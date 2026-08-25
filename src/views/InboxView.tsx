@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INITIAL_THREADS, InboxThread, filterThreadsByCategory } from '../lib/inboxDomain';
 import { Check, GitPullRequest, ShieldCheck, Mail, GitBranch, Send } from 'lucide-react';
 
@@ -9,19 +9,53 @@ export const InboxView: React.FC = () => {
   const [replyText, setReplyText] = useState('');
   const [replySent, setReplySent] = useState(false);
 
-  const handleApproveMerge = (id: string) => {
+  useEffect(() => {
+    fetch('/api/inbox?username=nate')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.threads) && data.threads.length > 0) {
+          setThreads(data.threads);
+          setSelectedThread(data.threads[0]);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleApproveMerge = async (id: string) => {
     setThreads(prev => prev.map(t => t.id === id ? { ...t, isMerged: true, unread: false } : t));
     if (selectedThread.id === id) {
       setSelectedThread(prev => ({ ...prev, isMerged: true, unread: false }));
     }
+
+    try {
+      await fetch('/api/inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'merge', messageId: id })
+      });
+    } catch {}
   };
 
-  const handleSendReply = (e: React.FormEvent) => {
+  const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim()) return;
     setReplySent(true);
+    const text = replyText.trim();
     setReplyText('');
     setTimeout(() => setReplySent(false), 2500);
+
+    try {
+      await fetch('/api/inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reply',
+          toUser: selectedThread.from,
+          subject: `Re: ${selectedThread.subject}`,
+          text
+        })
+      });
+    } catch {}
   };
 
   const filtered = filterThreadsByCategory(threads, activeFolder);
