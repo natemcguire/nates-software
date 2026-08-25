@@ -2,99 +2,157 @@ import React, { useState, useEffect } from 'react';
 import { APPS_DATA, AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
 import { PostEditorView } from './PostEditorView';
-import { Flame, ThumbsUp, Search, PlusCircle, Clock, Award, GitBranch } from 'lucide-react';
+import { calculateNextUtcDrop } from '../lib/hotwireDomain';
+import { Flame, ThumbsUp, Search, PlusCircle, Clock, Award, GitBranch, AlertCircle } from 'lucide-react';
+
+const BLANK_DRAFT_APP: AppListing = {
+  id: '',
+  name: '',
+  tagline: '',
+  description: '',
+  creator: 'nate',
+  creatorAvatar: '⚡',
+  upvotes: 1,
+  forks: 0,
+  version: 'v1.0.0',
+  license: 'MIT',
+  price: '$15 Registered Copy',
+  moddabilityScore: 95,
+  mergeCleanliness: '100% clean',
+  storage: 'Single-file SQLite WAL (/data/app.sqlite)',
+  screenshots: [
+    'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'
+  ],
+  binaries: {
+    mac: 'App-1.0.0.dmg (14.2MB)',
+    win: 'App-Setup-1.0.0.exe (18.4MB)',
+    linux: 'App-1.0.0.AppImage (16.1MB)',
+    ios: 'TestFlight Active'
+  },
+  tags: ['Shareware', 'SQLite WAL'],
+  comments: []
+};
 
 export const HotwireView: React.FC = () => {
   const [apps, setApps] = useState<AppListing[]>(APPS_DATA);
   const [selectedApp, setSelectedApp] = useState<AppListing>(APPS_DATA[0]);
+  const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'today' | 'alltime' | 'forks' | 'streaks'>('today');
-  const [isEditing, setIsEditing] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
-  const [countdown, setCountdown] = useState('09h 28m 14s');
+  const [countdown, setCountdown] = useState(() => calculateNextUtcDrop().countdown);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Fetch real drops from Cloudflare D1
   useEffect(() => {
     fetch('/api/drops')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('API fetch failed');
+        return res.json();
+      })
       .then(data => {
-        if (data.success && data.drops && data.drops.length > 0) {
+        if (data.success && Array.isArray(data.drops) && data.drops.length > 0) {
           setApps(data.drops);
           setSelectedApp(data.drops[0]);
         }
       })
-      .catch(() => {
-        // Graceful fallback to initial mock data if offline
-      });
+      .catch(() => {});
   }, []);
 
-  // Simulated live countdown to 12:01 AM UTC
+  // Live countdown to 12:01 AM UTC
   useEffect(() => {
     const timer = setInterval(() => {
-      const now = new Date();
-      const nextDrop = new Date();
-      nextDrop.setHours(24, 1, 0, 0);
-      const diff = Math.max(0, nextDrop.getTime() - now.getTime());
-
-      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const mins = Math.floor((diff / 1000 / 60) % 60);
-      const secs = Math.floor((diff / 1000) % 60);
-
-      setCountdown(
-        `${hours.toString().padStart(2, '0')}h ${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`
-      );
+      setCountdown(calculateNextUtcDrop().countdown);
     }, 1000);
     return () => clearInterval(timer);
   }, []);
 
   const handleUpvote = async (id: string) => {
+    // Save previous state for rollback
+    const prevApps = [...apps];
+    const prevSelected = selectedApp;
+
     // Optimistic UI update
     setApps(apps.map(a => a.id === id ? { ...a, upvotes: a.upvotes + 1 } : a));
     if (selectedApp.id === id) {
       setSelectedApp(prev => ({ ...prev, upvotes: prev.upvotes + 1 }));
     }
 
-    // Call live D1 API
     try {
-      await fetch('/api/upvote', {
+      const res = await fetch('/api/upvote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appId: id })
+        body: JSON.stringify({ appId: id, voterKey: 'nate_client' })
       });
+      if (!res.ok) throw new Error('Upvote failed');
+      const data = await res.json();
+      if (data.success && typeof data.upvotes === 'number') {
+        // Reconcile to authoritative count
+        setApps(prev => prev.map(a => a.id === id ? { ...a, upvotes: data.upvotes } : a));
+        if (selectedApp.id === id) {
+          setSelectedApp(prev => ({ ...prev, upvotes: data.upvotes }));
+        }
+      }
     } catch {
-      // ignore
+      // Rollback on failure
+      setApps(prevApps);
+      setSelectedApp(prevSelected);
+      setErrorMessage('Failed to submit upvote. Rolled back.');
+      setTimeout(() => setErrorMessage(null), 3000);
     }
   };
 
   const handleSavePost = async (updatedApp: AppListing) => {
-    setApps(apps.map(a => a.id === updatedApp.id ? updatedApp : a));
-    setSelectedApp(updatedApp);
-    setIsEditing(false);
+    const isNew = !updatedApp.id || updatedApp.id.trim().length === 0;
 
-    // Persist to Cloudflare D1
     try {
-      await fetch('/api/drops', {
+      const res = await fetch('/api/drops', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedApp)
       });
+      if (!res.ok) throw new Error('Save failed');
+      const data = await res.json();
+
+      const finalApp: AppListing = {
+        ...updatedApp,
+        id: data.id || updatedApp.id || `app_${Date.now()}`
+      };
+
+      if (isNew) {
+        setApps([finalApp, ...apps]);
+      } else {
+        setApps(apps.map(a => a.id === finalApp.id ? finalApp : a));
+      }
+      setSelectedApp(finalApp);
+      setEditingApp(null);
     } catch {
-      // ignore
+      setErrorMessage('Failed to save listing to Cloudflare D1.');
+      setTimeout(() => setErrorMessage(null), 3000);
     }
+  };
+
+  const startNewSubmission = () => {
+    setEditingApp({ ...BLANK_DRAFT_APP });
+  };
+
+  const startEditCurrent = () => {
+    setEditingApp({ ...selectedApp });
   };
 
   // Sort & Filter
   const sortedApps = [...apps].sort((a, b) => {
-    if (activeFilter === 'forks') return b.forks - a.forks;
-    if (activeFilter === 'alltime') return b.upvotes - a.upvotes;
-    return b.upvotes - a.upvotes;
+    if (activeFilter === 'forks') return (b.forks || 0) - (a.forks || 0);
+    if (activeFilter === 'alltime') return (b.upvotes || 0) - (a.upvotes || 0);
+    return (b.upvotes || 0) - (a.upvotes || 0);
   });
 
-  const filtered = sortedApps.filter(a =>
-    a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    a.creator.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filtered = sortedApps.filter(a => {
+    const nameMatch = a.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    const tagMatch = Array.isArray(a.tags) && a.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    const creatorMatch = a.creator?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    return nameMatch || tagMatch || creatorMatch;
+  });
 
   return (
     <div className="grid grid-cols-12 gap-3 h-full overflow-hidden font-tahoma text-sm">
@@ -107,21 +165,28 @@ export const HotwireView: React.FC = () => {
               <Flame size={14} className="text-orange-500 animate-pulse" /> 12:01 AM DAILY DROP #84
             </span>
             <span className="bg-green-900 text-green-300 font-mono text-[10px] px-1.5 py-0.5 rounded border border-green-600 font-bold">
-              ● CLOUDFLARE D1 LIVE
+              ● D1 LIVE
             </span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-gray-300">
             <span className="flex items-center gap-1 font-mono text-gray-400">
-              <Clock size={12} /> Next Drop in: <b className="text-white">{countdown}</b>
+              <Clock size={12} /> Next UTC Drop: <b className="text-white">{countdown}</b>
             </span>
             <button
-              onClick={() => setIsEditing(true)}
+              onClick={startNewSubmission}
               className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 shadow-sm"
             >
               <PlusCircle size={11} /> Submit Drop
             </button>
           </div>
         </div>
+
+        {/* Error Toast */}
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-800 p-1.5 rounded text-xs mb-2 flex items-center gap-1 font-bold">
+            <AlertCircle size={12} /> {errorMessage}
+          </div>
+        )}
 
         {/* Filter Navigation Tabs */}
         <div className="flex items-center gap-1 bg-gray-100 p-1 border border-gray-400 rounded mb-2">
@@ -169,7 +234,7 @@ export const HotwireView: React.FC = () => {
             {filtered.map((app, idx) => (
               <div
                 key={app.id}
-                onClick={() => { setSelectedApp(app); setIsEditing(false); }}
+                onClick={() => { setSelectedApp(app); setEditingApp(null); }}
                 className={`p-2.5 border-2 cursor-pointer transition-all ${
                   selectedApp.id === app.id
                     ? 'bg-blue-50 border-w95-blue shadow-sm'
@@ -190,13 +255,13 @@ export const HotwireView: React.FC = () => {
                     <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
 
                     <div className="flex gap-1.5 mt-1.5 flex-wrap items-center">
-                      {app.tags.map(t => (
+                      {(app.tags || []).map(t => (
                         <span key={t} className="bg-gray-200 text-gray-700 text-[10px] px-1.5 py-0.5 rounded font-mono font-medium">
                           {t}
                         </span>
                       ))}
                       <span className="text-[10px] text-purple-800 font-mono font-bold flex items-center gap-0.5">
-                        <GitBranch size={10} /> {app.forks} forks
+                        <GitBranch size={10} /> {app.forks || 0} forks
                       </span>
                     </div>
                   </div>
@@ -207,7 +272,7 @@ export const HotwireView: React.FC = () => {
                     className="btn-w95 flex flex-col items-center px-2.5 py-1 shrink-0"
                   >
                     <ThumbsUp size={12} className="text-orange-600" />
-                    <span className="font-bold font-mono text-xs">{app.upvotes}</span>
+                    <span className="font-bold font-mono text-xs">{app.upvotes || 0}</span>
                   </button>
                 </div>
               </div>
@@ -257,11 +322,11 @@ export const HotwireView: React.FC = () => {
 
       {/* Right Column: Full-Height Artifact Sandbox / Lineage Tree / Post Editor */}
       <div className="col-span-7 flex flex-col h-full bg-white border-2 border-gray-800 p-2.5 overflow-hidden">
-        {isEditing ? (
+        {editingApp !== null ? (
           <PostEditorView
-            app={selectedApp}
+            app={editingApp}
             onSave={handleSavePost}
-            onCancel={() => setIsEditing(false)}
+            onCancel={() => setEditingApp(null)}
           />
         ) : showLineage ? (
           <div className="flex flex-col h-full bg-[#ece9d8] p-4 text-xs font-tahoma overflow-y-auto">
@@ -305,9 +370,9 @@ export const HotwireView: React.FC = () => {
           <div className="flex flex-col h-full">
             <div className="flex items-center justify-between pb-1.5 mb-1 border-b text-xs">
               <span className="font-bold text-gray-700 flex items-center gap-1.5">
-                <span>Moddability: <b className="text-green-700 font-mono">{selectedApp.moddabilityScore}/100</b></span>
+                <span>Moddability: <b className="text-green-700 font-mono">{selectedApp.moddabilityScore || 95}/100</b></span>
                 <span>&middot;</span>
-                <span>Merge: <b className="text-blue-700 font-mono">{selectedApp.mergeCleanliness}</b></span>
+                <span>Merge: <b className="text-blue-700 font-mono">{selectedApp.mergeCleanliness || '99.8% clean'}</b></span>
               </span>
 
               <div className="flex gap-1">
@@ -318,7 +383,7 @@ export const HotwireView: React.FC = () => {
                   <GitBranch size={11} /> Lineage Tree
                 </button>
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={startEditCurrent}
                   className="btn-w95 text-xs py-0.5 px-2 text-w95-blue"
                 >
                   Edit Listing
@@ -331,7 +396,7 @@ export const HotwireView: React.FC = () => {
                 app={selectedApp}
                 onFork={() => alert(`Forked ${selectedApp.name} into SLOPSHOP worktree!`)}
                 onOpenAI={() => alert(`Launching Claude / Codex session for ${selectedApp.name}...`)}
-                onEditPost={() => setIsEditing(true)}
+                onEditPost={startEditCurrent}
               />
             </div>
           </div>

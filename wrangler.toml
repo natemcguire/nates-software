@@ -1,5 +1,5 @@
 name = "nates-software"
-compatibility_date = "2026-08-25"
+compatibility_date = "2024-09-23"
 pages_build_output_dir = "dist"
 
 # Cloudflare D1 (Serverless SQLite at Edge)
