@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { AppListing, AppComment } from '../data/mockData';
 import { EphemeralLiveApp } from './EphemeralLiveApp';
-import { Play, Code, Terminal, Download, Sparkles, GitFork, Image as ImageIcon, MessageSquare, ThumbsUp, Send, Edit3, ExternalLink } from 'lucide-react';
+import { Play, Code, Terminal, Download, Sparkles, GitFork, Image as ImageIcon, MessageSquare, ThumbsUp, Send, Edit3, ExternalLink, Database } from 'lucide-react';
+import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
 interface ArtifactSandboxProps {
   app: AppListing;
@@ -12,12 +13,23 @@ interface ArtifactSandboxProps {
 }
 
 export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, onOpenAI, onEditPost, onOpenLiveWindow }) => {
-  const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'code' | 'console'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'sqlite' | 'code' | 'console'>('preview');
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
   // Comment state
   const [comments, setComments] = useState<AppComment[]>(app.comments || []);
   const [newCommentText, setNewCommentText] = useState('');
+
+  // Live SQL query state for SQLite tab
+  const [customSqlQuery, setCustomSqlQuery] = useState('SELECT id, preset, status, size FROM render_queue;');
+  const [sqlResults, setSqlResults] = useState<{ columns: string[]; rows: any[][] }>({
+    columns: ['id', 'preset', 'status', 'size'],
+    rows: [
+      ['job-981', '24x36 Floating Walnut', 'Completed', '48.2 MB TIFF'],
+      ['job-982', '3-Piece Triptych Split', 'Completed', '112.4 MB TIFF'],
+      ['job-983', '4-Grid Oak Matting', 'Pending', '64.1 MB TIFF']
+    ]
+  });
 
   // Fetch comments from Cloudflare D1
   useEffect(() => {
@@ -39,6 +51,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
     e.preventDefault();
     if (!newCommentText.trim()) return;
 
+    playClickSound();
     const commentObj: AppComment = {
       id: `c-${Date.now()}`,
       author: 'nate',
@@ -51,8 +64,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
 
     setComments([commentObj, ...comments]);
     setNewCommentText('');
+    playSuccessChime();
 
-    // Persist to Cloudflare D1
     try {
       await fetch('/api/comments', {
         method: 'POST',
@@ -67,7 +80,24 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
   };
 
   const handleUpvoteComment = (cId: string) => {
+    playClickSound();
     setComments(comments.map(c => c.id === cId ? { ...c, upvotes: c.upvotes + 1 } : c));
+  };
+
+  const handleRunSqlQuery = (e: React.FormEvent) => {
+    e.preventDefault();
+    playClickSound();
+    if (customSqlQuery.toLowerCase().includes('select')) {
+      setSqlResults({
+        columns: ['id', 'preset', 'status', 'size'],
+        rows: [
+          ['job-981', '24x36 Floating Walnut', 'Completed', '48.2 MB TIFF'],
+          ['job-982', '3-Piece Triptych Split', 'Completed', '112.4 MB TIFF'],
+          ['job-983', '4-Grid Oak Matting', 'Pending', '64.1 MB TIFF'],
+          [`job-${Math.floor(100 + Math.random() * 900)}`, 'Custom 300 DPI Canvas', 'Executed', '38.4 MB TIFF']
+        ]
+      });
+    }
   };
 
   return (
@@ -91,31 +121,37 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
         {/* Tab Switcher & Pop Out Button */}
         <div className="flex items-center gap-1 bg-gray-200 p-1 border border-gray-400 rounded">
           <button
-            onClick={() => setActiveTab('preview')}
+            onClick={() => { setActiveTab('preview'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'preview' ? 'btn-w95-primary' : ''}`}
           >
             <Play size={13} /> Live App
           </button>
           <button
-            onClick={() => setActiveTab('screenshots')}
-            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'screenshots' ? 'btn-w95-primary' : ''}`}
+            onClick={() => { setActiveTab('sqlite'); playClickSound(); }}
+            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'sqlite' ? 'btn-w95-primary' : ''}`}
           >
-            <ImageIcon size={13} /> Screenshots ({app.screenshots.length})
+            <Database size={13} /> SQLite DB
           </button>
           <button
-            onClick={() => setActiveTab('comments')}
+            onClick={() => { setActiveTab('screenshots'); playClickSound(); }}
+            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'screenshots' ? 'btn-w95-primary' : ''}`}
+          >
+            <ImageIcon size={13} /> Shots ({app.screenshots.length})
+          </button>
+          <button
+            onClick={() => { setActiveTab('comments'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'comments' ? 'btn-w95-primary' : ''}`}
           >
             <MessageSquare size={13} /> Comments ({comments.length})
           </button>
           <button
-            onClick={() => setActiveTab('code')}
+            onClick={() => { setActiveTab('code'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'code' ? 'btn-w95-primary' : ''}`}
           >
-            <Code size={13} /> Code
+            <Code size={13} /> AST
           </button>
           <button
-            onClick={() => setActiveTab('console')}
+            onClick={() => { setActiveTab('console'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'console' ? 'btn-w95-primary' : ''}`}
           >
             <Terminal size={13} /> Logs
@@ -139,7 +175,75 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
           <EphemeralLiveApp app={app} />
         )}
 
-        {/* 2. Visual Screenshots Gallery */}
+        {/* 2. SQLite Database Inspector Tab */}
+        {activeTab === 'sqlite' && (
+          <div className="h-full flex flex-col justify-between p-4 bg-gray-50 overflow-hidden font-tahoma">
+            <div className="space-y-3 flex-1 overflow-y-auto">
+              <div className="flex justify-between items-center border-b pb-1.5">
+                <span className="font-bold text-sm text-w95-blue flex items-center gap-1.5">
+                  <Database size={14} /> Sovereign SQLite 3.45 WASM Database Inspector
+                </span>
+                <span className="font-mono text-green-800 font-bold text-xs bg-green-100 px-2 py-0.5 rounded">
+                  WAL ACTIVE (/data/{app.id}.sqlite)
+                </span>
+              </div>
+
+              {/* SQL Query Console */}
+              <form onSubmit={handleRunSqlQuery} className="space-y-1.5">
+                <div className="flex justify-between items-center text-xs font-bold">
+                  <span>Execute SQL Query:</span>
+                  <span className="text-gray-500 font-mono text-[10px]">Read-Write WAL Safe</span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customSqlQuery}
+                    onChange={(e) => setCustomSqlQuery(e.target.value)}
+                    className="flex-1 p-2 font-mono text-xs border border-gray-400 bg-white"
+                  />
+                  <button type="submit" className="btn-w95 btn-w95-primary px-3 py-1 font-bold text-xs">
+                    Run SQL &rarr;
+                  </button>
+                </div>
+              </form>
+
+              {/* Tabular Result Grid */}
+              <div className="border-2 border-gray-600 rounded bg-white overflow-hidden shadow-inner">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-w95-blue text-white text-left font-mono">
+                      {sqlResults.columns.map((col) => (
+                        <th key={col} className="p-1.5 border-r border-blue-400 last:border-r-0">{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono">
+                    {sqlResults.rows.map((row, rIdx) => (
+                      <tr key={rIdx} className="border-b hover:bg-blue-50">
+                        {row.map((cell, cIdx) => (
+                          <td key={cIdx} className="p-1.5 border-r border-gray-200 last:border-r-0">{cell}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t flex justify-between items-center text-xs">
+              <span className="text-gray-500 font-mono">Status: 0 locks &middot; 4.2ms query latency</span>
+              <a
+                href="data:text/plain;charset=utf-8,SQLite%203.45%20Binary"
+                download={`${app.id}.sqlite`}
+                className="btn-w95 btn-w95-primary px-3 py-1 font-bold flex items-center gap-1"
+              >
+                <Download size={12} /> Download Raw .sqlite Volume
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Visual Screenshots Gallery */}
         {activeTab === 'screenshots' && (
           <div className="h-full flex flex-col justify-between p-4 bg-gray-900 text-white overflow-y-auto">
             <div className="flex-1 flex items-center justify-center min-h-[220px]">
@@ -153,7 +257,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
               {app.screenshots.map((s, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setActiveShotIdx(idx)}
+                  onClick={() => { setActiveShotIdx(idx); playClickSound(); }}
                   className={`w-14 h-10 rounded overflow-hidden border-2 transition-all ${
                     activeShotIdx === idx ? 'border-yellow-400 scale-105' : 'border-gray-600 opacity-60 hover:opacity-100'
                   }`}
@@ -165,7 +269,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
           </div>
         )}
 
-        {/* 3. Community Comments Stream */}
+        {/* 4. Community Comments Stream */}
         {activeTab === 'comments' && (
           <div className="h-full flex flex-col justify-between p-4 bg-gray-50 overflow-hidden font-tahoma">
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
@@ -219,7 +323,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
           </div>
         )}
 
-        {/* 4. Code & AST Manifest */}
+        {/* 5. Code & AST Manifest */}
         {activeTab === 'code' && (
           <div className="h-full bg-gray-900 text-green-400 p-4 font-mono text-xs overflow-y-auto">
             <div className="text-gray-500 mb-2">// AST Feature Manifest (refs/features/wallart@v2.4)</div>
@@ -241,7 +345,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
           </div>
         )}
 
-        {/* 5. Logs */}
+        {/* 6. Logs */}
         {activeTab === 'console' && (
           <div className="h-full bg-black text-gray-300 p-4 font-mono text-xs overflow-y-auto space-y-1">
             <div className="text-green-400">[RIG.EXE] Sandboxed WASM SQLite instance booted.</div>

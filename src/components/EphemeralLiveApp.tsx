@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppListing } from '../data/mockData';
-import { Download, Compass, Sliders, Sparkles, Image as ImageIcon, Send, Check } from 'lucide-react';
+import { Download, Compass, Sliders, Sparkles, Image as ImageIcon, Send, Check, Upload, Trash2 } from 'lucide-react';
+import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
 interface EphemeralLiveAppProps {
   app: AppListing;
@@ -17,16 +18,20 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const [frameStyle, setFrameStyle] = useState<'walnut' | 'black' | 'oak' | 'canvas-wrap'>('walnut');
   const [layoutMode, setLayoutMode] = useState<'single' | 'triptych' | 'grid'>('single');
   const [printSize, setPrintSize] = useState('24" x 36" (60x90cm)');
+  const [customPhotoUrl, setCustomPhotoUrl] = useState<string | null>(null);
+
   const [renderJobQueue, setRenderJobQueue] = useState([
     { id: 'job-981', preset: '24x36 Floating Walnut', status: 'Completed', size: '48.2 MB TIFF' },
     { id: 'job-982', preset: '3-Piece Triptych Split', status: 'Completed', size: '112.4 MB TIFF' }
   ]);
 
   // RetroCalc Pro
-  const [calcVal] = useState('1,420.00');
-  const [transactions] = useState([
+  const [calcVal, setCalcVal] = useState('1,420.00');
+  const [transactions, setTransactions] = useState([
     { id: 1, desc: 'Starting Balance', amount: 1420.00, type: 'credit' },
   ]);
+  const [newTxDesc, setNewTxDesc] = useState('');
+  const [newTxAmount, setNewTxAmount] = useState('');
 
   // SailTrack GPS
   const [sog] = useState(7.4);
@@ -48,6 +53,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         clearInterval(interval);
         setIsHoldingShip(false);
         setIsShipped(true);
+        playSuccessChime();
         setTimeout(() => setIsShipped(false), 4000);
       }
     }, 150);
@@ -61,6 +67,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   };
 
   const handleQueueRender = () => {
+    playClickSound();
     const newId = `job-${Math.floor(100 + Math.random() * 900)}`;
     const newJob = {
       id: newId,
@@ -72,8 +79,39 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
 
     setTimeout(() => {
       setRenderJobQueue(prev => prev.map(j => j.id === newId ? { ...j, status: 'Completed', size: '64.1 MB TIFF' } : j));
+      playSuccessChime();
     }, 1200);
   };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setCustomPhotoUrl(url);
+      playSuccessChime();
+    }
+  };
+
+  const handleAddTransaction = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(newTxAmount);
+    if (!newTxDesc.trim() || isNaN(amt)) return;
+
+    playClickSound();
+    const newTx = {
+      id: Date.now(),
+      desc: newTxDesc.trim(),
+      amount: amt,
+      type: 'credit'
+    };
+    setTransactions([newTx, ...transactions]);
+    const currentNum = parseFloat(calcVal.replace(/,/g, ''));
+    setCalcVal((currentNum + amt).toLocaleString('en-US', { minimumFractionDigits: 2 }));
+    setNewTxDesc('');
+    setNewTxAmount('');
+  };
+
+  const activeMasterImage = customPhotoUrl || "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80";
 
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] p-3 text-xs font-tahoma overflow-y-auto">
@@ -104,7 +142,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
               }`}
               title="Click and hold for 1 second to ship verified changes to origin/main"
             >
-              {/* Progress Fill bar */}
               <div
                 style={{ width: `${shipProgress}%` }}
                 className="absolute inset-0 bg-green-600/80 transition-all duration-75 pointer-events-none"
@@ -131,9 +168,20 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
               <span className="font-bold text-xs flex items-center gap-1.5 text-yellow-300">
                 <ImageIcon size={14} /> Living Room Gallery Wall Preview
               </span>
-              <span className="text-[10px] font-mono bg-blue-900/80 px-2 py-0.5 rounded border border-blue-400">
-                {printSize} &middot; {layoutMode.toUpperCase()}
-              </span>
+              <div className="flex items-center gap-2">
+                {customPhotoUrl && (
+                  <button
+                    onClick={() => { setCustomPhotoUrl(null); playClickSound(); }}
+                    className="text-[10px] bg-red-900/80 text-red-200 px-1.5 py-0.5 rounded flex items-center gap-1 border border-red-500"
+                    title="Reset to default photo"
+                  >
+                    <Trash2 size={10} /> Reset
+                  </button>
+                )}
+                <span className="text-[10px] font-mono bg-blue-900/80 px-2 py-0.5 rounded border border-blue-400">
+                  {printSize} &middot; {layoutMode.toUpperCase()}
+                </span>
+              </div>
             </div>
 
             {/* Simulated Framed Canvas Display */}
@@ -149,7 +197,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                   className="bg-white rounded-sm transition-all duration-300 max-w-[340px] max-h-[220px] overflow-hidden"
                 >
                   <img
-                    src="https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"
+                    src={activeMasterImage}
                     alt="WallArt Master Canvas"
                     className="w-full h-full object-cover"
                   />
@@ -170,7 +218,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                       className="bg-white rounded-sm w-28 h-44 overflow-hidden"
                     >
                       <img
-                        src="https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"
+                        src={activeMasterImage}
                         alt={`Panel ${panel}`}
                         style={{ objectPosition: `${(panel - 1) * 50}% center` }}
                         className="w-full h-full object-cover scale-150"
@@ -194,7 +242,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                       className="bg-white rounded-sm h-24 overflow-hidden"
                     >
                       <img
-                        src="https://images.unsplash.com/photo-1582561424760-0321d75e81fa?auto=format&fit=crop&w=600&q=80"
+                        src={activeMasterImage}
                         alt={`Grid ${gridItem}`}
                         className="w-full h-full object-cover"
                       />
@@ -216,7 +264,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 ].map((swatch) => (
                   <button
                     key={swatch.color}
-                    onClick={() => setWallColor(swatch.color)}
+                    onClick={() => { setWallColor(swatch.color); playClickSound(); }}
                     style={{ backgroundColor: swatch.color }}
                     className={`w-5 h-5 rounded-full border-2 transition-transform ${
                       wallColor === swatch.color ? 'border-yellow-400 scale-125 shadow-md' : 'border-white/50 hover:scale-110'
@@ -230,7 +278,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
 
           {/* Right: Customization Controls & SQLite Print Queue */}
           <div className="col-span-5 bg-white border-2 border-gray-800 p-3 flex flex-col justify-between overflow-y-auto">
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <div className="border-b pb-1.5 flex items-center justify-between">
                 <span className="font-bold text-sm text-w95-blue flex items-center gap-1.5">
                   <Sliders size={14} /> Frame Matting &amp; Print Controls
@@ -238,6 +286,16 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">
                   300 DPI READY
                 </span>
+              </div>
+
+              {/* Upload Custom Photo Button */}
+              <div>
+                <label className="font-bold text-gray-800 block mb-1 text-[11px]">Upload Your Own Photo / Art:</label>
+                <label className="btn-w95 w-full py-1.5 flex items-center justify-center gap-1.5 cursor-pointer font-bold bg-blue-50 hover:bg-blue-100">
+                  <Upload size={12} className="text-w95-blue" />
+                  <span>Choose JPG / PNG File...</span>
+                  <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                </label>
               </div>
 
               {/* Frame Material */}
@@ -252,7 +310,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                   ].map((f) => (
                     <button
                       key={f.id}
-                      onClick={() => setFrameStyle(f.id as any)}
+                      onClick={() => { setFrameStyle(f.id as any); playClickSound(); }}
                       className={`btn-w95 py-1 text-left ${frameStyle === f.id ? 'btn-w95-primary' : ''}`}
                     >
                       {f.label}
@@ -266,19 +324,19 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 <label className="font-bold text-gray-800 block mb-1 text-[11px]">Display Layout:</label>
                 <div className="flex gap-1 font-mono text-[11px]">
                   <button
-                    onClick={() => setLayoutMode('single')}
+                    onClick={() => { setLayoutMode('single'); playClickSound(); }}
                     className={`btn-w95 flex-1 py-1 ${layoutMode === 'single' ? 'btn-w95-primary' : ''}`}
                   >
                     Single Frame
                   </button>
                   <button
-                    onClick={() => setLayoutMode('triptych')}
+                    onClick={() => { setLayoutMode('triptych'); playClickSound(); }}
                     className={`btn-w95 flex-1 py-1 ${layoutMode === 'triptych' ? 'btn-w95-primary' : ''}`}
                   >
                     3-Panel Triptych
                   </button>
                   <button
-                    onClick={() => setLayoutMode('grid')}
+                    onClick={() => { setLayoutMode('grid'); playClickSound(); }}
                     className={`btn-w95 flex-1 py-1 ${layoutMode === 'grid' ? 'btn-w95-primary' : ''}`}
                   >
                     4-Grid Split
@@ -291,7 +349,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 <label className="font-bold text-gray-800 block mb-1 text-[11px]">Canvas Aspect Ratio &amp; Dimension:</label>
                 <select
                   value={printSize}
-                  onChange={(e) => setPrintSize(e.target.value)}
+                  onChange={(e) => { setPrintSize(e.target.value); playClickSound(); }}
                   className="w-full p-1 border border-gray-400 text-xs bg-gray-50 font-bold"
                 >
                   <option value='24" x 36" (60x90cm)'>24" x 36" (60x90cm) — Master Living Room Hero</option>
@@ -306,7 +364,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                   <span>SQLite Render Queue (/data/wallart.sqlite):</span>
                   <span className="font-mono text-gray-500">{renderJobQueue.length} jobs</span>
                 </div>
-                <div className="space-y-1 max-h-[85px] overflow-y-auto">
+                <div className="space-y-1 max-h-[75px] overflow-y-auto">
                   {renderJobQueue.map((job) => (
                     <div key={job.id} className="bg-white p-1 rounded border text-[10px] flex justify-between items-center font-mono">
                       <span className="truncate">{job.preset}</span>
@@ -347,13 +405,38 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 <span className="bg-green-200 text-green-900 font-bold px-1.5 py-0.5 rounded text-[10px]">WASM SQLite 3.45</span>
               </div>
               <div className="bg-[#9ea792] p-3 rounded border-2 border-gray-700 mb-3 shadow-inner text-right font-mono">
-                <div className="text-[10px] text-gray-700 font-sans uppercase">Compound Balance / Result</div>
-                <div className="text-3xl font-black text-black tracking-tight my-1 truncate">{calcVal}</div>
+                <div className="text-[10px] text-gray-700 font-sans uppercase">Compound Balance / Ledger Total</div>
+                <div className="text-3xl font-black text-black tracking-tight my-1 truncate">${calcVal}</div>
               </div>
+
+              {/* Add Transaction Form */}
+              <form onSubmit={handleAddTransaction} className="space-y-2 bg-gray-100 p-2.5 rounded border border-gray-400">
+                <div className="font-bold text-gray-800 text-xs">Record Accounting Entry:</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="Description (e.g. Office Supplies)"
+                    value={newTxDesc}
+                    onChange={(e) => setNewTxDesc(e.target.value)}
+                    className="p-1 border text-xs bg-white"
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount ($)"
+                    value={newTxAmount}
+                    onChange={(e) => setNewTxAmount(e.target.value)}
+                    className="p-1 border text-xs bg-white font-mono"
+                  />
+                </div>
+                <button type="submit" className="btn-w95 btn-w95-primary w-full py-1 text-xs font-bold">
+                  + Add Entry to SQLite Ledger
+                </button>
+              </form>
             </div>
           </div>
           <div className="col-span-6 bg-white border-2 border-gray-800 p-3 flex flex-col justify-between">
-            <div className="font-bold text-sm text-w95-blue border-b pb-1 mb-2">Live SQLite Ledger</div>
+            <div className="font-bold text-sm text-w95-blue border-b pb-1 mb-2">Live SQLite Journal (/data/app.sqlite)</div>
             <div className="space-y-1 overflow-y-auto max-h-[220px]">
               {transactions.map((tx) => (
                 <div key={tx.id} className="p-1.5 bg-gray-50 border rounded flex justify-between text-xs">

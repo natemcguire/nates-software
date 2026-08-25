@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { toggleSound, isSoundEnabled, playClickSound } from '../lib/soundEngine';
 
-interface TaskbarTab {
+export interface TaskbarTab {
   id: string;
   title: string;
   icon: string;
@@ -14,54 +16,60 @@ interface DesktopTaskbarProps {
 }
 
 export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({ tabs, onStartClick }) => {
-  const [timeStr, setTimeStr] = useState('');
+  const [soundOn, setSoundOn] = useState(isSoundEnabled());
 
-  useEffect(() => {
-    const updateTime = () => {
-      const d = new Date();
-      setTimeStr(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    };
-    updateTime();
-    const timer = setInterval(updateTime, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const handleToggleSound = () => {
+    const next = toggleSound();
+    setSoundOn(next);
+    if (next) playClickSound();
+  };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-11 bg-w95-gray border-t-2 border-white flex items-center justify-between px-2 z-50 select-none font-tahoma">
-      {/* Start Button & Active Tasks */}
-      <div className="flex items-center gap-2 flex-1 overflow-x-auto">
-        <button
-          onClick={onStartClick}
-          className="btn-w95 flex items-center gap-1.5 px-3.5 py-1.5 font-bold text-sm bg-w95-gray active:translate-x-0.5 shadow-sm"
-        >
-          <span className="text-lg">🪟</span>
-          <span className="text-[14px]">Start</span>
-        </button>
+    <div className="fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
+      {/* Start Button */}
+      <button
+        onClick={() => { playClickSound(); onStartClick(); }}
+        className="h-7 px-3.5 flex items-center gap-1.5 font-bold border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0] active:border-gray-800"
+      >
+        <span className="text-base">⚡</span>
+        <span>Start</span>
+      </button>
 
-        {/* Task Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={tab.onClick}
-              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold truncate max-w-[220px] border-2 ${
-                tab.isActive
-                  ? 'bg-w95-panel border-gray-700 border-r-white border-b-white'
-                  : 'bg-w95-gray border-white border-r-gray-700 border-b-gray-700'
-              }`}
-            >
-              <span className="text-sm">{tab.icon}</span>
-              <span className="truncate text-[13px]">{tab.title}</span>
-            </button>
-          ))}
-        </div>
+      <div className="w-[2px] h-6 bg-gray-400 border-r border-white mx-2" />
+
+      {/* Running Taskbar Buttons */}
+      <div className="flex-1 flex gap-1 overflow-x-auto h-7">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => { playClickSound(); tab.onClick(); }}
+            className={`px-3 max-w-[170px] truncate text-xs flex items-center gap-1 border-2 text-left ${
+              tab.isActive
+                ? 'bg-gray-200 border-gray-800 border-r-white border-b-white font-bold'
+                : 'bg-[#c0c0c0] border-white border-r-gray-800 border-b-gray-800'
+            }`}
+          >
+            <span className="text-sm">{tab.icon}</span>
+            <span className="truncate">{tab.title}</span>
+          </button>
+        ))}
       </div>
 
-      {/* System Tray */}
-      <div className="flex items-center gap-3.5 px-3.5 py-1 bg-w95-panel w95-border-sunken text-xs font-bold">
-        <span>🔊</span>
-        <span className="text-w95-blue">⚡ 5 Engines Active</span>
-        <span className="text-gray-900 font-mono text-[13px]">{timeStr || '1:30 PM'}</span>
+      {/* System Tray (Audio, Clock, Status) */}
+      <div className="h-7 px-2.5 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-2.5">
+        <button
+          onClick={handleToggleSound}
+          className="hover:scale-110 transition-transform text-gray-700"
+          title={soundOn ? "Sound Effects Enabled (Click to Mute)" : "Sound Effects Muted (Click to Unmute)"}
+        >
+          {soundOn ? <Volume2 size={14} className="text-blue-900" /> : <VolumeX size={14} className="text-gray-500" />}
+        </button>
+        <span title="Sovereign Single-File SQLite Active" className="flex items-center">
+          <ShieldCheck size={14} className="text-green-700" />
+        </span>
+        <span className="font-mono text-[11px] text-gray-800">
+          {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
       </div>
     </div>
   );
