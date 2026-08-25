@@ -13,6 +13,8 @@ import { RigRuntimeView } from './views/RigRuntimeView';
 import { WhitePapersView } from './views/WhitePapersView';
 import { DynoView } from './views/DynoView';
 import { ProfileView } from './views/ProfileView';
+import { TerminalView } from './views/TerminalView';
+import { playClickSound } from './lib/soundEngine';
 
 export function App() {
   const {
@@ -28,6 +30,7 @@ export function App() {
   } = useWindowManager();
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
   // Desktop selection rubberband box
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
@@ -56,26 +59,37 @@ export function App() {
     .filter(w => w.isOpen)
     .map(w => ({
       id: w.id,
-      title: w.title.split('—')[0].trim(),
+      title: w.title.split('—')[0]?.trim() || w.title,
       icon: w.icon,
       isActive: activeWindowId === w.id && !w.isMinimized,
       onClick: () => {
-        if (w.isMinimized || activeWindowId !== w.id) {
-          focusWindow(w.id);
-        } else {
+        if (activeWindowId === w.id && !w.isMinimized) {
           minimizeWindow(w.id);
+        } else {
+          openWindow(w.id);
         }
       }
     }));
+
+  const bgStyles = {
+    teal: 'bg-[#008080]',
+    matrix: 'bg-[#0a140a]',
+    sunset: 'bg-[#1a102f]',
+    navy: 'bg-[#000033]'
+  };
 
   return (
     <div
       onPointerDown={handleDesktopPointerDown}
       onPointerMove={handleDesktopPointerMove}
       onPointerUp={handleDesktopPointerUp}
-      className="h-screen w-screen bg-w95-teal flex flex-col justify-between overflow-hidden relative font-tahoma select-none"
+      className={`fixed inset-0 select-none overflow-hidden pb-10 transition-colors duration-500 ${bgStyles[theme]}`}
+      style={{
+        backgroundImage: theme === 'teal' ? `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 1px, transparent 1px)` : undefined,
+        backgroundSize: '24px 24px'
+      }}
     >
-      {/* Desktop Selection Rubberband Box */}
+      {/* Rubberband Drag Selection Box */}
       {selectionBox && (
         <div
           style={{
@@ -84,65 +98,88 @@ export function App() {
             width: Math.abs(selectionBox.currentX - selectionBox.startX),
             height: Math.abs(selectionBox.currentY - selectionBox.startY)
           }}
-          className="absolute border border-dotted border-white bg-blue-500/20 z-0 pointer-events-none"
+          className="fixed border-2 border-dotted border-white/60 bg-blue-500/20 pointer-events-none z-30"
         />
       )}
 
-      {/* Desktop Icons Grid */}
-      <div className="p-4 grid grid-cols-6 gap-4 z-10 w-fit">
+      {/* Top Right Theme Selector */}
+      <div className="absolute top-3 right-4 z-10 flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma">
+        <span className="text-gray-300 font-bold mr-1">Theme:</span>
+        {[
+          { id: 'teal', label: 'Teal 95' },
+          { id: 'matrix', label: 'Matrix' },
+          { id: 'sunset', label: 'Sunset' },
+          { id: 'navy', label: 'DOS Navy' }
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => { playClickSound(); setTheme(t.id as any); }}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+              theme === t.id ? 'bg-w95-blue text-white shadow-sm border border-blue-400' : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Desktop App Icons Grid */}
+      <div className="absolute top-4 left-4 grid grid-flow-col grid-rows-7 gap-2 z-10">
         <DesktopIcon
+          label="README_FIRST.TXT"
           icon="📄"
-          label="README_FIRST.TXT (About Us)"
-          onClick={() => openWindow('mktg')}
+          onClick={() => { playClickSound(); openWindow('mktg'); }}
         />
         <DesktopIcon
-          icon="🔥"
+          label="TERMINAL.EXE"
+          icon="💻"
+          onClick={() => { playClickSound(); openWindow('terminal'); }}
+        />
+        <DesktopIcon
           label="HOTWIRE (Drops)"
-          onClick={() => openWindow('hotwire')}
-          badge="NEW"
+          icon="🔥"
+          onClick={() => { playClickSound(); openWindow('hotwire'); }}
         />
         <DesktopIcon
-          icon="🛠️"
           label="SLOPSHOP (AI Mod)"
-          onClick={() => openWindow('slopshop')}
+          icon="🔧"
+          onClick={() => { playClickSound(); openWindow('slopshop'); }}
         />
         <DesktopIcon
+          label="RIG.EXE (Runtime)"
           icon="⚙️"
-          label="RIG.EXE"
-          onClick={() => openWindow('rig')}
+          onClick={() => { playClickSound(); openWindow('rig'); }}
         />
         <DesktopIcon
-          icon="📬"
-          label="INBOX (Mailbox)"
-          onClick={() => openWindow('inbox')}
-          badge="3"
+          label="INBOX (Proposals)"
+          icon="📫"
+          onClick={() => { playClickSound(); openWindow('inbox'); }}
         />
         <DesktopIcon
-          icon="📖"
-          label="WHITE_PAPERS.DOC"
-          onClick={() => openWindow('papers')}
-        />
-        <DesktopIcon
+          label="DYNO (Speedometer)"
           icon="🏎️"
-          label="DYNO (Tuning)"
-          onClick={() => openWindow('dyno')}
-          badge="DYNO"
+          onClick={() => { playClickSound(); openWindow('dyno'); }}
         />
         <DesktopIcon
+          label="PROFILE.CFG (Shelf)"
           icon="👤"
-          label="MY_PROFILE.CFG"
-          onClick={() => openWindow('profile')}
+          onClick={() => { playClickSound(); openWindow('profile'); }}
         />
         <DesktopIcon
-          icon="🗑️"
-          label="Recycle Bin"
-          onClick={() => alert("Recycle Bin is empty.")}
+          label="WHITE_PAPERS.DOC"
+          icon="📖"
+          onClick={() => { playClickSound(); openWindow('papers'); }}
+        />
+        <DesktopIcon
+          label="Source on GitHub"
+          icon="🌐"
+          onClick={() => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); }}
         />
       </div>
 
-      {/* Floating, Draggable, Resizable Windows */}
-      
-      {/* 1. Marketing Window */}
+      {/* Floating Application Windows */}
+
+      {/* 0. Marketing / About Readme */}
       <RetroWindow
         windowState={windows.mktg}
         isActive={activeWindowId === 'mktg'}
@@ -158,11 +195,25 @@ export function App() {
           onOpenSlopshop={() => openWindow('slopshop')}
           onOpenInbox={() => openWindow('inbox')}
           onOpenWhitepapers={() => openWindow('papers')}
-          onDismiss={() => minimizeWindow('mktg')}
+          onDismiss={() => closeWindow('mktg')}
         />
       </RetroWindow>
 
-      {/* 2. Hotwire Drops Window */}
+      {/* 1. Terminal DOS Shell */}
+      <RetroWindow
+        windowState={windows.terminal}
+        isActive={activeWindowId === 'terminal'}
+        onFocus={() => focusWindow('terminal')}
+        onClose={() => closeWindow('terminal')}
+        onMinimize={() => minimizeWindow('terminal')}
+        onToggleMaximize={() => toggleMaximizeWindow('terminal')}
+        onMove={(x, y) => updateWindowPosition('terminal', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('terminal', w, h, x, y)}
+      >
+        <TerminalView />
+      </RetroWindow>
+
+      {/* 2. Hotwire Drops */}
       <RetroWindow
         windowState={windows.hotwire}
         isActive={activeWindowId === 'hotwire'}
@@ -176,7 +227,7 @@ export function App() {
         <HotwireView />
       </RetroWindow>
 
-      {/* 3. Slopshop AI Speed Shop Window */}
+      {/* 3. Slopshop AI Speed Shop */}
       <RetroWindow
         windowState={windows.slopshop}
         isActive={activeWindowId === 'slopshop'}
@@ -190,21 +241,7 @@ export function App() {
         <SlopshopView />
       </RetroWindow>
 
-      {/* 4. Inbox.EXE Window */}
-      <RetroWindow
-        windowState={windows.inbox}
-        isActive={activeWindowId === 'inbox'}
-        onFocus={() => focusWindow('inbox')}
-        onClose={() => closeWindow('inbox')}
-        onMinimize={() => minimizeWindow('inbox')}
-        onToggleMaximize={() => toggleMaximizeWindow('inbox')}
-        onMove={(x, y) => updateWindowPosition('inbox', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('inbox', w, h, x, y)}
-      >
-        <InboxView />
-      </RetroWindow>
-
-      {/* 5. RIG Runtime HUD Window */}
+      {/* 4. Rig.exe Runtime HUD */}
       <RetroWindow
         windowState={windows.rig}
         isActive={activeWindowId === 'rig'}
@@ -218,21 +255,21 @@ export function App() {
         <RigRuntimeView />
       </RetroWindow>
 
-      {/* 6. White Papers Reader Window */}
+      {/* 5. Inbox Merge Discussions */}
       <RetroWindow
-        windowState={windows.papers}
-        isActive={activeWindowId === 'papers'}
-        onFocus={() => focusWindow('papers')}
-        onClose={() => closeWindow('papers')}
-        onMinimize={() => minimizeWindow('papers')}
-        onToggleMaximize={() => toggleMaximizeWindow('papers')}
-        onMove={(x, y) => updateWindowPosition('papers', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('papers', w, h, x, y)}
+        windowState={windows.inbox}
+        isActive={activeWindowId === 'inbox'}
+        onFocus={() => focusWindow('inbox')}
+        onClose={() => closeWindow('inbox')}
+        onMinimize={() => minimizeWindow('inbox')}
+        onToggleMaximize={() => toggleMaximizeWindow('inbox')}
+        onMove={(x, y) => updateWindowPosition('inbox', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('inbox', w, h, x, y)}
       >
-        <WhitePapersView />
+        <InboxView />
       </RetroWindow>
 
-      {/* 7. Dyno Workstation Tuning Window */}
+      {/* 6. Dyno Workstation Speedometer */}
       <RetroWindow
         windowState={windows.dyno}
         isActive={activeWindowId === 'dyno'}
@@ -246,7 +283,21 @@ export function App() {
         <DynoView />
       </RetroWindow>
 
-      {/* 8. User Profile & Saved Shelf Window */}
+      {/* 7. Technical White Papers */}
+      <RetroWindow
+        windowState={windows.papers}
+        isActive={activeWindowId === 'papers'}
+        onFocus={() => focusWindow('papers')}
+        onClose={() => closeWindow('papers')}
+        onMinimize={() => minimizeWindow('papers')}
+        onToggleMaximize={() => toggleMaximizeWindow('papers')}
+        onMove={(x, y) => updateWindowPosition('papers', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('papers', w, h, x, y)}
+      >
+        <WhitePapersView />
+      </RetroWindow>
+
+      {/* 8. User Profile & My Shelf */}
       <RetroWindow
         windowState={windows.profile}
         isActive={activeWindowId === 'profile'}

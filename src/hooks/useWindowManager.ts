@@ -134,6 +134,19 @@ export function useWindowManager() {
       width: 1040,
       height: 660,
       zIndex: 17
+    },
+    terminal: {
+      id: 'terminal',
+      title: "TERMINAL.EXE — [Sovereign Interactive DOS Shell]",
+      icon: '💻',
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      x: pos3.x,
+      y: pos3.y,
+      width: 840,
+      height: 520,
+      zIndex: 18
     }
   });
 
