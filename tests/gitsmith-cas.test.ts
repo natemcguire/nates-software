@@ -1,34 +1,46 @@
 import { describe, it, expect } from 'vitest';
-
-// Atomic Compare-And-Swap merge engine simulation
-export function atomicCasMerge(
-  currentHeadSha: string,
-  expectedOldSha: string,
-  newSha: string
-): { success: boolean; newHead: string; error?: string } {
-  if (currentHeadSha !== expectedOldSha) {
-    return {
-      success: false,
-      newHead: currentHeadSha,
-      error: `CAS conflict: Expected ${expectedOldSha} but remote head is ${currentHeadSha}. Rebase required.`
-    };
-  }
-  return {
-    success: true,
-    newHead: newSha
-  };
-}
+import { executeCasMerge, CASMergeRequest } from '../src/lib/gitsmithDomain';
 
 describe('GITSMITH Atomic Compare-And-Swap (CAS) Merge Engine', () => {
   it('should succeed when remote head matches expected ancestor SHA', () => {
-    const result = atomicCasMerge('sha_abc123', 'sha_abc123', 'sha_def456');
+    const req: CASMergeRequest = {
+      ref: 'refs/heads/main',
+      expectedOldSha: '5c030af',
+      newSha: '8f4a21e',
+      committer: 'nate',
+      signatureVerified: true
+    };
+    const result = executeCasMerge('5c030af', req);
     expect(result.success).toBe(true);
-    expect(result.newHead).toBe('sha_def456');
+    if (result.success) {
+      expect(result.newHeadSha).toBe('8f4a21e');
+    }
   });
 
   it('should reject non-fast-forward push and require rebase', () => {
-    const result = atomicCasMerge('sha_diverged789', 'sha_abc123', 'sha_def456');
+    const req: CASMergeRequest = {
+      ref: 'refs/heads/main',
+      expectedOldSha: '5c030af',
+      newSha: '8f4a21e',
+      committer: 'nate',
+      signatureVerified: true
+    };
+    const result = executeCasMerge('diverged999', req);
     expect(result.success).toBe(false);
-    expect(result.error).toContain('CAS conflict');
+    if (!result.success) {
+      expect(result.error).toContain('CAS atomic rejection');
+    }
+  });
+
+  it('should reject invalid ref path', () => {
+    const req: CASMergeRequest = {
+      ref: 'invalid-ref-without-prefix',
+      expectedOldSha: '5c030af',
+      newSha: '8f4a21e',
+      committer: 'nate',
+      signatureVerified: true
+    };
+    const result = executeCasMerge('5c030af', req);
+    expect(result.success).toBe(false);
   });
 });
