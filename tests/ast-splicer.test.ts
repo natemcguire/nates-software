@@ -1,48 +1,66 @@
 import { describe, it, expect } from 'vitest';
-
-export interface FeatureManifest {
-  name: string;
-  version: string;
-  author: string;
-  storage: string;
-  schema: {
-    tables: string[];
-    wal_mode: boolean;
-  };
-  exports: string[];
-}
-
-export function validateFeatureManifest(manifest: Partial<FeatureManifest>): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-  if (!manifest.name) errors.push('Missing feature name');
-  if (!manifest.exports || manifest.exports.length === 0) errors.push('Feature must declare at least one exported AST module');
-  if (!manifest.schema || !manifest.schema.wal_mode) errors.push('Feature must explicitly declare schema.wal_mode = true');
-  return { valid: errors.length === 0, errors };
-}
+import { PRESET_FEATURES, validateAstFeature } from '../src/lib/slopshopDomain';
 
 describe('SLOPSHOP AST Feature Splicer & Manifest Contract', () => {
-  it('should accept a compliant feature package', () => {
-    const pkg: FeatureManifest = {
-      name: 'wallart-triptych-slicer',
-      version: '2.4.0',
-      author: '@nate',
-      storage: '/data/wallart.sqlite',
-      schema: { tables: ['presets', 'photos'], wal_mode: true },
-      exports: ['components/CanvasTriptych.tsx']
-    };
-    const result = validateFeatureManifest(pkg);
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
+  it('should validate all built-in preset feature packages', () => {
+    PRESET_FEATURES.forEach((pkg) => {
+      const result = validateAstFeature(pkg);
+      expect(result.valid).toBe(true);
+      if (result.valid) {
+        expect(result.data.name).toBe(pkg.name);
+        expect(result.data.walMode).toBe(true);
+      }
+    });
   });
 
-  it('should reject manifest without WAL mode declaration', () => {
-    const invalidPkg: any = {
-      name: 'legacy-feature',
-      exports: ['components/Bad.tsx'],
-      schema: { tables: ['bad'], wal_mode: false }
+  it('should reject non-object or null manifests', () => {
+    expect(validateAstFeature(null).valid).toBe(false);
+    expect(validateAstFeature('not an object').valid).toBe(false);
+    expect(validateAstFeature(123).valid).toBe(false);
+  });
+
+  it('should reject non-canonical ref grammar', () => {
+    const invalidPkg = {
+      ...PRESET_FEATURES[0],
+      ref: 'refs/heads/main'
     };
-    const result = validateFeatureManifest(invalidPkg);
+    const result = validateAstFeature(invalidPkg);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain('wal_mode = true');
+    if (!result.valid) {
+      expect(result.errors[0]).toContain('canonical format');
+    }
+  });
+
+  it('should reject truthy string walMode and require strict boolean true', () => {
+    const invalidPkg = {
+      ...PRESET_FEATURES[0],
+      walMode: 'true' as any
+    };
+    const result = validateAstFeature(invalidPkg);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors[0]).toContain('walMode === true');
+    }
+  });
+
+  it('should reject malformed table names containing invalid SQL characters', () => {
+    const invalidPkg = {
+      ...PRESET_FEATURES[0],
+      tablesCreated: ['bad-table; DROP TABLE users;--']
+    };
+    const result = validateAstFeature(invalidPkg);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors[0]).toContain('Invalid SQLite table identifier');
+    }
+  });
+
+  it('should reject non-integer or negative astNodesAdded', () => {
+    const invalidPkg = {
+      ...PRESET_FEATURES[0],
+      astNodesAdded: -5
+    };
+    const result = validateAstFeature(invalidPkg);
+    expect(result.valid).toBe(false);
   });
 });

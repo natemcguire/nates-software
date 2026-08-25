@@ -8,6 +8,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     const voter = voterKey || request.headers.get('CF-Connecting-IP') || 'anonymous_voter';
+    if (!voter) {
+      return Response.json({ success: false, error: 'voter identification required' }, { status: 400 });
+    }
 
     // Verify app exists
     const app = await env.DB.prepare('SELECT id FROM app_listings WHERE id = ?').bind(appId).first();
