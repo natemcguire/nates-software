@@ -1,17 +1,23 @@
-import React, { useState } from 'react';
-import { Cpu, Download, ShieldCheck, Terminal, Copy, Check, Play } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Cpu, Download, ShieldCheck, Terminal, Copy, Check, Play, RefreshCw, Layers } from 'lucide-react';
+import { INITIAL_FLEET, RigContainer, formatBytes } from '../lib/rigDomain';
 
 export const RigRuntimeView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'onboard' | 'fleet' | 'storage'>('onboard');
   const [copiedRemote, setCopiedRemote] = useState(false);
   const [copiedPush, setCopiedPush] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [fleet, setFleet] = useState<RigContainer[]>([...INITIAL_FLEET]);
+  const [restartingIds, setRestartingIds] = useState<Set<string>>(new Set());
+
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
+
   const [buildLogs, setBuildLogs] = useState<string[]>([
     "[GITSMITH] Hook post-receive initialized for repo: nate/wallart",
-    "[RIG.EXE] Allocated isolated Linux micro-container (ID: rig-98a412)",
+    "[RIG.EXE] Allocated isolated Linux micro-container (ID: rig-wa-9812)",
     "[RIG.EXE] Mounted sovereign volume: /data/wallart.sqlite (WAL mode)",
     "[BUILD] Running: npm run build (Vite 6 + React 19 + Tailwind)",
-    "[BUILD] Transformed 1,835 modules in 1.25s -> dist/ (374 kB JS, 31 kB CSS)",
+    "[BUILD] Transformed 1,837 modules in 0.99s -> dist/ (392 kB JS, 34 kB CSS)",
     "[PORTAL] Booted ephemeral dev server on port 3002 (dyno://nate/wallart:3002)",
     "[TESTS] Irrefutable Evidence Pass: 500 SQLite simulated writes verified in 0.04s",
     "[STATUS] ● Ephemeral build live and ready for testing."
@@ -20,28 +26,56 @@ export const RigRuntimeView: React.FC = () => {
   const remoteCmd = "git remote add nate git@gitsmith.dev:nate/wallart.git";
   const pushCmd = "git push nate main";
 
-  const copyRemote = () => {
-    navigator.clipboard.writeText(remoteCmd);
-    setCopiedRemote(true);
-    setTimeout(() => setCopiedRemote(false), 2000);
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(t => clearTimeout(t));
+      timersRef.current = [];
+    };
+  }, []);
+
+  const copyRemote = async () => {
+    try {
+      await navigator.clipboard.writeText(remoteCmd);
+      setCopiedRemote(true);
+      const t = setTimeout(() => setCopiedRemote(false), 2000);
+      timersRef.current.push(t);
+    } catch {}
   };
 
-  const copyPush = () => {
-    navigator.clipboard.writeText(pushCmd);
-    setCopiedPush(true);
-    setTimeout(() => setCopiedPush(false), 2000);
+  const copyPush = async () => {
+    try {
+      await navigator.clipboard.writeText(pushCmd);
+      setCopiedPush(true);
+      const t = setTimeout(() => setCopiedPush(false), 2000);
+      timersRef.current.push(t);
+    } catch {}
+  };
+
+  const handleRestartContainer = (id: string) => {
+    setRestartingIds(prev => new Set(prev).add(id));
+    setFleet(prev => prev.map(c => c.id === id ? { ...c, status: 'rebuilding' } : c));
+
+    const t = setTimeout(() => {
+      setFleet(prev => prev.map(c => c.id === id ? { ...c, status: 'online' } : c));
+      setRestartingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 900);
+    timersRef.current.push(t);
   };
 
   const runSimulatedPush = () => {
     setIsBuilding(true);
     setBuildLogs(["[GITSMITH] Receiving objects: 100% (142/142)..."]);
-    
+
     const steps = [
       "[GITSMITH] CAS atomic update: refs/heads/main -> 5c030af (OK)",
       "[RIG.EXE] Spinning up isolated micro-container (CPU limit: 2 cores, RAM limit: 256MB)",
       "[STORAGE] Initialized SQLite WAL volume at /data/wallart.sqlite",
       "[BUILD] Compiling TypeScript AST & bundling assets with Vite 6...",
-      "[BUILD] Build complete in 1.18s! Bundle size: 374 kB JS",
+      "[BUILD] Build complete in 0.99s! Bundle size: 392 kB JS",
       "[EVIDENCE] Running 10k SQLite stress tests & visual regression checks...",
       "[EVIDENCE] Irrefutable Evidence: 100% test pass rate, 0 lock contentions, <0.08ms latency",
       "[PORTAL] Live Ephemeral URL: https://wallart-nate.rig.nates.software (Port 3002)",
@@ -49,22 +83,25 @@ export const RigRuntimeView: React.FC = () => {
     ];
 
     steps.forEach((step, idx) => {
-      setTimeout(() => {
+      const t = setTimeout(() => {
         setBuildLogs(prev => [...prev, step]);
         if (idx === steps.length - 1) setIsBuilding(false);
       }, (idx + 1) * 350);
+      timersRef.current.push(t);
     });
   };
+
+  const activeOnlineCount = fleet.filter(c => c.status === 'online').length;
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
       {/* Top Header Navigation */}
-      <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700">
+      <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Cpu size={16} className="text-green-400" />
           <span className="font-bold text-sm text-green-300 font-mono">RIG.EXE BUILDER &amp; EPHEMERAL FLEET</span>
           <span className="bg-green-900 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded border border-green-500 font-mono">
-            ● 3 FLEET CONTAINERS ACTIVE
+            ● {activeOnlineCount} ACTIVE / {fleet.length} TOTAL
           </span>
         </div>
 
@@ -80,7 +117,7 @@ export const RigRuntimeView: React.FC = () => {
             onClick={() => setActiveTab('fleet')}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'fleet' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            ⚡ Parallel Fleet (Orbs)
+            ⚡ Parallel Fleet ({fleet.length})
           </button>
           <button
             onClick={() => setActiveTab('storage')}
@@ -146,7 +183,7 @@ export const RigRuntimeView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Step 3: Irrefutable Evidence Guarantee */}
+                {/* Step 3: Invariants */}
                 <div className="bg-blue-50 border border-w95-blue p-2.5 rounded space-y-1">
                   <div className="font-bold text-w95-blue flex items-center gap-1">
                     <ShieldCheck size={13} className="text-green-700" /> Automated Build Invariants:
@@ -200,7 +237,7 @@ export const RigRuntimeView: React.FC = () => {
 
               <div className="pt-2 border-t border-gray-800 flex justify-between items-center text-[10px] text-gray-500 font-sans">
                 <span>✔ Git CAS Hook &middot; Zero Lock Contentions</span>
-                <span className="text-green-400 font-mono font-bold">EXIT 0 (OK)</span>
+                <span className="text-green-400 font-mono font-bold">{isBuilding ? 'BUILDING...' : 'EXIT 0 (OK)'}</span>
               </div>
             </div>
           </div>
@@ -224,51 +261,53 @@ export const RigRuntimeView: React.FC = () => {
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="bg-w95-blue text-white text-left">
-                  <th className="p-2">App / Fork / Task</th>
-                  <th className="p-2">Container Port</th>
+                  <th className="p-2">Container ID / App</th>
+                  <th className="p-2">Port</th>
                   <th className="p-2">Memory / Cap</th>
-                  <th className="p-2">SQLite Volume</th>
-                  <th className="p-2">Irrefutable Evidence</th>
-                  <th className="p-2">Live Portal</th>
+                  <th className="p-2">SQLite Volume (WAL)</th>
+                  <th className="p-2">Evidence</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2">Action</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b hover:bg-gray-50">
-                  <td className="p-2 font-bold text-w95-blue">nate/wallart (Flagship)</td>
-                  <td className="p-2 font-mono">3002</td>
-                  <td className="p-2 text-green-700 font-bold font-mono">48 MB / 256 MB</td>
-                  <td className="p-2 font-mono">/data/wallart.sqlite (14.8MB)</td>
-                  <td className="p-2 text-green-700 font-bold">✔ 100% (300 DPI Pass)</td>
-                  <td className="p-2">
-                    <span className="bg-blue-100 text-blue-900 px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer hover:underline">
-                      Open Portal &rarr;
-                    </span>
-                  </td>
-                </tr>
-                <tr className="border-b hover:bg-gray-50">
-                  <td className="p-2 font-bold text-w95-blue">sam/retro-calc</td>
-                  <td className="p-2 font-mono">3001</td>
-                  <td className="p-2 text-green-700 font-bold font-mono">24 MB / 256 MB</td>
-                  <td className="p-2 font-mono">/data/app.sqlite (1.4MB)</td>
-                  <td className="p-2 text-green-700 font-bold">✔ 100% (WAL Verified)</td>
-                  <td className="p-2">
-                    <span className="bg-blue-100 text-blue-900 px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer hover:underline">
-                      Open Portal &rarr;
-                    </span>
-                  </td>
-                </tr>
-                <tr className="border-b hover:bg-gray-50">
-                  <td className="p-2 font-bold text-w95-blue">nate/sailtrack</td>
-                  <td className="p-2 font-mono">3003</td>
-                  <td className="p-2 text-green-700 font-bold font-mono">38 MB / 256 MB</td>
-                  <td className="p-2 font-mono">/data/telemetry.sqlite (4.2MB)</td>
-                  <td className="p-2 text-green-700 font-bold">✔ 100% (Polar NMEA Lock)</td>
-                  <td className="p-2">
-                    <span className="bg-blue-100 text-blue-900 px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer hover:underline">
-                      Open Portal &rarr;
-                    </span>
-                  </td>
-                </tr>
+                {fleet.map((c) => {
+                  const isRebuilding = restartingIds.has(c.id) || c.status === 'rebuilding';
+                  return (
+                    <tr key={c.id} className="border-b hover:bg-gray-50">
+                      <td className="p-2 font-bold text-w95-blue">
+                        <div>{c.name}</div>
+                        <span className="text-[10px] text-gray-500 font-mono">{c.id}</span>
+                      </td>
+                      <td className="p-2 font-mono font-bold">{c.port}</td>
+                      <td className="p-2 text-green-700 font-bold font-mono">
+                        {c.memoryMb} MB / {c.memoryCapMb} MB
+                      </td>
+                      <td className="p-2 font-mono text-[11px]">
+                        <div>{c.sqlitePath} ({formatBytes(c.sqliteSizeBytes)})</div>
+                        <div className="text-gray-500 text-[10px]">WAL: {formatBytes(c.walJournalSizeBytes)}</div>
+                      </td>
+                      <td className="p-2 text-green-700 font-bold">✔ {c.testEvidenceScore}% Pass</td>
+                      <td className="p-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          isRebuilding ? 'bg-yellow-100 text-yellow-900 border border-yellow-400' : 'bg-green-100 text-green-800'
+                        }`}>
+                          ● {isRebuilding ? 'REBUILDING...' : c.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="p-2">
+                        <button
+                          onClick={() => handleRestartContainer(c.id)}
+                          disabled={isRebuilding}
+                          className="btn-w95 text-[10px] py-0.5 px-2 flex items-center gap-1"
+                        >
+                          <RefreshCw size={10} className={isRebuilding ? 'animate-spin' : ''} />
+                          {isRebuilding ? 'Rebooting...' : 'Restart'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -278,13 +317,19 @@ export const RigRuntimeView: React.FC = () => {
         {activeTab === 'storage' && (
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-blue-50 border-2 border-w95-blue p-3 rounded space-y-2">
-              <span className="font-bold text-w95-blue text-sm">Sovereign SQLite Disk Export</span>
+              <span className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
+                <Layers size={14} /> Sovereign SQLite Disk Export
+              </span>
               <p className="text-gray-700 text-xs">
-                Export any running container\'s complete, uncorrupted SQLite database file to your local computer with zero locks.
+                Export any running container's complete, uncorrupted SQLite database file to your local computer with zero locks.
               </p>
-              <button className="btn-w95 btn-w95-primary w-full py-1.5 flex items-center justify-center gap-1.5">
-                <Download size={13} /> Export wallart.sqlite (WAL Safe)
-              </button>
+              <a
+                href="data:text/plain;charset=utf-8,WallArt%20SQLite%203.45%20Database"
+                download="wallart-live.sqlite"
+                className="btn-w95 btn-w95-primary w-full py-1.5 flex items-center justify-center gap-1.5"
+              >
+                <Download size={13} /> Export wallart.sqlite ({formatBytes(15518920)})
+              </a>
             </div>
 
             <div className="bg-yellow-50 border-2 border-yellow-500 p-3 rounded space-y-2">
