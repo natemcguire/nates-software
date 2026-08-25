@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AppListing } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { AppListing, AppComment } from '../data/mockData';
 import { EphemeralLiveApp } from './EphemeralLiveApp';
 import { Play, Code, Terminal, Download, Sparkles, GitFork, Image as ImageIcon, MessageSquare, ThumbsUp, Send, Edit3, ExternalLink } from 'lucide-react';
 
@@ -16,25 +16,54 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
   // Comment state
-  const [comments, setComments] = useState(app.comments || []);
+  const [comments, setComments] = useState<AppComment[]>(app.comments || []);
   const [newCommentText, setNewCommentText] = useState('');
 
-  const handleAddComment = (e: React.FormEvent) => {
+  // Fetch comments from Cloudflare D1
+  useEffect(() => {
+    fetch(`/api/comments?app_id=${app.id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.comments && data.comments.length > 0) {
+          setComments(data.comments);
+        } else {
+          setComments(app.comments || []);
+        }
+      })
+      .catch(() => {
+        setComments(app.comments || []);
+      });
+  }, [app.id]);
+
+  const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCommentText.trim()) return;
 
-    const commentObj = {
+    const commentObj: AppComment = {
       id: `c-${Date.now()}`,
       author: 'nate',
       avatar: '⚡',
       time: 'Just now',
       text: newCommentText.trim(),
       upvotes: 1,
-      isMaker: false
+      isMaker: true
     };
 
     setComments([commentObj, ...comments]);
     setNewCommentText('');
+
+    // Persist to Cloudflare D1
+    try {
+      await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appId: app.id,
+          author: 'nate',
+          text: commentObj.text
+        })
+      });
+    } catch {}
   };
 
   const handleUpvoteComment = (cId: string) => {
@@ -112,145 +141,150 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
 
         {/* 2. Visual Screenshots Gallery */}
         {activeTab === 'screenshots' && (
-          <div className="h-full flex flex-col p-4 bg-gray-900 text-white overflow-hidden">
-            {/* Big Main Image */}
-            <div className="flex-1 flex items-center justify-center bg-black border-2 border-gray-700 rounded overflow-hidden relative">
+          <div className="h-full flex flex-col justify-between p-4 bg-gray-900 text-white overflow-y-auto">
+            <div className="flex-1 flex items-center justify-center min-h-[220px]">
               <img
                 src={app.screenshots[activeShotIdx]}
                 alt={`Screenshot ${activeShotIdx + 1}`}
-                className="max-h-full max-w-full object-contain"
+                className="max-h-[240px] max-w-full object-contain rounded border-2 border-gray-700 shadow-2xl"
               />
-              <div className="absolute bottom-2 left-3 bg-black/70 px-3 py-1 rounded text-xs font-mono text-gray-200">
-                Screenshot {activeShotIdx + 1} of {app.screenshots.length}
-              </div>
             </div>
-
-            {/* Thumbnail Carousel */}
-            <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
-              {app.screenshots.map((shot, idx) => (
-                <div
+            <div className="flex justify-center gap-2 pt-3 border-t border-gray-800">
+              {app.screenshots.map((s, idx) => (
+                <button
                   key={idx}
                   onClick={() => setActiveShotIdx(idx)}
-                  className={`w-24 h-16 shrink-0 rounded overflow-hidden border-2 cursor-pointer transition-all ${
-                    activeShotIdx === idx ? 'border-yellow-400 scale-105 shadow-md' : 'border-gray-600 opacity-60 hover:opacity-100'
+                  className={`w-14 h-10 rounded overflow-hidden border-2 transition-all ${
+                    activeShotIdx === idx ? 'border-yellow-400 scale-105' : 'border-gray-600 opacity-60 hover:opacity-100'
                   }`}
                 >
-                  <img src={shot} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
-                </div>
+                  <img src={s} alt="thumb" className="w-full h-full object-cover" />
+                </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* 3. Community Comments & Reviews Stream */}
+        {/* 3. Community Comments Stream */}
         {activeTab === 'comments' && (
-          <div className="h-full flex flex-col p-4 bg-gray-50 overflow-hidden">
-            {/* Comments List */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2 mb-3">
-              {comments.map((comment) => (
-                <div key={comment.id} className="bg-white border-2 border-gray-300 p-3 rounded shadow-sm">
-                  <div className="flex items-center justify-between border-b pb-1.5 mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base">{comment.avatar}</span>
-                      <span className="font-bold text-gray-900">@{comment.author}</span>
-                      {comment.isMaker && (
-                        <span className="bg-blue-100 text-w95-blue text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-300">
-                          MAKER
+          <div className="h-full flex flex-col justify-between p-4 bg-gray-50 overflow-hidden font-tahoma">
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              <div className="flex items-center justify-between border-b pb-1.5 mb-2 text-xs">
+                <span className="font-bold text-w95-blue">Maker Discussion &amp; Feedback Stream</span>
+                <span className="text-gray-500 font-mono">{comments.length} comments &middot; D1 Live</span>
+              </div>
+
+              {comments.map((c) => (
+                <div key={c.id} className="p-2.5 bg-white border border-gray-300 rounded shadow-sm text-xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-lg">{c.avatar}</span>
+                      <span className="font-bold text-gray-900">@{c.author}</span>
+                      {c.isMaker && (
+                        <span className="bg-blue-100 text-w95-blue text-[10px] font-bold px-1.5 py-0.2 rounded border border-blue-300">
+                          Maker
                         </span>
                       )}
-                      <span className="text-gray-400 text-xs font-mono">{comment.time}</span>
+                      <span className="text-gray-400 text-[10px]">&middot; {c.time}</span>
                     </div>
-
                     <button
-                      onClick={() => handleUpvoteComment(comment.id)}
-                      className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1"
+                      onClick={() => handleUpvoteComment(c.id)}
+                      className="btn-w95 text-[10px] py-0.5 px-1.5 flex items-center gap-1"
                     >
-                      <ThumbsUp size={11} className="text-orange-600" />
-                      <span className="font-bold">{comment.upvotes}</span>
+                      <ThumbsUp size={10} className="text-orange-600" />
+                      <span>{c.upvotes}</span>
                     </button>
                   </div>
-                  <p className="text-gray-800 text-xs leading-relaxed">{comment.text}</p>
+                  <p className="text-gray-700 leading-relaxed text-xs pl-6">{c.text}</p>
                 </div>
               ))}
             </div>
 
-            {/* New Comment Input Box */}
-            <form onSubmit={handleAddComment} className="bg-white border-2 border-gray-800 p-2.5 flex gap-2">
+            {/* Add Comment Form */}
+            <form onSubmit={handleAddComment} className="pt-3 border-t border-gray-300 flex gap-2">
               <input
                 type="text"
-                placeholder="Ask the creator a question or leave feedback..."
+                placeholder="Ask a question or leave feedback for the maker..."
                 value={newCommentText}
                 onChange={(e) => setNewCommentText(e.target.value)}
-                className="flex-1 p-2 border border-gray-400 text-xs font-tahoma bg-gray-50 focus:bg-white outline-none"
+                className="flex-1 p-2 border border-gray-400 text-xs bg-white"
               />
-              <button type="submit" className="btn-w95 btn-w95-primary px-4 py-1.5 flex items-center gap-1.5">
-                <Send size={13} /> Post Comment
+              <button
+                type="submit"
+                className="btn-w95 btn-w95-primary px-4 text-xs flex items-center gap-1 font-bold"
+              >
+                <Send size={12} /> Post Comment
               </button>
             </form>
           </div>
         )}
 
-        {/* 4. Code Inspector */}
+        {/* 4. Code & AST Manifest */}
         {activeTab === 'code' && (
-          <div className="h-full bg-black text-green-400 p-4 font-mono text-xs overflow-y-auto leading-relaxed">
-            <div className="text-gray-500 mb-2">// src/components/{app.id}.tsx (Clean, unbundled TypeScript)</div>
-            <div><span className="text-pink-400">import</span> React, &#123; useState &#125; <span className="text-pink-400">from</span> <span className="text-yellow-300">'react'</span>;</div>
-            <div><span className="text-pink-400">import</span> &#123; useSQLite &#125; <span className="text-pink-400">from</span> <span className="text-yellow-300">'@natesoftware/sqlite'</span>;</div>
-            <br />
-            <div><span className="text-blue-400">export function</span> <span className="text-yellow-400">{app.name.replace(/\s+/g, '')}</span>() &#123;</div>
-            <div>&nbsp;&nbsp;<span className="text-pink-400">const</span> [balance, setBalance] = useState(<span className="text-yellow-300">"1420.00"</span>);</div>
-            <div>&nbsp;&nbsp;<span className="text-pink-400">const</span> db = useSQLite(<span className="text-yellow-300">"/data/app.sqlite"</span>);</div>
-            <br />
-            <div>&nbsp;&nbsp;<span className="text-pink-400">return</span> (</div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&lt;<span className="text-blue-400">div</span> className=<span className="text-yellow-300">"w95-calc-panel"</span>&gt;</div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;<span className="text-blue-400">input</span> value=&#123;balance&#125; /&gt;</div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;&lt;/<span className="text-blue-400">div</span>&gt;</div>
-            <div>&nbsp;&nbsp;);</div>
-            <div>&#125;</div>
+          <div className="h-full bg-gray-900 text-green-400 p-4 font-mono text-xs overflow-y-auto">
+            <div className="text-gray-500 mb-2">// AST Feature Manifest (refs/features/wallart@v2.4)</div>
+            <pre className="text-green-300">{`{
+  "name": "wallart-canvas-studio",
+  "version": "2.4.0",
+  "author": "@nate",
+  "storage": "/data/wallart.sqlite",
+  "schema": {
+    "tables": ["presets", "photos", "render_queue", "icc_profiles"],
+    "wal_mode": true
+  },
+  "exports": [
+    "components/CanvasStage3D.tsx",
+    "components/FrameMattingControls.tsx",
+    "lib/sqliteRenderQueue.ts"
+  ]
+}`}</pre>
           </div>
         )}
 
-        {/* 5. Logs Console */}
+        {/* 5. Logs */}
         {activeTab === 'console' && (
-          <div className="h-full bg-black text-gray-200 p-4 font-mono text-xs overflow-y-auto leading-relaxed">
+          <div className="h-full bg-black text-gray-300 p-4 font-mono text-xs overflow-y-auto space-y-1">
             <div className="text-green-400">[RIG.EXE] Sandboxed WASM SQLite instance booted.</div>
-            <div className="text-green-400">[SQLITE] PRAGMA journal_mode = WAL (latency: 0.12ms)</div>
-            <div className="text-gray-400">[CLIENT] Component mounted in 14ms. Ready for interaction.</div>
-            <div className="text-gray-400">[MEDIA] 3 high-res screenshot assets cached in memory.</div>
+            <div className="text-gray-500">[STORAGE] PRAGMA journal_mode = WAL; (OK)</div>
+            <div className="text-gray-500">[HTTP] GET /api/drops (200 OK - 4.8ms)</div>
+            <div className="text-green-400">[PORTAL] Live interactive frame customizer ready.</div>
           </div>
         )}
       </div>
 
-      {/* Action Bar Footer */}
-      <div className="mt-2.5 pt-2 border-t border-gray-300 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <a
-            href="data:text/plain;charset=utf-8,SQLite%203.45%20Format"
-            download={`${app.id}.sqlite`}
-            className="btn-w95"
-          >
-            <Download size={13} /> Export .sqlite
-          </a>
-          <span className="btn-w95 text-gray-800 text-xs">
-            🍎 {app.binaries.mac.split(' ')[0]}
-          </span>
-          <span className="btn-w95 text-gray-800 text-xs">
-            🪟 {app.binaries.win.split(' ')[0]}
-          </span>
-        </div>
-
+      {/* Bottom Action Footer Bar */}
+      <div className="pt-2 mt-2 border-t border-gray-400 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
+          <button
+            onClick={onFork}
+            className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-md"
+          >
+            <GitFork size={13} /> Fork &amp; Mod in SLOPSHOP
+          </button>
+          <button
+            onClick={onOpenAI}
+            className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5"
+          >
+            <Sparkles size={13} className="text-purple-700" /> Open AI Session
+          </button>
           {onEditPost && (
-            <button onClick={onEditPost} className="btn-w95 text-xs text-blue-900">
+            <button
+              onClick={onEditPost}
+              className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 text-w95-blue"
+            >
               <Edit3 size={13} /> Edit Post
             </button>
           )}
-          <button onClick={onOpenAI} className="btn-w95 text-xs">
-            <Sparkles size={13} className="text-purple-700" /> Prompt AI in Claude/Codex
-          </button>
-          <button onClick={onFork} className="btn-w95 btn-w95-primary text-xs">
-            <GitFork size={13} /> Fork in SLOPSHOP &rarr;
-          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <a
+            href="data:text/plain;charset=utf-8,WallArt%20Binary%20Package"
+            download={`${app.id}-${app.version}.dmg`}
+            className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
+          >
+            <Download size={12} /> Download Offline DMG
+          </a>
         </div>
       </div>
     </div>

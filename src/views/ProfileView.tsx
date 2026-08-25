@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Key, Download, HardDrive, MessageSquare, Check, Sparkles, Plus } from 'lucide-react';
 import { APPS_DATA } from '../data/mockData';
 
@@ -10,29 +10,64 @@ export const ProfileView: React.FC = () => {
   const [displayName, setDisplayName] = useState('Nate McGuire');
   const [avatar, setAvatar] = useState('⚡');
   const [bio, setBio] = useState('Founder at East Bay Projects. Building shareware for sovereign users.');
-  const [sshKey, setSshKey] = useState('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG... nate@macmini');
+  const [sshKey, setSshKey] = useState('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY8... nate@macmini');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   // User Shelf (Owned / Saved Apps)
-  const [shelfApps] = useState([
+  const [shelfApps, setShelfApps] = useState<any[]>([
     {
-      ...APPS_DATA[0], // RetroCalc Pro
+      ...APPS_DATA[0],
+      licenseKey: 'NSW-WA-9821-0001',
+      purchasedDate: 'Aug 25, 2026',
+      localDbSize: '14.8 MB'
+    },
+    {
+      ...APPS_DATA[1],
       licenseKey: 'NSW-RC-9821-4401',
       purchasedDate: 'Aug 24, 2026',
       localDbSize: '1.4 MB'
-    },
-    {
-      ...APPS_DATA[1], // SailTrack GPS
-      licenseKey: 'NSW-ST-1109-8832',
-      purchasedDate: 'Aug 22, 2026',
-      localDbSize: '4.2 MB'
     }
   ]);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  // Load live profile & shelf from Cloudflare D1
+  useEffect(() => {
+    fetch('/api/profile?username=nate')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          if (data.user) {
+            setDisplayName(data.user.displayName || 'Nate McGuire');
+            setAvatar(data.user.avatar || '⚡');
+            setBio(data.user.bio || '');
+            if (data.user.sshKey) setSshKey(data.user.sshKey);
+          }
+          if (data.shelf && data.shelf.length > 0) {
+            setShelfApps(data.shelf);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
+
+    // Call live Cloudflare D1 API
+    try {
+      await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          displayName,
+          avatar,
+          bio,
+          sshKey
+        })
+      });
+    } catch {}
   };
 
   return (
@@ -45,7 +80,9 @@ export const ProfileView: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="font-bold text-base">{displayName}</span>
               <span className="bg-blue-800 text-blue-200 text-xs px-2 py-0.5 rounded font-mono">@{username}</span>
-              <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">VERIFIED MAKER</span>
+              <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">
+                ● D1 SYNC ACTIVE
+              </span>
             </div>
             <p className="text-blue-100 text-xs mt-0.5">{bio}</p>
           </div>
@@ -172,7 +209,7 @@ export const ProfileView: React.FC = () => {
           </form>
         )}
 
-        {/* TAB 2: My Shelf / Saved Software */}
+        {/* TAB 2: My Shelf */}
         {activeTab === 'shelf' && (
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
@@ -189,7 +226,7 @@ export const ProfileView: React.FC = () => {
               {shelfApps.map((app) => (
                 <div key={app.id} className="border-2 border-gray-700 bg-gray-50 p-3 rounded flex items-center justify-between gap-3 shadow-sm">
                   <div className="flex items-center gap-3">
-                    <span className="text-3xl bg-white p-1 rounded border border-gray-400">{app.creatorAvatar}</span>
+                    <span className="text-3xl bg-white p-1 rounded border border-gray-400">{app.creatorAvatar || '📦'}</span>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-gray-900">{app.name}</span>
@@ -200,22 +237,21 @@ export const ProfileView: React.FC = () => {
                       </div>
                       <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
                       <div className="text-[11px] text-gray-500 font-mono mt-1">
-                        Acquired: {app.purchasedDate} &middot; Local Database: {app.localDbSize} (WAL Mode)
+                        Acquired: {app.purchasedDate} &middot; Local Database: {app.localDbSize || '1.4 MB'} (WAL Mode)
                       </div>
                     </div>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-1.5 shrink-0">
                     <a
                       href="data:text/plain;charset=utf-8,SQLite%203.45%20Format"
-                      download={`${app.id}-backup.sqlite`}
+                      download={`${app.appId || app.id}-backup.sqlite`}
                       className="btn-w95 text-xs py-1 px-2 flex items-center gap-1"
                     >
                       <Download size={12} /> Backup .sqlite
                     </a>
                     <button className="btn-w95 text-xs py-1 px-2">
-                      🍎 {app.binaries.mac.split(' ')[0]}
+                      🍎 Download DMG
                     </button>
                     <button className="btn-w95 btn-w95-primary text-xs py-1 px-3">
                       Launch &rarr;
@@ -227,7 +263,7 @@ export const ProfileView: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: My Published Apps & Forks */}
+        {/* TAB 3: Forks */}
         {activeTab === 'forks' && (
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
@@ -242,8 +278,8 @@ export const ProfileView: React.FC = () => {
 
             <div className="border-2 border-gray-700 bg-blue-50 p-3 rounded flex items-center justify-between">
               <div>
-                <div className="font-bold text-sm text-w95-blue">⚡ SailTrack GPS v2.1.0</div>
-                <div className="text-xs text-gray-600">Created by @nate &middot; 192 upvotes &middot; 46 downstream forks</div>
+                <div className="font-bold text-sm text-w95-blue">⚡ WallArt Canvas Pro v2.4.0</div>
+                <div className="text-xs text-gray-600">Created by @nate &middot; 384 upvotes &middot; 112 downstream forks</div>
                 <div className="text-[11px] text-green-700 font-bold mt-1">Total Royalty Earnings: $920.00 (Settled)</div>
               </div>
               <button className="btn-w95 text-xs py-1 px-3">
@@ -253,7 +289,7 @@ export const ProfileView: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 4: Comments & Activity */}
+        {/* TAB 4: Activity */}
         {activeTab === 'activity' && (
           <div className="space-y-3 max-w-3xl mx-auto">
             <div className="border-b pb-2 mb-2">
@@ -264,13 +300,13 @@ export const ProfileView: React.FC = () => {
             <div className="space-y-2">
               <div className="bg-gray-50 border p-3 rounded">
                 <div className="flex justify-between items-center text-xs mb-1">
-                  <span className="font-bold text-w95-blue">Commented on RetroCalc Pro:</span>
-                  <span className="text-gray-400 font-mono text-[11px]">2 hours ago</span>
+                  <span className="font-bold text-w95-blue">Commented on WallArt Canvas Pro:</span>
+                  <span className="text-gray-400 font-mono text-[11px]">45 mins ago</span>
                 </div>
                 <p className="text-gray-800 text-xs">
-                  "Just forked this into SLOPSHOP and spliced the dark mode OLED theme. The SQLite WAL mode integration is super clean — cold-boots instantly in RIG.EXE!"
+                  "Thanks Josh! In the next drop I\'m adding local GPU background segmentation so you can preview custom matting against actual photos of your room wall."
                 </p>
-                <div className="text-[11px] text-orange-600 font-bold mt-1">👍 18 Upvotes</div>
+                <div className="text-[11px] text-orange-600 font-bold mt-1">👍 19 Upvotes</div>
               </div>
             </div>
           </div>

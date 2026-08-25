@@ -13,12 +13,27 @@ export const HotwireView: React.FC = () => {
   const [showLineage, setShowLineage] = useState(false);
   const [countdown, setCountdown] = useState('09h 28m 14s');
 
+  // Fetch real drops from Cloudflare D1
+  useEffect(() => {
+    fetch('/api/drops')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.drops && data.drops.length > 0) {
+          setApps(data.drops);
+          setSelectedApp(data.drops[0]);
+        }
+      })
+      .catch(() => {
+        // Graceful fallback to initial mock data if offline
+      });
+  }, []);
+
   // Simulated live countdown to 12:01 AM UTC
   useEffect(() => {
     const timer = setInterval(() => {
       const now = new Date();
       const nextDrop = new Date();
-      nextDrop.setHours(24, 1, 0, 0); // 12:01 AM next day
+      nextDrop.setHours(24, 1, 0, 0);
       const diff = Math.max(0, nextDrop.getTime() - now.getTime());
 
       const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
@@ -32,24 +47,47 @@ export const HotwireView: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const handleUpvote = (id: string) => {
+  const handleUpvote = async (id: string) => {
+    // Optimistic UI update
     setApps(apps.map(a => a.id === id ? { ...a, upvotes: a.upvotes + 1 } : a));
     if (selectedApp.id === id) {
       setSelectedApp(prev => ({ ...prev, upvotes: prev.upvotes + 1 }));
     }
+
+    // Call live D1 API
+    try {
+      await fetch('/api/upvote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appId: id })
+      });
+    } catch {
+      // ignore
+    }
   };
 
-  const handleSavePost = (updatedApp: AppListing) => {
+  const handleSavePost = async (updatedApp: AppListing) => {
     setApps(apps.map(a => a.id === updatedApp.id ? updatedApp : a));
     setSelectedApp(updatedApp);
     setIsEditing(false);
+
+    // Persist to Cloudflare D1
+    try {
+      await fetch('/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedApp)
+      });
+    } catch {
+      // ignore
+    }
   };
 
   // Sort & Filter
   const sortedApps = [...apps].sort((a, b) => {
     if (activeFilter === 'forks') return b.forks - a.forks;
     if (activeFilter === 'alltime') return b.upvotes - a.upvotes;
-    return b.upvotes - a.upvotes; // default today's rank
+    return b.upvotes - a.upvotes;
   });
 
   const filtered = sortedApps.filter(a =>
@@ -68,8 +106,8 @@ export const HotwireView: React.FC = () => {
             <span className="font-bold text-yellow-400 flex items-center gap-1.5 font-mono">
               <Flame size={14} className="text-orange-500 animate-pulse" /> 12:01 AM DAILY DROP #84
             </span>
-            <span className="bg-gray-800 text-green-400 font-mono text-[11px] px-1.5 py-0.5 rounded border border-gray-600">
-              ● LIVE
+            <span className="bg-green-900 text-green-300 font-mono text-[10px] px-1.5 py-0.5 rounded border border-green-600 font-bold">
+              ● CLOUDFLARE D1 LIVE
             </span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-gray-300">
@@ -125,7 +163,7 @@ export const HotwireView: React.FC = () => {
           />
         </div>
 
-        {/* 1. Normal Drops Scroll List */}
+        {/* Drops Scroll List */}
         {activeFilter !== 'streaks' && (
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {filtered.map((app, idx) => (
@@ -177,7 +215,7 @@ export const HotwireView: React.FC = () => {
           </div>
         )}
 
-        {/* 2. Maker Streaks View */}
+        {/* Maker Streaks View */}
         {activeFilter === 'streaks' && (
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             <div className="bg-yellow-50 border-2 border-yellow-500 p-2.5 rounded text-xs">
@@ -226,7 +264,6 @@ export const HotwireView: React.FC = () => {
             onCancel={() => setIsEditing(false)}
           />
         ) : showLineage ? (
-          /* Visual Lineage Graph Tree View */
           <div className="flex flex-col h-full bg-[#ece9d8] p-4 text-xs font-tahoma overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-2 mb-3">
               <span className="font-bold text-base text-w95-blue flex items-center gap-2">
@@ -241,7 +278,6 @@ export const HotwireView: React.FC = () => {
             </div>
 
             <div className="space-y-4 max-w-xl mx-auto">
-              {/* Root Parent */}
               <div className="bg-white border-2 border-gray-700 p-3 rounded shadow-md">
                 <div className="text-[10px] text-gray-500 uppercase font-mono font-bold">1. Root Upstream Architecture</div>
                 <div className="font-bold text-sm text-gray-900">WallArt Core Engine v1.0.0</div>
@@ -250,7 +286,6 @@ export const HotwireView: React.FC = () => {
 
               <div className="text-center font-bold text-purple-700 text-lg">&darr; 20% Lineage Royalty Split</div>
 
-              {/* Selected Current Fork */}
               <div className="bg-blue-50 border-2 border-w95-blue p-3 rounded shadow-md ring-2 ring-blue-400">
                 <div className="text-[10px] text-w95-blue uppercase font-mono font-bold">2. Current Drop (Selected)</div>
                 <div className="font-bold text-base text-w95-blue">{selectedApp.name} ({selectedApp.version})</div>
@@ -259,7 +294,6 @@ export const HotwireView: React.FC = () => {
 
               <div className="text-center font-bold text-purple-700 text-lg">&darr; Downstream Community Forks</div>
 
-              {/* Descendant 1 */}
               <div className="bg-white border-2 border-gray-400 p-3 rounded">
                 <div className="text-[10px] text-gray-500 uppercase font-mono font-bold">3. Downstream Fork</div>
                 <div className="font-bold text-xs text-gray-900">WallArt PrintLab Webhook (@sam)</div>
@@ -269,7 +303,6 @@ export const HotwireView: React.FC = () => {
           </div>
         ) : (
           <div className="flex flex-col h-full">
-            {/* Quick Header Lineage Bar */}
             <div className="flex items-center justify-between pb-1.5 mb-1 border-b text-xs">
               <span className="font-bold text-gray-700 flex items-center gap-1.5">
                 <span>Moddability: <b className="text-green-700 font-mono">{selectedApp.moddabilityScore}/100</b></span>
