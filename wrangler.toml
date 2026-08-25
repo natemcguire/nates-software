@@ -1,0 +1,19 @@
+name = "nates-software"
+compatibility_date = "2026-08-25"
+pages_build_output_dir = "dist"
+
+# Cloudflare D1 (Serverless SQLite at Edge)
+[[d1_databases]]
+binding = "DB"
+database_name = "nates-software-d1"
+database_id = "nates-software-d1-prod"
+
+# Cloudflare R2 (Zero Egress Binary Storage for .dmg, .exe, .AppImage, .sqlite)
+[[r2_buckets]]
+binding = "BINARIES"
+bucket_name = "nates-software-binaries"
+
+# Cloudflare KV (Fast daily drops cache)
+[[kv_namespaces]]
+binding = "DROPS_KV"
+id = "nates-software-drops-kv"

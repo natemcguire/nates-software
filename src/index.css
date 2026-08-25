@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer utilities {
+  .w95-border {
+    border: 2px solid;
+    border-color: #ffffff #404040 #404040 #ffffff;
+  }
+  .w95-border-sunken {
+    border: 2px solid;
+    border-color: #808080 #ffffff #ffffff #808080;
+  }
+  .w95-border-inset {
+    border: 2px solid;
+    border-color: #404040 #ffffff #ffffff #404040;
+  }
+  .w95-shadow {
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.45);
+  }
+}
+
+/* Classic Win95 Bevel Button - Scaled & Readable */
+.btn-w95 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background-color: #c0c0c0;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  padding: 5px 14px;
+  font-family: Tahoma, -apple-system, sans-serif;
+  font-size: 13.5px;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn-w95:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+  transform: translate(1px, 1px);
+}
+
+.btn-w95-primary {
+  background-color: #000080;
+  color: #ffffff;
+  border-color: #5c5cfc #000040 #000040 #5c5cfc;
+}
+
+.btn-w95-danger {
+  background-color: #800000;
+  color: #ffffff;
+}
+
+.titlebar-w95 {
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #ffffff;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: Tahoma, -apple-system, sans-serif;
+  font-size: 14px;
+  font-weight: bold;
+  user-select: none;
+}

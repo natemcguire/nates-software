@@ -1,0 +1,1442 @@
+<title>East Bay Projects Ideas</title>
+<style>
+  :root{
+    --ground:#0E161F; --panel:#16222E; --panel2:#1B2937; --ink:#EAF2F9; --line:#2C4054; --muted:#AFC4D6;
+    --accent:#FF6B52; --green:#37BD96; --gold:#DBAD45; --blue:#5CA8E8; --faint:#1C2B39;
+    --shadow:0 1px 3px rgba(0,0,0,.35),0 8px 26px rgba(0,0,0,.32);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--ground);color:var(--ink);overflow:hidden;
+    font-family:-apple-system,"Helvetica Neue",Segoe UI,Roboto,sans-serif;
+    font-size:21px;line-height:1.6;}
+  a{color:var(--blue);text-decoration:none;border-bottom:1px solid rgba(92,168,232,.35)}
+  a:hover{border-bottom-color:var(--blue)}
+
+  .deck{position:fixed;inset:0}
+  .slide{position:absolute;inset:0;display:none;overflow-y:auto;padding:60px clamp(28px,5vw,120px) 100px}
+  .slide.active{display:block}
+  .inner{max-width:1520px;margin:0 auto;min-height:calc(100vh - 160px);display:flex;flex-direction:column;justify-content:center}
+  @media (prefers-reduced-motion:no-preference){
+    .slide.active .inner{animation:in .26s ease}
+    @keyframes in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+  }
+
+  .eyebrow{font-size:15px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:800;margin:0 0 14px}
+  h1,h2{font-weight:800;letter-spacing:-.015em;text-wrap:balance;margin:0}
+  h1{font-size:clamp(52px,6.5vw,104px);line-height:1.0}
+  h2{font-size:clamp(38px,4vw,60px);line-height:1.06}
+  .sub{color:var(--muted);font-size:clamp(19px,1.5vw,24px);line-height:1.6;max-width:66ch;margin-top:20px}
+  .sub b,.card b,.cell b:not(.lbl){color:var(--ink)}
+  .tag{display:inline-block;font-size:13px;letter-spacing:.1em;font-weight:800;padding:5px 14px;border-radius:5px;text-transform:uppercase}
+  .tag.paid{background:var(--accent);color:#fff}
+  .tag.free{background:var(--green);color:#fff}
+  .tag.research{background:var(--blue);color:#0E161F}
+  .tag.dead{background:#3A4C5E;color:var(--muted)}
+  .tag.joy{background:var(--gold);color:#0E161F}
+
+  .navbtn{position:fixed;top:50%;transform:translateY(-50%);z-index:10;width:58px;height:58px;border-radius:50%;
+    border:1.5px solid var(--line);background:var(--panel);color:var(--ink);font-size:24px;cursor:pointer;
+    box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center}
+  .navbtn:hover{border-color:var(--accent);color:var(--accent)}
+  .navbtn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  #prev{left:18px}#next{right:18px}
+  .counter{position:fixed;bottom:20px;right:28px;z-index:10;color:var(--muted);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+  .progress{position:fixed;bottom:0;left:0;height:5px;background:var(--accent);z-index:10;transition:width .25s ease}
+  .hint{position:fixed;bottom:20px;left:28px;z-index:10;color:var(--muted);font-size:14px}
+
+  /* stat chips */
+  .chips{display:flex;gap:14px;flex-wrap:wrap;margin-top:26px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 20px;box-shadow:var(--shadow)}
+  .chip .k{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:800}
+  .chip .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:2px}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;background:var(--panel);box-shadow:var(--shadow);font-size:18px;border-radius:10px;overflow:hidden}
+  th{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:left;
+    padding:15px 18px;border-bottom:2px solid var(--line);font-weight:800}
+  td{padding:15px 18px;border-bottom:1px solid var(--faint);vertical-align:top;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .tbl-wrap{overflow-x:auto;margin-top:28px;border-radius:10px}
+  .rankcell{font-weight:800;font-size:27px;color:var(--accent)}
+  .ideaname{font-weight:800;font-size:20px}
+  .ideacat{color:var(--muted);font-size:16px}
+  td small{color:var(--muted);font-size:14px;display:block;margin-top:3px}
+
+  /* lean canvas */
+  .canvas{display:grid;gap:11px;margin-top:30px;grid-template-columns:repeat(10,1fr);
+    grid-template-areas:
+      "prob prob sol sol uvp uvp unfair unfair seg seg"
+      "prob prob meta meta uvp uvp chan chan seg seg"
+      "tam tam tam cost cost cost rev rev rev rev";}
+  .cell{background:var(--panel);box-shadow:var(--shadow);padding:18px 20px;border-top:5px solid var(--line);border-radius:8px;min-width:0}
+  .cell.hot{border-top-color:var(--accent)}
+  .cell.cool{border-top-color:var(--green)}
+  .cell.tamc{border-top-color:var(--blue)}
+  .cell b.lbl{display:block;font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:9px;font-weight:800}
+  .cell p,.cell ul{font-size:16.5px;line-height:1.55;margin:0}
+  .cell ul{padding-left:20px}
+  .cell li{margin-bottom:6px}
+  .a-prob{grid-area:prob}.a-sol{grid-area:sol}.a-meta{grid-area:meta}.a-uvp{grid-area:uvp}
+  .a-unfair{grid-area:unfair}.a-chan{grid-area:chan}.a-seg{grid-area:seg}
+  .a-tam{grid-area:tam}.a-cost{grid-area:cost}.a-rev{grid-area:rev}
+  @media(max-width:1000px){.canvas{grid-template-columns:1fr 1fr;grid-template-areas:
+    "prob sol""meta uvp""unfair chan""seg seg""tam tam""cost rev"}}
+
+  .idea-head{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-bottom:14px}
+  .idea-head .eyebrow{margin:0}
+
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:30px}
+  .card{background:var(--panel);box-shadow:var(--shadow);padding:22px 26px;border-top:5px solid var(--line);border-radius:8px}
+  .card.hot{border-top-color:var(--accent)}
+  .card.cool{border-top-color:var(--green)}
+  .card h3{font-size:13.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:800}
+  .big{font-weight:800;font-size:44px;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .card p,.card li{font-size:17px;line-height:1.55}
+  .card p{margin:8px 0 0}
+  .card ul{margin:8px 0 0;padding-left:21px}
+  .card li{margin-bottom:6px}
+  .verdict{border-left:5px solid var(--accent);padding:10px 0 10px 24px;margin-top:32px;font-size:21px;font-style:italic;line-height:1.55;max-width:78ch}
+  .verdict small{display:block;font-style:normal;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:10px;font-weight:800}
+  .grave{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-top:30px}
+  .grave .card h3{color:var(--ink);font-size:18px;letter-spacing:0;text-transform:none;font-weight:800}
+  .grave .card p{font-size:16px;color:var(--muted)}
+  .src{color:var(--muted);font-size:15px}
+
+  /* wait-what slides */
+  .ww{background:var(--panel2);border-radius:14px;padding:44px clamp(28px,4vw,64px);box-shadow:var(--shadow);margin-top:30px;max-width:1100px}
+  .ww p{font-size:clamp(21px,1.7vw,26px);line-height:1.7;margin:0 0 22px;max-width:58ch}
+  .ww p:last-child{margin-bottom:0}
+  .ww .q{color:var(--gold);font-weight:800}
+</style>
+
+<div class="deck" id="deck">
+
+<!-- 1 TITLE -->
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Six Rounds + Guest Rounds · Evidence Edition · Aug 25 2026</p>
+  <h1>East Bay Projects<br>Ideas</h1>
+  <p class="sub"><b>Seven bets, joy tickets, a fintech map, three guest rounds, and a graveyard.</b> 50+ agents across six research waves — 31 more ideas hit the evidence bar on Aug 25; 30 died, and the one survivor was yours. Plus <b>30 orthogonal guest ideas</b> from Codex, Antigravity, and Grok appended raw — their 7 finalists went <b>0-for-7</b> in the grinder.
+  Every revenue, headcount, and TAM figure is <b>linked to a source or marked "not public"</b> — nothing invented.
+  Filtered through your triage: things you'd build anyway, sold to buyers who provably have money.</p>
+  <p class="src" style="margin-top:28px">← → arrow keys to navigate · each bet: Lean Canvas → The Numbers → Wait, what?</p>
+</div></section>
+
+<!-- 2 SCOREBOARD -->
+<section class="slide"><div class="inner">
+  <p class="eyebrow">The Scoreboard</p>
+  <h2>Seven bets, ranked by evidence</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>#</th><th>Idea</th><th>Model</th><th>Price</th><th>Honest ceiling (sourced)</th><th>Why it's on the board</th></tr>
+    <tr><td class="rankcell">1</td><td><span class="ideaname">DealScope</span><br><span class="ideacat">Pre-LOI dossiers on SMB sellers</span></td><td><span class="tag paid">Paid</span></td><td>$950–1.5K/report</td><td>$5–15K/mo cash</td><td>Buyers provably spend <a href="https://dodilligence.io/pre-loi-due-diligence" target="_blank">$5–25K/target</a>; your engine exists</td></tr>
+    <tr><td class="rankcell">2</td><td><span class="ideaname">Frostline</span><br><span class="ideacat">Weather-true garden planner</span></td><td><span class="tag paid">Paid</span></td><td>$24.99/yr</td><td>$3–15K/mo, exit-proven</td><td><b>Two acquisitions</b> in this exact niche (<a href="https://gardenmediagroup.com/client-news/park-seed-acquires-gardening-planning-app-from-seed-to-spoon/" target="_blank">2022</a>, <a href="https://www.netinfluencer.com/epic-gardening-acquires-growveg-creator-to-unite-content-products-in-gardening-space/" target="_blank">2025</a>)</td></tr>
+    <tr><td class="rankcell">3</td><td><span class="ideaname">CouncilGraph</span><br><span class="ideacat">Local-gov intelligence graph</span></td><td><span class="tag paid">Paid</span></td><td>$199/mo · $6–12K/yr API</td><td>$50–150K ARR, 1–3 metros</td><td>Funded comps are tiny teams (<a href="https://wellfound.com/company/hamlet" target="_blank">Hamlet: 8 ppl</a>); nobody does the graph</td></tr>
+    <tr><td class="rankcell">4</td><td><span class="ideaname">TrueHue</span><br><span class="ideacat">Paint match via calibration card + math</span></td><td><span class="tag paid">Paid</span></td><td>$12.99 app + $7 card</td><td>Single-digit $M SAM</td><td>Physics checks out (ΔE ~2–3); <a href="https://www.printweek.com/content/product-news/pantone-hikes-connect-pricing" target="_blank">Pantone self-sabotaged</a> the wedge</td></tr>
+    <tr><td class="rankcell">5</td><td><span class="ideaname">Rehearsal Receipt</span><br><span class="ideacat">AI band-rehearsal recorder</span></td><td><span class="tag paid">Paid</span></td><td>$49–79/yr per band</td><td>$1–5K/mo passion slot</td><td><b>No direct competitor found</b> doing AI rehearsal parsing</td></tr>
+    <tr><td class="rankcell">6</td><td><span class="ideaname">Heritage Dossier</span><br><span class="ideacat">Family-history gift reports, verified</span></td><td><span class="tag paid">Paid</span></td><td>$500–1.5K/report</td><td>Side business: $1.5–5M SAM</td><td>The <b>$150 ⟷ $2,950 gap</b> is unserved; <a href="https://welcome.storyworth.com" target="_blank">StoryWorth's 1M+ books</a> prove gift demand</td></tr>
+    <tr><td class="rankcell">7</td><td><span class="ideaname">Restitch</span><br><span class="ideacat">AI template-update sync — "Dependabot for your starting point"</span></td><td><span class="tag paid">Paid</span></td><td>$15–25/repo/mo</td><td>$1–3M ARR solo ceiling</td><td><b>Unshipped primitive</b> — <a href="https://github.com/backstage/backstage/issues/14416" target="_blank">Backstage punted ("not planned")</a>; <a href="https://sacra.com/c/coderabbit/" target="_blank">CodeRabbit proves the channel</a></td></tr>
+    <tr><td style="color:var(--gold);font-weight:800;font-size:20px">☆</td><td><span class="ideaname">Gridle</span><br><span class="ideacat">Daily street-grid puzzle</span></td><td><span class="tag joy">Joy</span></td><td>Free + ads</td><td>Worldle itself &lt;$10K/mo (est.)</td><td>Demoted: <a href="https://citystreetsgame.io" target="_blank">already built twice</a> — needs a twist</td></tr>
+    <tr><td style="color:var(--blue);font-weight:800;font-size:20px">◈</td><td><span class="ideaname">Fintech Map</span><br><span class="ideacat">Research-only (conflicted)</span></td><td><span class="tag research">Parked</span></td><td>—</td><td>Solo proof: <a href="https://projectionlab.com/blog/we-reached-1m-arr-with-zero-funding" target="_blank">$1M ARR</a></td><td>Mapped for later — see the fintech slide</td></tr>
+  </table></div>
+</div></section>
+
+<!-- ============ BET 1: DEALSCOPE ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº1 · OSINT Productized</p><span class="tag paid">Paid</span></div>
+  <h2>DealScope</h2>
+  <p class="sub">Fixed-price pre-LOI due-diligence dossiers on SMB sellers for search-fund buyers — litigation, UCC liens, hidden entities, adversarial verification, network graph. <b>Your dossier engine, pointed at people who provably pay.</b></p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>SMB buyers sign LOIs on trust; investigator diligence starts at <b>$5–25K/target</b></li><li>$39–49 robo-reports are shallow; Kroll ignores small deals</li><li>Sellers with hidden liens burn buyers</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Fixed price, fixed format, <b>5-day turnaround</b></li><li>Engine pulls; human judgment on top</li><li>Every claim marked <b>verified / asserted / refuted</b></li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Reports sold/mo</li><li>Searchfunder inbound</li><li>3-pack attach rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Know who you're buying from before you sign."</b> Investigator-grade skepticism at 1/10th consultant price, 20× deeper than the $49 robots.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>OSINT engine <b>already built</b> (records, FEC, graphs, adversarial verification)</li><li>The demo IS the pitch: send a prospect their own mini-dossier</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li><a href="https://www.searchfunder.com" target="_blank">Searchfunder</a> + <a href="https://duedilio.com" target="_blank">DueDilio</a> vendor listing</li><li>ETA podcasts (Acquiring Minds)</li><li>Direct to the ~94 funds launched/yr</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Search-fund / ETA buyers pre-LOI</li><li>Self-funded searchers</li><li>Later: recurring "deal monitoring" SaaS</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p><b>No published TAM.</b> Bottoms-up: <a href="https://www.gsb.stanford.edu/insights/search-funds-keep-offering-proven-path-ownership" target="_blank">94 funds launched 2023 (Stanford)</a>, <a href="https://www.bizbuysell.com/blog/2025-year-in-review/" target="_blank">9,586 SMB deals closed 2025 (BizBuySell)</a> → ≈ <b>$3–30M</b> niche spend.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>$100–200/report marginal · channels are free · <b>80%+ gross margin</b></p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$950</b> Standard · <b>$1,500</b> Deep/rush · <b>$2,400</b> 3-pack (searchers evaluate multiple targets)</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº1 · DealScope · The Numbers</p>
+  <h2>Who's already in this market</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Competitor</th><th>Revenue</th><th>Employees</th><th>Position &amp; weakness</th></tr>
+    <tr><td><a href="https://dodilligence.io/" target="_blank"><b>dodilligence</b></a></td><td>not public</td><td>not public</td><td>$39–49 automated PDFs in &lt;1hr — the price anchor; shallow robo-reports leave the verified tier open</td></tr>
+    <tr><td><a href="https://duedilio.com/" target="_blank"><b>DueDilio</b></a></td><td>not public</td><td>not public<small>founder-led marketplace</small></td><td>Brokers human providers — slow &amp; variable; also your free distribution channel</td></tr>
+    <tr><td><a href="https://www.corporateresolutions.com/" target="_blank"><b>Corporate Resolutions</b></a></td><td>not public</td><td>~30 <small><a href="https://www.corporateresolutions.com/team/kenneth-s-springer/" target="_blank">firm bio</a></small></td><td>Ex-FBI boutique priced for institutional funds, not $1–5M deals</td></tr>
+    <tr><td><a href="https://www.intelligo.ai/" target="_blank"><b>Intelligo</b></a></td><td>not public<small>$43.8M raised · <a href="https://www.crunchbase.com/organization/intelligo-group" target="_blank">Crunchbase</a></small></td><td>not public</td><td>VC-backed, aimed at funds screening managers — not SMB targets</td></tr>
+    <tr><td><a href="https://www.kroll.com/" target="_blank"><b>Kroll</b></a></td><td>not public</td><td>~6,500 <small><a href="https://umbrex.com/resources/profiles-of-the-top-consulting-firms/overview-profile-and-history-of-kroll/" target="_blank">profile</a></small></td><td>Enterprise pricing makes it irrelevant below ~$25M deal size — exactly your turf</td></tr>
+  </table></div>
+  <div class="chips">
+    <div class="chip"><div class="k">Price gap</div><div class="v">$49 ⟷ $5,000</div></div>
+    <div class="chip"><div class="k">Your slot</div><div class="v">$950–1,500</div></div>
+    <div class="chip"><div class="k">CAC</div><div class="v">≈ $0 (marketplaces)</div></div>
+    <div class="chip"><div class="k">Build cost</div><div class="v">A weekend</div></div>
+  </div>
+  <p class="verdict">"Buyers demonstrably have money… this is one of the rare ideas where his weirdest skill IS the product. But the market is genuinely tiny — winnable solo as a $5–15K/mo cash business, with its best version as a wedge into recurring deal-monitoring SaaS."<small>research verdict · <a href="https://www.gsb.stanford.edu/insights/search-funds-keep-offering-proven-path-ownership" target="_blank">Stanford study</a> · <a href="https://www.bizbuysell.com/blog/2025-year-in-review/" target="_blank">BizBuySell 2025</a></small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº1 · DealScope</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> People buy small businesses — laundromats, HVAC companies, software shops. Before they commit, they want to know: is this seller hiding lawsuits, debts, or a second shady company? You already built a machine that digs that up. You'd sell the answer as a tidy report.</p>
+    <p><span class="q">Who pays you?</span> The buyers. They've raised real money to go shopping, and they already pay investigators $5,000+ for this. You charge about $1,000 and deliver in five days.</p>
+    <p><span class="q">Why you?</span> The hard part — the digging engine with the "prove it or flag it" discipline — is already sitting in your dossier project. Selling it is packaging, not building.</p>
+    <p><span class="q">First move?</span> Make one sample report about a fake seller. Post it where these buyers hang out. Take orders.</p>
+  </div>
+</div></section>
+
+<!-- ============ BET 2: FROSTLINE ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº2 · Gardening</p><span class="tag paid">Paid</span></div>
+  <h2>Frostline</h2>
+  <p class="sub">iOS garden planner computing your planting &amp; succession calendar from <b>live NWS forecast data</b> — real frost-risk countdowns, not 30-year-old zone averages. Still Water's architecture, pointed at the garden you already dashboard.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Every incumbent uses <b>static frost dates</b>; actual frost is probabilistic + weather-driven</li><li>Succession sowing is spreadsheet hell</li><li>Plant-ID apps can't <i>plan</i></li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Zip → live frost-risk countdown + "plant this week" pushes</li><li>Succession autopilot</li><li>Local-first + CloudKit (Still Water verbatim)</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Trial→paid at spring peak</li><li>Weekly active loggers</li><li>Year-2 renewal</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Your garden's calendar, computed from the actual sky."</b> The only planner using live forecasts.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>You run a Tempest station + garden dashboard <b>today</b></li><li>Proven 1-day iOS ship pipeline</li><li>Sidesteps CV — the one moat you can't beat</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Seasonal ASO: "frost date", "when to plant tomatoes" (Feb–May spike)</li><li>r/vegetablegardening (~600K)</li><li>Garden-blogger review circuit</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>US food-gardening households</li><li>Homesteaders, market-garden hobbyists</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>Bottoms-up: <a href="https://gardenpals.com/gardening-statistics/" target="_blank">~42M US food-gardening households</a> × 10% × $25/yr ≈ <b>$105M/yr serviceable</b>. (Top-down $1.2B report exists but low-credibility.)</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Weather APIs free · variety database = weeks of Python curation (the real cost)</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$24.99/yr</b>, 7-day trial — undercuts the whole comp band ($29–168/yr)</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº2 · Frostline · The Numbers</p>
+  <h2>A niche with real exits</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Competitor</th><th>Revenue</th><th>Employees</th><th>Position &amp; weakness</th></tr>
+    <tr><td><a href="https://www.growveg.com/" target="_blank"><b>GrowVeg</b></a></td><td>not public<small>parent Epic Gardening ~$80M/yr trajectory · <a href="https://www.inc.com/bryan-elliott/how-a-30-something-content-creator-grew-a-backyard-gardening-business-to-more-than-50-million/91149740" target="_blank">Inc.</a></small></td><td>14 <small><a href="https://tracxn.com/d/companies/growveg/__txYyciOFteIqVtvzYVpAvdZV6k2RqVpb9ECrmFRloKE" target="_blank">Tracxn 2025</a></small></td><td>Category incumbent since 2007, <b>acquired Oct 2025</b> — web-first, static dates, ~$29–45/yr</td></tr>
+    <tr><td><a href="https://www.seedtospoon.net/" target="_blank"><b>Seed to Spoon</b></a></td><td>not public<small>terms undisclosed · <a href="https://gardenmediagroup.com/client-news/park-seed-acquires-gardening-planning-app-from-seed-to-spoon/" target="_blank">acquisition PR</a></small></td><td>husband-wife indie pre-acquisition</td><td><b>Indie → acquired by Park Seed 2022</b> — the proof this niche buys indies. 500K+ users, $46.99/yr</td></tr>
+    <tr><td><a href="https://getplanta.com/" target="_blank"><b>Planta</b></a></td><td>not public<small>Owler est. $4.1M, unverified</small></td><td>15 <small><a href="https://www.gardencentermag.com/news/how-the-app-planta-help-consumers-take-care-of-plants/" target="_blank">interview</a></small></td><td>Houseplant-centric; outdoor veg planning is shallow</td></tr>
+    <tr><td><a href="https://seedtime.us/pages/pricing" target="_blank"><b>Seedtime</b></a></td><td>not public</td><td>not public</td><td>Charges <b>$84–168/yr</b> — proof serious gardeners pay real money; clunky web UX</td></tr>
+  </table></div>
+  <div class="chips">
+    <div class="chip"><div class="k">Niche exits</div><div class="v">2 acquisitions</div></div>
+    <div class="chip"><div class="k">Price band</div><div class="v">$29–168/yr</div></div>
+    <div class="chip"><div class="k">Your price</div><div class="v">$24.99/yr</div></div>
+    <div class="chip"><div class="k">The wedge</div><div class="v">Live weather</div></div>
+  </div>
+  <p class="verdict">"Real money is proven — two strategic acquisitions in this exact niche, with Seed to Spoon itself a husband-wife indie that exited. Every incumbent uses static dates; the live-forecast wedge is real and technically shallow-competition."<small>research verdict · gardening</small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº2 · Frostline</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A gardening app that answers one question perfectly: <b>"can I plant this yet?"</b> Every other app uses an average frost date from an old map. Yours watches the actual forecast and tells you "frost risk Thursday — wait" or "you're clear — plant the tomatoes."</p>
+    <p><span class="q">Who pays you?</span> Vegetable gardeners. They already pay $29–168/year for worse planners. You charge $25.</p>
+    <p><span class="q">Why you?</span> You literally have a weather station in your yard feeding a garden dashboard you built for fun. And you just shipped a whole iOS app in a day — this is the same skeleton.</p>
+    <p><span class="q">First move?</span> Ship a free mini-tool — type your zip, see your real frost outlook — to collect the audience before the paid app.</p>
+  </div>
+</div></section>
+
+<!-- ============ BET 3: COUNCILGRAPH ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº3 · Civic Intelligence B2B</p><span class="tag paid">Paid</span></div>
+  <h2>CouncilGraph</h2>
+  <p class="sub">Local-government intelligence: every agenda item linked to <b>parcels, applicants, vendors, donors, and board seats</b> — with cited relationship graphs. Your dossier engine × your civic-scraper hobby, sold to people who bill by the hour.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Land-use attorneys &amp; developers dig through agendas by hand</li><li>Existing tools transcribe meetings — <b>nobody maps the relationships</b></li><li>Who's connected to whom is the actual question</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Agenda item → parcel, applicant, donor history, past votes, connected entities</li><li>Cited graph, weekly digest, alerts</li><li>One metro deep, then replicate</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Paying seats in metro #1</li><li>Digest opens</li><li>API-tier deals</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"See the network behind the agenda."</b> Transcripts tell you what was said; the graph tells you what's going on.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>OSINT graph + FEC + adversarial verification <b>already built</b></li><li>You build civic scrapers for fun (legislately, atxcouncil, uscode)</li><li>Austin ground truth; NoVA data-center corridor is metro #2</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Free SEO artifact per metro: page per agenda item/parcel</li><li>Weekly "what council actually decided" email</li><li>Direct: land-use bar, public-affairs firms</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Land-use attorneys, small developers</li><li>Public-affairs firms, data-center site selection</li><li>Local newsrooms (discounted)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>Top-down: public-affairs software <a href="https://www.cognitivemarketresearch.com/public-affairs-and-advocacy-software-market-report" target="_blank">~$1.2–1.4B (2024)</a>. Bottoms-up niche SAM: <b>~$25–60M</b> (100 metros × 100–250 plausible buyers).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Scraper time per metro · LLM processing pennies · your hobby is the R&amp;D</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$199/mo</b> self-serve · <b>$6–12K/yr</b> multi-metro/API tier</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº3 · CouncilGraph · The Numbers</p>
+  <h2>Funded proof, tiny teams</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Competitor</th><th>Revenue</th><th>Employees</th><th>Position &amp; weakness</th></tr>
+    <tr><td><a href="https://fiscalnote.com/newsroom/fiscalnote-announces-acquisition-of-curate" target="_blank"><b>Curate</b> (FiscalNote)</a></td><td>parent FY2025: <b>$95.4M</b> rev, $84.1M ARR <small>public filings</small></td><td>543 <small>FiscalNote total</small></td><td>Local-gov monitoring at enterprise scale — keyword alerts, <b>no relationship graph</b></td></tr>
+    <tr><td><a href="https://www.myhamlet.com/" target="_blank"><b>Hamlet</b></a></td><td>not public<small>raised $7.5–10M · <a href="https://pitchbook.com/profiles/company/529032-97" target="_blank">PitchBook</a></small></td><td>8 <small><a href="https://wellfound.com/company/hamlet" target="_blank">Wellfound</a></small></td><td>Meeting-video transcription/search across <a href="https://www.publicceo.com/2026/02/hamlet-launches-nationwide-public-meeting-coverage-over-3000-local-governments-videos-now-discoverable/" target="_blank">3,000+ govs</a> — validates SEO channel; no parcels/donors</td></tr>
+    <tr><td><a href="https://www.cloverleaf.ai/" target="_blank"><b>Cloverleaf AI</b></a></td><td>not public<small>raised $11.7M · <a href="https://www.govtech.com/biz/cloverleaf-ai-raises-2-8m-to-help-gov-tech-suppliers" target="_blank">GovTech</a></small></td><td>~16 <small>PitchBook</small></td><td>Meeting-speech alerts for govtech <i>vendors</i> — different buyer</td></tr>
+    <tr><td><a href="https://www.polimorphic.com/" target="_blank"><b>Polimorphic</b></a></td><td>not public<small>raised $28M (General Catalyst, 2025)</small></td><td>not public</td><td>Sells AI <i>to</i> governments, not intelligence <i>about</i> them — adjacent</td></tr>
+  </table></div>
+  <div class="chips">
+    <div class="chip"><div class="k">Niche SAM</div><div class="v">$25–60M</div></div>
+    <div class="chip"><div class="k">Solo target</div><div class="v">$50–150K ARR</div></div>
+    <div class="chip"><div class="k">Metro #1</div><div class="v">Austin</div></div>
+    <div class="chip"><div class="k">Differentiator</div><div class="v">The graph</div></div>
+  </div>
+  <p class="verdict">"The differentiator is genuinely Nate-shaped: nobody visualizes relationships and parcels. Solo-winnable in 1–3 metros at $50–150K ARR — niche money, but the funded players confirm this is a small-team market, which cuts both ways."<small>research verdict · civic intelligence</small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº3 · CouncilGraph</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> City council agendas are goldmines that nobody has time to read. A zoning case on page 40 might make a developer millions or kill a deal. You'd scrape every agenda and connect the dots — this applicant, that parcel, those donations, that board member — into a map anyone can read.</p>
+    <p><span class="q">Who pays you?</span> Land-use lawyers and developers who bill hundreds an hour. $199/month is lunch money if it saves them one surprise.</p>
+    <p><span class="q">Why you?</span> You already build council trackers and legislation scrapers <b>for fun</b>, and your dossier engine already does the connect-the-dots part. This is your hobby with an invoice attached.</p>
+    <p><span class="q">First move?</span> Build it for Austin only. Publish the free weekly digest. Sell seats when lawyers start replying.</p>
+  </div>
+</div></section>
+
+<!-- ============ BET 4: TRUEHUE ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº4 · Paint Matching, Reopened</p><span class="tag paid">Paid</span></div>
+  <h2>TrueHue</h2>
+  <p class="sub">Camera paint matching done with <b>real math</b>: a $7 calibration card in frame → solve the lighting → true CIELAB color → top-3 Sherwin/Behr/Benjamin Moore codes. One-time price. <b>No subscription — that's the whole point.</b></p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Naive camera apps fail (ΔE 2.1–5.8 depending on light)</li><li>Hardware works but costs <b>$59–126</b> for a one-time job</li><li>Pantone built the card solution then <a href="https://www.printweek.com/content/product-news/pantone-hikes-connect-pricing" target="_blank">paywalled it to death</a></li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Printed card with lab-measured patches in frame</li><li>Root-polynomial regression solves the illuminant</li><li>Top-3 paint-brand matches + confidence</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Card attach rate</li><li>Match-confirmed rate (user feedback)</li><li>Painter Pro conversions</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Hardware-grade paint matching for the price of a sandwich."</b> Buy once. Real brand codes. No subscription, ever.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>CV + color-pipeline chops (Sail Scan stripe detection was harder)</li><li>Strip-pad color science from Still Water</li><li>Incumbents structurally can't drop subscriptions/hardware</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>ASO: "match paint color from photo" (junk apps rank now)</li><li>r/HomeImprovement + r/DIY before/afters vs Nix</li><li>"I tested every paint app" YouTube bait</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Homeowners matching existing walls</li><li>Painters quoting touch-ups (Pro tier $29–49/yr)</li><li>Realtor/PM turnover touch-ups</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>Anchor: US architectural coatings <a href="https://www.mordorintelligence.com/industry-reports/united-states-architectural-coatings-market" target="_blank">$19.9B (2025)</a>. Realistic app SAM: <b>single-digit $M/yr</b> — bounded by <a href="https://www.timesfreepress.com/news/business/diary/story/2018/feb/18/variable-grows-color-muse-device-sherwin-will/463903/" target="_blank">Color Muse's ~$3M/yr</a> hardware comp.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Card printing $1–2/unit (sell $7) · one-time app dev · zero inference cost (on-device math)</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$12.99</b> one-time app · <b>$7</b> mailed card · <b>$29–49/yr</b> painter Pro (jobs, deck exports). Hard ceiling: stay under the $49 hardware puck.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº4 · TrueHue · The Numbers</p>
+  <h2>The physics, honestly</h2>
+  <div class="cols">
+    <div class="card hot"><h3>Does the math work?</h3><p class="big">ΔE ≈ 2–3</p><p>Card-calibrated smartphone colorimetry hits <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7662536/" target="_blank">ΔE 1.1–4.5 in peer-reviewed studies</a>; <a href="https://ieeexplore.ieee.org/document/7047834/" target="_blank">reference-chart correction cuts variance 65–70%</a>. Industry rule: ΔE&lt;2 imperceptible, &lt;5 acceptable. <b>Good enough to pick paint — not hardware parity</b> (Nix Pro: <a href="https://visualsproducer.wordpress.com/2020/10/13/nix-color-sensor-pro-2/" target="_blank">ΔE&lt;0.35</a>).</p></div>
+    <div class="card"><h3>Fact-check bonus</h3><p>The "96% accuracy" hardware claim from round 1 <b>didn't verify</b>: Datacolor's real published claims are <a href="https://colorreader-support.datacolor.com/hc/en-us/articles/4404350370450" target="_blank">&gt;85% top-3 (EZ)</a> and 92–94% (Pro). The bar is lower than assumed.</p></div>
+  </div>
+  <div class="tbl-wrap"><table>
+    <tr><th>Competitor</th><th>Revenue</th><th>Employees</th><th>Position &amp; weakness</th></tr>
+    <tr><td><a href="https://www.datacolor.com/colorreader/" target="_blank"><b>Datacolor</b></a></td><td><b>$93.2M</b> FY22/23 <small><a href="https://ir.datacolor.com/wp-content/uploads/GB23_en_V03_FF.pdf" target="_blank">annual report</a></small></td><td>426 <small>same report</small></td><td>$49–59 EZ puck — the price ceiling; hardware-only answer</td></tr>
+    <tr><td><a href="https://www.nixsensor.com/color-sensor-comparison/" target="_blank"><b>Nix Sensor</b></a></td><td>not public<small>RocketReach est. ~$5M, unverified</small></td><td>not public<small>est. 10–50</small></td><td>$126 Mini 3, best accuracy — but $126 for one repaint job</td></tr>
+    <tr><td><a href="https://variableinc.com/product-category/color-muse/" target="_blank"><b>Variable / Color Muse</b></a></td><td>~$3M (2017) <small><a href="https://www.timesfreepress.com/news/business/diary/story/2018/feb/18/variable-grows-color-muse-device-sherwin-will/463903/" target="_blank">press</a></small></td><td>45 (2018) → ~22 <small><a href="https://www.cbinsights.com/company/variable" target="_blank">CB Insights</a></small></td><td>Won Sherwin's 4,200 stores — proves the channel is paint retail (closed to you)</td></tr>
+    <tr><td><a href="https://gizmodo.com/this-15-rainbow-card-turns-your-smartphone-into-a-high-1844232669" target="_blank"><b>Pantone Match Card</b></a></td><td>not public</td><td>not public</td><td><b>Validated the exact physics</b> at $14.99 — then killed it with the hated <a href="https://apps.apple.com/us/app/pantone-connect/id1491023737" target="_blank">$7.99/mo Connect</a> paywall + Pantone-only library. The opening.</td></tr>
+  </table></div>
+  <p class="verdict">"The math edge is REAL but BOUNDED — it loses head-to-head on accuracy while winning on price and no-subscription. A narrow, honest wedge exploiting Pantone's self-sabotage."<small>research verdict · color-science deep dive</small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº4 · TrueHue</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> You want to touch up a wall but don't know the paint color. Phone cameras get this wrong because lighting lies. The fix: hold a small printed card of known colors next to the wall. Since the app knows exactly what those patches should look like, it can cancel out the lighting and read the wall's true color. Then it names the closest Sherwin-Williams or Behr can to buy.</p>
+    <p><span class="q">Who pays you?</span> Homeowners: ~$13 once, plus $7 for the card. Painters pay ~$40/year for job-tracking extras. Nobody pays a subscription — that's why people hate the big competitor.</p>
+    <p><span class="q">Why you?</span> This is camera color science — you did harder versions of it reading sail stripes and designing test-strip pads. The competitors are stuck selling $60 gadgets or subscriptions.</p>
+    <p><span class="q">First move?</span> Prove the accuracy: print a card, scan 20 painted boards, measure the error against a borrowed Nix. If ΔE beats 3, build it.</p>
+  </div>
+</div></section>
+
+<!-- ============ BET 5: REHEARSAL RECEIPT ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº5 · Music (Passion Slot)</p><span class="tag paid">Paid</span></div>
+  <h2>Rehearsal Receipt</h2>
+  <p class="sub">Record band practice on an iPhone. On-device AI splits it into songs, keeps the good takes, and turns "let's open with the new one Friday" into an actual setlist and to-do list. <b>The only entrant found doing AI rehearsal parsing.</b></p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Rehearsals vanish into 2-hour voice memos nobody replays</li><li>Decisions made out loud are forgotten by Friday</li><li>Existing band apps organize gigs, not practice</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>One-tap record → auto song-boundary detection</li><li>On-device Whisper + LLM extracts decisions &amp; action items</li><li>Setlist + next-session checklist, shared to the band</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Rehearsals recorded/band/mo</li><li>Bandmate invites (viral loop)</li><li>Trial→paid</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Your rehearsal, received."</b> Everything the band decided, kept — private, on-device, no cloud.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>LocalScribe stack (Whisper + Ollama) already runs</li><li>Still Water's local-first iOS skeleton</li><li>You're the target user</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Austin rehearsal complexes — QR flyers at Music Lab / Space ATX</li><li>r/WeAreTheMusicMakers, r/BandMembers</li><li>Bandmate invites = built-in growth</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Gigging + hobby bands (one payer per band)</li><li>Later: solo practicers, choirs, theater</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>No published figure. Bottoms-up: <a href="https://www.bls.gov/ooh/entertainment-and-sports/musicians-and-singers.htm" target="_blank">169,800 US musician jobs (BLS)</a>, ~45.5K musical-group businesses (IBISWorld) → ceiling <b>~$20–40M/yr</b>. Small. Honest.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>On-device inference = $0 marginal · pure build time</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$49–79/yr per band</b> (BandHelper's $80/yr band plan is the proven ceiling) · free tier: 3 rehearsals</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº5 · Rehearsal Receipt · The Numbers</p>
+  <h2>An empty lane in a small market</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Competitor</th><th>Revenue</th><th>Employees</th><th>Position &amp; weakness</th></tr>
+    <tr><td><a href="https://www.bandhelper.com/" target="_blank"><b>BandHelper</b></a></td><td>not public</td><td><b>1</b> — solo dev (Arlo Leach)</td><td>Gig logistics, not rehearsal capture; $80/yr band plan sets the price ceiling — and proves the market's size honestly</td></tr>
+    <tr><td><a href="https://moises.ai/" target="_blank"><b>Moises / Music AI</b></a></td><td>not public<small>$40M Series A, 50M users · <a href="https://www.musicbusinessworldwide.com/music-ai-raises-40m-in-series-a-round-as-its-moises-platform-hits-50m-users/" target="_blank">MBW</a></small></td><td>~181 <small>Tracxn</small></td><td>Stem-splitting practice tools — adjacent tech, no rehearsal-session parsing</td></tr>
+    <tr><td><a href="https://www.bandlab.com/" target="_blank"><b>BandLab</b></a></td><td>not public<small>Getlatka est. $48M ARR, unverified</small></td><td>~450 <small>Tracxn</small></td><td>Social DAW; doesn't touch the rehearsal-room problem</td></tr>
+    <tr><td><a href="https://audiomulticut.com/articles/split-band-rehearsal-recordings" target="_blank"><b>AudioMultiCut</b></a></td><td>not public</td><td>not public</td><td>Manual splitting utility — closest thing found, no AI, no band workflow</td></tr>
+  </table></div>
+  <div class="chips">
+    <div class="chip"><div class="k">Direct AI competitor</div><div class="v">None found</div></div>
+    <div class="chip"><div class="k">Ceiling</div><div class="v">$1–5K/mo</div></div>
+    <div class="chip"><div class="k">Marginal cost</div><div class="v">$0 (on-device)</div></div>
+    <div class="chip"><div class="k">Role</div><div class="v">Passion slot</div></div>
+  </div>
+  <p class="verdict">"Genuinely interesting and squarely in his stack — two targeted searches found no direct competitor doing AI rehearsal parsing. But the money is weak: the category's proven winner never grew past one developer. Build it because you're the user, not for the money."<small>research verdict · music</small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº5 · Rehearsal Receipt</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> Your band plays for two hours. Someone says "that bridge was great, let's start with it Friday." A week later — gone. This app records the room, cuts the recording into songs automatically, and writes down what the band decided. Like meeting notes, but for rehearsal.</p>
+    <p><span class="q">Who pays you?</span> One person per band, about $60/year. It's a small market and the research is honest about that — beer money to maybe rent money.</p>
+    <p><span class="q">Why you?</span> Your local transcription stack already does the hard part, and nobody else is building this. Plus you'd actually use it — which is why it's on the board despite the small numbers.</p>
+    <p><span class="q">First move?</span> Record one of your own jams, run it through LocalScribe, and see if the song-splitting works. That's the whole risk, tested in an afternoon.</p>
+  </div>
+</div></section>
+
+
+<!-- ============ BET 6: HERITAGE DOSSIER ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº6 · OSINT for Love (Round-3 Survivor)</p><span class="tag paid">Paid</span></div>
+  <h2>Heritage Dossier</h2>
+  <p class="sub">Done-for-you family-history reports sold as <b>gifts</b> — milestone birthdays, anniversaries. Records research + a verified narrative ("every fact cited to a primary record") + a printed keepsake. The dossier engine, pointed at grandma.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Meaningful gifts for parents/grandparents are genuinely hard</li><li>Ancestry = DIY homework the giftee won't do</li><li>Pro genealogists start at <b>$2,950+</b> (Legacy Tree); Etsy tops out ~$150</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Three tiers: <b>$500</b> single-line dossier · <b>$950</b> 4-line heritage book · <b>$1,500</b> deep-dive legacy</li><li>Pipeline-assisted research; human narrative on top</li><li>Premium printed book as the deliverable</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Reports/mo (throughput is the constraint)</li><li>Holiday pipeline fill</li><li>Referral rate per delivered book</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Their whole story — verified."</b> Not a DNA kit, not homework: a finished, beautiful, fact-checked family history they can hold.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Most genealogists hand-search; your pipeline sweeps FamilySearch/census/newspapers systematically</li><li>Adversarial verification = the differentiator sold on the cover</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Etsy at the premium tier (sellers already transact at $150 — the channel works)</li><li>Gift-guide SEO ("80th birthday gift for dad")</li><li>Holiday seasonality; each delivered book markets itself at the party</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Adult children gifting parents (60th–90th birthdays, big anniversaries)</li><li>Memorial/estate keepsakes</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>Top-down: genealogy market <b>$4.7–7.3B</b> (sources disagree widely). Honest bottoms-up for gift-positioned done-for-you reports: <b>~$1.5–5M/yr</b>. A side business by design.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Your hours (the real cost — time-for-money) + printing ~$50–100/book. Near-zero marketing spend.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$500 / $950 / $1,500</b> tiers. 4 reports/mo at mid-tier ≈ <b>$45K/yr</b> side income.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº6 · Heritage Dossier · The Numbers</p>
+  <h2>The gap between Etsy and $2,950</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Comparable</th><th>Price / scale</th><th>What it proves</th></tr>
+    <tr><td><a href="https://welcome.storyworth.com" target="_blank"><b>StoryWorth</b></a></td><td>$99/yr · <b>1M+ books sold</b></td><td>Family-story <b>gifts</b> sell at massive scale — but it's DIY prompts, not research</td></tr>
+    <tr><td><a href="https://www.legacytree.com" target="_blank"><b>Legacy Tree Genealogists</b></a></td><td>projects from <b>$2,950+</b></td><td>The professional ceiling — real willingness-to-pay for done-for-you research</td></tr>
+    <tr><td><a href="https://www.ancestry.com" target="_blank"><b>Ancestry ProGenealogists</b></a></td><td>custom research packages</td><td>The incumbent validates the service category</td></tr>
+    <tr><td><b>Etsy genealogy sellers</b></td><td>~<b>$150</b>/research listing</td><td>The channel works today — and tops out far below the pro tier. Your slot: $500–1,500.</td></tr>
+  </table></div>
+  <div class="chips">
+    <div class="chip"><div class="k">The gap</div><div class="v">$150 ⟷ $2,950</div></div>
+    <div class="chip"><div class="k">Your tiers</div><div class="v">$500–1,500</div></div>
+    <div class="chip"><div class="k">Marketing spend</div><div class="v">≈ $0</div></div>
+    <div class="chip"><div class="k">Constraint</div><div class="v">Your hours</div></div>
+  </div>
+  <p class="verdict">"A real side business, not a venture business — and probably the good kind for you. The $500–1,500 gap is genuinely unserved, and the verification ('every fact cited to a primary record') is a legitimate edge most genealogists can't match."<small>research verdict · round 3</small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº6 · Heritage Dossier</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> Someone's dad is turning 80. Their kids want a gift that matters. You research the family's real history — records, newspapers, immigration papers — and turn it into a beautiful printed book where every fact is backed by an actual document. You hand them their story.</p>
+    <p><span class="q">Who pays you?</span> The adult kids, $500 to $1,500 per book. Gift buyers at milestone moments don't haggle. StoryWorth sold a million books proving people buy family stories as gifts.</p>
+    <p><span class="q">Why you?</span> Your dossier engine already sweeps public records and fact-checks claims automatically. Professional genealogists do this by hand and charge $3,000. You can do it faster, cheaper, and more rigorously.</p>
+    <p><span class="q">First move?</span> Make one — for your own family. That's the portfolio piece, the process test, and a gift, all at once.</p>
+  </div>
+</div></section>
+
+
+<!-- ============ BET 7: RESTITCH ============ -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Bet Nº7 · Your Idea, Inverted (Round-5 Survivor)</p><span class="tag paid">Paid</span></div>
+  <h2>Restitch</h2>
+  <p class="sub">Dependabot updated your dependencies. <b>Nobody updates the 80% of your repo that came from a template.</b> Restitch is a GitHub App that replays upstream template/boilerplate changes as <b>tested PRs</b> onto repos that have long since diverged — the one piece of your Forkmarket idea that nobody has shipped.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Repos born from templates drift immediately; upstream fixes never arrive</li><li>Backstage closed the exact request <a href="https://github.com/backstage/backstage/issues/14416" target="_blank"><b>"not planned"</b></a> in 2022 — and users <a href="https://github.com/backstage/backstage/issues/31361" target="_blank">re-asked in 2025</a></li><li><a href="https://makerkit.dev/docs/next-supabase-turbo/installation/updating-codebase" target="_blank">Makerkit&#39;s official fix</a>: <code>git pull upstream main</code> and resolve conflicts by hand</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Upstream release → <b>changeset</b> (intent + reference diff + tests)</li><li>An AI agent <b>re-implements</b> it inside each diverged repo, runs that repo&#39;s own tests, opens a PR</li><li>Feature-level <b>adopt / skip</b>: take the security patch, skip the redesign</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Synced repos</li><li>Replay success % / PR merge rate</li><li>Agent compute $ per PR</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Dependabot for your starting point."</b> Updates for the code you forked and changed — not just your dependencies.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>The primitive is <b>unshipped</b>: closest are a solo alpha (gfix), textual replay (copier), and a sunset startup (Grit.io)</li><li>You are user #1 — you re-apply shared patterns across a 20-repo registry by hand today</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>GitHub Marketplace: <a href="https://docs.github.com/en/apps/github-marketplace/selling-your-app-on-github-marketplace/receiving-payment-for-app-purchases" target="_blank">5% take</a>; <a href="https://sacra.com/c/coderabbit/" target="_blank">CodeRabbit&#39;s 8K+ paying customers</a> prove the channel</li><li>The two open Backstage issues = a <b>named waiting list</b></li><li>Boilerplate sellers as case studies ("give your customers a button")</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li><b>Platform teams</b> with internal golden-path templates (the money — IDP buyers already pay <a href="https://codepulsehq.com/guides/opslevel-vs-cortex" target="_blank">$28–75K/yr</a> for adjacent tools)</li><li>Boilerplate customers (ShipFast/Makerkit)</li><li>OSS template authors (free tier)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>Template prevalence isn&#39;t public. Bounding: <a href="https://github.blog/news-insights/octoverse/octoverse-a-new-developer-joins-github-every-second-as-ai-leads-typescript-to-1/" target="_blank">630M repos, 180M devs</a>; honest SAM = <b>10⁴–10⁵ payable repos</b> (org template descendants + boilerplate-derived SaaS).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Agent compute <b>$1–10 per sync PR</b> at ~1–4 changesets/repo/mo — margin holds at $20/repo. Solo eng.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p>Free (public/OSS) → <b>~$15–25/private repo/mo</b>, team tiers (~$299/mo · 25 repos). <b>$1M ARR ≈ 4,200 synced repos.</b></p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº7 · Restitch · The Numbers</p>
+  <h2>An unshipped primitive, a proven channel</h2>
+  <div class="tbl-wrap"><table>
+    <tr><th>Player</th><th>Money / scale</th><th>What it proves</th></tr>
+    <tr><td><a href="https://github.com/backstage/backstage/issues/14416" target="_blank"><b>Backstage</b> (Spotify)</a></td><td>category leader, OSS</td><td>Closed this exact feature request <b>"not planned"</b> (2022); <a href="https://github.com/backstage/backstage/issues/31361" target="_blank">re-asked 2025</a> — pain in writing, unowned</td></tr>
+    <tr><td><a href="https://sacra.com/c/coderabbit/" target="_blank"><b>CodeRabbit</b></a></td><td>est. <b>$40M ARR</b> (Sacra) · $60M Series B · $24–48/user</td><td>PR-bot products sell <b>self-serve</b> on GitHub Marketplace at scale — no enterprise motion</td></tr>
+    <tr><td><a href="https://moderne.ai" target="_blank"><b>Moderne</b></a></td><td>$30M Series B (Feb 2025), revenue not public</td><td>Closest funded player — recipe-based JVM migrations, <b>not</b> template-descendant sync</td></tr>
+    <tr><td><a href="https://copier.readthedocs.io/en/stable/updating/" target="_blank"><b>copier</b></a> (OSS)</td><td>$0</td><td>Only update-capable incumbent: textual replay, copier-born projects only, leaves conflict markers</td></tr>
+    <tr><td><a href="https://github.github.com/gh-aw/examples/multi-repo/feature-sync/" target="_blank"><b>GitHub agentic workflows</b></a></td><td>free · technical preview</td><td><b>The top risk</b> (skeptic&#39;s find): a native "feature sync" example exists — an example workflow, not a product. Re-underwrite before building.</td></tr>
+    <tr><td><a href="https://www.vendr.com/marketplace/mend" target="_blank"><b>Renovate / Mend</b></a></td><td>Community free · enterprise ~$100K+ (est.)</td><td>The pricing shadow: free won dependency updates; moat must be fleet dashboard + test-gating + adopt/skip, not the agent call</td></tr>
+  </table></div>
+  <div class="chips">
+    <div class="chip"><div class="k">Solo ceiling</div><div class="v">$1–3M ARR</div></div>
+    <div class="chip"><div class="k">Price</div><div class="v">$15–25/repo/mo</div></div>
+    <div class="chip"><div class="k">Marketplace take</div><div class="v">5%</div></div>
+    <div class="chip"><div class="k">The handicap</div><div class="v">Fires ~monthly, not daily</div></div>
+  </div>
+  <p class="verdict">"Survives — no productized competitor exists, and the pain is documented in the incumbents&#39; own issue trackers and docs. The residual moat is the registry, adopt/skip, and test-gating UX; the free-native substitute is one markdown file away."<small>research + adversarial skeptic · round 5 · aug 25 2026</small></p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Bet Nº7 · Restitch</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> When someone builds an app from a starter kit, they immediately start changing it — and from that moment, fixes the kit&#39;s author ships never reach them. Restitch is a robot that reads each upstream fix, <b>rewrites it to fit every person&#39;s modified copy</b>, runs their tests, and proposes it as a one-click pull request.</p>
+    <p><span class="q">Who pays you?</span> Software teams that stamp out dozens of internal projects from a "golden" template — $15–25 per repo per month, sold through GitHub&#39;s app store, which keeps just 5% and where a comparable bot (CodeRabbit) found 8,000+ paying customers self-serve.</p>
+    <p><span class="q">Why you?</span> This is your Forkmarket idea with the marketplace stripped away. The research killed the store — Lovable gives remixing away free at $500M ARR — but confirmed <b>nobody has shipped the update robot</b>. And you already do this job by hand across your own 20-project registry.</p>
+    <p><span class="q">First move?</span> Point it at your own repos. If it keeps your registry in sync for a month, that&#39;s the demo — ship it free for public templates and knock on the two Backstage issues full of people asking for exactly this.</p>
+  </div>
+</div></section>
+
+<!-- FINTECH -->
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">The Fintech Map</p><span class="tag research">Research-Only · Conflicted</span></div>
+  <h2>Where solo devs win in fintech</h2>
+  <p class="sub">Mapped for later, per your constraint. The pattern is consistent: <b>no custody, no securities advice, no lending, no credit furnishing</b> — those need licenses. The license-free fringe is calculators, read-only trackers, and niche vertical bookkeeping at <b>$49–150/yr premium</b>.</p>
+  <div class="tbl-wrap"><table>
+    <tr><th>Proof point</th><th>Revenue</th><th>Team</th><th>What it proves</th></tr>
+    <tr><td><a href="https://projectionlab.com" target="_blank"><b>ProjectionLab</b></a></td><td><b>$1M ARR, $0 funding</b> <small><a href="https://projectionlab.com/blog/we-reached-1m-arr-with-zero-funding" target="_blank">first-party post</a></small></td><td>1 (nights/weekends)</td><td>A solo dev can hit 7 figures with a <b>simulator</b> — no licenses, no bank connections required</td></tr>
+    <tr><td><a href="https://lunchmoney.app" target="_blank"><b>Lunch Money</b></a></td><td><b>$34K MRR</b> (~$408K ARR) <small><a href="https://www.starterstory.com/lunch-money-breakdown" target="_blank">Starter Story 2025</a></small></td><td>1 (Jen Yip)</td><td>Solo budgeting app with read-only bank data works at real scale</td></tr>
+    <tr><td><a href="https://www.monarchmoney.com" target="_blank"><b>Monarch</b></a></td><td>500K+ paying subs @ ~$100/yr <small><a href="https://www.cnbc.com/2025/05/23/personal-finance-app-monarch-raises-75-million.html" target="_blank">CNBC</a></small></td><td>not public</td><td>Post-Mint demand is enormous — but the head-on category is VC territory</td></tr>
+    <tr><td><a href="https://www.rocketmoney.com" target="_blank"><b>Rocket Money</b></a></td><td>~$100M ARR at 2021 exit <small><a href="https://ir.rocketcompanies.com/news-and-events/press-releases" target="_blank">Rocket IR</a></small></td><td>—</td><td>The category's ceiling; also why not to fight it directly</td></tr>
+    <tr><td><a href="https://homebot.ai/pricing/loan-officer" target="_blank"><b>Homebot</b></a></td><td>not public<small>pricing: $125–300/mo/seat published</small></td><td>~70–90 <small>est.</small></td><td>Property wedge: loan officers pay real money for homeowner-equity tools (B2B2C grind though)</td></tr>
+    <tr><td><a href="https://actualbudget.org" target="_blank"><b>Actual Budget</b></a></td><td><b>$0</b> — failed commercially, went OSS</td><td>community</td><td>The cautionary tale: good product ≠ business in this category</td></tr>
+  </table></div>
+  <p class="verdict">Best future fits for your stack when the conflict clears: a <b>niche vertical cost/bookkeeping tool</b> (the domains you know: homes, projects, small agencies) or a <b>ProjectionLab-style simulator</b> — premium annual, no bank credentials, no licenses.<small>fintech map · research-only · <a href="https://www.housingwire.com/articles/ownwell-property-tax-appeal-funding/" target="_blank">property-fintech context</a></small></p>
+</div></section>
+
+<!-- JOY + BENCH -->
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Joy Tickets &amp; Feature Notes</p>
+  <h2>Small bets, honest sizes</h2>
+  <div class="grave">
+    <div class="card"><h3><span class="tag joy">Joy</span> Gridle — needs a twist now</h3><p>Round-2 finding: the mechanic <b>already exists twice</b> (<a href="https://citystreetsgame.io" target="_blank">citystreetsgame.io</a>, <a href="https://geosky.io" target="_blank">geosky.io</a>) and est. genre ceiling is low — Worldle itself est. &lt;$10K/mo. Still a fun weekend — but it needs a novel angle (e.g., <i>your hometown grid</i> personalization), not a straight clone.</p></div>
+    <div class="card"><h3><span class="tag joy">Joy</span> Tool or Fool</h3><p>Real-vs-AI-tool daily game. Breakouts cap ~$10–35K/mo (est.), median clone ≈ $0, and tool-affiliate commissions are 1–3% — a red herring. Same rules as Gridle: only worth it as fun.</p></div>
+    <div class="card"><h3><span class="tag joy">Joy</span> BirdCam AI (round 3)</h3><p>Software Bird Buddy for any camera. Demand is real (<a href="https://www.prnewswire.com/news-releases/the-ultimate-2024-holiday-gift-immerse-yourself-in-nature-with-bird-buddys-smart-bird-feeder-302300079.html" target="_blank">Bird Buddy: ~285K units</a>, $28M raised) but the wedge is squeezed: <a href="https://www.birdwatchai.com/" target="_blank">BirdWatchAI</a> already sells it at $75 one-time, free OSS serves the RTSP crowd, and BirdNET models are non-commercial. Verdict: <b>build it for your own feeder + HA first</b> — $20–80K/yr lifestyle upside if the highlight-clip share loop catches.</p></div>
+    <div class="card"><h3><span class="tag free">Feature</span> Pool Chem Oracle → Still Water Pro</h3><p>Standalone is dead: <b>free Clorox &amp; AquaChek apps commoditized strip-scanning</b>, and camera colorimetry inherits accuracy complaints. But as a <b>Still Water Pro feature</b> (scan instead of tap), it strengthens the paywall you already shipped.</p></div>
+    <div class="card"><h3><span class="tag free">Bench</span> Garden Autopilot (HACS)</h3><p>HA's own incumbent irrigation integration has just <b>~1,780 opted-in installs</b>, and HA users are famously pay-averse. Fine as an open-source calling card feeding Frostline; not a business.</p></div>
+  </div>
+</div></section>
+
+<!-- GRAVEYARD -->
+<section class="slide"><div class="inner">
+  <p class="eyebrow">The Graveyard · Killed With Evidence</p>
+  <h2>What died, and the receipts</h2>
+  <div class="grave">
+    <div class="card"><h3><span class="tag dead">Killed</span> PartnerProof</h3><p><b>The buyer doesn't exist.</b> Every agency-vetting guide prescribes free methods (references, trial projects); no evidence anyone pays for partner-diligence reports.</p></div>
+    <div class="card"><h3><span class="tag dead">Killed</span> BallotGraph</h3><p>Philanthropic economics: category leader <a href="https://ballotpedia.org" target="_blank">Ballotpedia</a> runs <b>$8.9M/yr as a nonprofit with 60 staff after 15 years</b>; a free newsroom embed already exists for 2026.</p></div>
+    <div class="card"><h3><span class="tag dead">Killed</span> BidPath (pre-RFP intel)</h3><p>Enterprise-locked: Deltek ($535M rev → <b>$2.8B exit</b>), OpenGov ($1.8B), and the small-vendor wedge is unproven — Ontopical is stuck tiny trying it.</p></div>
+    <div class="card"><h3><span class="tag dead">Killed</span> PermitScope</h3><p>A funded data arms race: <a href="https://www.shovels.ai" target="_blank">Shovels</a> sells the data at $599/mo; <a href="https://www.permitflow.com" target="_blank">PermitFlow</a> raised <b>$54M</b>. Solo = thin wrapper at your supplier's mercy.</p></div>
+    <div class="card"><h3><span class="tag dead">Killed</span> UniformProof AI</h3><p>A feature, not a company: PE-backed Inktavo/OrderMyGear own the approval workflow and could ship it in a quarter. Bottoms-up TAM ~$28M.</p></div>
+    <div class="card"><h3><span class="tag dead">Killed</span> ATX live-music finder</h3><p>20 years of labor-of-love precedents (Showlist Austin); venues are famously broke; the city's own study showed the non-festival economy shrinking.</p></div>
+    <div class="card"><h3><span class="tag dead">Round 3 kills</span> Fresh ideas, fast funerals</h3><p><b>Estate Dossier</b> — red legal flag: bank accounts aren't public records, and TX Occ. Code 1702.104 makes compensated probate evidence-work a licensed PI activity. <b>Redline</b> — five competitors; <a href="https://governingdocs.ai" target="_blank">the best gives the first report free</a>. <b>Quote Decoder</b> — already exists at $9.99 and free; cost-data licensing eats the margin. Plus taste vetoes: STR Watch, HailProof, PlatCheck, UnclaimedFinder. <b>AuctionHawk</b> survives as Nate's personal alert tool, not a product.</p></div>
+    <div class="card"><h3><span class="tag dead">Round 4 kills</span> 14 ideas, one day, one epitaph</h3><p><b>"The exact product already exists, free or near-free."</b> FDD reports (<a href="https://inkvex.app/fdd-analyzer" target="_blank">first one free</a>, <a href="https://fddiq.com/" target="_blank">$19.99 at FranchiseIQ</a>) · exposure reports (<a href="https://www.optery.com" target="_blank">the removal industry&#39;s free lead magnet</a>) · BillWatch (<a href="https://www.energyogre.com" target="_blank">Energy Ogre, $12/mo since 2013</a> + free Arbor) · Quiet Check (<a href="https://www.envoyathome.com/elderly-monitor-product/" target="_blank">envoyatHome is the exact product</a>; Amazon killed Alexa Together at 2× the price) · WellLog (only <b>9%</b> of well owners test; the free apps have 1–3 ratings) · SeedVault (the whole category: ~14 lifetime ratings) · plus LandScope, Relo Dossier, BrandWatch, FOIA, Vendor Vet, GearProvenance, Domain Steward, and HomeBase ATX — the last on a real legal wall: <a href="https://tcss.legis.texas.gov/resources/oc/htm/oc.1702.htm" target="_blank">TX Occ. Code 1702</a> makes paid camera/smart-lock installs a licensed-alarm-company activity. <b>Lesson: the AI-tool rush closed every $0–250 lane.</b></p></div>
+    <div class="card"><h3><span class="tag dead">Round 5 kills</span> The big swings</h3><p><b>HOA OS</b> — the self-managed segment is real (~130–150K associations) and that&#39;s why it&#39;s taken: <a href="https://www.inman.com/2024/05/17/payhoa-closes-series-a-funding-round-of-27-5m/" target="_blank">PayHOA raised $27.5M</a> for exactly this at <a href="https://www.payhoa.com/pricing/" target="_blank">$49/mo</a>. <b>Pool Owner Platform</b> — <a href="https://adapty.io/paywall-library/pool-math/" target="_blank">Pool Math</a> is the independent TFP-method app, fed by a 200–400K-member forum, and after 9 years makes est. &lt;$1–5K/mo. <b>Harvest Network</b> — three corpses: Growstuff (13 yrs → 1,243 members), SeedLinked ($500K + USDA for ~1,500 loggers), <a href="https://www.growertalks.com/Article/?articleid=24957" target="_blank">Ball&#39;s GrowIt! (1M+ members, abandoned to a Facebook group)</a>. <b>People do not log harvests.</b> <i>HOA OS was then RE-TESTED as an attack</i> (free software, monetize the dues rails only — the Toast playbook PayHOA can't follow): killed on its own math. Fee-passing to homeowners is already the industry norm, so "free" only removes a <b>$6–12/home/yr</b> line item; the rails yield ~$100–1,200/yr/association (billing-frequency dependent) while front-loading the hardest migration (re-enrolling every homeowner's autopay); and <a href="https://help.hoamessenger.com/en/articles/5636895-pricing" target="_blank">HOA Messenger already runs the exact free+payments play</a> — for years, without denting PayHOA. Toast inverted: Toast replaced thousands in POS spend on $1M+ GPV; this saves $588/yr on $120K GPV.</p></div>
+    <div class="card"><h3><span class="tag dead">Forkmarket → salvaged</span> Nate&#39;s idea: the store died, the robot lived</h3><p>Git-native marketplace for forkable AI apps — killed with honors: paid starting points are post-peak (<a href="https://newsletter.marclou.com/p/i-made-1-032-000-in-2025" target="_blank">ShipFast −85% from its $141K MRR peak</a>), <a href="https://techcrunch.com/2026/08/12/lovable-confirms-new-13-3b-valuation-raises-another-400m/" target="_blank">Lovable ($500M ARR)</a> gives remix + GitHub sync + ownership away free, <a href="https://www.bleepingcomputer.com/news/security/glitch-to-end-app-hosting-and-user-profiles-on-july-8/" target="_blank">Glitch died 7/2025</a>, and Envato&#39;s real take is <b>50%</b>. But the novel primitive inside it — AI replay of upstream changes onto diverged forks — was <b>unshipped by anyone</b>. It&#39;s now <b>Bet #7: Restitch</b>.</p></div>
+    <div class="card"><h3><span class="tag dead">Round 6 kills</span> Four more corners, four funerals</h3><p><b>TM Sweep</b> — occupied at price: <a href="https://www.markify.com/services/us-full-new.html" target="_blank">Markify sells the exact AI comprehensive US trademark search at $169, instant</a>, and locked LegalZoom as an API customer in 2017. <b>Harbormaster</b> (small-marina OS) — the software floor is <a href="https://slipboss.com/" target="_blank">literally free (SlipBoss, free under 30 slips)</a> plus a second free tier (Marinapy under 100 slips), card fees are surcharged to boaters (fee-passing kill), and Dockwa&#39;s moat is a 300K-boater network. <b>MUD Billing</b> — the buyer doesn&#39;t exist: operators (Inframark, Si Environmental), not districts, pick the billing software and bundle it into pass-through service contracts; CUSI holds the floor at <b>$0.35/meter/mo</b>. <b>GovCon Scout</b> — the $300–3K SAM-registration predator fee is real but uncapturable: the honest substitute is <b>$0</b> (<a href="https://www.orapexaccelerator.org/bid-matching-services" target="_blank">DoD-funded APEX Accelerators do free registration + daily bid-matching in all 50 states</a>), and the alert product is occupied below price by FedScout at $20/mo.</p></div>
+    <div class="card"><h3><span class="tag dead">ModelDyno</span> Nate&#39;s idea: the dyno needle is noise</h3><p>Personal daily benchmarks mined from your own repos, to catch Claude &quot;getting dumber.&quot; The pain is vendor-confirmed — <a href="https://www.anthropic.com/engineering/a-postmortem-of-three-recent-issues" target="_blank">Anthropic&#39;s postmortem admits ~3 weeks of silent degradation</a> — but the math fails: distinguishing a 15% regression from noise needs <b>~700 runs/day per model ≈ $390/day</b>, while an affordable 20-task suite carries a <b>±22pp confidence interval</b>. MarginLab already answers &quot;is Claude degraded?&quot; free daily (<a href="https://news.ycombinator.com/item?id=46810282" target="_blank">760-pt HN launch, zero willingness-to-pay in 354 comments</a>), and the repo-mining &quot;moat&quot; is shipped OSS (<a href="https://github.com/SWE-bench/SWE-smith" target="_blank">SWE-smith: 100 tasks from any repo in 10 min</a>). Honest residue: release-triggered A-vs-B replay (~$140/model) — a feature, not a company.</p></div>
+    <div class="card"><h3><span class="tag dead">Guest finalists</span> The grinder went 0-for-7</h3><p>Each guest agent&#39;s top picks, researched + skeptic-checked, all killed. <b>ExamDelta</b> — cert bodies push exam changes to publishers <b>free</b> as channel strategy (CompTIA partner program, Microsoft 30-day public change logs). <b>PourMap</b> — measuring isn&#39;t the binding line item: crews survey in 30 min with a rotary laser they own and deliberately overbuy 20–30%. <b>PlotRecon</b> — <a href="https://www.plotbox.com/" target="_blank">PlotBox already sells the drone forensic-inventory audit</a>, and photogrammetry can&#39;t prove a plot empty (unmarked burials = the actual liability). <b>StitchVector</b> — auto-digitizing exists free (Ink/Stitch, EmbroidAI) and offshore human digitizing is <b>$6–8 flat</b>, not $15–35. <b>ReagentWatch</b> (the agy+Grok collision) — bubble detection is in analyzer firmware + patents, third-party sensors are FDA-regulated accessories; the tracking variant is free (eLabFTW, Quartzy). <b>ShopSight</b> — shops are paid to find <i>more</i> work, not less: dealers pay UVeye $3–5.5K/mo because underbody scans generate <b>~$46K/mo in additional quotes</b>. <b>LoadGuard</b> — Thermo King is free 24 months on new reefers; <a href="https://tive.com" target="_blank">Tive</a> owns single-use at $29 with $135.5M raised.</p></div>
+    <div class="card"><h3><span class="tag dead">Round 1 kills (stand)</span> The classics</h3><p>Consumer AI-interior subs (clone-factory), kids apps (COPPA + CPI — you agreed), hyper-casual (ARPDAU $0.03–0.08 vs $1.50 CPI), home-maintenance trackers (Centriq died, Homer's free), tenant/employment screening (FCRA).</p></div>
+    <div class="card"><h3><span class="tag dead">Your calls (stand)</span> Taste vetoes</h3><p>Property-tax packs · law-firm AI ("they just use ChatGPT") · realtor photo AI ("competitive and boring") · teacher tools ("no money") · sailing products (Sail Scan owns that lane).</p></div>
+  </div>
+</div></section>
+
+<!-- GUEST ROUNDS: Codex / Antigravity / Grok — 30 unvetted orthogonal ideas -->
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Guest Round · Codex</p>
+  <h1>10 orthogonal ideas<br>by Codex</h1>
+  <p class="sub"><b>Unvetted.</b> These have not passed the evidence grinder — the observed survival base rate is ~7%. Every claim below is the author's own; figures marked <b>(UNVERIFIED)</b> await the research pass.</p>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº1 · ADULT CERTIFICATION PUBLISHING</p><span class="tag paid">Paid</span></div>
+  <h2>ExamDelta</h2>
+  <p class="sub">An evidence-linked feed that tells exam-prep publishers <b>what changed, where, and which lessons break</b> when a credential moves.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Empty lane:</b> sponsor updates are fragmented; a neutral cross-sponsor feed was not found <b>(UNVERIFIED)</b>.</li><li>A moved blueprint, source standard, or retirement date creates urgent editorial work; the cost is not public.</li><li>A cheap summary is insufficient: publishers need source snapshots, provenance, and an accountable impact call.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Version official blueprints, handbooks, standards lists, calendars, and retirement notices.</li><li>Map each verified diff to the publisher's lessons and question bank through an API.</li><li>Human-review severity, ambiguity, and effective date; preserve an audit ledger.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>18%</b> (judgment); rank <b>#1/10</b> by odds × ceiling.</li><li>Verified-alert latency; share of alerts mapped to a content decision.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“Version control for high-stakes exam content.”</b> Publisher infrastructure, not another learner or teacher app.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Nate's OSINT pipelines, Python diffs, source archiving, and agent review fit the work exactly.</li><li><b>Risk:</b> partner-only notices may defeat public crawling; sponsors such as <a href="https://www.exin.com/product-release-calendar/" target="_blank">EXIN</a> already publish useful calendars.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Finite-list outbound to exam-prep publishers and continuing-education catalog owners.</li><li>Lead with a free, source-cited change audit for one credential; sell the ongoing feed.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Publishers maintaining several professional-certification catalogs.</li><li><b>Orthogonal:</b> adult-content operations data, not kids, teachers, law firms, or generic AI reports.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p><a href="https://credentialengine.org/all-resources/2025-counting-credentials/" target="_blank">Credential Engine</a> counted <b>6,892 U.S. certifications in 2025</b>; the publisher-maintained, frequently changing subset is not public.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Crawling, version storage, source licensing review, and human adjudication. Avoid protected exam questions entirely.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$12K per credential/year</b>; 250 live feeds = <b>$3M/year</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº1 · ExamDelta</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A sponsor quietly replaces a PDF and changes several blueprint verbs. ExamDelta catches the source diff, dates it, and points a publisher to the affected lessons. <b>Why it may survive adversarial research:</b> the input is public evidence, the output replaces recurring expert labor, and success has an objective audit trail.</p>
+    <p><span class="q">Who pays you?</span> A content VP pays roughly <b>$12K per credential/year (est., unverified)</b>. The fee buys accountable surveillance across releases; the real alternative is assigning editors to watch dozens of moving sources.</p>
+    <p><span class="q">Why Nate?</span> This is OSINT collection, PDF and webpage diffing, a Next.js review console, Python impact mapping, and AI agents constrained by citations—his strongest stack.</p>
+    <p><span class="q">First move?</span> Spend <b>under $100</b> on a domain and email. Manually audit five public credential sources for 30 days, then send twenty publishers a cited sample and ask for a paid one-credential pilot.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº2 · FLOORING INSTALLATION</p><span class="tag paid">Paid</span></div>
+  <h2>PourMap</h2>
+  <p class="sub">Use a line laser and iPhone video to turn a subfloor into a <b>grind/fill map and self-leveler quantity</b> before the crew mixes a bag.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Binding work:</b> crews manually grid floors with lasers, rulers, screws, and straightedges; job-level labor is not public.</li><li>Bad depth estimates waste compound or leave a second pour and delayed installation.</li><li>ASTM profilers document concrete; installers need an actionable material plan before finish flooring.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Place printable fiducials, sweep a self-leveling laser, and record a guided phone walk.</li><li>Computer vision reconstructs the laser plane and samples floor height across the room.</li><li>Output grind zones, fill depths, and bag ranges using the selected product's stated coverage.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>15%</b> (judgment); rank <b>#2/10</b> by odds × ceiling.</li><li>Repeatability versus a manual grid; quantity error versus the completed pour.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“Turn the laser line into the pour plan.”</b> A physical measuring instrument, not quote decoding or a home-maintenance tracker.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Swift capture plus OpenCV geometry creates a testable edge that a prompt cannot copy.</li><li><b>Risk:</b> line visibility, phone optics, and floor reflectivity may miss tolerance; professional profilers such as <a href="https://nationalconcreteequipment.com/smg-axiom-1155" target="_blank">Axiom 1155</a> already exist.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Demonstrate at flooring-supply counters and tool-rental desks where crews already buy compound.</li><li>Partner with underlayment manufacturers on a no-claim “planning estimate” workflow.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Flooring and tile contractors doing repeat flattening and leveling jobs.</li><li><b>Orthogonal:</b> construction metrology, not real estate, property appeals, or contractor-price analysis.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>The Census defines <a href="https://www.census.gov/naics/?details=238&amp;input=238&amp;year=2022" target="_blank">NAICS 238330</a> for flooring contractors; the high-volume leveling-job subset is not public.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Target printing, calibration fixtures, device testing, rental logistics, support, and errors-and-omissions coverage.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$600 per kit-and-analysis job</b>; 5,000 jobs = <b>$3M/year</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº2 · PourMap</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> Before leveling a condo floor, the installer sweeps a red laser around the room and records one slow phone video. The resulting map says where to grind, how deep to fill, and which areas need manual confirmation. <b>Why it may survive adversarial research:</b> the pain is physical, the validation target is measurable, and distributors can put it in front of buyers without an audience.</p>
+    <p><span class="q">Who pays you?</span> The flooring contractor pays about <b>$600 per job (est., unverified)</b> for the loaner kit and checked plan. On a meaningful pour, avoiding an extra mobilization or excess material is the non-haggle reason; actual savings must be measured.</p>
+    <p><span class="q">Why Nate?</span> It joins iPhone capture, Swift, OpenCV, photogrammetry, and a small optimization engine—the kind of physics-plus-software product he can prototype alone.</p>
+    <p><span class="q">First move?</span> Spend <b>under $200</b> on a line laser, printed targets, and measuring rods. Scan one garage, compare at least 100 points with a manual grid, and show the error map to five flooring installers.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº3 · LEATHER &amp; TEXTILE COMMERCE</p><span class="tag paid">Paid</span></div>
+  <h2>HideMatch Exchange</h2>
+  <p class="sub">A marketplace where buyers upload patterns and shop remnants by <b>actual cuttable yield</b>, not square feet and hopeful photos.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Empty transaction primitive:</b> a remnant's area does not reveal whether real pattern pieces fit around scars and holes.</li><li>Industrial hide digitizers and nesting systems exist, but ordinary marketplace listings lack geometry.</li><li>Generic remnant marketplaces exist; pattern-fit search was not found in this pass <b>(UNVERIFIED)</b>.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Seller photographs the hide on a calibration mat; the app vectorizes its boundary and marked defects.</li><li>Buyer uploads SVG or DXF pieces; nesting reports fit count, rotation, and unusable zones.</li><li>The marketplace stores the geometry with the listing and handles payment and dispute evidence.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>7%</b> (judgment); rank <b>#3/10</b> by odds × ceiling.</li><li>Pattern-fit searches ending in a sale; dispute and repeat-purchase rates.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“Buy the piece your pattern fits.”</b> Geometry makes an irregular material remotely tradable.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Computer vision plus nesting turns each listing into proprietary, reusable fit data.</li><li><b>Risk:</b> cold start, low-value shipping, subjective defect marking, and fraud; factory systems such as <a href="https://www.n-hega.com/leather-hide-digitizing-software-system" target="_blank">NShot Pro</a> prove the geometry is possible.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Seed supply from upholstery, footwear, and leather-goods shops with dead stock.</li><li>Recruit buyers through pattern designers, maker forums, and pages indexed by material and fit.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Small leather-goods makers buying partial hides; shops selling usable offcuts.</li><li><b>Orthogonal:</b> irregular-material commerce, unrelated to apparel styling, color matching, or home software.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>Live venues such as <a href="https://craftremnants.com/pages/sell-your-remnants" target="_blank">Remnants</a> and <a href="https://www.etsy.com/market/leather_remnant" target="_blank">Etsy</a> verify supply and transactions, but total relevant GMV is <b>not public</b>.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Seller onboarding, calibration mats, image QA, nesting compute, payments, disputes, and marketplace trust.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>10% transaction fee</b>; $50M GMV = <b>$5M/year</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº3 · HideMatch Exchange</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A wallet maker needs a batch of front panels. Instead of buying by approximate square feet, she uploads one panel outline and sees photographed remnants that can physically yield the whole batch.</p>
+    <p><span class="q">Who pays you?</span> The seller gives up <b>10% of a completed sale (est., unverified)</b>; there is no subscription to debate. The buyer pays merchandise and shipping only after the geometry says the pattern fits.</p>
+    <p><span class="q">Why Nate?</span> Boundary extraction, defect masks, geometric nesting, a React marketplace, and evidence trails map directly to his OpenCV, Python, and Next.js skills.</p>
+    <p><span class="q">First move?</span> Spend <b>under $150</b> on a printed calibration mat and simple photography rig. Manually digitize twenty offcuts from one Austin shop, then ask ten makers to upload real patterns and attempt a purchase.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº4 · SCIENTIFIC LABS</p><span class="tag free">Free reach</span></div>
+  <h2>LastFit</h2>
+  <p class="sub">A free, cited compatibility graph connecting <b>legacy lab instruments to obtainable parts, cables, and consumables</b>.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Data rent:</b> a usable instrument can be stranded when an OEM catalog or supported part disappears.</li><li>Compatibility lives in legacy PDFs, reseller pages, and brand-specific cross-reference tools.</li><li>A wrong substitute can waste a run; exact annual spend caused by incompatibility is not public.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Model instrument → required part → compatible substitute, with a source on every edge.</li><li>Separate manufacturer-documented, reseller-claimed, and community-tested fits.</li><li>Publish indexable model pages; alert suppliers when an unresolved part request appears.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>10%</b> (judgment); rank <b>#4/10</b> by odds × ceiling.</li><li>Cited compatibility edges; solved searches; supplier-qualified requests.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“A compatibility layer for instruments that outlive their catalogs.”</b> Free search attacks lock-in; suppliers fund discovery.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>OSINT extraction, PDF parsing, entity resolution, and a provenance graph compound into a data moat.</li><li><b>Risk:</b> scope and liability are enormous; vendors already offer narrow tools such as <a href="https://www.thermofisher.com/ag/en/home/life-science/lab-plasticware-supplies/pipettes-pipette-tips/handheld-pipette-tips/compatible-pipette-tip-selection-tool.html" target="_blank">Thermo Fisher's selector</a>.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Part-number and model-number SEO, then citations shared in lab and repair communities.</li><li>Used-equipment refurbishers and independent distributors contribute verified stock for leads.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Lab technicians, procurement staff, and used-instrument buyers search free.</li><li>Suppliers and refurbishers pay; <b>orthogonal</b> to vendor due diligence or generic reporting.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>A <a href="https://www.cdc.gov/cliac/docs/november-2024/3_CMS_Update.pdf" target="_blank">CMS October 2024 update</a> lists about <b>314,895 CLIA laboratories</b>; it excludes research labs, and the legacy-instrument subset is unknown.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Crawling, document storage, human verification, moderation, supplier normalization, and liability controls.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p>Free search; <b>$25 per lead</b> or <b>$15K/year supplier feed</b>; 200 feeds = <b>$3M</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº4 · LastFit</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A lab owns a discontinued chromatography module and needs a cable whose original part number is dead. LastFit shows the old manual, the connector specification, two documented replacements, one user-tested substitute, and a reseller with stock.</p>
+    <p><span class="q">Who pays you?</span> The lab searches free. A specialist supplier pays about <b>$25 for a qualified request</b> or <b>$15K/year for a catalog feed (est., unverified)</b> because the query already names an instrument and missing part.</p>
+    <p><span class="q">Why Nate?</span> This is public-document ingestion, SKU and model entity resolution, cited knowledge graphs, search, and agent-assisted maintenance—his OSINT and web stack.</p>
+    <p><span class="q">First move?</span> Spend <b>under $75</b> on hosting and a domain. Build one hundred cited edges for one discontinued Shimadzu series from its public legacy guide, publish twenty pages, and ask five refurbishers to buy the first leads.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº5 · VETERINARY OPERATIONS</p><span class="tag paid">Paid</span></div>
+  <h2>VetPack Vision</h2>
+  <p class="sub">A phone-over-mat workstation that <b>checks a veterinary surgical pack against its own recipe</b> before the tech wraps it.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Binding labor:</b> techs lay out and manually count reusable instruments for every pack; time and rework cost are not public.</li><li>Look-alike tools, missing gauze, or a closed hinge can survive a rushed checklist.</li><li>Hospital-grade machine vision exists; a vet-specific low-complexity product was not found <b>(UNVERIFIED)</b>.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Clinic photographs a known-good pack to create its visual recipe.</li><li>An overhead iPhone identifies visible instruments, counts disposables, and flags uncertain items.</li><li>The technician resolves exceptions and signs off; the product never claims sterility or clinical fitness.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>9%</b> (judgment); rank <b>#5/10</b> by odds × ceiling.</li><li>False-clear rate; verification time; packs requiring a human correction.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“A second pair of eyes before the wrap.”</b> Narrow visual QA for repeatable veterinary packs.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Per-clinic golden-pack training narrows the recognition problem enough for a solo CV founder.</li><li><b>Risk:</b> occlusion, look-alike tools, and liability; <a href="https://www.scalpel.ai/spd" target="_blank">Scalpel AI</a> and <a href="https://rstautomation.com/aim-tray-assembly/" target="_blank">AIM</a> already serve human hospitals.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Veterinary distributors bundle the stand and mat with reusable instrument packs.</li><li>Direct pilots with high-volume spay/neuter and specialty-surgery clinics.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>High-throughput veterinary surgery teams with repeatable pack recipes.</li><li><b>Orthogonal:</b> clinic sterile-processing workflow, not pet diagnosis, monitoring, or consumer wellness.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>An <a href="https://ebusiness.avma.org/files/productdownloads/002_AVMA_SotPReport25_NoPasswordPRO.pdf" target="_blank">AVMA report</a> cites <b>34,000 U.S. veterinary establishments in 2022</b>; the surgery-heavy subset is not public.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Phone stands, washable mats, clinic-specific labeling, model operations, onboarding, and insurance.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$750 setup + $250/station/month</b>; 1,000 stations ≈ <b>$3M ARR</b> before setup fees <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº5 · VetPack Vision</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A tech spreads a cleaned spay pack under an iPhone. The screen outlines the forceps, scissors, towel clamps, gauze, and indicator, then asks the tech to inspect one item it cannot distinguish before wrapping.</p>
+    <p><span class="q">Who pays you?</span> A clinic operations manager pays about <b>$750 to set up and $250 per station monthly (est., unverified)</b>. They buy a documented second check and faster onboarding, not a promise that the pack is sterile.</p>
+    <p><span class="q">Why Nate?</span> iOS capture, on-device computer vision, per-clinic model adaptation, and a lightweight audit dashboard are squarely within his Swift, OpenCV, and React skills.</p>
+    <p><span class="q">First move?</span> Pay one veterinary technician <b>$150</b> to record fifty consented pack assemblies using clinic-owned tools and no patient data. Run a human-powered “vision” pilot and measure which mistakes a camera view can actually expose.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº6 · DEATH-CARE EQUIPMENT</p><span class="tag paid">Paid</span></div>
+  <h2>RetortSkin</h2>
+  <p class="sub">Guided exterior thermography and cycle-log analysis that <b>trends crematory refractory deterioration between service visits</b>.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Binding price:</b> <a href="https://purchase.blcremationsystems.com/product/crematory-tune-up-inspection/" target="_blank">B&amp;L lists</a> a crematory tune-up/inspection at <b>$1,195</b>, before selected travel and parts.</li><li>Annual visual inspection is a sparse snapshot of refractory and insulation wear.</li><li>Newer OEM systems can expose control data; independent mixed-brand fleets still need comparable history.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Guide the operator through the same exterior thermal scan after a standardized cycle.</li><li>Register images over time and combine hotspot movement with cycle duration and controller logs.</li><li>Send a quarterly human-reviewed triage: watch, call a qualified repairer, or stop and inspect.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>11%</b> (judgment); rank <b>#6/10</b> by odds × ceiling.</li><li>Repeatable scans; expert-confirmed flags; avoided false alarms.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“Trend the furnace skin between truck rolls.”</b> Monitoring complements—not replaces—authorized maintenance.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Thermal computer vision, IoT logs, and cross-brand time series create a physics/data edge.</li><li><b>Risk:</b> expert trust is the product; <a href="https://chasenedrow.com/industry/crematories/" target="_blank">thermography services</a> and OEM remote diagnostics already exist.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Crematory supply and repair firms white-label the monitoring layer.</li><li>Finite-list outbound to independent operators with older or mixed-brand equipment.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Human and pet crematories operating one to several retorts.</li><li><b>Orthogonal:</b> industrial furnace maintenance inside death care, not genealogy, estates, or elder monitoring.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p><a href="https://www.cremationassociation.org/blog/environmental-impact-of-cremation" target="_blank">CANA</a> reported <b>3,105 U.S. crematories in 2019</b>; current retort count, age, and thermal-camera access are unknown.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Loaner thermal cameras, calibration checks, reviewer time, secure log storage, shipping, and insurance.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$1,200 per retort/year</b>; 1,250 monitored retorts = <b>$1.5M/year</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº6 · RetortSkin</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> On a regular schedule, an operator points a clip-on thermal camera at the same furnace faces after the same kind of cycle. RetortSkin aligns today's scan with prior scans and shows a hotspot that is spreading near the door frame.</p>
+    <p><span class="q">Who pays you?</span> The crematory owner pays about <b>$1,200 per retort/year (est., unverified)</b>. The product sits between annual visits and emergency calls; it does not certify the equipment or replace a qualified technician.</p>
+    <p><span class="q">Why Nate?</span> Home Assistant and IoT telemetry, thermal-image registration, Python time-series analysis, and agent-assisted log review are unusually close to his existing skills.</p>
+    <p><span class="q">First move?</span> Spend <b>under $200</b> on two repair-technician honoraria. Ask them to annotate consented historical thermal images and interview fifteen operators about scan access, false alarms, and whether between-visit trending changes a maintenance call.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº7 · COMMERCIAL BAKING</p><span class="tag paid">Paid</span></div>
+  <h2>OvenMap Mailer</h2>
+  <p class="sub">A reusable sensor traveler mailed to bakeries, with software and human review that returns an <b>oven loading and rotation plan</b>.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Binding service:</b> uneven ovens cause inconsistent bakes; onsite profiling requires specialist travel and hardware.</li><li>Industrial profilers record heat, airflow, and product curves; pricing is generally not public.</li><li>Whether small multi-site bakeries will pay for a narrower remote audit is <b>UNVERIFIED</b>.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Mail a calibrated, shielded multi-sensor tray with a foolproof test protocol.</li><li>Capture standardized empty and loaded cycles, rack position, product, and operator notes.</li><li>Return a hot/cold map, repeatability check, and ranked loading, rotation, or service experiments.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>7%</b> (judgment); rank <b>#7/10</b> by odds × ceiling.</li><li>Kit turnaround; repeatable temperature spread; accepted recommendations.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“An oven tune-up that travels by mail.”</b> Hardware captures physics; a human owns the recommendation.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>IoT hardware, time-series analysis, and a standardized remote protocol lower travel labor.</li><li><b>Risk:</b> domain expertise and calibration dominate software; <a href="https://www.readingthermal.com/resources/commercial-oven-temperature-recorder.html" target="_blank">Reading Thermal</a> and <a href="https://www.falkthermal.com/" target="_blank">Falk Thermal</a> already profile bakeries.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Bakery-equipment repair firms and distributors offer the kit before a truck roll.</li><li>Direct outreach to multi-location independents using public bakery directories.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent bakeries and commissary kitchens running repeat products through rack ovens.</li><li><b>Orthogonal:</b> food-process thermodynamics, not restaurant SaaS, recipe AI, or utility auditing.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>The Census classifies retail and commercial bakeries under <a href="https://www.census.gov/naics/" target="_blank">NAICS 311811 and 311812</a>; the multi-site rack-oven subset is <b>not public</b>.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>High-temperature kits, calibration, sanitation, two-way shipping, loss reserve, and expert review.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$1,250 per audit</b>; 1,600 audits = <b>$2M/year</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº7 · OvenMap Mailer</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A bakery says the left side of its rack oven browns early. It receives a sensor tray, runs the prescribed cycles, and mails it back. The report compares rack positions and proposes three testable loading or service changes.</p>
+    <p><span class="q">Who pays you?</span> The owner or production manager pays about <b>$1,250 per audit (est., unverified)</b>. They are buying a bounded diagnosis without a specialist visit; food-safety validation remains out of scope.</p>
+    <p><span class="q">Why Nate?</span> Rugged IoT capture, Python time-series analysis, a guided mobile workflow, and agent-organized reports use his hardware, data, and orchestration strengths.</p>
+    <p><span class="q">First move?</span> Use <b>under $180</b> in K-type thermocouples and logger parts to test repeatability in one cooperating commercial oven. Give the map away and ask the owner and service technician what decision it changes.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº8 · FILM &amp; PHOTO PRODUCTION</p><span class="tag free">Free reach</span></div>
+  <h2>FlickerAtlas</h2>
+  <p class="sub">A free iPhone test whose real product is a public map of <b>fixture × dimmer × camera × frame-rate compatibility</b>.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Zero-price floor:</b> inexpensive flicker detectors and shutter calculators already exist.</li><li>Crews still repeat tests because behavior changes with fixture, dimmer level, camera, and capture settings.</li><li>A public cross-device measurement corpus was not found in this pass <b>(UNVERIFIED)</b>.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Capture light intensity, OCR the fixture label, and record dimmer and camera settings.</li><li>Publish raw evidence and confidence on an indexable page for each tested combination.</li><li>Sell a reference sensor and controlled verification workflow to manufacturers and rental houses.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>5%</b> (judgment); rank <b>#8/10</b> by odds × ceiling.</li><li>Reusable combinations; indexed pages; reports shared into real productions.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“The compatibility database, not another meter.”</b> Every free field test can create organic reach.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Swift capture, FFT analysis, OCR, device calibration, and a growing evidence corpus.</li><li><b>Risk:</b> phone sensors miss high-frequency PWM; <a href="https://apps.apple.com/us/app/flicker-safe-test-light/id6771406035" target="_blank">Flicker Safe</a> and <a href="https://appsonset.com/shutterfinder" target="_blank">ShutterFinder</a> already solve detection cheaply.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>SEO for exact fixture and camera models; shareable pre-shoot reports spread in crew chats.</li><li>Rental houses contribute tests and use verified pages in prep and checkout.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>DPs, gaffers, camera assistants, and creators use the free consumer/pro tool.</li><li>Lighting makers and rental houses pay; <b>orthogonal</b> to band, music-gear, or generic creator AI.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p><a href="https://www.bls.gov/ooh/media-and-communication/film-and-video-editors-and-camera-operators.htm" target="_blank">BLS</a> reports about <b>36,400 U.S. camera-operator jobs in 2024</b>; this omits many creators and is only a weak proxy.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>iOS development, moderation, reference photodiodes, device calibration, raw-data storage, and test-lab time.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$5K per verified fixture family</b>; 400 families = <b>$2M/year</b>, plus $199 sensors <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº8 · FlickerAtlas</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A gaffer scans an LED panel at 40% output and records a clean waveform plus the intended camera settings. The next crew searching that exact fixture sees the sample, caveats, and known-safe combinations before its camera test.</p>
+    <p><span class="q">Who pays you?</span> Field users pay nothing. A lighting maker or rental house pays about <b>$5K per verified fixture family (est., unverified)</b> for controlled test evidence and an official page; the free detector itself has no price moat.</p>
+    <p><span class="q">Why Nate?</span> This requires low-level iOS capture, signal processing, OCR, a public data pipeline, confidence scoring, and organic programmatic pages—all within his range.</p>
+    <p><span class="q">First move?</span> Spend <b>under $100</b> on a photodiode and microcontroller reference rig. Test twenty available practical and film lights, publish static evidence pages, and ask twenty working camera or lighting people whether they reuse them.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº9 · WAREHOUSE SAFETY</p><span class="tag paid">Paid</span></div>
+  <h2>RackPlumb</h2>
+  <p class="sub">Temporary fiducials plus a phone walkthrough that <b>measures rack lean, beam deflection, and change over time</b> for qualified inspectors.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Binding labor:</b> rack inspections rely heavily on visual surveys and manual measurements; pricing is not public.</li><li>Photos document damage but do not consistently quantify lean or movement.</li><li>OSHA tells operators to inspect damaged racking; engineering disposition still requires qualified judgment.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Clip calibrated magnetic targets to base, upright, and beam during the normal inspection walk.</li><li>Phone video reconstructs rack lines, estimates movement, and compares each bay with its baseline.</li><li>Flag measurements for inspector review; never certify structural safety automatically.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>5%</b> (judgment); rank <b>#9/10</b> by odds × ceiling.</li><li>Error versus survey tools; scan time per bay; engineer-confirmed escalation rate.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“Measure the lean; do not just photograph it.”</b> Quantitative history slots into an existing inspection service.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Photogrammetry and persistent geometry make the camera useful without replacing the inspector.</li><li><b>Risk:</b> measurement tolerance and liability may kill it; incumbents such as <a href="https://www.damotech.com/rack-inspection-mobile-app" target="_blank">Damotech</a> already own digital inspection workflow.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Sell through rack-inspection and repair firms as a per-technician instrument.</li><li>Pilot with warehouse risk consultants who already perform scheduled site walks.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent rack inspectors and repair firms; warehouses are the downstream beneficiary.</li><li><b>Orthogonal:</b> structural warehouse metrology, not logistics SaaS or local-government intelligence.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p><a href="https://www.osha.gov/warehousing/standards-enforcement" target="_blank">OSHA</a> identifies warehousing subsectors under NAICS 4931; total racked bays and third-party inspectors are <b>not public</b>.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Target kits, calibration, device testing, standards advice, partner training, cloud comparison, and insurance.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$3K per technician/year</b>; 500 paid seats = <b>$1.5M ARR</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº9 · RackPlumb</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A forklift clips an upright. During the inspector's walk, three magnetic targets and a phone video show that the post has shifted since the last scan; the inspector decides whether to unload the bay and call an engineer.</p>
+    <p><span class="q">Who pays you?</span> A rack-inspection company pays about <b>$3K per technician/year (est., unverified)</b>. It sells more consistent evidence inside an existing paid inspection rather than asking a warehouse for another generic subscription.</p>
+    <p><span class="q">Why Nate?</span> Calibrated computer vision, AR guidance, geometric baselines, offline iOS capture, and a web review console map to Swift, OpenCV, and Next.js.</p>
+    <p><span class="q">First move?</span> Spend <b>under $120</b> on printed targets and a test frame. Blindly measure known tilts and beam sags against a digital level, then put the accuracy plots—not a mockup—in front of five rack inspectors.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Codex Idea Nº10 · AUTO REPAIR / ADAS</p><span class="tag paid">Paid</span></div>
+  <h2>BayPass</h2>
+  <p class="sub">A pre-appointment phone scan that tells a mobile ADAS calibrator whether a shop bay is <b>geometrically and operationally usable</b> before the truck rolls.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li><b>Binding labor:</b> a mobile calibration crew can arrive before discovering bad floor, clearance, or lighting; failed-trip cost is not public.</li><li>OEM and equipment procedures make the working area part of calibration quality.</li><li>Premium systems already verify or compensate for floors, but not every feeder shop owns one.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>The body or glass shop records a guided walkthrough with temporary fiducials before booking.</li><li>Measure floor plane and clearances; capture glare, obstructions, and target-area evidence.</li><li>The calibration provider reviews a pass, conditional pass, or reject—never an automated calibration approval.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Survival odds: <b>3%</b> (judgment); rank <b>#10/10</b> by odds × ceiling.</li><li>False passes; avoided failed dispatches; scan-to-booking conversion.</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>“Reject the bad bay before the truck rolls.”</b> A booking gate, not a calibration tool.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Photogrammetry plus a provider-owned decision rule turns shop video into dispatch evidence.</li><li><b>Risk:</b> liability, procedure access, and phone repeatability are severe; <a href="https://mytru-point.com/en-US/" target="_blank">Tru-Point</a> and <a href="https://autel.us/product/maxisys-ia700t/" target="_blank">Autel IA700</a> already solve geometry with dedicated hardware.</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Mobile ADAS firms require a BayPass link in their own booking workflow.</li><li>Collision and glass shops complete the scan free; one provider sale reaches many feeder shops.</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Mobile ADAS calibration providers pay; collision and glass shops supply the scan.</li><li><b>Orthogonal:</b> automotive field geometry, not insurance, fintech, vehicle reports, or quote analysis.</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>The Census classifies body and glass shops under <a href="https://www.census.gov/naics/resources/archives/sect81.html" target="_blank">NAICS 811121 and 811122</a>; the mobile-calibration subset is <b>not public</b>.</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Target kits, device calibration, procedure maintenance, provider review, evidence storage, and liability coverage.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$25 per provider-reviewed pre-check</b>; 80,000 checks = <b>$2M/year</b> <b>(est., unverified)</b>.</p></div>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Codex Idea Nº10 · BayPass</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A glass shop wants a mobile camera calibration tomorrow. Before confirming, it records the bay floor, available target distance, windows, lights, and obstructions. The calibration company rejects the bay or books the job with known constraints.</p>
+    <p><span class="q">Who pays you?</span> The mobile calibration provider pays about <b>$25 per reviewed pre-check (est., unverified)</b>. One avoided unproductive dispatch could cover many checks, but that frequency and value must be proven.</p>
+    <p><span class="q">Why Nate?</span> Guided iPhone capture, OpenCV plane estimation, rules tied to cited procedures, and a provider review queue combine his mobile, vision, and agent-orchestration strengths.</p>
+    <p><span class="q">First move?</span> Spend <b>under $180</b> on fiducials and a reference laser level. Map three consenting shop bays, compare with manual measurements, and ask ten mobile ADAS techs to price the avoided-trip decision.</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Guest Round · Antigravity</p>
+  <h1>10 orthogonal ideas<br>by Antigravity</h1>
+  <p class="sub"><b>Unvetted.</b> These have not passed the evidence grinder — the observed survival base rate is ~7%. Every claim below is the author's own; figures marked <b>(UNVERIFIED)</b> await the research pass.</p>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº1 · DEATH CARE &amp; CEMETERIES</p><span class="tag paid">Paid</span></div>
+  <h2>PlotRecon</h2>
+  <p class="sub">Drone photogrammetry + OCR pipeline that audits cemetery ground records to recover <b>unrecorded burial inventory</b> worth $50K–$300K.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Independent cemeteries run on paper ledger maps from the 1950s.</li><li>Double-burial lawsuits cost <b>$50K–$150K</b>; unmapped plots sit unsold.</li><li>Binding price is the manual survey line item (<b>$8K–$20K</b> per property).</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Automated drone imagery stitch + headstone OCR ledger cross-match.</li><li>Web GIS map highlighting verified vacant sellable burial spaces.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Unrecorded plots discovered per acre</li><li>Ledger conflict resolution rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Find $100K in forgotten cemetery plots in 48 hours."</b> 1/3 the cost of conventional ground surveys with zero digging.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>High-throughput OpenCV OCR pipeline on eroded stone typography</li><li>Risk: CemSites / webCemeteries enterprise lock-in (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>State Cemetery Association annual directories (direct mail)</li><li>Direct outreach to municipal cemetery boards and church parishes</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent and municipal cemeteries (500–5,000 plots)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~25,000 active cemeteries in the US; <b>$75M</b> audit TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Drone pilot contract (<b>$300–$500/job</b>); photogrammetry cloud compute.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$2,500–$6,000</b> per cemetery audit; 200 audits/yr = <b>$800K</b> ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº1 · PlotRecon</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A drone scans an old country cemetery in 30 minutes, stitches 1,200 photos, reads every headstone inscription with computer vision, and overlays the results onto the cemetery's yellowed 1962 paper map to reveal 42 empty, sellable grave plots the superintendent thought were occupied.</p>
+    <p><span class="q">Who pays you?</span> The cemetery operator pays $3,500 per property because recovering just two sellable plots at $2,000 each immediately pays for the entire audit.</p>
+    <p><span class="q">Why Nate?</span> OpenCV / photogrammetry pipelines, Python OCR orchestration, and geospatial Next.js mapping he can build in 2 weeks.</p>
+    <p><span class="q">First move?</span> Walk a 3-acre historic cemetery in Austin or Alexandria with a drone/phone camera, run the OCR script against publicly available burial records, and present the diff to the cemetery manager for under $100.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº2 · COMMERCIAL KITCHEN SAFETY</p><span class="tag paid">Paid</span></div>
+  <h2>BaffleCheck</h2>
+  <p class="sub">Computer-vision baffle grease gauge that automates <b>NFPA 96 exhaust hood inspection logs</b> to prevent fire marshal shut-downs.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Kitchen hood grease fires cause <b>$2,500–$10,000+</b> shut-down losses.</li><li>Insurers and fire marshals mandate NFPA 96 grease depth logs (<b>50 microns</b>).</li><li>Kitchen exhaust cleaners (KEC) fake or pencil-whip paper compliance logs.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Mobile app captures hood baffle photo with magnetic calibration target.</li><li>Edge CV calculates grease depth score and generates signed compliance PDF.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Monthly audit logs generated per kitchen</li><li>Insurance audit pass rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Bulletproof NFPA 96 proof in 10 seconds per shift."</b> Eliminates paper logs and stops fire marshal closures.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Proprietary depth-target CV calibration for harsh, low-light kitchen stainless</li><li>Risk: Hood Boss / commercial KEC portals launching mobile apps (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Commercial kitchen exhaust cleaning (KEC) contractor partnerships</li><li>Restaurant franchise safety directors (QSR franchisee groups)</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Multi-unit QSR franchisees (10–50 locations) and KEC service providers</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~750,000 commercial kitchens in the US; <b>$180M</b> ARR TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>App Store hosting; serverless PDF generation; target sticker printing (<b>$0.50/ea</b>).</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$49/mo per kitchen</b> or <b>$249/mo</b> per KEC contractor; 1,500 kitchens = <b>$882K ARR</b>.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº2 · BaffleCheck</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A restaurant line cook or exhaust cleaning technician slaps a magnetic reference sticker on the exhaust hood baffle, takes a 2-second phone photo, and the app instantly calculates grease thickness to verify if the hood meets NFPA 96 fire standards.</p>
+    <p><span class="q">Who pays you?</span> Multi-unit franchise owners and kitchen exhaust cleaning companies pay $49/mo per kitchen to ensure their fire insurance claims aren't denied after a flash grease fire.</p>
+    <p><span class="q">Why Nate?</span> iOS/Swift native image capture with custom OpenCV edge filtering for metallic surface reflections.</p>
+    <p><span class="q">First move?</span> Print 20 magnetic calibration stickers ($35), visit 3 Austin fast-casual restaurants during closing prep, take sample photos, and generate prototype PDF audit reports.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº3 · ECCLESIASTICAL ASSETS</p><span class="tag paid">Paid</span></div>
+  <h2>SanctuaryRegistry</h2>
+  <p class="sub">Asset registry and valuation pipeline for church <b>stained glass, pipe organs, and liturgical bronze</b> for insurance renewals.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Denominational closures require asset liquidation and insurance appraisal.</li><li>Specialized art appraisers charge <b>$3,500–$10,000</b> per parish property.</li><li>Binding price is the manual architectural appraisal line item.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Mobile photo survey + maker-mark / studio attribution database (e.g. Tiffany, Mayer).</li><li>Certified replacement-value schedule for church insurers.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Parish inventories completed</li><li>Average unrecorded asset value identified</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Appraise historic church assets at 80% lower cost."</b> Protects endowments and speeds up property insurance endorsements.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>OSINT scrapers on historical liturgical catalogs and diocese archives</li><li>Risk: Local specialty antique appraisers retained by dioceses (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Diocesan real estate and risk management offices</li><li>Church property insurers (e.g. Church Mutual, GuideOne)</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Dioceses, denominational regional synods, and church property trusts</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~350,000 religious congregations in the US; <b>$120M</b> appraisal market (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Web hosting; database storage; archival document indexing pipeline.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$750</b> per church inventory or <b>$5,000/yr</b> per diocese; 250 dioceses = <b>$1.25M</b> ceiling.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº3 · SanctuaryRegistry</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A volunteer or parish administrator takes photos of church stained glass windows, altars, and organ pipes. The software matches signatures, makers, and leaded glass patterns against a historical catalog to generate an insurance-grade replacement valuation report.</p>
+    <p><span class="q">Who pays you?</span> The Diocesan Chief Financial Officer pays $750 per building because insurance underwriters require accurate replacement schedules before renewing multi-million-dollar property coverage.</p>
+    <p><span class="q">Why Nate?</span> Public-records / archival scraping pipelines and CV visual similarity search mapped to structured Next.js reports.</p>
+    <p><span class="q">First move?</span> Photograph 5 historic churches in Alexandria/Austin, scrape 19th-century stained glass maker catalogs (under $20 domain/host cost), and pitch the sample valuation binder to a local parish council.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº4 · APPAREL EMBROIDERY OPS</p><span class="tag paid">Paid</span></div>
+  <h2>StitchVector</h2>
+  <p class="sub">Algorithmic vector-to-embroidery digitizer that eliminates the <b>$15–$35 manual puncher fee</b> per logo for custom apparel shops.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Print shops must convert vector logos into stitch files (.DST/.PES) before sewing.</li><li>Outsourced human digitizers charge <b>$15–$35/design</b> with a <b>24–48 hr</b> turnaround.</li><li>Binding price is the outsourced human digitizing labor line item.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Python path-planning algorithm that converts SVG to .DST with push/pull compensation.</li><li>Instant 30-second turnaround directly embedded into shop order workflow.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Stitch files generated per month</li><li>Thread break / machine jam rate (&lt;0.1%)</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Instant embroidery files for $5 instead of $25."</b> Physics-based fabric pull compensation with zero wait time.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Mathematical stitch-density pathing engine competitors cannot prompt with an LLM</li><li>Risk: Wilcom / Hatch proprietary desktop lock-in (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Direct integration plugins for Shopify / Printful API workflows</li><li>Promotional product and screenprinting Facebook/Reddit communities</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent embroidery shops and print-on-demand operators (1–10 heads)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~30,000 commercial embroidery shops in the US; <b>$90M</b> digitizing fee TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Compute servers (<b>$50/mo</b>); test fabric and thread for physical machine validation.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$5/file pay-as-you-go</b> or <b>$99/mo unlimited</b>; 800 active shops = <b>$950K ARR</b> ceiling.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº4 · StitchVector</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A local t-shirt shop gets an order for 50 embroidered polos. Instead of sending the customer's vector PDF to an overseas freelancer for $25 and waiting two days, they drop the SVG into StitchVector, which automatically calculates stitch angles, underlay density, and pull compensation, spitting out a ready-to-sew Tajima .DST file in 20 seconds.</p>
+    <p><span class="q">Who pays you?</span> The print shop owner pays $5 per file or $99/month because it saves them $20+ cash per job and lets them fulfill rush same-day orders.</p>
+    <p><span class="q">Why Nate?</span> Deep algorithmic computational geometry in Python and Next.js drag-and-drop web tooling.</p>
+    <p><span class="q">First move?</span> Rent 2 hours of time on a multi-needle commercial embroidery machine at a local maker space ($40), run 10 test SVGs through a custom Python stitch-pathing script, and compare stitch density.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº5 · CLINICAL LAB INSTRUMENTS</p><span class="tag paid">Paid</span></div>
+  <h2>ReagentWatch</h2>
+  <p class="sub">External optical telemetry sensor that prevents <b>$1,500–$5,000 aborted test batches</b> caused by clinical analyzer dead-volume bubbles.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Clinical analyzers (chemistry/immuno) abort 96-well batches when fluid levels drop.</li><li>A single mid-run bubble failure wastes <b>$1,500–$5,000</b> in reagent cartridges.</li><li>Binding price is wasted reagent inventory and emergency instrument recalibration.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Non-invasive camera clip-on reading meniscus levels + fluid line bubbles via CV.</li><li>Python daemon triggers early pause alert before probe draws air.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Aborted runs prevented per analyzer/month</li><li>Fluid line meniscus tracking accuracy</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Zero aborted runs from reagent starvation."</b> Works on legacy open-reagent lab machines without breaking OEM warranties.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Sub-millimeter meniscus CV edge detection + low-power IoT hardware integration</li><li>Risk: OEM closed-cartridge RFID tracking on newest machines (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Direct cold outreach to independent reference lab directors (CLIA certified)</li><li>Laboratory equipment refurbisher and distributor reseller partnerships</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent clinical toxicology, pathology, and diagnostic reference labs</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~8,000 independent diagnostic labs in the US; <b>$65M</b> instrumentation monitoring TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>ESP32-CAM module + 3D printed clip housing (<b>$25/unit</b>); cellular/WiFi gateway.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$150/unit hardware + $79/mo per analyzer</b>; 1,000 instruments = <b>$948K ARR</b>.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº5 · ReagentWatch</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A palm-sized optical clip snaps onto the transparent reagent feed line of a clinical lab analyzer. A tiny camera monitors fluid flow and meniscus height in real time, beeping the technician's phone before a bubble enters the aspiration probe and ruins a $3,000 diagnostic run.</p>
+    <p><span class="q">Who pays you?</span> Lab managers pay $79/mo per machine because preventing just one aborted assay batch every two months saves them $3,000+ in wasted reagents.</p>
+    <p><span class="q">Why Nate?</span> Home Assistant / IoT hardware bridges, Python daemon development, and OpenCV real-time video edge processing.</p>
+    <p><span class="q">First move?</span> Assemble an ESP32-CAM rig with a $15 plastic pipette fixture ($30 total), run bubble-detection CV on dyed water, and record a 60-second proof demo to email 10 lab managers.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº6 · EQUINE VETERINARY &amp; FARRIER</p><span class="tag paid">Paid</span></div>
+  <h2>HoofBalance CV</h2>
+  <p class="sub">High-speed mobile CV app that measures <b>equine hoof landing asymmetry and balance angles</b> to settle $1,500 shoeing disputes.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Uneven hoof landings cause tendon injuries in performance horses (<b>$10K–$50K</b> value).</li><li>Farriers and equine vets argue over medio-lateral trim balance with manual calipers.</li><li>Binding price is the $1,200+ specialized force-plate sensor gait analysis service.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>240fps slow-motion iPhone capture analyzes hoof flight arc and landing impact angle.</li><li>Generates millimeter-accurate trim correction guide for farriers in 30 seconds.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Horses analyzed per farrier/week</li><li>Pre/post-shoeing symmetry improvement</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Gait-lab precision in your pocket at the barn."</b> Objective visual proof for horse owners and veterinarians.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Native iOS 240fps CoreML optical tracking calibrated for equine hoof geometry</li><li>Risk: Existing equestrian sensor boots e.g. Sleip / Equinosis (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>American Farrier's Association (AFA) and AAEP annual conventions</li><li>Equestrian barn word-of-mouth and farrier supply house demo displays</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Master farriers and equine sports medicine veterinarians (30,000+ pros)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~3.8M performance horses in the US; <b>$45M</b> farrier software market (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Apple Developer account; minimal backend sync compute.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$39/mo</b> or <b>$349/year</b> pro subscription; 2,500 subscribers = <b>$872K ARR</b> ceiling.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº6 · HoofBalance CV</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A farrier crouches by a horse trotting down a barn aisle, records a 5-second 240fps video on an iPhone, and the app instantly overlays landing angle lines showing the left front hoof strikes 4 degrees outside-edge first, indicating exactly how much horn to rasp off.</p>
+    <p><span class="q">Who pays you?</span> Master farriers and equine sports vets pay $39/mo because it gives them objective video proof to justify their $250+ corrective shoeing charges to demanding horse owners.</p>
+    <p><span class="q">Why Nate?</span> iOS/Swift native development using Apple's high-frame-rate AVFoundation and CoreML Vision framework.</p>
+    <p><span class="q">First move?</span> Visit an Austin equestrian boarding barn on a weekend, record 3 horses trotting with an iPhone slow-mo camera ($0), build the landmark tracker in Python/Swift, and review with the resident farrier.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº7 · SCRAP RECYCLING &amp; METALS</p><span class="tag paid">Paid</span></div>
+  <h2>ScrapGrade</h2>
+  <p class="sub">Overhead camera CV system that flags <b>non-ferrous alloy contamination</b> in scrap hoppers before incurring $3,000 foundry penalties.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Scrap metal yards get hit with <b>$1,500–$5,000 penalty chargebacks</b> for contaminated loads.</li><li>Lead or zinc mixed into aluminum / copper scrap ruins entire foundry melt batches.</li><li>Binding price is the foundry penalty deduction and manual intake sorting labor.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Overhead weatherproof camera feeds real-time object classification at intake scale.</li><li>Alerts scale operator if low-grade iron or prohibited batteries enter clean copper bins.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Contamination events detected before dumping</li><li>Foundry chargeback reduction rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Catch bad scrap at the scale, not the furnace."</b> Saves $30K+/year in mill rejection fees with plug-and-play RTSP cameras.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Specialized scrap visual classification model trained on weathered industrial scrap profiles</li><li>Risk: Handheld XRF gun makers e.g. Thermo Fisher Niton adding cameras (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Institute of Scrap Recycling Industries (ISRI) member directory direct outreach</li><li>Independent scrap yard scale-house visits across Texas / Mid-Atlantic</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent scrap metal recycling yards (2 to 10 acres)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~9,000 scrap processing facilities in the US; <b>$54M</b> yard automation TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>On-premise edge mini-PC (<b>$350/yard</b>); cloud model fine-tuning compute.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$399/mo per scale line</b>; 250 active yards = <b>$1.19M ARR</b> ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº7 · ScrapGrade</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A rugged camera mounted above a scrap yard scale watches peddlers dump metal from pickup trucks into sorting bins. If someone hides cheap steel rebar or hazardous lithium batteries underneath a pile of clean #1 bare bright copper, the scale master's screen flashes yellow before payment is made.</p>
+    <p><span class="q">Who pays you?</span> The scrap yard owner pays $399/mo because avoiding just one docked smelter load or battery fire pays for the full year of software.</p>
+    <p><span class="q">Why Nate?</span> OpenCV video streaming, RTSP IP camera integrations, and lightweight edge inference pipelines on cheap mini-PCs.</p>
+    <p><span class="q">First move?</span> Spend $40 at an Austin scrap yard buying 5 samples of mixed copper/brass/steel scrap, film them under varying sun/shadow conditions, and train a fast YOLO classifier.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº8 · VOCATIONAL TRADE LICENSING</p><span class="tag paid">Paid</span></div>
+  <h2>WireMaster Sim</h2>
+  <p class="sub">Interactive 3D simulator that drills electricians on <b>practical NEC conduit bending and box-fill rules</b> to pass licensing boards.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Journeyman and Master Electrician practical board exams have a <b>40–60% fail rate</b>.</li><li>Failing an exam delays a <b>$6–$14/hour union wage raise</b> for 6 months.</li><li>Binding price is the <b>$800–$2,000</b> weekend trade school cram course.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Interactive browser/mobile 3D simulation of conduit bending, 3-way switching, and box fill.</li><li>Real-time National Electrical Code (NEC 2023/2026) violation flagging with instant grading.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>First-time exam pass rate for paid users</li><li>Simulation exercises completed per user</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Pass your practical electrical board on the first try."</b> 1/5 the price of in-person weekend trade seminars.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Algorithmic NEC rule validation engine with interactive WebGL mechanical wire physics</li><li>Risk: Mike Holt Enterprises or Dewalt exam prep apps (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>IBEW union apprenticeship training centers (JATC coordinators)</li><li>Trade school forums, r/electricians, and vocational YouTube partnerships</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Apprentice electricians preparing for Journeyman/Master state licensing exams</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~80,000 candidates sit for electrical licensing exams annually in US; <b>$16M</b> prep market (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Next.js hosting; 3D asset rendering; low static file delivery costs.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$149 one-time access (90 days)</b>; 5,000 students/year = <b>$745K/year</b> ceiling.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº8 · WireMaster Sim</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A 4th-year electrical apprentice sits at a laptop and virtually wires a 3-gang switch box, bends EMT conduit around an obstacle, and calculates derating rules in 3D. The engine immediately flags if they overfill the box cubic-inch capacity under NEC Article 314.</p>
+    <p><span class="q">Who pays you?</span> The apprentice happily pays $149 out of pocket because passing the state board turns them into a licensed journeyman with an immediate $15,000/year pay bump.</p>
+    <p><span class="q">Why Nate?</span> Full-stack Next.js/React + WebGL 3D physics interaction, combined with precise deterministic rule verification algorithms.</p>
+    <p><span class="q">First move?</span> Build a 1-lesson interactive 3D box-fill calculator widget in Three.js ($0), post it to r/electricians, and measure signups for the full practice exam simulator.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº9 · FILM &amp; BROADCAST PRODUCTION</p><span class="tag paid">Paid</span></div>
+  <h2>DistroLoad</h2>
+  <p class="sub">Mobile power distribution calculator that balances <b>3-phase film generator legs</b> to prevent $10,000/hr movie set shut-downs.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>A tripped generator on a commercial or film shoot halts 40+ crew members (<b>$10K/hr cost</b>).</li><li>Gaffers manually calculate voltage drop and phase load on paper across 20+ heavy lights.</li><li>Binding price is the idle crew payroll during power failure downtime.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>iOS app that maps 3-phase lunchboxes, Cam-Lok feeds, and LED/HMI draw in real time.</li><li>Recommends optimal leg distribution to keep phases within 10% balance.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Set setups mapped per production day</li><li>Phase imbalance alerts resolved</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Zero tripped generators on set."</b> Calculates 3-phase amp draw and cable resistance in 15 seconds.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Native iOS offline-first calculation engine designed specifically for fast-paced grip &amp; electric crews</li><li>Risk: Gaffer's Elite / SetPower generic electrical calculator apps (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>IATSE Local 728 / 52 electrics union Facebook and Discord groups</li><li>Film lighting rental houses (promotional flyers in distro boxes)</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Film set gaffers, best boy electrics, and commercial production rigging crews</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~45,000 professional film/commercial electric crew members; <b>$12M</b> pro tool TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Apple Developer Program ($99/yr); near-zero ongoing server costs (offline-first).</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$14.99/mo</b> or <b>$119/year</b> pro subscription; 3,500 active gaffers = <b>$416K ARR</b> ceiling.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº9 · DistroLoad</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A Best Boy Electrician pulls out an iPhone on a movie set at night, taps in the 8 big lights they are plugging into Distro Box 2, and the app calculates the exact amp draw on Phase A, B, and C, warning them that Phase B will overload by 18 amps when the 18K HMI strikes.</p>
+    <p><span class="q">Who pays you?</span> Gaffers and production companies pay $119/year because a single blown breaker during a night shoot with 50 actors standing in the cold ruins an entire $50,000 shooting block.</p>
+    <p><span class="q">Why Nate?</span> Rapid native iOS/Swift development, custom clean UI for high-contrast outdoor/night viewing, and offline-first reactive architecture.</p>
+    <p><span class="q">First move?</span> Reach out to 3 local Austin film lighting rental houses, get their standard generator distro specs, build a TestFlight beta in 48 hours ($0), and hand it to working local best boys.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Antigravity Idea Nº10 · COMMERCIAL TREE CARE</p><span class="tag paid">Paid</span></div>
+  <h2>ArboPermit</h2>
+  <p class="sub">Automated tree ordinance engine that compiles <b>protected-tree removal permit packages</b> with LiDAR/canopy calculations.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Municipal protected tree ordinances (e.g. Austin, VA) hold up tree removal permits for weeks.</li><li>Tree care companies lose <b>$400–$1,000</b> in admin labor preparing arborist mitigation filings.</li><li>Binding price is the outsourced consulting arborist mitigation report line item.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Scrapes municipal tree preservation codes; ingests photo + DBH (diameter at breast height).</li><li>Generates complete municipal permit filing package with critical root zone (CRZ) maps.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Permit filing packages generated per week</li><li>Municipal first-pass permit approval rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"City-ready tree permit filings in 5 minutes."</b> Pre-loaded with exact municipal tree codes and CRZ math.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>OSINT scrapers indexing hyper-local tree protection bylaws across 500+ US municipalities</li><li>Risk: TreePlotter / SingleOps adding specialized municipal permit modules (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>ISA (International Society of Arboriculture) chapter events and contractor directories</li><li>Direct cold outreach to commercial tree service estimators in high-regulation metros (Austin, Seattle, Atlanta)</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Commercial tree care operators and land development clearing contractors</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>~22,000 tree service companies in regulated US metros; <b>$55M</b> permitting software TAM (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Municipal code scrapers; PDF rendering serverless functions; map tile caching.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$149/mo base + $20 per permit package</b>; 500 tree companies = <b>$1.01M ARR</b> ceiling.</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Antigravity Idea Nº10 · ArboPermit</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A tree service estimator in Austin or Northern Virginia measures an 28-inch heritage live oak near a construction foundation, inputs the DBH and tree condition into the app, and ArboPermit automatically calculates the Critical Root Zone disturbance percentage and generates the exact city-mandated Tree Mitigation Report and permit application PDF.</p>
+    <p><span class="q">Who pays you?</span> Commercial tree care businesses pay $149/mo plus $20/permit because it saves their staff 3 hours of tedious manual drafting and gets permits approved without city rejections.</p>
+    <p><span class="q">Why Nate?</span> Public-records / municipal ordinance scraping pipelines, automated PDF report generation, and Next.js / GIS mapping.</p>
+    <p><span class="q">First move?</span> Parse the City of Austin Tree Protection Ordinance (Title 25-8), build a simple one-page permit calculation form, and show it to 5 Austin tree service owners ($0).</p>
+  </div>
+</div></section>
+
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Guest Round · Grok</p>
+  <h1>10 orthogonal ideas<br>by Grok</h1>
+  <p class="sub"><b>Unvetted.</b> These have not passed the evidence grinder — the observed survival base rate is ~7%. Every claim below is the author's own; figures marked <b>(UNVERIFIED)</b> await the research pass.</p>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº1 · AUTO REPAIR</p><span class="tag paid">Paid</span></div>
+  <h2>ShopSight</h2>
+  <p class="sub">Mobile CV app that scans a vehicle undercarriage and surfaces <b>hidden rust or collision damage</b> before a shop quotes a repair.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Shops lose $2–4K per missed frame or suspension issue discovered after teardown.</li><li>Customers distrust quotes when surprises appear mid-job.</li><li>Binding price is the labor line item on frame work.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Swift + OpenCV iOS app uploads 8 photos, returns annotated damage map.</li><li>API exports PDF to shop management systems.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Photos processed per shop per month</li><li>Quote revision rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"See the frame before you lift the car."</b> One photo set replaces a $450–850 inspection that shops currently eat or pass through.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Risk: existing frame-inspection services (UNVERIFIED)</li><li>OSINT + public wreck data to pre-train model</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Direct cold email to 50 independent shops in Austin metro</li><li>Shop-equipment trade shows</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent auto repair shops (5–25 bays)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US independent collision and mechanical shops (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Compute for CV inference; App Store fees.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$99/mo per bay</b> or $1,200 annual; 200 shops = $1.9M ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº1 · ShopSight</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A mechanic points an iPhone under a truck and the screen lights up red on bent cross-members or hidden rust the customer never mentioned.</p>
+    <p><span class="q">Who pays you?</span> The shop owner pays $99 per bay monthly because the tool stops them from under-quoting a $3,800 frame job that would otherwise lose them money.</p>
+    <p><span class="q">Why Nate?</span> iOS/Swift + computer vision pipeline he already runs daily; public wreck records give him training data without buying images.</p>
+    <p><span class="q">First move?</span> Build a 15-photo test set from three Austin shops, run offline model, show side-by-side with their current inspection notes — total cost under $50 in gas and coffee.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº2 · FREIGHT / LOGISTICS</p><span class="tag paid">Paid</span></div>
+  <h2>LoadGuard</h2>
+  <p class="sub">Hardware-light IoT box that rides on reefer trailers and alerts the carrier the moment <b>temperature deviation or door breach</b> occurs, before the receiver rejects the load.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>One rejected reefer load costs carrier $8–15K in product loss and claims.</li><li>Binding price is the cargo claim line item on insurance.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>ESP32 + sensors in 3D-printed case; Python agent pushes alerts to dispatcher phone and broker portal.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Alerts that prevent rejection</li><li>False-positive rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Know the reefer failed before the receiver does."</b> Cheaper than satellite systems; works on older trailers.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Home Assistant / IoT experience for reliable low-power builds</li><li>Risk: major carriers already have telematics (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas Trucking Association member list</li><li>Direct LinkedIn to small fleets</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Small-to-mid reefer carriers (5–40 trucks)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US temperature-controlled trucking fleets (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Parts ~$35 per unit; cellular data.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$29 per unit + $8/mo monitoring</b>; 1,000 units = $380K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº2 · LoadGuard</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A cheap box taped inside a trailer of frozen chicken beeps the dispatcher’s phone the second the temperature climbs above 32°F while the truck is still 200 miles from the warehouse.</p>
+    <p><span class="q">Who pays you?</span> The fleet owner pays $29 upfront and $8 monthly because one prevented claim saves the price of 40 units.</p>
+    <p><span class="q">Why Nate?</span> Python agent orchestration plus Home Assistant/IoT work he already does; he can ship a working prototype in days.</p>
+    <p><span class="q">First move?</span> Buy three ESP32 kits ($45 total), tape them to a friend’s trailer for a weekend run, log temperature vs. existing paper logs.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº3 · WASTE / RECYCLING</p><span class="tag paid">Paid</span></div>
+  <h2>RouteProof</h2>
+  <p class="sub">Camera + AI that rides on the grabber arm of a garbage truck and <b>flags contamination</b> in recycling bins before the load reaches the MRF, protecting the hauler’s tip fee.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>MRFs charge haulers $80–120 per ton of contaminated load; one bad route day costs thousands.</li><li>Binding price is the contamination surcharge line item.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Truck-mounted camera + Python CV model; instant driver alert via tablet.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Contamination incidents caught</li><li>Driver compliance rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Catch the pizza box before it hits the MRF scale."</b> Real-time, not after-the-fact audits.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Computer vision experience; risk that haulers already photograph loads (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas SWANA chapter email list</li><li>Direct outreach to municipal contractors</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Regional waste haulers serving cities under 500K</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US private waste collection companies (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Camera hardware; edge inference device.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$149 per truck per month</b>; 300 trucks = $536K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº3 · RouteProof</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> As the truck’s arm lifts a blue bin, a small camera spots a plastic bag full of takeout containers and the driver sees a red overlay on his tablet telling him to leave the bin at the curb.</p>
+    <p><span class="q">Who pays you?</span> The hauler pays $149 per truck monthly because each avoided $100/ton fine pays for the system in a single route.</p>
+    <p><span class="q">Why Nate?</span> OpenCV pipeline + edge deployment skills; he can iterate the model with publicly available waste-image datasets.</p>
+    <p><span class="q">First move?</span> Mount a $60 webcam on a borrowed rear-loader for one morning route, label 200 frames, train a quick contamination classifier on his laptop.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº4 · HOUSES OF WORSHIP</p><span class="tag paid">Paid</span></div>
+  <h2>PewPulse</h2>
+  <p class="sub">Anonymous Wi-Fi + door-counter system that gives clergy <b>real-time headcount and dwell time</b> during services without installing cameras or collecting names.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Churches cannot justify staff or utility spend when attendance data is anecdotal; one mis-sized program wastes $10K+.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>ESP32 + Home Assistant flow; dashboard shows weekly trends, no PII stored.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Weekly active devices</li><li>Event attendance accuracy</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Know exactly how many people showed up without asking them to sign in."</b></p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>IoT orchestration experience; risk: some churches already use manual counters (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas Conference of Churches directory</li><li>Denominational tech webinars</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Churches with 150–800 weekly attendees</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US congregations above 100 members (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Low-cost sensors; hosted dashboard.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$49/mo per campus</b>; 400 campuses = $235K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº4 · PewPulse</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A small box above the sanctuary door counts phones and bodies; the pastor opens a browser the next morning and sees that the 7 pm service actually drew 187 people, not the 120 they guessed.</p>
+    <p><span class="q">Who pays you?</span> The church administrator pays $49 monthly because the data justifies keeping or cutting the second service and the associated utility bill.</p>
+    <p><span class="q">Why Nate?</span> Home Assistant/IoT stack plus simple web dashboard he can build in Next.js in a weekend.</p>
+    <p><span class="q">First move?</span> Install one sensor kit in a local Austin church for two services, compare counts to manual headcount — under $80 in parts.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº5 · VETERINARY CLINICS</p><span class="tag paid">Paid</span></div>
+  <h2>MedLogVet</h2>
+  <p class="sub">Controlled-substance cabinet logger that records every draw with <b>timestamped video and weight delta</b> so clinics pass DEA audits without manual logs.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>DEA biennial audits trigger $5K–25K fines for incomplete controlled-drug logs.</li><li>Binding price is the fine plus staff hours reconciling paper records.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Small camera + load-cell rig over the cabinet; Python agent writes immutable entry to clinic EHR.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Audit pass rate</li><li>Time to produce logs</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Hand the auditor a single file instead of three binders."</b> Hardware cost under $180 per cabinet.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>IoT + computer vision stack already in use</li><li>Risk: some clinics use RFID safes (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas Veterinary Medical Association directory</li><li>DEA audit-prep webinars</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent veterinary practices with controlled substances</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US veterinary practices handling Schedule II–V drugs (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Camera + load cell ~$140; cloud logging.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$79/mo per cabinet</b>; 150 clinics = $142K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº5 · MedLogVet</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A vet tech opens the ketamine cabinet; a tiny camera records the drawer weight drop and time, then the log appears automatically in the practice software.</p>
+    <p><span class="q">Who pays you?</span> The practice owner pays $79 monthly because one failed DEA audit costs far more than the subscription.</p>
+    <p><span class="q">Why Nate?</span> Home Assistant/IoT hardware work plus Python agent orchestration he already runs daily.</p>
+    <p><span class="q">First move?</span> Build one prototype cabinet rig ($110 in parts), test with a local Austin clinic for two weeks, compare against their paper log.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº6 · CONSTRUCTION TRADES</p><span class="tag paid">Paid</span></div>
+  <h2>PermitLatch</h2>
+  <p class="sub">Mobile app that photographs every required inspection point on a job and <b>auto-submits geotagged evidence</b> to the city portal, eliminating re-inspection fees.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Failed inspections cost contractors $300–800 in re-inspection fees plus one lost day per job.</li><li>Binding price is the re-inspection fee line item.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Swift app with checklist; photos auto-tagged and uploaded via city API when available.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Re-inspection rate drop</li><li>Photos accepted on first try</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Pass the framing inspection the first time."</b> Evidence is captured before the inspector arrives.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>iOS/Swift + public-records pipelines</li><li>Risk: some cities already accept photo evidence (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas electrical and plumbing contractor associations</li><li>Job-site supply houses</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Electrical and plumbing contractors doing permitted work</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US specialty trade contractors pulling permits (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>App Store fees; minimal backend.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$49/mo per crew</b>; 300 crews = $176K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº6 · PermitLatch</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> An electrician finishes rough-in, takes six required photos of boxes and grounding; the app timestamps and GPS-tags them, then sends the packet to the city the same afternoon.</p>
+    <p><span class="q">Who pays you?</span> The contractor pays $49 monthly because one avoided re-inspection fee covers two years of the app.</p>
+    <p><span class="q">Why Nate?</span> iOS/Swift skills plus experience building public-records pipelines that already parse city portals.</p>
+    <p><span class="q">First move?</span> Interview five Austin electricians, map the exact photo list for one common permit, build a three-screen prototype—under $150 in coffee and ads.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº7 · APPAREL MANUFACTURING</p><span class="tag paid">Paid</span></div>
+  <h2>ThreadTrace</h2>
+  <p class="sub">Batch-level QR system that lets small apparel factories <b>prove fiber origin and dye lot</b> to brands that now demand traceability for each production run.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Brands withhold payment or cancel orders when traceability docs are missing; one failed audit loses a $40K–120K contract.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Next.js dashboard + printable QR tags; each roll or dye lot gets a chain-of-custody record.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Traceability queries answered</li><li>Contract retention rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Show the brand the exact dye lot in 30 seconds."</b> No new ERP required.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Next.js/React skills; risk that large mills already have systems (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas Apparel & Textile Association</li><li>Brand supplier portals</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Small-to-mid apparel cut-and-sew factories (20–150 employees)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US apparel manufacturers under 200 employees (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Simple web hosting; QR printing costs passed to factory.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$199/mo per factory</b>; 120 factories = $286K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº7 · ThreadTrace</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A factory worker scans a QR on a bolt of fabric; the brand’s compliance team later clicks the code and sees the mill invoice, dye lot number, and who cut it.</p>
+    <p><span class="q">Who pays you?</span> The factory owner pays $199 monthly to keep the brand’s orders flowing and avoid contract penalties.</p>
+    <p><span class="q">Why Nate?</span> Next.js/React experience; he can build the dashboard and simple mobile scan flow in days.</p>
+    <p><span class="q">First move?</span> Visit two Dallas-area cut-and-sew shops, map their current paper trail for one brand, prototype the QR flow—under $100 in printing and travel.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº8 · FITNESS FACILITIES</p><span class="tag paid">Paid</span></div>
+  <h2>EquipGuard</h2>
+  <p class="sub">Simple NFC tags on gym equipment that log <b>last service date and usage hours</b> so independent gyms avoid $2K–6K surprise repair bills and member complaints.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>One treadmill failure during peak hours costs $2K–6K in emergency repair plus lost members.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>NFC tags + lightweight iOS app; staff taps to record service, members see green/red status on equipment.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Preventive service rate</li><li>Member complaint tickets</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"See which machine is due before it breaks."</b> No expensive IoT hardware on every unit.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>iOS/Swift + simple backend</li><li>Risk: some chains use CMMS (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas independent gym owner Facebook groups</li><li>Equipment distributor lists</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent gyms and small chains (3–12 locations)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US independent fitness facilities (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>NFC tags ~$0.30 each; app hosting.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$59/mo per location</b>; 250 locations = $177K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº8 · EquipGuard</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A member sees a red dot on the elliptical; the front desk taps their phone on the NFC tag and instantly knows it needs a belt replacement next week, not next month.</p>
+    <p><span class="q">Who pays you?</span> The gym owner pays $59 monthly because one avoided emergency service call pays for the year.</p>
+    <p><span class="q">Why Nate?</span> iOS/Swift skills for the tap-and-log flow plus simple web dashboard in Next.js.</p>
+    <p><span class="q">First move?</span> Place 20 NFC tags in one Austin gym, build the three-screen app, run for two weeks, measure service response time—under $80 total.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº9 · SCIENTIFIC LABS</p><span class="tag paid">Paid</span></div>
+  <h2>ReagentWatch</h2>
+  <p class="sub">Expiration and lot-tracking dashboard for academic and small industrial labs that <b>flags expired reagents before experiments fail</b> and audit trails break.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>One spoiled reagent batch ruins a $3K–15K grant experiment and forces repeat work.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Phone app + shared dashboard; lab techs scan incoming lots and get expiry alerts via email/Slack.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Expired items caught</li><li>Experiment repeat rate</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Know the lot is good before you open the vial."</b> Works with existing freezers and no RFID required.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>Python scripting + simple web app skills</li><li>Risk: some labs use lab inventory systems (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>University lab manager listservs</li><li>Small biotech park directories</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Academic and small industrial labs (5–40 researchers)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US academic and small research labs (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Web hosting; email alerts.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$99/mo per lab group</b>; 180 groups = $214K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº9 · ReagentWatch</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> A grad student scans a box of antibodies; the dashboard shows the lot expires in 11 days and the rest of the lab gets an email so no one starts a multi-day protocol with bad reagent.</p>
+    <p><span class="q">Who pays you?</span> The lab manager or PI pays $99 monthly because one ruined grant experiment costs far more than the subscription.</p>
+    <p><span class="q">Why Nate?</span> Python + Next.js/React stack he already uses daily for quick internal tools.</p>
+    <p><span class="q">First move?</span> Visit two UT Austin labs, map their current fridge labeling, build a minimal scan-and-alert prototype—under $120 in barcodes and hosting.</p>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <div class="idea-head"><p class="eyebrow">Grok Idea Nº10 · HOTEL OPERATIONS</p><span class="tag paid">Paid</span></div>
+  <h2>LinenGuard</h2>
+  <p class="sub">RFID tag + reader system that tracks hotel linen through the laundry cycle so independent hotels <b>stop paying for lost or stolen towels and sheets</b> that currently disappear at 15–25% per year.</p>
+  <div class="canvas">
+    <div class="cell a-prob hot"><b class="lbl">Problem</b><ul><li>Independent hotels replace 15–25% of linen inventory yearly at $8–18 per item; total annual loss often exceeds $25K per property.</li></ul></div>
+    <div class="cell a-sol"><b class="lbl">Solution</b><ul><li>Low-cost UHF RFID tags sewn into linen; handheld reader + simple dashboard shows loss by shift or vendor.</li></ul></div>
+    <div class="cell a-meta"><b class="lbl">Key Metrics</b><ul><li>Linen loss rate</li><li>Replacement spend</li></ul></div>
+    <div class="cell a-uvp hot"><b class="lbl">Unique Value Prop</b><p><b>"Know exactly which shift or vendor is losing your towels."</b> Tags cost under $0.40 each.</p></div>
+    <div class="cell a-unfair"><b class="lbl">Unfair Advantage</b><ul><li>IoT and simple hardware integration experience</li><li>Risk: large hotel groups already tag linen (UNVERIFIED)</li></ul></div>
+    <div class="cell a-chan"><b class="lbl">Channels</b><ul><li>Texas Hotel & Lodging Association</li><li>Independent hotel Facebook groups</li></ul></div>
+    <div class="cell a-seg"><b class="lbl">Customer Segments</b><ul><li>Independent hotels and small chains (20–120 rooms)</li></ul></div>
+    <div class="cell a-tam tamc"><b class="lbl">TAM (sourced)</b><p>US independent hotel properties (est., unverified).</p></div>
+    <div class="cell a-cost cool"><b class="lbl">Cost Structure</b><p>Tags and reader hardware; basic dashboard.</p></div>
+    <div class="cell a-rev cool"><b class="lbl">Revenue Streams</b><p><b>$129/mo per property + tag sales</b>; 150 properties = $232K ARR ceiling (est.).</p></div>
+  </div>
+</div></section>
+<section class="slide"><div class="inner">
+  <p class="eyebrow">Grok Idea Nº10 · LinenGuard</p>
+  <h2>Wait, what is this?</h2>
+  <div class="ww">
+    <p><span class="q">What is it?</span> Housekeeping scans a cart of towels after laundry; the dashboard immediately shows that 17 towels from the night shift never returned, so the manager talks to that vendor instead of ordering replacements.</p>
+    <p><span class="q">Who pays you?</span> The hotel owner pays $129 monthly because recovering even 5% of lost linen pays for the system in one quarter.</p>
+    <p><span class="q">Why Nate?</span> Home Assistant/IoT experience for reliable reader integration plus quick Next.js dashboard.</p>
+    <p><span class="q">First move?</span> Buy a $180 UHF reader and 200 tags, test on one 60-room Austin hotel for two weeks, measure actual loss rate—under $200 total.</p>
+  </div>
+</div></section>
+
+<!-- RECOMMENDATION -->
+<section class="slide"><div class="inner">
+  <p class="eyebrow">The Recommendation</p>
+  <h2>Two engines, one experiment,<br>one toy</h2>
+  <div class="cols">
+    <div class="card hot"><h3>Cash now</h3><p class="big">DealScope</p><p>The engine exists; channels are free; tickets are $950+. <b>This week:</b> one sample dossier + the DueDilio application.</p></div>
+    <div class="card hot"><h3>Compounding B2B</h3><p class="big">CouncilGraph</p><p>Your civic hobby with an invoice. Build Austin, publish the free digest, convert the lawyers who reply. Feeds on the same OSINT engine as DealScope — <b>one codebase, two products.</b></p></div>
+    <div class="card cool"><h3>The physics experiment</h3><p class="big">TrueHue</p><p>One afternoon kills or confirms it: print a card, scan 20 boards, measure ΔE. If it beats 3, you have the anti-Pantone. Frostline follows in winter, aimed at spring '27.</p></div>
+    <div class="card"><h3>For the soul</h3><p class="big">Rehearsal Receipt</p><p>Test song-splitting on one of your own jams via LocalScribe. If it works, build it slowly, for you first. Gridle stays a rainy-weekend option — with a twist or not at all.</p></div>
+  </div>
+  <p class="verdict">Six rounds agree on one thing: <b>your dossier engine is the most monetizable thing you own</b> — DealScope sells its reports, CouncilGraph sells its graph, Heritage sells it as love. The Aug-25 massacre (31 researched, 30 killed) surfaced the one thing the evidence could not touch: <b>Restitch, your own idea inverted</b> — the primitive AI has not commoditized yet. The guest rounds&#39; own top picks went 0-for-7 in the grinder; the remaining 23 stay unvetted. Fintech waits, mapped and ready, until the conflict clears.<small>synthesis · 50+ agents, 6 waves + 3 guest rounds, every figure linked · aug 25 2026</small></p>
+</div></section>
+
+</div>
+
+<button class="navbtn" id="prev" aria-label="Previous slide">←</button>
+<button class="navbtn" id="next" aria-label="Next slide">→</button>
+<div class="counter" id="counter"></div>
+<div class="hint">← → to navigate</div>
+<div class="progress" id="progress"></div>
+
+<script>
+(function(){
+  var slides=[].slice.call(document.querySelectorAll('.slide'));
+  var i=Math.max(0,Math.min(slides.length-1,(parseInt(location.hash.slice(1),10)||1)-1));
+  var counter=document.getElementById('counter'),progress=document.getElementById('progress');
+  function show(n){
+    n=Math.max(0,Math.min(slides.length-1,n));
+    slides[i].classList.remove('active');
+    i=n; slides[i].classList.add('active'); slides[i].scrollTop=0;
+    counter.textContent=(i+1)+' / '+slides.length;
+    progress.style.width=(100*(i+1)/slides.length)+'%';
+    history.replaceState(null,'','#'+(i+1));
+  }
+  slides[i].classList.add('active'); show(i);
+  document.getElementById('prev').addEventListener('click',function(){show(i-1)});
+  document.getElementById('next').addEventListener('click',function(){show(i+1)});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key==='PageDown'||(e.key===' '&&!e.shiftKey)){e.preventDefault();show(i+1)}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'||(e.key===' '&&e.shiftKey)){e.preventDefault();show(i-1)}
+    else if(e.key==='Home'){show(0)} else if(e.key==='End'){show(slides.length-1)}
+  });
+  var x0=null;
+  document.addEventListener('touchstart',function(e){x0=e.touches[0].clientX},{passive:true});
+  document.addEventListener('touchend',function(e){
+    if(x0===null)return;
+    var dx=e.changedTouches[0].clientX-x0;
+    if(Math.abs(dx)>60){ dx<0?show(i+1):show(i-1); }
+    x0=null;
+  },{passive:true});
+})();
+</script>
