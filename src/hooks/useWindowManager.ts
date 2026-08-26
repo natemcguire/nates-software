@@ -56,7 +56,7 @@ export function useWindowManager() {
       id: 'mktg',
       title: "About Nate's Software — [README_FIRST.TXT]",
       icon: '📄',
-      isOpen: true,
+      isOpen: false,
       isMinimized: false,
       isMaximized: false,
       x: mktgConfig.x,
@@ -80,7 +80,7 @@ export function useWindowManager() {
     },
     slopshop: {
       id: 'slopshop',
-      title: "SLOPSHOP — [AI Speed Shop & AST Feature Splicer]",
+      title: "SLOPSHOP — [Headless Local AI Agent Launchpad & Worktree Forge]",
       icon: '🛠️',
       isOpen: false,
       isMinimized: false,

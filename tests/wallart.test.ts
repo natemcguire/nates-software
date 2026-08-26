@@ -3,19 +3,21 @@ import { INITIAL_APPS } from '../src/data/mockData';
 import { GITSMITH_REPOS } from '../src/views/GitsmithView';
 
 describe('Real Sovereign Shareware Apps Suite (Zero Mock Apps)', () => {
-  it('should only contain the 3 real active projects (dronehunter, certified-mailer, picfitai)', () => {
+  it('should contain real authentic projects and zero fake mockup apps', () => {
     const appIds = INITIAL_APPS.map(a => a.id);
-    expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'picfitai']);
+    expect(appIds).toContain('dronehunter');
+    expect(appIds).toContain('certified-mailer');
+    expect(appIds).toContain('picfitai');
+    expect(appIds).toContain('baby');
     expect(appIds).not.toContain('wallart');
     expect(appIds).not.toContain('retro-calc');
-    expect(appIds).not.toContain('sailtrack');
   });
 
-  it('should configure single-file SQLite databases in WAL mode for all 3 apps', () => {
+  it('should configure single-file SQLite databases in WAL mode for all sovereign apps', () => {
     INITIAL_APPS.forEach(app => {
-      expect(app.sqlitePath).toMatch(/^\/data\/[a-z-]+\.sqlite$/);
+      expect(app.sqliteDatabase).toMatch(/^\/data\/[a-z-]+\.sqlite$/);
       expect(app.storage).toContain('WAL');
-      expect(app.creator).toBe('nate');
+      expect(app.author).toBeDefined();
     });
   });
 

@@ -414,7 +414,7 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 <input
                   type="text"
                   value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
                   className="w-full p-2 border-2 border-gray-600 font-bold text-base text-green-800 bg-green-50 font-mono"
                 />
               </div>
