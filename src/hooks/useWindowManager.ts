@@ -49,6 +49,7 @@ export function useWindowManager() {
   const dynoConfig = getResponsiveWindowConfig(30, 1000, 600);
   const profileConfig = getResponsiveWindowConfig(20, 1100, 700);
   const gitsmithConfig = getResponsiveWindowConfig(35, 1180, 740);
+  const chatConfig = getResponsiveWindowConfig(20, 960, 620);
   const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
 
   const [windows, setWindows] = useState<Record<string, WindowState>>({
@@ -168,6 +169,19 @@ export function useWindowManager() {
       width: gitsmithConfig.width,
       height: gitsmithConfig.height,
       zIndex: 19
+    },
+    chat: {
+      id: 'chat',
+      title: "CHAT — [#lounge · IRC Chatroom & Presence]",
+      icon: '💬',
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      x: chatConfig.x,
+      y: chatConfig.y,
+      width: chatConfig.width,
+      height: chatConfig.height,
+      zIndex: 18
     },
     terminal: {
       id: 'terminal',

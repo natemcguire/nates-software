@@ -17,6 +17,7 @@ import { WhitePapersView } from './views/WhitePapersView';
 import { DynoView } from './views/DynoView';
 import { ProfileView } from './views/ProfileView';
 import { TerminalView } from './views/TerminalView';
+import { ChatView } from './views/ChatView';
 import { playClickSound } from './lib/soundEngine';
 
 export function App() {
@@ -81,6 +82,17 @@ export function App() {
       </div>
     </div>
   );
+
+  // 1.5 CHAT Route (chat.nates-software.com or /chat or ?view=chat)
+  if (
+    hostname.startsWith('chat.') ||
+    pathname.startsWith('/chat') ||
+    pathname.startsWith('/irc') ||
+    pathname.startsWith('/lounge') ||
+    viewQuery === 'chat'
+  ) {
+    return renderStandaloneWrapper("CHAT IRC CHATROOM (#lounge)", <ChatView />);
+  }
 
   // 2. GITSMITH Route (gitsmith.nates-software.com or /gitsmith or /forge or ?view=gitsmith)
   if (
@@ -308,6 +320,11 @@ export function App() {
           onClick={() => { playClickSound(); openWindow('terminal'); }}
         />
         <DesktopIcon
+          label="CHAT (IRC)"
+          icon="💬"
+          onClick={() => { playClickSound(); openWindow('chat'); }}
+        />
+        <DesktopIcon
           label="HOTWIRE (Drops)"
           icon="🔥"
           onClick={() => { playClickSound(); openWindow('hotwire'); }}
@@ -377,6 +394,20 @@ export function App() {
           onOpenWhitepapers={() => openWindow('papers')}
           onDismiss={() => closeWindow('mktg')}
         />
+      </RetroWindow>
+
+      {/* 0.5 CHAT IRC Chatroom Window */}
+      <RetroWindow
+        windowState={windows.chat}
+        isActive={activeWindowId === 'chat'}
+        onFocus={() => focusWindow('chat')}
+        onClose={() => closeWindow('chat')}
+        onMinimize={() => minimizeWindow('chat')}
+        onToggleMaximize={() => toggleMaximizeWindow('chat')}
+        onMove={(x, y) => updateWindowPosition('chat', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('chat', w, h, x, y)}
+      >
+        <ChatView />
       </RetroWindow>
 
       {/* 1. Terminal DOS Shell */}

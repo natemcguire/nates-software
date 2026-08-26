@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, FileText, Gauge, User, Terminal } from 'lucide-react';
+import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, FileText, Gauge, User, Terminal, MessageSquare } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 
 interface StartMenuProps {
@@ -57,6 +57,14 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         </div>
 
         <div className="border-t border-gray-400 my-1 mx-2" />
+
+        <div
+          onClick={() => handleItemClick('chat')}
+          className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
+        >
+          <MessageSquare size={16} className="text-yellow-600" />
+          <span className="font-bold">CHAT (IRC Lounge)</span>
+        </div>
 
         <div
           onClick={() => handleItemClick('hotwire')}
