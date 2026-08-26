@@ -121,7 +121,12 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
     }, 1800);
   };
 
-  const subdomainUrl = `https://${app.id}.nates-software.com`;
+  const getLiveUrl = (appId: string) => {
+    if (appId === 'picfitai') return 'https://picfit.ai';
+    if (appId === 'dronehunter') return 'https://dronehunter.nates-software.com';
+    return `https://${appId}.nates-software.com`;
+  };
+  const liveUrl = getLiveUrl(app.id);
 
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden">
@@ -184,12 +189,12 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         {/* Right: Subdomain link */}
         <div className="flex items-center gap-2">
           <a
-            href={subdomainUrl}
+            href={liveUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="bg-blue-950 text-blue-300 hover:text-white px-2.5 py-1 rounded text-[11px] font-mono hover:bg-blue-900 transition-colors flex items-center gap-1 border border-blue-700 shadow-sm"
           >
-            <span>{app.id}.nates-software.com</span>
+            <span>{app.id === 'picfitai' ? 'picfit.ai' : `${app.id}.nates-software.com`}</span>
             <ExternalLink size={11} />
           </a>
         </div>
@@ -215,7 +220,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
               </div>
             </div>
 
-            {/* If DroneHunter, render the real interactive canvas */}
+            {/* If DroneHunter or PicFit, render the real live app */}
             {app.id === 'dronehunter' ? (
               <div className="flex-1 bg-black border-2 border-gray-800 rounded overflow-hidden relative">
                 <iframe
@@ -223,6 +228,15 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                   title="Drone Hunter Arcade Game"
                   className="w-full h-full border-0 absolute inset-0"
                   allow="autoplay; fullscreen"
+                />
+              </div>
+            ) : app.id === 'picfitai' ? (
+              <div className="flex-1 bg-white border-2 border-gray-800 rounded overflow-hidden relative">
+                <iframe
+                  src="https://picfit.ai/"
+                  title="PicFit.ai Live Production App"
+                  className="w-full h-full border-0 absolute inset-0"
+                  allow="autoplay; camera; microphone"
                 />
               </div>
             ) : (
@@ -236,7 +250,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                   </p>
                   <div className="flex justify-center gap-2">
                     <a
-                      href={subdomainUrl}
+                      href={liveUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="btn-w95 btn-w95-primary px-4 py-2 font-bold text-xs flex items-center gap-1.5"
@@ -383,7 +397,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
             <div className="bg-white border-2 border-gray-800 p-4 rounded flex items-center justify-between">
               <div>
                 <div className="font-bold text-sm text-gray-900">Provision &amp; Deploy to Cloudflare Infrastructure</div>
-                <div className="text-xs text-gray-500 font-mono">Target: {subdomainUrl}</div>
+                <div className="text-xs text-gray-500 font-mono">Target: {liveUrl}</div>
               </div>
 
               <button
