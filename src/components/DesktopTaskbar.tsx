@@ -1,3 +1,5 @@
+import { useAuth } from '../context/AuthContext';
+import { LogIn, LogOut } from 'lucide-react';
 import React, { useState } from 'react';
 import { Volume2, VolumeX, ShieldCheck, ZoomIn } from 'lucide-react';
 import { toggleSound, isSoundEnabled, playClickSound } from '../lib/soundEngine';
@@ -32,6 +34,7 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
   };
 
   const scalePercent = Math.round(displayScale * 100);
+  const { user, isAuthenticated, isSuperAdmin, openAuthModal, logout } = useAuth();
 
   return (
     <div className="fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
@@ -62,6 +65,44 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
             <span className="truncate">{tab.title}</span>
           </button>
         ))}
+      </div>
+
+      {/* Account / Login Widget */}
+      <div className="h-7 px-2 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-1.5 mr-1 font-mono text-[11px]">
+        {isAuthenticated && user ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">{user.avatar || '👤'}</span>
+            <span className="font-bold text-blue-900">@{user.username}</span>
+            {isSuperAdmin && (
+              <span className="bg-amber-100 text-amber-900 border border-amber-400 px-1 py-0.2 rounded text-[9px] font-bold">
+                ADMIN
+              </span>
+            )}
+            <button
+              onClick={() => logout()}
+              className="text-gray-500 hover:text-red-700 ml-1 p-0.5"
+              title="Log Out"
+            >
+              <LogOut size={12} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => openAuthModal('login')}
+              className="px-2 py-0.5 font-bold text-blue-900 bg-white hover:bg-blue-50 border border-gray-400 rounded flex items-center gap-1 text-[10px]"
+            >
+              <LogIn size={10} />
+              <span>Log In</span>
+            </button>
+            <button
+              onClick={() => openAuthModal('register')}
+              className="px-2 py-0.5 font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-400 rounded text-[10px]"
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
       </div>
 
       {/* System Tray (Scale / Audio / Clock / Status) */}

@@ -20,6 +20,7 @@ import {
   Globe
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
 
 export interface GitsmithRepo {
@@ -148,6 +149,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
 
 export const GitsmithView: React.FC = () => {
   const { showAlert } = useAlert();
+  const { isAuthenticated, openAuthModal } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo>(GITSMITH_REPOS[0]);
   const [activeFile, setActiveFile] = useState<any>(GITSMITH_REPOS[0].files.find(f => f.type === 'file') || GITSMITH_REPOS[0].files[0]);
@@ -226,6 +228,11 @@ export const GitsmithView: React.FC = () => {
   };
 
   const handleForkSlop = (repo: GitsmithRepo) => {
+    if (!isAuthenticated) {
+      showAlert("Authentication Required: You must log in or create an account to fork repositories or push code to GITSMITH.", "Sign In Required", "warning");
+      openAuthModal('login');
+      return;
+    }
     playSuccessChime();
     const cmd = `slop fork ${repo.owner}/${repo.name}`;
     navigator.clipboard.writeText(cmd);
