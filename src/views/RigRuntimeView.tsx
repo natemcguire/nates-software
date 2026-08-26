@@ -13,17 +13,17 @@ export const RigRuntimeView: React.FC = () => {
   const timersRef = useRef<NodeJS.Timeout[]>([]);
 
   const [buildLogs, setBuildLogs] = useState<string[]>([
-    "[GITSMITH] Hook post-receive initialized for repo: nate/wallart",
+    "[GITSMITH] Hook post-receive initialized for repo: nate/dronehunter",
     "[RIG.EXE] Allocated isolated Linux micro-container (ID: rig-wa-9812)",
-    "[RIG.EXE] Mounted sovereign volume: /data/wallart.sqlite (WAL mode)",
+    "[RIG.EXE] Mounted sovereign volume: /data/dronehunter.sqlite (WAL mode)",
     "[BUILD] Running: npm run build (Vite 6 + React 19 + Tailwind)",
     "[BUILD] Transformed 1,837 modules in 0.99s -> dist/ (392 kB JS, 34 kB CSS)",
-    "[PORTAL] Booted ephemeral dev server on port 3002 (dyno://nate/wallart:3002)",
+    "[PORTAL] Booted ephemeral dev server on port 3002 (dyno://nate/dronehunter:3002)",
     "[TESTS] Irrefutable Evidence Pass: 500 SQLite simulated writes verified in 0.04s",
     "[STATUS] ● Ephemeral build live and ready for testing."
   ]);
 
-  const remoteCmd = "git remote add nate git@gitsmith.dev:nate/wallart.git";
+  const remoteCmd = "git remote add nate git@git.nates-software.com:nate/dronehunter.git";
   const pushCmd = "git push nate main";
 
   useEffect(() => {
@@ -73,12 +73,12 @@ export const RigRuntimeView: React.FC = () => {
     const steps = [
       "[GITSMITH] CAS atomic update: refs/heads/main -> 5c030af (OK)",
       "[RIG.EXE] Spinning up isolated micro-container (CPU limit: 2 cores, RAM limit: 256MB)",
-      "[STORAGE] Initialized SQLite WAL volume at /data/wallart.sqlite",
+      "[STORAGE] Initialized SQLite WAL volume at /data/dronehunter.sqlite",
       "[BUILD] Compiling TypeScript AST & bundling assets with Vite 6...",
       "[BUILD] Build complete in 0.99s! Bundle size: 392 kB JS",
       "[EVIDENCE] Running 10k SQLite stress tests & visual regression checks...",
       "[EVIDENCE] Irrefutable Evidence: 100% test pass rate, 0 lock contentions, <0.08ms latency",
-      "[PORTAL] Live Ephemeral URL: https://wallart-nate.rig.nates.software (Port 3002)",
+      "[PORTAL] Live Ephemeral URL: https://dronehunter.nates-software.com (Port 3002)",
       "[HOTWIRE] Submitted build to 12:01 AM Daily Drops Board (Batch #84)"
     ];
 

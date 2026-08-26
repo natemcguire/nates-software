@@ -158,7 +158,7 @@ export const GitsmithView: React.FC = () => {
 
   const handleCopyClone = (repo: GitsmithRepo) => {
     playClickSound();
-    const url = `git clone ssh://git@gitsmith.dev:2222/${repo.owner}/${repo.name}.git`;
+    const url = `git clone ssh://git@git.nates-software.com:2222/${repo.owner}/${repo.name}.git`;
     navigator.clipboard.writeText(url);
     setCopiedClone(true);
     setTimeout(() => setCopiedClone(false), 2000);
