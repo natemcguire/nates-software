@@ -3,7 +3,6 @@ import { AppListing, AppComment } from '../data/mockData';
 import { EphemeralLiveApp } from './EphemeralLiveApp';
 import {
   Play,
-  Download,
   Sparkles,
   Image as ImageIcon,
   MessageSquare,
@@ -37,7 +36,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   // Modals state
   const [showLineageModal, setShowLineageModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   // Comment state
   const [comments, setComments] = useState<AppComment[]>(app.comments || []);
@@ -571,65 +569,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
       )}
 
-      {/* 3. Signed Binary Download Drawer */}
-      {showDownloadModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-md w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
-              <div className="flex items-center gap-2">
-                <Download size={16} className="text-emerald-400" />
-                <span className="font-bold text-sm text-white font-mono">Download Offline Binaries · {app.name}</span>
-              </div>
-              <button onClick={() => setShowDownloadModal(false)} className="text-slate-400 hover:text-white">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-white">macOS Universal (.dmg)</div>
-                  <div className="text-[10px] text-slate-400 font-mono">Apple Silicon &amp; Intel · Single-file SQLite</div>
-                </div>
-                <button
-                  onClick={() => {
-                    playSuccessChime();
-                    showAlert(`Initiating offline DMG download for ${app.name}...`, "Download Started", "success");
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded font-bold text-xs"
-                >
-                  Download DMG
-                </button>
-              </div>
-
-              <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-white">Standalone CLI (.tar.gz)</div>
-                  <div className="text-[10px] text-slate-400 font-mono">Linux / macOS terminal binary</div>
-                </div>
-                <button
-                  onClick={() => {
-                    playSuccessChime();
-                    showAlert(`Initiating standalone CLI binary download for ${app.name}...`, "Download Started", "success");
-                  }}
-                  className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded font-bold text-xs"
-                >
-                  Download CLI
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowDownloadModal(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-1.5 rounded font-mono"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

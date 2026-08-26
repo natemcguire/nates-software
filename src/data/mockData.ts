@@ -83,10 +83,6 @@ export const INITIAL_APPS: AppListing[] = [
       { name: 'Sam Altman', handle: '@sam', avatar: '🤖' },
       { name: 'Alex Rivera', handle: '@alex', avatar: '🎨' }
     ],
-    binaries: {
-      macosDmg: 'https://releases.nates-software.com/dronehunter-1.0.0.dmg',
-      linuxAppImage: 'https://releases.nates-software.com/dronehunter-1.0.0.AppImage'
-    },
     screenshots: [
       'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80'
@@ -146,10 +142,6 @@ export const INITIAL_APPS: AppListing[] = [
       { name: 'Josh McGuire', handle: '@josh', avatar: '⛵' },
       { name: 'Elena Rostova', handle: '@elena', avatar: '⚖️' }
     ],
-    binaries: {
-      macosDmg: 'https://releases.nates-software.com/certified-mailer-1.0.0.dmg',
-      linuxAppImage: 'https://releases.nates-software.com/certified-mailer-1.0.0.tar.gz'
-    },
     screenshots: [
       'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
     ],
@@ -200,9 +192,6 @@ export const INITIAL_APPS: AppListing[] = [
       { name: 'Nate McGuire', handle: '@nate', avatar: '⚡' },
       { name: 'Sarah Chen', handle: '@sarah', avatar: '👗' }
     ],
-    binaries: {
-      macosDmg: 'https://releases.nates-software.com/picfitai-1.0.0.dmg'
-    },
     screenshots: [
       'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80'
     ],
