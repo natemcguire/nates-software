@@ -1,10 +1,13 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, GitMerge, Mail, Download, Sparkles, BookOpen } from 'lucide-react';
+import { Flame, Wrench, Cpu, GitMerge, Mail, User, Sparkles, BookOpen } from 'lucide-react';
 
 interface MarketingWindowProps {
   onOpenHotwire: () => void;
   onOpenSlopshop: () => void;
+  onOpenRig: () => void;
+  onOpenGitsmith: () => void;
   onOpenInbox: () => void;
+  onOpenProfile: () => void;
   onOpenWhitepapers: () => void;
   onDismiss: () => void;
 }
@@ -12,7 +15,10 @@ interface MarketingWindowProps {
 export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onOpenHotwire,
   onOpenSlopshop,
+  onOpenRig,
+  onOpenGitsmith,
   onOpenInbox,
+  onOpenProfile,
   onOpenWhitepapers,
   onDismiss
 }) => {
@@ -29,9 +35,10 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </p>
       </div>
 
-      {/* 5 Standalone Engines Grid */}
+      {/* 6 Standalone Engines & Navigation Grid */}
       <div className="grid grid-cols-3 gap-3 flex-1 overflow-y-auto mb-3">
-        <div onClick={onOpenHotwire} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between">
+        {/* 1. HOTWIRE */}
+        <div onClick={onOpenHotwire} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
               <span className="flex items-center gap-2"><Flame size={18} className="text-orange-600" /> HOTWIRE</span>
@@ -41,10 +48,11 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               Daily 12:01 AM drops leaderboard, maker streaks, and Nate's LLM Specs dyno scores.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block">Open Drops Board &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Drops Board &rarr;</span>
         </div>
 
-        <div onClick={onOpenSlopshop} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between">
+        {/* 2. SLOPSHOP */}
+        <div onClick={onOpenSlopshop} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
               <span className="flex items-center gap-2"><Wrench size={18} className="text-blue-700" /> SLOPSHOP</span>
@@ -54,10 +62,11 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               The AI speed shop: 1-click forking, AST feature splicing &amp; Claude/Codex launchers.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block">Enter Mod Bay &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Enter Mod Bay &rarr;</span>
         </div>
 
-        <div className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between">
+        {/* 3. RIG.EXE */}
+        <div onClick={onOpenRig} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
               <span className="flex items-center gap-2"><Cpu size={18} className="text-green-700" /> RIG.EXE</span>
@@ -67,23 +76,25 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               Zero-fuss micro-container runtime with single-file SQLite persistence &amp; scale-to-zero.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block">Inspect Dynos &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Inspect Dynos (Ports 3001..3010) &rarr;</span>
         </div>
 
-        <div className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between">
+        {/* 4. GITSMITH */}
+        <div onClick={onOpenGitsmith} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
               <span className="flex items-center gap-2"><GitMerge size={18} className="text-purple-700" /> GITSMITH</span>
               <span className="text-xs text-gray-500 font-mono">FORGE</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Bare Git forge over SSH with sandboxed test execution &amp; atomic CAS merge queue.
+              GitHub-style bare Git forge over SSH with all repos, search, and 1-click live preview links.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block">Explore Bare Repos &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Explore Bare Repos &rarr;</span>
         </div>
 
-        <div onClick={onOpenInbox} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between">
+        {/* 5. INBOX */}
+        <div onClick={onOpenInbox} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
               <span className="flex items-center gap-2"><Mail size={18} className="text-yellow-700" /> INBOX</span>
@@ -93,20 +104,21 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               3-pane async email client for human and agent discussions &amp; 1-click merge approvals.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block">Open Mailbox (3) &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Mailbox (3) &rarr;</span>
         </div>
 
-        <div className="bg-blue-50 border-2 border-w95-blue p-3.5 flex flex-col justify-between">
+        {/* 6. MY PROFILE (Replaces Multi-Platform) */}
+        <div onClick={onOpenProfile} className="bg-blue-50 border-2 border-w95-blue p-3.5 cursor-pointer hover:bg-blue-100 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
-              <span className="flex items-center gap-2"><Download size={18} className="text-blue-900" /> Multi-Platform</span>
-              <span className="text-xs text-green-700 font-bold">READY</span>
+              <span className="flex items-center gap-2"><User size={18} className="text-blue-900" /> My Profile</span>
+              <span className="text-xs text-green-700 font-bold font-mono">@nate</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Download native .dmg, .exe, .AppImage, and iOS TestFlight builds for any fork.
+              Maker identity, verified SSH keys, protocol revenue wallet, and your sovereign software shelf.
             </p>
           </div>
-          <span className="text-green-800 font-bold text-xs mt-2 block">Universal Binaries</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Profile &amp; Shelf &rarr;</span>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+import { GitsmithView } from './views/GitsmithView';
 import { EphemeralLiveApp } from './components/EphemeralLiveApp';
 import { INITIAL_APPS } from './data/mockData';
 import React, { useState } from 'react';
@@ -187,6 +188,11 @@ export function App() {
           onClick={() => { playClickSound(); openWindow('slopshop'); }}
         />
         <DesktopIcon
+          label="GITSMITH (Forge)"
+          icon="📁"
+          onClick={() => { playClickSound(); openWindow('gitsmith'); }}
+        />
+        <DesktopIcon
           label="RIG.EXE (Runtime)"
           icon="⚙️"
           onClick={() => { playClickSound(); openWindow('rig'); }}
@@ -234,7 +240,10 @@ export function App() {
         <MarketingWindow
           onOpenHotwire={() => openWindow('hotwire')}
           onOpenSlopshop={() => openWindow('slopshop')}
+          onOpenRig={() => openWindow('rig')}
+          onOpenGitsmith={() => openWindow('gitsmith')}
           onOpenInbox={() => openWindow('inbox')}
+          onOpenProfile={() => openWindow('profile')}
           onOpenWhitepapers={() => openWindow('papers')}
           onDismiss={() => closeWindow('mktg')}
         />
@@ -350,6 +359,20 @@ export function App() {
         onResize={(w, h, x, y) => updateWindowSize('profile', w, h, x, y)}
       >
         <ProfileView />
+      </RetroWindow>
+
+            {/* 9. Gitsmith GitHub-Style Forge */}
+      <RetroWindow
+        windowState={windows.gitsmith}
+        isActive={activeWindowId === 'gitsmith'}
+        onFocus={() => focusWindow('gitsmith')}
+        onClose={() => closeWindow('gitsmith')}
+        onMinimize={() => minimizeWindow('gitsmith')}
+        onToggleMaximize={() => toggleMaximizeWindow('gitsmith')}
+        onMove={(x, y) => updateWindowPosition('gitsmith', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('gitsmith', w, h, x, y)}
+      >
+        <GitsmithView />
       </RetroWindow>
 
       {/* Pop-Up Start Menu */}

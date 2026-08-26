@@ -135,6 +135,19 @@ export function useWindowManager() {
       height: 660,
       zIndex: 17
     },
+    gitsmith: {
+      id: 'gitsmith',
+      title: 'GITSMITH — [GitHub-Style Bare Git Forge & Repos]',
+      icon: '📁',
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      x: pos2.x + 30,
+      y: pos2.y + 30,
+      width: 1100,
+      height: 700,
+      zIndex: 19
+    },
     terminal: {
       id: 'terminal',
       title: "TERMINAL.EXE — [Sovereign Interactive DOS Shell]",
