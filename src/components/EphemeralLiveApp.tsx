@@ -178,20 +178,20 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
           <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-ping" />
           <span className="font-bold text-sm text-green-300 font-mono">LIVE EPHEMERAL MAIN BUILD</span>
           <a
-            href={`https://${app.id}.nates-software.pages.dev`}
+            href={`https://nates-software.pages.dev/?app=${app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => {
               if (typeof window !== 'undefined' && window.location.hostname.includes('pages.dev')) {
-                window.open(`https://${app.id}.nates-software.pages.dev`, '_blank');
+                window.open(`https://nates-software.pages.dev/?app=${app.id}`, '_blank');
               } else {
                 window.open(`/?app=${app.id}`, '_blank');
               }
             }}
             className="bg-blue-950 text-blue-300 hover:text-white px-2 py-0.5 rounded text-[11px] font-mono hover:bg-blue-900 transition-colors flex items-center gap-1 border border-blue-700 cursor-pointer shadow-sm"
-            title={`Click to open https://${app.id}.nates-software.pages.dev in a new tab`}
+            title={`Click to open https://nates-software.pages.dev/?app=${app.id} in a new tab`}
           >
-            <span>{app.id}.nates-software.pages.dev</span>
+            <span>nates-software.pages.dev/?app={app.id}</span>
             <span>↗</span>
           </a>
         </div>

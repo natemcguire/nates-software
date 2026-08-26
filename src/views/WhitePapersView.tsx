@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { BookOpen, Cpu, Wrench, GitMerge, Mail, Flame, Download, ShieldCheck } from 'lucide-react';
+import { BookOpen, Cpu, Wrench, GitMerge, Mail, Flame, Download, ShieldCheck, Copy, Check } from 'lucide-react';
 import { WHITEPAPERS_DATA } from '../data/whitepapersData';
+import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { playClickSound } from '../lib/soundEngine';
 
 export const WhitePapersView: React.FC = () => {
-  const [selectedTab, setSelectedTab] = useState<'rig' | 'slopshop' | 'gitsmith' | 'inbox' | 'hotwire' | 'suite'>('rig');
+  const [selectedTab, setSelectedTab] = useState<'rig' | 'slopshop' | 'gitsmith' | 'inbox' | 'hotwire' | 'suite'>('gitsmith');
+  const [copied, setCopied] = useState(false);
 
   const papers = {
     rig: {
@@ -52,27 +55,36 @@ export const WhitePapersView: React.FC = () => {
 
   const current = papers[selectedTab];
 
+  const handleCopyMd = () => {
+    playClickSound();
+    navigator.clipboard.writeText(current.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="grid grid-cols-12 gap-3 h-full overflow-hidden font-tahoma text-sm">
       {/* Left Navigation */}
-      <div className="col-span-4 bg-white border-2 border-gray-800 p-2.5 overflow-y-auto space-y-1.5">
-        <div className="font-bold text-base text-w95-blue border-b pb-1.5 mb-2 flex items-center gap-1.5">
-          <BookOpen size={16} /> Architectural White Papers
-        </div>
-        {Object.values(papers).map((p) => (
-          <div
-            key={p.id}
-            onClick={() => setSelectedTab(p.id as any)}
-            className={`p-2.5 border-2 cursor-pointer transition-all ${
-              selectedTab === p.id ? 'bg-blue-50 border-w95-blue shadow-sm' : 'bg-gray-50 border-gray-300 hover:border-gray-500'
-            }`}
-          >
-            <div className="font-bold text-gray-900 flex items-center gap-2 text-xs">
-              {p.icon} {p.title}
-            </div>
-            <div className="text-gray-500 text-[11px] mt-0.5 truncate">{p.subtitle}</div>
+      <div className="col-span-4 bg-white border-2 border-gray-800 p-2.5 overflow-y-auto space-y-1.5 flex flex-col justify-between">
+        <div className="space-y-1.5">
+          <div className="font-bold text-base text-w95-blue border-b pb-1.5 mb-2 flex items-center gap-1.5">
+            <BookOpen size={16} /> Architectural White Papers
           </div>
-        ))}
+          {Object.values(papers).map((p) => (
+            <div
+              key={p.id}
+              onClick={() => { playClickSound(); setSelectedTab(p.id as any); }}
+              className={`p-2.5 border-2 cursor-pointer transition-all ${
+                selectedTab === p.id ? 'bg-blue-50 border-w95-blue shadow-sm' : 'bg-gray-50 border-gray-300 hover:border-gray-500'
+              }`}
+            >
+              <div className="font-bold text-gray-900 flex items-center gap-2 text-xs">
+                {p.icon} {p.title}
+              </div>
+              <div className="text-gray-500 text-[11px] mt-0.5 truncate">{p.subtitle}</div>
+            </div>
+          ))}
+        </div>
 
         <div className="bg-blue-50 p-2.5 border border-w95-blue rounded text-[11px] text-gray-700 mt-4 space-y-1">
           <div className="font-bold text-w95-blue flex items-center gap-1">
@@ -84,9 +96,9 @@ export const WhitePapersView: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Detail Full Reader */}
-      <div className="col-span-8 bg-white border-2 border-gray-800 p-5 overflow-y-auto leading-relaxed">
-        <div className="border-b pb-3 mb-4 flex items-start justify-between">
+      {/* Right Detail Full Reader with Styled Markdown */}
+      <div className="col-span-8 bg-white border-2 border-gray-800 p-5 overflow-y-auto flex flex-col">
+        <div className="border-b pb-3 mb-4 flex items-start justify-between flex-wrap gap-2">
           <div>
             <div className="text-xl font-black text-w95-blue flex items-center gap-2">
               {current.icon} {current.title}
@@ -94,18 +106,28 @@ export const WhitePapersView: React.FC = () => {
             <div className="text-gray-600 text-xs mt-0.5 font-medium">{current.subtitle}</div>
           </div>
 
-          <a
-            href={`data:text/markdown;charset=utf-8,${encodeURIComponent(current.content)}`}
-            download={`${current.id}-whitepaper.md`}
-            className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1"
-          >
-            <Download size={12} /> Export .md
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopyMd}
+              className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1"
+            >
+              {copied ? <Check size={12} className="text-green-700" /> : <Copy size={12} />}
+              <span>{copied ? 'Copied MD' : 'Copy MD'}</span>
+            </button>
+
+            <a
+              href={`data:text/markdown;charset=utf-8,${encodeURIComponent(current.content)}`}
+              download={`${current.id}-whitepaper.md`}
+              className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1"
+            >
+              <Download size={12} /> Export .md
+            </a>
+          </div>
         </div>
 
-        {/* Full Untruncated White Paper Body */}
-        <div className="font-mono text-xs text-gray-900 whitespace-pre-wrap leading-relaxed bg-gray-50 p-4 border border-gray-300 rounded shadow-inner max-h-[580px] overflow-y-auto select-text">
-          {current.content}
+        {/* Formatted Markdown Reader Container */}
+        <div className="flex-1 overflow-y-auto p-6 bg-[#fafafa] border border-gray-300 rounded shadow-inner select-text">
+          <MarkdownRenderer content={current.content} />
         </div>
       </div>
     </div>

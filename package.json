@@ -14,8 +14,10 @@
     "deploy": "npm run build && wrangler pages deploy dist"
   },
   "dependencies": {
+    "@types/marked": "^5.0.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
+    "marked": "^18.0.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sql.js": "^1.14.2",

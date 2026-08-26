@@ -64,7 +64,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Photo Studio', 'Canvas Prints', 'Gallery Wall', 'Next.js 16', 'SQLite WAL'],
-    liveUrl: 'https://wallart.nates-software.pages.dev',
+    liveUrl: 'https://nates-software.pages.dev/?app=wallart',
     files: [
       { name: 'src', type: 'dir' },
       { name: 'migrations', type: 'dir' },
@@ -93,7 +93,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Arcade', 'Radar', 'Defense', 'SQLite WAL', 'Metal Shaders'],
-    liveUrl: 'https://dronehunter.nates-software.pages.dev',
+    liveUrl: 'https://nates-software.pages.dev/?app=dronehunter',
     files: [
       { name: 'src', type: 'dir' },
       { name: 'migrations', type: 'dir' },
@@ -123,7 +123,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Finance', 'SQLite', 'Local-First', 'React 19', 'Accounting'],
-    liveUrl: 'https://retro-calc.nates-software.pages.dev',
+    liveUrl: 'https://nates-software.pages.dev/?app=retro-calc',
     files: [
       { name: 'src', type: 'dir' },
       { name: 'package.json', type: 'file', size: '940 B', content: `{\n  "name": "retro-calc",\n  "version": "1.2.0",\n  "dependencies": { "react": "^19.0.0" }\n}` },
@@ -150,7 +150,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Marine', 'GPS', 'Mapping', 'Offline', 'Regatta'],
-    liveUrl: 'https://sailtrack.nates-software.pages.dev',
+    liveUrl: 'https://nates-software.pages.dev/?app=sailtrack',
     files: [
       { name: 'src', type: 'dir' },
       { name: 'package.json', type: 'file', size: '1.1 KB', content: `{\n  "name": "sailtrack-gps",\n  "version": "2.1.0"\n}` },
