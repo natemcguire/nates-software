@@ -404,7 +404,7 @@ export const OcrScanner: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          featureIds: ['feat_triptych', 'feat_ocr'],
+          features: [sampleTriptychFeature, sampleOcrFeature],
           hostSource: sampleHostCode
         })
       });
@@ -415,7 +415,7 @@ export const OcrScanner: React.FC = () => {
       expect(json.success).toBe(true);
       expect(json.splicedSource).toContain('TriptychViewer');
       expect(json.splicedSource).toContain('OcrScannerWidget');
-      expect(json.migrationPlan.orderedMigrations.length).toBe(4); // 2 from triptych, 2 from ocr
+      expect(json.migrationPlan.orderedMigrations.length).toBe(2); // 1 from triptych, 1 from ocr
       expect(json.reversiblePatch).toBeDefined();
     });
 

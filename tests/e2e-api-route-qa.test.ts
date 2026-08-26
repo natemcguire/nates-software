@@ -15,6 +15,7 @@ import * as feedApi from '../functions/api/feed';
 import { INITIAL_APPS } from '../src/data/mockData';
 import { GITSMITH_REPOS } from '../src/views/GitsmithView';
 import { INITIAL_ONLINE_USERS } from '../src/lib/ircProtocol';
+import { resolveAppRoute } from '../src/App';
 
 describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
@@ -230,39 +231,26 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 9. Standalone Subdomain & URL Route Matching
-  describe('9. Subdomain & Route Matching Invariants', () => {
-    const routeMatcher = (hostname: string, pathname: string) => {
-      if (hostname.startsWith('chat.') || pathname.startsWith('/chat')) return 'CHAT';
-      if (hostname.startsWith('gitsmith.') || pathname.startsWith('/gitsmith')) return 'GITSMITH';
-      if (hostname.startsWith('hotwire.') || pathname.startsWith('/hotwire')) return 'HOTWIRE';
-      if (hostname.startsWith('slopshop.') || pathname.startsWith('/slopshop')) return 'SLOPSHOP';
-      if (hostname.startsWith('rig.') || pathname.startsWith('/rig')) return 'RIG';
-      if (pathname.startsWith('/inbox')) return 'INBOX';
-      if (pathname.startsWith('/white-papers')) return 'WHITE_PAPERS';
-      if (pathname.startsWith('/dyno')) return 'DYNO';
-      if (pathname.startsWith('/profile')) return 'PROFILE';
-      if (pathname.startsWith('/terminal')) return 'TERMINAL';
-      if (hostname.startsWith('dronehunter.')) return 'STANDALONE_DRONEHUNTER';
-      return 'DESKTOP_OS';
-    };
-
-    it('should accurately resolve all registered subdomains', () => {
-      expect(routeMatcher('chat.nates-software.com', '/')).toBe('CHAT');
-      expect(routeMatcher('gitsmith.nates-software.com', '/')).toBe('GITSMITH');
-      expect(routeMatcher('hotwire.nates-software.com', '/')).toBe('HOTWIRE');
-      expect(routeMatcher('slopshop.nates-software.com', '/')).toBe('SLOPSHOP');
-      expect(routeMatcher('rig.nates-software.com', '/')).toBe('RIG');
-      expect(routeMatcher('dronehunter.nates-software.com', '/')).toBe('STANDALONE_DRONEHUNTER');
+  // 9. Standalone Subdomain & Production Route Resolution (Testing src/App.tsx)
+  describe('9. Production Subdomain & Route Resolution (src/App.tsx)', () => {
+    it('should accurately resolve all registered subdomains via resolveAppRoute', () => {
+      expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' });
+      expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'gitsmith', title: 'GITSMITH FORGE' });
+      expect(resolveAppRoute('hotwire.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' });
+      expect(resolveAppRoute('slopshop.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' });
+      expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & SQLITE HUD' });
+      expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
+      expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
+      expect(resolveAppRoute('picfitai.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'picfitai', title: 'PicFit.ai' });
     });
 
-    it('should accurately resolve all direct root path routes', () => {
-      expect(routeMatcher('nates-software.com', '/inbox')).toBe('INBOX');
-      expect(routeMatcher('nates-software.com', '/white-papers')).toBe('WHITE_PAPERS');
-      expect(routeMatcher('nates-software.com', '/dyno')).toBe('DYNO');
-      expect(routeMatcher('nates-software.com', '/profile')).toBe('PROFILE');
-      expect(routeMatcher('nates-software.com', '/terminal')).toBe('TERMINAL');
-      expect(routeMatcher('nates-software.com', '/')).toBe('DESKTOP_OS');
+    it('should accurately resolve all direct root path routes via resolveAppRoute', () => {
+      expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'INBOX PROPOSALS' });
+      expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });
+      expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO WORKSTATION SPEEDOMETER' });
+      expect(resolveAppRoute('nates-software.com', '/profile')).toEqual({ type: 'standalone_view', id: 'profile', title: 'MAKER PROFILE & DISK SHELF' });
+      expect(resolveAppRoute('nates-software.com', '/terminal')).toEqual({ type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' });
+      expect(resolveAppRoute('nates-software.com', '/')).toEqual({ type: 'desktop' });
     });
   });
 });

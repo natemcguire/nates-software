@@ -1,3 +1,65 @@
+export interface ResolvedRoute {
+  readonly type: 'standalone_app' | 'standalone_view' | 'desktop';
+  readonly id?: string;
+  readonly title?: string;
+}
+
+export function resolveAppRoute(
+  hostname: string = '',
+  pathname: string = '',
+  viewQuery: string = '',
+  appIdQuery: string | null = null
+): ResolvedRoute {
+  const requestedAppId = appIdQuery || (hostname ? hostname.split('.')[0] : null);
+  const standaloneApp = requestedAppId ? INITIAL_APPS.find(a => a.id === requestedAppId || a.name.toLowerCase().replace(/[^a-z0-9]/g, '') === requestedAppId) : null;
+
+  if (standaloneApp && !['gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile', 'whitepapers', 'terminal', 'www', 'nates-software'].includes(requestedAppId || '')) {
+    return { type: 'standalone_app', id: standaloneApp.id, title: standaloneApp.name };
+  }
+
+  if (hostname.startsWith('chat.') || pathname.startsWith('/chat') || pathname.startsWith('/irc') || pathname.startsWith('/lounge') || viewQuery === 'chat') {
+    return { type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' };
+  }
+
+  if (hostname.startsWith('gitsmith.') || hostname.startsWith('git.') || pathname.startsWith('/gitsmith') || pathname.startsWith('/forge') || viewQuery === 'gitsmith') {
+    return { type: 'standalone_view', id: 'gitsmith', title: 'GITSMITH FORGE' };
+  }
+
+  if (hostname.startsWith('hotwire.') || pathname.startsWith('/hotwire') || pathname.startsWith('/drops') || viewQuery === 'hotwire') {
+    return { type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' };
+  }
+
+  if (hostname.startsWith('slopshop.') || pathname.startsWith('/slopshop') || pathname.startsWith('/speedshop') || viewQuery === 'slopshop') {
+    return { type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' };
+  }
+
+  if (hostname.startsWith('rig.') || pathname.startsWith('/rig') || pathname.startsWith('/runtime') || viewQuery === 'rig') {
+    return { type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & SQLITE HUD' };
+  }
+
+  if (hostname.startsWith('inbox.') || pathname.startsWith('/inbox') || viewQuery === 'inbox') {
+    return { type: 'standalone_view', id: 'inbox', title: 'INBOX PROPOSALS' };
+  }
+
+  if (pathname.startsWith('/white-papers') || pathname.startsWith('/whitepapers') || pathname.startsWith('/docs') || viewQuery === 'white-papers' || viewQuery === 'papers') {
+    return { type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' };
+  }
+
+  if (pathname.startsWith('/dyno') || pathname.startsWith('/speedometer') || viewQuery === 'dyno') {
+    return { type: 'standalone_view', id: 'dyno', title: 'DYNO WORKSTATION SPEEDOMETER' };
+  }
+
+  if (pathname.startsWith('/profile') || pathname.startsWith('/shelf') || viewQuery === 'profile') {
+    return { type: 'standalone_view', id: 'profile', title: 'MAKER PROFILE & DISK SHELF' };
+  }
+
+  if (pathname.startsWith('/terminal') || pathname.startsWith('/shell') || pathname.startsWith('/dos') || viewQuery === 'terminal') {
+    return { type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' };
+  }
+
+  return { type: 'desktop' };
+}
+
 import React, { useState } from 'react';
 import { GitsmithView } from './views/GitsmithView';
 import { EphemeralLiveApp } from './components/EphemeralLiveApp';
@@ -26,11 +88,10 @@ export function App() {
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
   const viewQuery = urlParams?.get('view') || '';
 
-  // 1. Standalone Live App Subdomain Routing (e.g. dronehunter.nates-software.com)
-  const requestedAppId = urlParams?.get('app') || (hostname ? hostname.split('.')[0] : null);
-  const standaloneApp = requestedAppId ? INITIAL_APPS.find(a => a.id === requestedAppId || a.name.toLowerCase().replace(/[^a-z0-9]/g, '') === requestedAppId) : null;
+  const route = resolveAppRoute(hostname, pathname, viewQuery, urlParams?.get('app') || null);
 
-  if (standaloneApp && !['gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile', 'whitepapers', 'terminal', 'www', 'nates-software'].includes(requestedAppId || '')) {
+  if (route.type === 'standalone_app' && route.id) {
+    const standaloneApp = INITIAL_APPS.find(a => a.id === route.id)!;
     return (
       <div className="fixed inset-0 bg-[#ece9d8] flex flex-col font-tahoma text-xs overflow-hidden">
         <div className="bg-w95-blue text-white p-2 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
@@ -83,104 +144,19 @@ export function App() {
     </div>
   );
 
-  // 1.5 CHAT Route (chat.nates-software.com or /chat or ?view=chat)
-  if (
-    hostname.startsWith('chat.') ||
-    pathname.startsWith('/chat') ||
-    pathname.startsWith('/irc') ||
-    pathname.startsWith('/lounge') ||
-    viewQuery === 'chat'
-  ) {
-    return renderStandaloneWrapper("CHAT IRC CHATROOM (#lounge)", <ChatView />);
-  }
-
-  // 2. GITSMITH Route (gitsmith.nates-software.com or /gitsmith or /forge or ?view=gitsmith)
-  if (
-    hostname.startsWith('gitsmith.') ||
-    hostname.startsWith('git.') ||
-    pathname.startsWith('/gitsmith') ||
-    pathname.startsWith('/forge') ||
-    viewQuery === 'gitsmith'
-  ) {
-    return renderStandaloneWrapper("GITSMITH FORGE", <GitsmithView />);
-  }
-
-  // 3. HOTWIRE Route (hotwire.nates-software.com or /hotwire or /drops or ?view=hotwire)
-  if (
-    hostname.startsWith('hotwire.') ||
-    pathname.startsWith('/hotwire') ||
-    pathname.startsWith('/drops') ||
-    viewQuery === 'hotwire'
-  ) {
-    return renderStandaloneWrapper("HOTWIRE DAILY DROPS", <HotwireView />);
-  }
-
-  // 4. SLOPSHOP Route (slopshop.nates-software.com or /slopshop or /speedshop or ?view=slopshop)
-  if (
-    hostname.startsWith('slopshop.') ||
-    pathname.startsWith('/slopshop') ||
-    pathname.startsWith('/speedshop') ||
-    viewQuery === 'slopshop'
-  ) {
-    return renderStandaloneWrapper("SLOPSHOP LOCAL AI AGENT LAUNCHPAD", <SlopshopView />);
-  }
-
-  // 5. RIG.EXE Route (rig.nates-software.com or /rig or /runtime or ?view=rig)
-  if (
-    hostname.startsWith('rig.') ||
-    pathname.startsWith('/rig') ||
-    pathname.startsWith('/runtime') ||
-    viewQuery === 'rig'
-  ) {
-    return renderStandaloneWrapper("RIG.EXE MICRO-CONTAINER & SQLITE HUD", <RigRuntimeView />);
-  }
-
-  // 6. INBOX Route (/inbox or ?view=inbox)
-  if (
-    hostname.startsWith('inbox.') ||
-    pathname.startsWith('/inbox') ||
-    viewQuery === 'inbox'
-  ) {
-    return renderStandaloneWrapper("INBOX PROPOSALS", <InboxView />);
-  }
-
-  // 7. WHITE PAPERS Route (/white-papers or /whitepapers or /docs or ?view=white-papers)
-  if (
-    pathname.startsWith('/white-papers') ||
-    pathname.startsWith('/whitepapers') ||
-    pathname.startsWith('/docs') ||
-    viewQuery === 'white-papers' ||
-    viewQuery === 'papers'
-  ) {
-    return renderStandaloneWrapper("ARCHITECTURAL WHITE PAPERS", <WhitePapersView />);
-  }
-
-  // 8. DYNO Route (/dyno or /speedometer or ?view=dyno)
-  if (
-    pathname.startsWith('/dyno') ||
-    pathname.startsWith('/speedometer') ||
-    viewQuery === 'dyno'
-  ) {
-    return renderStandaloneWrapper("DYNO WORKSTATION SPEEDOMETER", <DynoView />);
-  }
-
-  // 9. PROFILE Route (/profile or /shelf or ?view=profile)
-  if (
-    pathname.startsWith('/profile') ||
-    pathname.startsWith('/shelf') ||
-    viewQuery === 'profile'
-  ) {
-    return renderStandaloneWrapper("MAKER PROFILE & DISK SHELF", <ProfileView />);
-  }
-
-  // 10. TERMINAL Route (/terminal or /shell or /dos or ?view=terminal)
-  if (
-    pathname.startsWith('/terminal') ||
-    pathname.startsWith('/shell') ||
-    pathname.startsWith('/dos') ||
-    viewQuery === 'terminal'
-  ) {
-    return renderStandaloneWrapper("TERMINAL.EXE INTERACTIVE DOS SHELL", <TerminalView />);
+  if (route.type === 'standalone_view') {
+    switch (route.id) {
+      case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
+      case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
+      case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView />);
+      case 'slopshop': return renderStandaloneWrapper(route.title || "SLOPSHOP", <SlopshopView />);
+      case 'rig': return renderStandaloneWrapper(route.title || "RIG.EXE", <RigRuntimeView />);
+      case 'inbox': return renderStandaloneWrapper(route.title || "INBOX", <InboxView />);
+      case 'white-papers': return renderStandaloneWrapper(route.title || "WHITE PAPERS", <WhitePapersView />);
+      case 'dyno': return renderStandaloneWrapper(route.title || "DYNO", <DynoView />);
+      case 'profile': return renderStandaloneWrapper(route.title || "PROFILE", <ProfileView />);
+      case 'terminal': return renderStandaloneWrapper(route.title || "TERMINAL", <TerminalView />);
+    }
   }
 
   // Main Desktop Environment

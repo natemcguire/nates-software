@@ -133,10 +133,19 @@ export function handleMod(featureArg?: string): SlopCommandResult {
   }
 
   const query = featureArg.toLowerCase().trim();
+  const normalizedQuery = query.replace(/[^a-z0-9]/g, "");
   let feature = PRESET_FEATURES.find(
-    f => f.id.toLowerCase() === query ||
-         f.id.toLowerCase().replace(/^feat_/, "") === query ||
-         f.name.toLowerCase().includes(query)
+    f => {
+      const fNorm = f.id.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const fClean = f.id.toLowerCase().replace(/^feat_/, "").replace(/[^a-z0-9]/g, "");
+      return f.id.toLowerCase() === query ||
+             f.id.toLowerCase().replace(/^feat_/, "") === query ||
+             fNorm === normalizedQuery ||
+             fClean === normalizedQuery ||
+             normalizedQuery.includes(fClean) ||
+             fClean.includes(normalizedQuery) ||
+             f.name.toLowerCase().includes(query);
+    }
   );
 
   if (!feature) {
@@ -151,7 +160,7 @@ export function handleMod(featureArg?: string): SlopCommandResult {
       description: `Custom AST feature mod for ${featureArg}`,
       author: "@nate",
       astNodesAdded: 16,
-      tablesCreated: [`${cleanId.replace(/^feat_/, "")}_items`],
+      tablesCreated: [`${cleanId.replace(/^feat_/, "").replace(/[^a-z0-9]/g, "_")}_items`],
       walMode: true,
       cleanlinessScore: 99.5
     };

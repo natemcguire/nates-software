@@ -16,43 +16,43 @@ export interface ASTFeaturePackage {
 
 export const PRESET_FEATURES: readonly [ASTFeaturePackage, ...ASTFeaturePackage[]] = [
   {
-    id: 'feat_triptych',
-    name: '3-Piece Triptych Slicer & Matting',
-    version: '2.4.0',
-    targetApp: 'wallart',
-    ref: 'refs/features/wallart-triptych/v2.4.0',
-    description: 'Slices single canvas into 3 multi-panel museum displays with configurable gap offsets.',
+    id: 'feat_dronehunter_scores',
+    name: 'High Score Telemetry & Audio Synthesizer',
+    version: '1.0.0',
+    targetApp: 'dronehunter',
+    ref: 'refs/features/dronehunter-scores/v1.0.0',
+    description: 'High score leaderboard persistence in SQLite WAL and 8-bit sound effects synthesizer.',
     author: '@nate',
-    astNodesAdded: 14,
-    tablesCreated: ['triptych_splits', 'frame_presets'],
+    astNodesAdded: 16,
+    tablesCreated: ['high_scores', 'sound_effects'],
     walMode: true,
     cleanlinessScore: 99.8
   },
   {
-    id: 'feat_ocr',
-    name: 'OCR Receipt Scanner & Ledger',
-    version: '1.2.0',
-    targetApp: 'retro-calc',
-    ref: 'refs/features/receipt-ocr/v1.2.0',
-    description: 'Optical character recognition for receipts with instant SQLite balance journal insertions.',
-    author: '@sam',
-    astNodesAdded: 22,
-    tablesCreated: ['receipt_scans', 'extracted_line_items'],
+    id: 'feat_pdf_raster',
+    name: '300 DPI PDF Rasterizer & FCRA Validator',
+    version: '1.0.0',
+    targetApp: 'certified-mailer',
+    ref: 'refs/features/pdf-rasterizer/v1.0.0',
+    description: 'High-res rasterizer preventing printer layout substitutions during legal certified mailing.',
+    author: '@nate',
+    astNodesAdded: 24,
+    tablesCreated: ['pdf_raster_caches', 'dispute_filings'],
     walMode: true,
-    cleanlinessScore: 99.4
+    cleanlinessScore: 99.5
   },
   {
-    id: 'feat_polar',
-    name: 'NMEA Polar Chart Telemetry Lock',
-    version: '2.1.0',
-    targetApp: 'sailtrack',
-    ref: 'refs/features/nmea-polar/v2.1.0',
-    description: 'Real-time polar performance curves and target VMG calculations against wind angle.',
-    author: '@nate',
+    id: 'feat_gemini_vision',
+    name: 'Google Gemini 2.5 Flash Virtual Try-On',
+    version: '1.0.0',
+    targetApp: 'picfitai',
+    ref: 'refs/features/gemini-tryon/v1.0.0',
+    description: 'Photorealistic AI virtual try-on and garment segmentation pipeline.',
+    author: '@sam',
     astNodesAdded: 18,
-    tablesCreated: ['polar_curves', 'telemetry_points'],
+    tablesCreated: ['tryon_sessions', 'garment_masks'],
     walMode: true,
-    cleanlinessScore: 98.8
+    cleanlinessScore: 99.2
   }
 ];
 

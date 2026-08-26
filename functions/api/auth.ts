@@ -108,7 +108,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   try {
     const url = new URL(request.url);
     const action = url.searchParams.get('action') || 'login';
-    const body = await request.json() as any;
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {}
 
     if (action === 'register') {
       const { username, password, displayName, avatar = '👤', bio = '' } = body;
