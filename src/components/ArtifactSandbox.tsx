@@ -189,8 +189,20 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         {/* TAB 1: Live App Embedded Runner */}
         {activeTab === 'preview' && (
           <div className="h-full flex flex-col">
-            <div className="bg-gray-100 p-2 border border-gray-300 mb-2 flex items-center justify-between text-xs font-mono">
-              <span className="text-gray-700">Subdomain: <strong className="text-blue-800">{app.id}.nates-software.com</strong></span>
+            <div className="bg-gray-100 p-2 border border-gray-300 mb-2 flex items-center justify-between text-xs font-mono flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-700">Subdomain: <strong className="text-blue-800">{app.id}.nates-software.com</strong></span>
+                <a
+                  href={`https://${app.id}.nates-software.com`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => playClickSound()}
+                  className="btn-w95 text-xs py-1 px-3 bg-blue-50 text-blue-900 font-bold flex items-center gap-1.5 hover:bg-blue-100 shadow-sm border border-blue-400"
+                  title={`Open https://${app.id}.nates-software.com in a new browser window`}
+                >
+                  <ExternalLink size={13} /> Open in New Window
+                </a>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded border border-green-300 font-bold">
                   ● Concurrency Governor: Active (2 / 10 Max)
