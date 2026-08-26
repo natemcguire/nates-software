@@ -14,11 +14,14 @@ const BLANK_DRAFT_APP: AppListing = {
   creatorAvatar: '⚡',
   upvotes: 1,
   forks: 0,
+  forkCount: 0,
+  lineageDepth: 1,
   version: 'v1.0.0',
   license: 'MIT',
   price: '$15 Registered Copy',
   moddabilityScore: 95,
   mergeCleanliness: '100% clean',
+  sqlitePath: '/data/app.sqlite',
   storage: 'Single-file SQLite WAL (/data/app.sqlite)',
   screenshots: [
     'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'
@@ -29,6 +32,7 @@ const BLANK_DRAFT_APP: AppListing = {
     linux: 'App-1.0.0.AppImage (16.1MB)',
     ios: 'TestFlight Active'
   },
+  techStack: ['TypeScript', 'SQLite', 'React 19'],
   tags: ['Shareware', 'SQLite WAL'],
   comments: []
 };

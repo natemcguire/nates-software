@@ -16,14 +16,14 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
   const [description, setDescription] = useState(app.description);
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
-  const [tagsStr, setTagsStr] = useState(app.tags.join(', '));
+  const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
 
-  const [macBinary, setMacBinary] = useState(app.binaries.mac);
-  const [winBinary, setWinBinary] = useState(app.binaries.win);
-  const [linuxBinary, setLinuxBinary] = useState(app.binaries.linux);
-  const [iosBinary, setIosBinary] = useState(app.binaries.ios);
+  const [macBinary, setMacBinary] = useState(app.binaries?.mac);
+  const [winBinary, setWinBinary] = useState(app.binaries?.win);
+  const [linuxBinary, setLinuxBinary] = useState(app.binaries?.linux);
+  const [iosBinary, setIosBinary] = useState(app.binaries?.ios);
 
   const handleAddImage = () => {
     if (!newImageUrl.trim()) return;
@@ -43,7 +43,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
       description,
       version,
       price,
-      tags: tagsStr.split(',').map(t => t.trim()).filter(Boolean),
+      tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
       screenshots,
       binaries: {
         mac: macBinary,

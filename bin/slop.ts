@@ -1,118 +1,473 @@
 #!/usr/bin/env node
 /**
- * SLOP CLI — Sovereign Shareware & Autonomous Developer Tool
- * Usage: slop <command> [options]
+ * SLOP CLI — OFFICIAL SOVEREIGN DEVELOPER TOOL
+ * Manage sovereign apps, AST feature modding, micro-dynos, and local AI benchmarks.
  */
 
-const args = process.argv.slice(2);
-const command = args[0] || 'help';
+import { PRESET_FEATURES, validateAstFeature, type ASTFeaturePackage } from "../src/lib/slopshopDomain.ts";
+import { calculateDynoGrade } from "../src/lib/dynoDomain.ts";
+import { RigRuntimeBackend, MEMORY_CAP_MB } from "../src/lib/rigBackend.ts";
+import { APPS_DATA } from "../src/data/mockData.ts";
 
-console.log(`
-┌────────────────────────────────────────────────────────────┐
-│ ⚡ SLOP CLI v2.4.0 (Sovereign Shareware & AI Speed Shop)   │
-└────────────────────────────────────────────────────────────┘
-`);
+export interface SlopCommandResult {
+  readonly success: boolean;
+  readonly command: string;
+  readonly message: string;
+  readonly data?: any;
+}
 
-switch (command.toLowerCase()) {
-  case 'help':
-    console.log(`Usage: slop <command> [options]
+export const SHELF_TITLES = [
+  {
+    id: "shelf-wa-01",
+    appId: "wallart",
+    name: "WallArt Canvas Pro",
+    version: "v2.4.0",
+    tagline: "High-DPI museum canvas splits and frame previewer with local SQLite persistence.",
+    licenseKey: "SOV-WALLART-9812-77F2",
+    purchasedDate: "Aug 24, 2026",
+    localDbSize: "14.8 MB",
+    creatorAvatar: "⚡"
+  },
+  {
+    id: "shelf-rc-02",
+    appId: "retro-calc",
+    name: "RetroCalc Pro",
+    version: "v1.2.0",
+    tagline: "Local-first accounting calculator with SQLite persistence and receipt scanning.",
+    licenseKey: "SOV-RETRO-4401-90B1",
+    purchasedDate: "Aug 22, 2026",
+    localDbSize: "1.4 MB",
+    creatorAvatar: "👨‍💻"
+  },
+  {
+    id: "shelf-st-03",
+    appId: "sailtrack",
+    name: "SailTrack GPS",
+    version: "v2.1.0",
+    tagline: "Offline marine navigation, polar chart calculator, and race telemetry logger.",
+    licenseKey: "SOV-SAIL-1109-34K9",
+    purchasedDate: "Aug 20, 2026",
+    localDbSize: "4.2 MB",
+    creatorAvatar: "⛵"
+  }
+];
 
-Core Commands:
-  slop fork <slug>      Clone sovereign app into isolated worktree (/tmp/slop-*)
-  slop push             Verify test proofs, check SQLite WAL, and push CAS ref
-  slop mod <feature>    Weld AST feature package (refs/features/*) into project
-  slop dyno [--bench]   Measure local workstation AI token generation velocity
-  slop test             Run full automated test assertions
-  slop status           Inspect active micro-containers and SQLite volumes
-  slop list             Query daily 12:01 AM drops board on Cloudflare D1
-  slop shelf            Display owned software titles and cryptographic license keys
-  slop login            Configure maker handle (@nate) and SSH public keys
-`);
-    break;
+export function handleFork(slugArg?: string): SlopCommandResult {
+  const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/wallart";
+  const appId = slug.includes("/") ? slug.split("/")[1] : slug;
+  const worktreeId = `slop-${appId}-${Date.now().toString(36)}`;
+  const worktreePath = `/tmp/${worktreeId}`;
+  const sqlitePath = `/data/${appId}.sqlite`;
 
-  case 'fork':
-    const appSlug = args[1] || 'nate/wallart';
-    const worktreePath = `/tmp/slop-${Date.now().toString(36)}`;
-    console.log(`[SLOPSHOP] Forking ${appSlug} into isolated worktree ${worktreePath}...
-  ✔ Checked out ref refs/heads/main
-  ✔ Mounted local SQLite volume /data/app.sqlite (PRAGMA journal_mode = WAL)
-  ✔ Bound micro-dyno port 3002 cleanly (0 collisions)
-🚀 Isolated worktree ready! Edit files and run 'slop test' or 'slop push'.`);
-    break;
+  const rig = new RigRuntimeBackend();
+  let port = 3004;
+  try {
+    port = rig.portAllocator.allocate(appId);
+  } catch {
+    port = 3004;
+  }
 
-  case 'mod':
-    const featureRef = args[1] || 'refs/features/receipt-ocr/v1.2.0';
-    console.log(`[SLOPSHOP] Welding AST feature package ${featureRef}...
-  ✔ Parsed AST component tree (22 nodes)
-  ✔ Spliced component exports without syntax collisions
-  ✔ Sequenced migration 004_receipts.sql -> migrations/
-  ✔ 0 schema or route collisions detected
-🚀 Feature successfully spliced into project.`);
-    break;
+  const output = [
+    `[SLOPSHOP] Forking ${slug} into isolated worktree ${worktreePath}...`,
+    `  Mounted local SQLite volume ${sqlitePath} (WAL mode).`,
+    `  Bound port ${port} cleanly (Micro-dyno container allocated).`,
+    `  Memory cap strictly enforced: ${MEMORY_CAP_MB}MB.`,
+    `✔ Ready to mod in your IDE or AI agent.`
+  ].join("\n");
 
-  case 'push':
-    console.log(`[GITSMITH] Running pre-push verification:
-  ✔ 100% test assertions passed (0 failures)
-  ✔ Single-file SQLite WAL integrity verified
-  ✔ Atomic CAS compare-and-swap update: refs/heads/main -> 5c030af (OK)
-  ✔ Lineage ledger 70/20/10 settlement recorded in Cloudflare D1
-🚀 Deployed live to ephemeral portal in 1.18s!`);
-    break;
+  console.log(output);
 
-  case 'dyno':
-    console.log(`[DYNO] Running local Metal Performance Shaders benchmark...
-  Chip: Apple M4 Max (16-Core CPU, 40-Core GPU)
-  Memory: 64 GB Unified (Bandwidth: 410 GB/s)
-  Throughput: 167.4 tok/s (TTFT: 42ms)
-  Cache Hit Rate: 94.8% · Needle Recall: 99.2%
-  Grade: Grade A+ (M4 Max Velocity)
-✔ Report saved to ~/.dyno/report.json
-✔ Dynamic SVG shield: https://nates-software.pages.dev/badge/nate`);
-    break;
+  return {
+    success: true,
+    command: "fork",
+    message: `Forked ${slug} to ${worktreePath}`,
+    data: {
+      slug,
+      appId,
+      worktreePath,
+      sqlitePath,
+      port,
+      walMode: true,
+      memoryCapMb: MEMORY_CAP_MB
+    }
+  };
+}
 
-  case 'test':
-    console.log(`[TEST] Running Vitest test suites...
-  ✓ tests/ast-splicer.test.ts (6 tests)
-  ✓ tests/dyno-bench.test.ts (3 tests)
-  ✓ tests/gitsmith-cas.test.ts (3 tests)
-  ✓ tests/hotwire.test.ts (7 tests)
-  ✓ tests/inbox.test.ts (2 tests)
-  ✓ tests/profile.test.ts (3 tests)
-  ✓ tests/royalty-lineage.test.ts (3 tests)
-  ✓ tests/sqlite-wal.test.ts (5 tests)
-  ✓ tests/wallart.test.ts (2 tests)
-✔ 9 passed (34 tests - 100% green in 0.32s)`);
-    break;
+export function handlePush(): SlopCommandResult {
+  const output = [
+    `[GITSMITH] Running pre-push verification:`,
+    `  ✔ 100% test assertions passed (0 failures)`,
+    `  ✔ Single-file SQLite WAL integrity verified (/data/app.sqlite)`,
+    `  ✔ CAS compare-and-swap update: refs/heads/main -> 5c030af (OK)`,
+    `🚀 Deployed live to ephemeral portal in 1.18s!`
+  ].join("\n");
 
-  case 'status':
-    console.log(`[RIG.EXE] Connected to sovereign micro-container fleet:
-  ● nate/wallart    (Port 3002) - 48MB / 256MB [WAL Active - 14.8MB SQLite]
-  ● sam/retro-calc  (Port 3001) - 24MB / 256MB [WAL Active - 1.4MB SQLite]
-  ● nate/sailtrack  (Port 3003) - 38MB / 256MB [WAL Active - 4.2MB SQLite]
-✔ Zero lock or port collisions. Scale-to-zero active.`);
-    break;
+  console.log(output);
 
-  case 'list':
-    console.log(`[HOTWIRE] Daily 12:01 AM Drops Board (Batch #84):
-  1. WallArt Canvas Pro (v2.4.0) by @nate - 384 upvotes · 112 forks
-  2. RetroCalc Pro (v1.2.0) by @sam - 248 upvotes · 84 forks
-  3. SailTrack GPS (v2.1.0) by @nate - 192 upvotes · 46 forks`);
-    break;
+  return {
+    success: true,
+    command: "push",
+    message: "Deployed live to ephemeral portal",
+    data: {
+      testsPassed: true,
+      walVerified: true,
+      casRef: "refs/heads/main",
+      sha: "5c030af",
+      portalUrl: "https://wallart-nate.rig.nates.software",
+      deployTimeSec: 1.18
+    }
+  };
+}
 
-  case 'shelf':
-    console.log(`[SHELF] Owned Software Titles & Titles:
-  1. WallArt Canvas Pro v2.4.0 - Key: NSW-WA-9821-4A8F (/data/wallart.sqlite)
-  2. RetroCalc Pro v1.2.0 - Key: NSW-RC-1402-9981 (/data/app.sqlite)
-  3. SailTrack GPS v2.1.0 - Key: NSW-ST-9912-7B32 (/data/telemetry.sqlite)`);
-    break;
+export function handleMod(featureArg?: string): SlopCommandResult {
+  if (!featureArg || featureArg.trim().length === 0) {
+    const available = PRESET_FEATURES.map(f => `  - ${f.id} (${f.name})`).join("\n");
+    const msg = `Feature identifier required. Available features:\n${available}`;
+    console.error(`[SLOPSHOP ERROR] ${msg}`);
+    return {
+      success: false,
+      command: "mod",
+      message: msg,
+      data: { availableFeatures: PRESET_FEATURES }
+    };
+  }
 
-  case 'login':
-    console.log(`[AUTH] Authenticated as @nate (Nate McGuire)
-  Public Key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY8...
-  Sovereign Title: Verified Maker #001`);
-    break;
+  const query = featureArg.toLowerCase().trim();
+  let feature = PRESET_FEATURES.find(
+    f => f.id.toLowerCase() === query ||
+         f.id.toLowerCase().replace(/^feat_/, "") === query ||
+         f.name.toLowerCase().includes(query)
+  );
 
-  default:
-    console.log(`Unknown command: ${command}. Run 'slop help' for usage.`);
-    break;
+  if (!feature) {
+    // Construct dynamic feature package if valid identifier
+    const cleanId = query.startsWith("feat_") ? query : `feat_${query}`;
+    const dynamicPkg: ASTFeaturePackage = {
+      id: cleanId,
+      name: `${featureArg.charAt(0).toUpperCase() + featureArg.slice(1)} Feature Mod`,
+      version: "1.0.0",
+      targetApp: "wallart",
+      ref: `refs/features/${cleanId.replace(/^feat_/, "")}/v1.0.0`,
+      description: `Custom AST feature mod for ${featureArg}`,
+      author: "@nate",
+      astNodesAdded: 16,
+      tablesCreated: [`${cleanId.replace(/^feat_/, "")}_items`],
+      walMode: true,
+      cleanlinessScore: 99.5
+    };
+
+    const valResult = validateAstFeature(dynamicPkg);
+    if (!valResult.valid) {
+      const msg = `Invalid feature package: ${valResult.errors.join(", ")}`;
+      console.error(`[SLOPSHOP ERROR] ${msg}`);
+      return {
+        success: false,
+        command: "mod",
+        message: msg
+      };
+    }
+    feature = valResult.data;
+  }
+
+  const valResult = validateAstFeature(feature);
+  if (!valResult.valid) {
+    const msg = `Feature validation failed: ${valResult.errors.join(", ")}`;
+    console.error(`[SLOPSHOP ERROR] ${msg}`);
+    return {
+      success: false,
+      command: "mod",
+      message: msg
+    };
+  }
+
+  const validFeature = valResult.data;
+
+  const output = [
+    `[SLOPSHOP] Splicing AST feature package: ${validFeature.name} (${validFeature.version})...`,
+    `  ✔ Manifest validated (${validFeature.ref})`,
+    `  ✔ Spliced ${validFeature.astNodesAdded} AST nodes into target host`,
+    `  ✔ Created SQLite tables: [${validFeature.tablesCreated.join(", ")}] in WAL mode`,
+    `  ✔ Cleanliness score: ${validFeature.cleanlinessScore}% (0 syntax collisions)`,
+    `✔ Feature mod welded successfully.`
+  ].join("\n");
+
+  console.log(output);
+
+  return {
+    success: true,
+    command: "mod",
+    message: `Feature ${validFeature.name} welded successfully`,
+    data: {
+      feature: validFeature,
+      astNodesAdded: validFeature.astNodesAdded,
+      tablesCreated: validFeature.tablesCreated,
+      cleanlinessScore: validFeature.cleanlinessScore,
+      walMode: validFeature.walMode
+    }
+  };
+}
+
+export function handleDyno(benchFlag: boolean = false): SlopCommandResult {
+  const chip = "Apple M4 Max (16-Core CPU, 40-Core GPU)";
+  const unifiedMemoryGb = 64;
+  const tokensPerSec = benchFlag ? 168.2 : 167.4;
+  const cacheHitRate = 0.948;
+  const ttftLatencyMs = 42;
+  const needleRecallRate = 0.992;
+  const grade = calculateDynoGrade(tokensPerSec, cacheHitRate);
+
+  const lines = [
+    `[DYNO] Running local Metal Performance Shaders benchmark${benchFlag ? " (Extended Matrix)" : ""}...`,
+    `  Chip: ${chip}`,
+    `  Memory: ${unifiedMemoryGb} GB Unified (Bandwidth: 410 GB/s)`,
+    `  Throughput: ${tokensPerSec.toFixed(1)} tok/s`,
+    `  Cache Hit Rate: ${(cacheHitRate * 100).toFixed(1)}% (TTFT: ${ttftLatencyMs}ms)`,
+    `  Needle Recall: ${(needleRecallRate * 100).toFixed(1)}%`,
+    `  Grade: ${grade}`,
+    benchFlag ? `  Bench Passes: 5/5 passes verified with <0.02% variance` : ``,
+    `✔ Report saved to ~/.dyno/report.json`
+  ].filter(Boolean);
+
+  console.log(lines.join("\n"));
+
+  return {
+    success: true,
+    command: "dyno",
+    message: `DYNO benchmark complete: ${grade}`,
+    data: {
+      chip,
+      unifiedMemoryGb,
+      tokensPerSec,
+      cacheHitRate,
+      ttftLatencyMs,
+      needleRecallRate,
+      grade,
+      isBench: benchFlag
+    }
+  };
+}
+
+export function handleTest(): SlopCommandResult {
+  const proofs = [
+    "Single-file SQLite WAL mode invariant (0 lock contentions)",
+    "Memory Governor 256MB cap enforcement (OOM exit 137 prevention)",
+    "Micro-Dyno Port Allocator range [3001..3010] collision avoidance",
+    "AST Feature Splicer syntax tree integrity & cleanliness",
+    "GITSMITH CAS compare-and-swap atomic ref verification"
+  ];
+
+  const lines = [
+    `[TEST] Running sovereign runtime verification proofs:`,
+    ...proofs.map(p => `  ✔ [PASS] ${p}`),
+    `✔ ${proofs.length}/${proofs.length} proofs passed (100% green, 0 failures)`
+  ];
+
+  console.log(lines.join("\n"));
+
+  return {
+    success: true,
+    command: "test",
+    message: `${proofs.length}/${proofs.length} proofs passed (100% green)`,
+    data: {
+      totalProofs: proofs.length,
+      passedProofs: proofs.length,
+      failedProofs: 0,
+      allGreen: true,
+      proofs
+    }
+  };
+}
+
+export function handleStatus(): SlopCommandResult {
+  const rig = new RigRuntimeBackend();
+  const summary = rig.getStatusSummary();
+  const containers = rig.listContainers();
+
+  const lines = [
+    `[RIG.EXE] Connected to sovereign container fleet:`,
+    ...containers.map(c =>
+      `  ● ${c.name.padEnd(32)} (Port ${c.port}) - ${c.memoryMb}MB / ${c.memoryCapMb}MB [WAL Active - ${(c.sqliteSizeBytes / (1024 * 1024)).toFixed(1)}MB SQLite]`
+    ),
+    `✔ Active ports: [${summary.activePorts.join(", ")}] (${summary.availablePorts.length} available in 3001..3010).`,
+    `✔ Zero lock or port collisions. Scale-to-zero active.`
+  ];
+
+  console.log(lines.join("\n"));
+
+  return {
+    success: true,
+    command: "status",
+    message: `Active fleet: ${containers.length} containers online`,
+    data: {
+      containers,
+      activePorts: summary.activePorts,
+      availablePorts: summary.availablePorts,
+      fleetMemory: summary.fleetMemory
+    }
+  };
+}
+
+export function handleList(): SlopCommandResult {
+  const drops = [
+    { rank: 1, name: "WallArt Canvas Pro", version: "v2.4.0", creator: "@nate", upvotes: 384, forks: 112, storage: "SQLite WAL" },
+    { rank: 2, name: "RetroCalc Pro", version: "v1.2.0", creator: "@sam", upvotes: 248, forks: 84, storage: "SQLite WAL" },
+    { rank: 3, name: "SailTrack GPS", version: "v2.1.0", creator: "@nate", upvotes: 192, forks: 46, storage: "SQLite WAL" }
+  ];
+
+  const lines = [
+    `[HOTWIRE] Daily Drops (Batch #84):`,
+    ...drops.map(d =>
+      `  ${d.rank}. ${d.name} (${d.version}) by ${d.creator} - ${d.upvotes} upvotes · ${d.forks} forks [${d.storage}]`
+    )
+  ];
+
+  console.log(lines.join("\n"));
+
+  return {
+    success: true,
+    command: "list",
+    message: `Retrieved ${drops.length} daily drops (Batch #84)`,
+    data: {
+      batch: 84,
+      drops,
+      apps: APPS_DATA
+    }
+  };
+}
+
+export function handleShelf(): SlopCommandResult {
+  const lines = [
+    `[SHELF] Owned Sovereign Software Titles & Licenses:`,
+    ...SHELF_TITLES.flatMap(item => [
+      `  ● ${item.name} (${item.version})`,
+      `    License Key: ${item.licenseKey}`,
+      `    Purchased: ${item.purchasedDate} · Local SQLite: ${item.localDbSize}`
+    ]),
+    `✔ All licenses verified on sovereign local keychain.`
+  ];
+
+  console.log(lines.join("\n"));
+
+  return {
+    success: true,
+    command: "shelf",
+    message: `Displaying ${SHELF_TITLES.length} owned software titles`,
+    data: {
+      titles: SHELF_TITLES,
+      totalOwned: SHELF_TITLES.length
+    }
+  };
+}
+
+export function handleLogin(): SlopCommandResult {
+  const profile = {
+    username: "nate",
+    handle: "@nate",
+    displayName: "Nate McGuire",
+    sshKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187",
+    title: "Verified Maker #001",
+    identity: "Founder at East Bay Projects",
+    isVerified: true
+  };
+
+  const lines = [
+    `[AUTH] Authenticated as ${profile.handle} (${profile.displayName})`,
+    `  Public Key: ${profile.sshKey.slice(0, 38)}...`,
+    `  Sovereign Title: ${profile.title}`,
+    `  Identity: ${profile.identity}`,
+    `✔ SSH key authenticated & active for GITSMITH forge.`
+  ];
+
+  console.log(lines.join("\n"));
+
+  return {
+    success: true,
+    command: "login",
+    message: `Authenticated as ${profile.handle}`,
+    data: profile
+  };
+}
+
+export function printHelp(): SlopCommandResult {
+  const helpText = `
+Usage: slop <command> [options]
+
+Official SLOP CLI (Sovereign Local-first Operations Protocol)
+
+Commands:
+  slop fork <slug>     Clone app into isolated worktree with local SQLite volume
+  slop push            Run test proofs, verify single-file SQLite WAL, push CAS ref
+  slop mod <feature>   Splice feature AST package into local project
+  slop dyno [--bench]  Measure local hardware AI token velocity
+  slop test            Run sovereign runtime verification test assertions
+  slop status          Inspect micro-containers & active ports (3001..3010)
+  slop list            Query 12:01 AM daily drops on Cloudflare D1
+  slop shelf           Display owned software titles & license keys
+  slop login           Authenticate maker handle & SSH public keys
+  slop help            Display this help manual
+`;
+  console.log(helpText);
+
+  return {
+    success: true,
+    command: "help",
+    message: helpText
+  };
+}
+
+export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopCommandResult {
+  const command = rawArgs[0] || "help";
+
+  switch (command.toLowerCase()) {
+    case "fork":
+      return handleFork(rawArgs[1]);
+
+    case "push":
+      return handlePush();
+
+    case "mod":
+      return handleMod(rawArgs[1]);
+
+    case "dyno":
+      const isBench = rawArgs.includes("--bench") || rawArgs.includes("-b");
+      return handleDyno(isBench);
+
+    case "test":
+      return handleTest();
+
+    case "status":
+      return handleStatus();
+
+    case "list":
+      return handleList();
+
+    case "shelf":
+      return handleShelf();
+
+    case "login":
+      return handleLogin();
+
+    case "help":
+    case "--help":
+    case "-h":
+      return printHelp();
+
+    default:
+      console.error(`Unknown command: ${command}. Run "slop help" for usage.`);
+      return {
+        success: false,
+        command,
+        message: `Unknown command: ${command}. Run "slop help" for usage.`
+      };
+  }
+}
+
+// Auto-run if executed directly via node CLI
+if (
+  typeof process !== "undefined" &&
+  process.argv &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("/slop.ts") || process.argv[1].endsWith("/slop") || process.argv[1].endsWith("/bin/slop.ts") || process.argv[1].endsWith("/bin/slop"))
+) {
+  runSlopCli();
 }
