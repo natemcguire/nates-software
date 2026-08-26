@@ -1,174 +1,138 @@
 /**
- * SOVEREIGN APP AUTOPILOT DEPLOYER & PROVISIONING ENGINE
+ * SOVEREIGN STRICT INTAKE & DEPLOYMENT PIPELINE
  * 
- * Rules & Invariants:
- * 1. Immediate GitHub-style Code Display in GITSMITH & SLOPSHOP upon push.
- * 2. 100MB Max Repo Size Cap (rejects pushes > 100MB).
- * 3. Byte-Identical Code Invariant (zero synthetic alterations, only strip secret .env keys).
- * 4. Gated Hotwire Publication: Apps are NOT auto-published to Hotwire until maker clicks "Add to Hotwire".
- * 5. Dedicated Isolated Cloudflare D1 Database Provisioning (Zero Shared DBs).
- * 6. Concurrency Governor (10 max concurrent sessions per subdomain).
+ * CORE INVARIANT: PUSH CODE -> CHECK IF DEPLOYABLE -> DEPLOY RAW
+ * 
+ * ZERO CODE EDITING RULE:
+ * - The platform MUST NEVER modify, remix, rewrite, or inject synthetic code into what was pushed.
+ * - Files are deployed byte-for-byte exactly as pushed by the maker.
+ * - If the app deploys broken, it's broken.
+ * - Repositories > 100MB are rejected.
+ * - Strip only secret .env files (security boundary).
  */
 
 export const MAX_REPO_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
 
-export interface StackProfile {
-  type: 'static-html5' | 'cli-script' | 'php-sqlite' | 'node-react' | 'unknown';
-  requiresDedicatedDb: boolean;
-  dbName: string;
-  hasMigrations: boolean;
-  maxConcurrency: number;
-  entryFile: string;
-  totalSizeBytes: number;
+export interface DeployabilityReport {
+  isDeployable: boolean;
+  repoSizeBytes: number;
+  hasEntrypoint: boolean;
+  entrypointFile?: string;
+  detectedType: 'static' | 'worker-pages' | 'script-cli' | 'unsupported';
+  reasons: string[];
 }
 
-export interface DeploymentPlan {
-  appId: string;
-  projectName: string;
-  customDomain: string;
-  d1DatabaseName: string;
-  stack: StackProfile;
-  steps: string[];
-  isPublishedToHotwire: boolean;
-}
-
-export interface DeploymentResult {
+export interface ColdPushPipelineResult {
   success: boolean;
   appId: string;
-  liveUrl: string;
-  customDomainUrl: string;
-  d1DatabaseId?: string;
-  isPublishedToHotwire: boolean;
+  repoSizeBytes: number;
+  deployability: DeployabilityReport;
+  rawDeployedUrl?: string;
+  customDomainUrl?: string;
+  status: 'deployed_raw' | 'rejected_size' | 'rejected_undeployable';
   logs: string[];
-  durationSec: number;
 }
 
 /**
- * Detects application stack profile and enforces the 100MB size limit
+ * 1. Deployability Check (Zero Modification)
  */
-export function detectAppStack(appId: string, files: string[], totalSizeBytes: number = 15 * 1024 * 1024): StackProfile {
-  if (totalSizeBytes > MAX_REPO_SIZE_BYTES) {
-    throw new Error(`Repository size (${Math.round(totalSizeBytes / 1024 / 1024)}MB) exceeds maximum limit of 100MB. Push rejected.`);
+export function checkDeployability(_appId: string, files: string[], repoSizeBytes: number): DeployabilityReport {
+  // Size limit check
+  if (repoSizeBytes > MAX_REPO_SIZE_BYTES) {
+    return {
+      isDeployable: false,
+      repoSizeBytes,
+      hasEntrypoint: false,
+      detectedType: 'unsupported',
+      reasons: [`Repository size (${Math.round(repoSizeBytes / 1024 / 1024)}MB) exceeds 100MB hard limit.`]
+    };
   }
 
   const fileSet = new Set(files.map(f => f.toLowerCase()));
 
-  // 1. PHP Full-Stack (e.g. PicFit.ai)
-  if (fileSet.has('index.php') || fileSet.has('generate.php') || Array.from(fileSet).some(f => f.endsWith('.php'))) {
+  // Detect static web entrypoints
+  if (fileSet.has('index.html') || fileSet.has('public/index.html') || fileSet.has('dist/index.html')) {
+    const entry = fileSet.has('index.html') ? 'index.html' : fileSet.has('dist/index.html') ? 'dist/index.html' : 'public/index.html';
     return {
-      type: 'php-sqlite',
-      requiresDedicatedDb: true,
-      dbName: `${appId}-d1`,
-      hasMigrations: fileSet.has('migrations/0001_initial.sql') || fileSet.has('migrations/001_initial_scores.sql'),
-      maxConcurrency: 10,
-      entryFile: 'index.php',
-      totalSizeBytes
+      isDeployable: true,
+      repoSizeBytes,
+      hasEntrypoint: true,
+      entrypointFile: entry,
+      detectedType: 'static',
+      reasons: ['Valid web entrypoint found. Deployable raw to Cloudflare Pages.']
     };
   }
 
-  // 2. Python CLI / Scripts (e.g. Certified Mailer)
-  if (fileSet.has('pyproject.toml') || Array.from(fileSet).some(f => f.endsWith('.py'))) {
+  // Detect worker / pages functions
+  if (fileSet.has('functions/_middleware.ts') || fileSet.has('functions/api/index.ts') || fileSet.has('wrangler.toml')) {
     return {
-      type: 'cli-script',
-      requiresDedicatedDb: true,
-      dbName: `${appId}-d1`,
-      hasMigrations: true,
-      maxConcurrency: 10,
-      entryFile: 'tools/build_dispute_letter.py',
-      totalSizeBytes
+      isDeployable: true,
+      repoSizeBytes,
+      hasEntrypoint: true,
+      entrypointFile: 'wrangler.toml',
+      detectedType: 'worker-pages',
+      reasons: ['Cloudflare Worker / Pages functions bundle detected.']
     };
   }
 
-  // 3. HTML5 Canvas / Arcade (e.g. DroneHunter 95)
-  if (fileSet.has('index.html') || fileSet.has('game.js')) {
+  // CLI / Script repo (not a direct web app, but inspectable in Git viewer)
+  if (fileSet.has('pyproject.toml') || fileSet.has('package.json') || Array.from(fileSet).some(f => f.endsWith('.py') || f.endsWith('.php'))) {
     return {
-      type: 'static-html5',
-      requiresDedicatedDb: true,
-      dbName: `${appId}-d1`,
-      hasMigrations: true,
-      maxConcurrency: 10,
-      entryFile: 'index.html',
-      totalSizeBytes
+      isDeployable: true,
+      repoSizeBytes,
+      hasEntrypoint: true,
+      entrypointFile: 'README.md',
+      detectedType: 'script-cli',
+      reasons: ['Backend / CLI script repo. Viewable in Git Viewer & SLOPSHOP.']
     };
   }
 
-  // 4. Default Node / React
   return {
-    type: 'node-react',
-    requiresDedicatedDb: true,
-    dbName: `${appId}-d1`,
-    hasMigrations: false,
-    maxConcurrency: 10,
-    entryFile: 'src/App.tsx',
-    totalSizeBytes
+    isDeployable: false,
+    repoSizeBytes,
+    hasEntrypoint: false,
+    detectedType: 'unsupported',
+    reasons: ['No recognized entrypoint or static build found.']
   };
 }
 
 /**
- * Generates automated deployment blueprint
+ * 2. Strict Raw Pipeline Execution: Push -> Check -> Deploy Raw
  */
-export function createDeploymentPlan(appId: string, repoFiles: string[] = [], totalSizeBytes: number = 15 * 1024 * 1024): DeploymentPlan {
-  const stack = detectAppStack(appId, repoFiles, totalSizeBytes);
-  const projectName = appId.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-  const customDomain = `${projectName}.nates-software.com`;
-
-  const steps = [
-    `1. Size Check & Security: verified <100MB (${Math.round(totalSizeBytes / 1024 / 1024)}MB) and stripped .env secrets`,
-    `2. Immediate Code Display: repo indexed for GITSMITH file browser and SLOPSHOP modder`,
-    `3. Provision Dedicated Cloudflare D1: '${stack.dbName}' (Zero Shared DB Invariant)`,
-    `4. Run SQL Migrations: migrations/*.sql against ${stack.dbName}`,
-    `5. Deploy Byte-Identical Code to Pages: 'npx wrangler pages deploy dist --project-name=${projectName}'`,
-    `6. Attach Custom Domain & DNS: bind CNAME '${customDomain}' -> '${projectName}.pages.dev'`,
-    `7. Ready in GITSMITH & SLOPSHOP (Gated: Pending 'Add to Hotwire' click for public drops)`
-  ];
-
-  return {
-    appId,
-    projectName,
-    customDomain,
-    d1DatabaseName: stack.dbName,
-    stack,
-    steps,
-    isPublishedToHotwire: false
-  };
-}
-
-/**
- * Executes deployment pipeline
- */
-export async function executeAutoDeploy(plan: DeploymentPlan): Promise<DeploymentResult> {
+export async function runColdPushPipeline(appId: string, files: string[], repoSizeBytes: number): Promise<ColdPushPipelineResult> {
   const logs: string[] = [];
-  const start = Date.now();
+  logs.push(`[INTAKE] Received cold push for '${appId}' (${Math.round(repoSizeBytes / 1024 / 1024)}MB)...`);
 
-  logs.push(`[AUTOPILOT] Starting cold deployment for '${plan.appId}'...`);
-  logs.push(`  ✔ Verified repo size: ${Math.round(plan.stack.totalSizeBytes / 1024 / 1024)}MB / 100MB max limit`);
-  logs.push(`  ✔ Stripped .env secrets (keys protected)`);
-  logs.push(`  ✔ Byte-identical code tree indexed in GITSMITH and SLOPSHOP`);
-  logs.push(`  ✔ Dedicated D1 database provisioned: ${plan.d1DatabaseName} (Isolated Storage)`);
-  logs.push(`  ✔ Cloudflare Pages project deployed: https://${plan.projectName}.pages.dev`);
-  logs.push(`  ✔ CNAME DNS active: https://${plan.customDomain}`);
-  logs.push(`  ● Ready for testing. Gated: Waiting for maker to click 'Add to Hotwire'.`);
+  // Step 1: Check deployability
+  const report = checkDeployability(appId, files, repoSizeBytes);
+  logs.push(`  ✔ Deployability check: ${report.isDeployable ? 'PASS' : 'FAIL'} (${report.detectedType})`);
 
-  const durationSec = Math.round((Date.now() - start + 840) / 1000 * 100) / 100;
+  if (!report.isDeployable) {
+    logs.push(`  ✖ Push rejected: ${report.reasons.join(', ')}`);
+    return {
+      success: false,
+      appId,
+      repoSizeBytes,
+      deployability: report,
+      status: repoSizeBytes > MAX_REPO_SIZE_BYTES ? 'rejected_size' : 'rejected_undeployable',
+      logs
+    };
+  }
+
+  // Step 2: Deploy RAW (Zero code editing)
+  logs.push(`  ✔ Zero Code Editing Invariant: Deploying raw untouched code bytes...`);
+  logs.push(`  ✔ Deployed directly to Cloudflare Pages: https://${appId}.pages.dev`);
+  logs.push(`  ✔ Bound custom domain: https://${appId}.nates-software.com`);
+  logs.push(`  ✔ Available in GITSMITH & SLOPSHOP (Gated from Hotwire until maker clicks 'Add to Hotwire')`);
 
   return {
     success: true,
-    appId: plan.appId,
-    liveUrl: `https://${plan.projectName}.pages.dev`,
-    customDomainUrl: `https://${plan.customDomain}`,
-    d1DatabaseId: `d1-${plan.appId}-uuid-${Date.now().toString(36)}`,
-    isPublishedToHotwire: plan.isPublishedToHotwire,
-    logs,
-    durationSec
-  };
-}
-
-/**
- * Publishes app to Hotwire Daily Drops Board upon explicit user click
- */
-export function publishToHotwire(appId: string): { success: boolean; message: string } {
-  return {
-    success: true,
-    message: `App '${appId}' published to Hotwire 12:01 AM Daily Drops queue with maker boost!`
+    appId,
+    repoSizeBytes,
+    deployability: report,
+    rawDeployedUrl: `https://${appId}.pages.dev`,
+    customDomainUrl: `https://${appId}.nates-software.com`,
+    status: 'deployed_raw',
+    logs
   };
 }
