@@ -1,12 +1,15 @@
 // GET /api/chat?channel=#lounge
 // POST /api/chat
+// Ephemeral 24-Hour Sliding Window Auto-Purge
+
+const TTL_24_HOURS_MS = 24 * 60 * 60 * 1000;
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const url = new URL(request.url);
     const channel = url.searchParams.get('channel') || '#lounge';
+    const cutoff = Date.now() - TTL_24_HOURS_MS;
 
-    // In Cloudflare D1 or in-memory fallback
     if (env && env.DB) {
       try {
         await env.DB.prepare(`
@@ -21,23 +24,30 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           );
         `).run();
 
+        // 1. Auto-purge records older than 24 hours
+        await env.DB.prepare(`
+          DELETE FROM chat_messages WHERE created_at < ?
+        `).bind(cutoff).run();
+
+        // 2. Fetch only unexpired messages within the 24-hour window
         const { results } = await env.DB.prepare(`
           SELECT id, channel, sender, type, text, is_op AS isOp, created_at AS timestamp
           FROM chat_messages
-          WHERE channel = ?
+          WHERE channel = ? AND created_at >= ?
           ORDER BY created_at ASC
           LIMIT 100
-        `).bind(channel).all();
+        `).bind(channel, cutoff).all();
 
         return Response.json({
           success: true,
           channel,
           messages: results || [],
+          ttlHours: 24,
           server: 'irc.nates-software.com',
           port: 6667
         });
       } catch (dbErr) {
-        // Fall back to success if table query fails
+        // Fall back gracefully
       }
     }
 
@@ -45,6 +55,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       success: true,
       channel,
       messages: [],
+      ttlHours: 24,
       server: 'irc.nates-software.com',
       port: 6667
     });
@@ -64,9 +75,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const timestamp = Date.now();
+    const cutoff = timestamp - TTL_24_HOURS_MS;
 
     if (env && env.DB) {
       try {
+        // Auto-purge old logs before insert
+        await env.DB.prepare(`
+          DELETE FROM chat_messages WHERE created_at < ?
+        `).bind(cutoff).run();
+
         await env.DB.prepare(`
           INSERT INTO chat_messages (id, channel, sender, type, text, is_op, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?)

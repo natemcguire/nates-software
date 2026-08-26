@@ -6,7 +6,8 @@ import {
   INITIAL_ONLINE_USERS,
   INITIAL_CHAT_MESSAGES,
   formatIrcTime,
-  parseUserChatInput
+  parseUserChatInput,
+  filterUnexpiredIrcMessages
 } from '../lib/ircProtocol';
 import {
   Users,
@@ -58,7 +59,7 @@ export const ChatView: React.FC = () => {
           setMessages(prev => {
             const existingIds = new Set(prev.map(p => p.id));
             const newOnes = apiMsgs.filter(m => !existingIds.has(m.id));
-            return [...prev, ...newOnes];
+            return filterUnexpiredIrcMessages([...prev, ...newOnes]);
           });
         }
       })
@@ -184,6 +185,7 @@ export const ChatView: React.FC = () => {
           <span className="bg-emerald-950 text-emerald-300 border border-emerald-500 px-2 py-0.5 rounded font-bold flex items-center gap-1">
             <Radio size={11} className="text-emerald-400 animate-pulse" />
             <span>{serverStatus} (irc.nates-software.com:6667)</span>
+            <span className="bg-blue-900 text-cyan-300 px-1.5 py-0.2 rounded text-[10px]">24h Ephemeral Buffer</span>
           </span>
 
           <button

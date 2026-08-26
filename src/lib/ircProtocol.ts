@@ -266,3 +266,16 @@ export const INITIAL_CHAT_MESSAGES: IrcMessage[] = [
     timeFormatted: '07:38:00'
   }
 ];
+
+/**
+ * Purge helper: returns only messages created within the last 24 hours
+ */
+export const IRC_MESSAGE_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function filterUnexpiredIrcMessages(messages: IrcMessage[], nowMs: number = Date.now()): IrcMessage[] {
+  const cutoff = nowMs - IRC_MESSAGE_TTL_MS;
+  return messages.filter(m => {
+    const msgTime = new Date(m.timestamp).getTime();
+    return !isNaN(msgTime) && msgTime >= cutoff;
+  });
+}

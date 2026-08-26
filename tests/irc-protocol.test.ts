@@ -4,7 +4,9 @@ import {
   formatRawIrcLine,
   parseUserChatInput,
   formatIrcTime,
-  INITIAL_ONLINE_USERS
+  filterUnexpiredIrcMessages,
+  INITIAL_ONLINE_USERS,
+  IrcMessage
 } from '../src/lib/ircProtocol';
 
 describe('RFC 1459 / 2812 IRC Protocol Suite', () => {
@@ -77,5 +79,33 @@ describe('RFC 1459 / 2812 IRC Protocol Suite', () => {
   it('should format standard timestamps to [HH:MM:SS]', () => {
     const timeStr = formatIrcTime(new Date(2026, 7, 26, 7, 38, 15));
     expect(timeStr).toBe('07:38:15');
+  });
+
+  it('should purge and filter messages older than 24 hours (24h Ephemeral Buffer)', () => {
+    const now = Date.now();
+    const mockMessages: IrcMessage[] = [
+      {
+        id: 'msg-old',
+        channel: '#lounge',
+        sender: 'sam',
+        type: 'PRIVMSG',
+        text: 'This is 25 hours old and should be purged',
+        timestamp: new Date(now - 25 * 3600 * 1000).toISOString(),
+        timeFormatted: '06:00:00'
+      },
+      {
+        id: 'msg-fresh',
+        channel: '#lounge',
+        sender: 'nate',
+        type: 'PRIVMSG',
+        text: 'This is 2 hours old and is active',
+        timestamp: new Date(now - 2 * 3600 * 1000).toISOString(),
+        timeFormatted: '05:38:00'
+      }
+    ];
+
+    const unexpired = filterUnexpiredIrcMessages(mockMessages, now);
+    expect(unexpired.length).toBe(1);
+    expect(unexpired[0].id).toBe('msg-fresh');
   });
 });
