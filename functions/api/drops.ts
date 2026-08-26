@@ -46,7 +46,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       query += ` ORDER BY a.upvotes DESC LIMIT 100`;
     }
 
-    const { results } = await env.DB.prepare(query).all();
+    let results: any[] = [];
+    if (env && env.DB) {
+      const dbRes = await env.DB.prepare(query).all();
+      results = dbRes.results || [];
+    }
 
     // Fetch user drop history for maker streak calculation
     let makerStreaks: Record<string, any> = {};

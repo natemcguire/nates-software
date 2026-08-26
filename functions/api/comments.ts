@@ -13,15 +13,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       FROM comments c
       JOIN users u ON c.user_id = u.id
     `;
-    if (appId) {
-      query += ` WHERE c.app_id = ? ORDER BY c.created_at DESC`;
-      const { results } = await env.DB.prepare(query).bind(appId).all();
-      return Response.json({ success: true, comments: results });
-    } else {
-      query += ` ORDER BY c.created_at DESC LIMIT 50`;
-      const { results } = await env.DB.prepare(query).all();
-      return Response.json({ success: true, comments: results });
+    if (env && env.DB) {
+      if (appId) {
+        query += ` WHERE c.app_id = ? ORDER BY c.created_at DESC`;
+        const { results } = await env.DB.prepare(query).bind(appId).all();
+        return Response.json({ success: true, comments: results });
+      } else {
+        query += ` ORDER BY c.created_at DESC LIMIT 50`;
+        const { results } = await env.DB.prepare(query).all();
+        return Response.json({ success: true, comments: results });
+      }
     }
+    return Response.json({ success: true, comments: [] });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }
