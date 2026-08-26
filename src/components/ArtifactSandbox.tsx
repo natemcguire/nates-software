@@ -362,12 +362,22 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setShowDownloadModal(true)}
+          <a
+            href={app.liveUrl || `https://${app.id}.nates-software.com`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
+          >
+            <ExternalLink size={12} /> Launch Live App &rarr;
+          </a>
+          <a
+            href={`https://gitsmith.nates-software.com?repo=${app.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
           >
-            <Download size={12} /> Download Offline DMG
-          </button>
+            <Database size={12} /> View on GITSMITH
+          </a>
         </div>
       </div>
 

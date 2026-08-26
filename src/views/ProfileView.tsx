@@ -1,31 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { User, Key, Download, HardDrive, MessageSquare, Check, Sparkles, Plus } from 'lucide-react';
+import { User, Key, Download, HardDrive, MessageSquare, Check, Sparkles, ExternalLink, Folder, Copy } from 'lucide-react';
 import { APPS_DATA } from '../data/mockData';
+import { playClickSound } from '../lib/soundEngine';
 
 export const ProfileView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'shelf' | 'forks' | 'activity'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'shelf' | 'forks' | 'activity'>('shelf');
 
   // User Profile State
   const [username, setUsername] = useState('nate');
   const [displayName, setDisplayName] = useState('Nate McGuire');
   const [avatar, setAvatar] = useState('⚡');
-  const [bio, setBio] = useState('Founder at East Bay Projects. Building shareware for indie developers.');
+  const [bio, setBio] = useState('Founder at East Bay Projects. Building indie shareware.');
   const [sshKey, setSshKey] = useState('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY8... nate@macmini');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
   // User Shelf (Owned / Saved Apps)
   const [shelfApps, setShelfApps] = useState<any[]>([
     {
       ...APPS_DATA[0],
-      licenseKey: 'NSW-WA-9821-0001',
+      licenseKey: 'NSW-DH-9821-0001',
       purchasedDate: 'Aug 25, 2026',
       localDbSize: '14.8 MB'
     },
     {
       ...APPS_DATA[1],
-      licenseKey: 'NSW-RC-9821-4401',
+      licenseKey: 'NSW-CM-9821-4401',
       purchasedDate: 'Aug 24, 2026',
       localDbSize: '1.4 MB'
+    },
+    {
+      ...APPS_DATA[2],
+      licenseKey: 'NSW-PF-9821-7702',
+      purchasedDate: 'Aug 22, 2026',
+      localDbSize: '4.2 MB'
     }
   ]);
 
@@ -38,7 +46,7 @@ export const ProfileView: React.FC = () => {
           if (data.user) {
             setDisplayName(data.user.displayName || 'Nate McGuire');
             setAvatar(data.user.avatar || '⚡');
-            setBio(data.user.bio || '');
+            setBio(data.user.bio || 'Founder at East Bay Projects. Building indie shareware.');
             if (data.user.sshKey) setSshKey(data.user.sshKey);
           }
           if (data.shelf && data.shelf.length > 0) {
@@ -54,7 +62,6 @@ export const ProfileView: React.FC = () => {
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
 
-    // Call live Cloudflare D1 API
     try {
       await fetch('/api/profile', {
         method: 'POST',
@@ -70,8 +77,15 @@ export const ProfileView: React.FC = () => {
     } catch {}
   };
 
+  const handleCopyLicense = (appId: string, key: string) => {
+    playClickSound();
+    navigator.clipboard.writeText(key);
+    setCopiedKeyId(appId);
+    setTimeout(() => setCopiedKeyId(null), 2000);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm">
+    <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm select-none">
       {/* Profile Header Navigation */}
       <div className="bg-gradient-to-r from-w95-blue via-blue-900 to-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
@@ -91,25 +105,25 @@ export const ProfileView: React.FC = () => {
         {/* Tab Navigation */}
         <div className="flex gap-1">
           <button
-            onClick={() => setActiveTab('profile')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'profile' ? 'btn-w95-primary' : 'text-black'}`}
-          >
-            <User size={13} /> Account Settings
-          </button>
-          <button
-            onClick={() => setActiveTab('shelf')}
+            onClick={() => { playClickSound(); setActiveTab('shelf'); }}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'shelf' ? 'btn-w95-primary' : 'text-black'}`}
           >
             <HardDrive size={13} /> My Shelf ({shelfApps.length})
           </button>
           <button
-            onClick={() => setActiveTab('forks')}
+            onClick={() => { playClickSound(); setActiveTab('forks'); }}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'forks' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            <Sparkles size={13} /> My Forks &amp; Drops
+            <Sparkles size={13} /> Published Apps (3)
           </button>
           <button
-            onClick={() => setActiveTab('activity')}
+            onClick={() => { playClickSound(); setActiveTab('profile'); }}
+            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'profile' ? 'btn-w95-primary' : 'text-black'}`}
+          >
+            <User size={13} /> Account Settings
+          </button>
+          <button
+            onClick={() => { playClickSound(); setActiveTab('activity'); }}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'activity' ? 'btn-w95-primary' : 'text-black'}`}
           >
             <MessageSquare size={13} /> Comments &amp; Upvotes
@@ -119,7 +133,131 @@ export const ProfileView: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
-        {/* TAB 1: Profile Settings */}
+        {/* TAB 1: My Shelf */}
+        {activeTab === 'shelf' && (
+          <div className="space-y-3 max-w-4xl mx-auto">
+            <div className="border-b pb-2 mb-2 flex justify-between items-center">
+              <div>
+                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; Local Database Volume</span>
+                <p className="text-gray-600 text-xs">All software titles in your library with live URLs, Git repository links, and SQLite database backup options.</p>
+              </div>
+              <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
+                {shelfApps.length} Owned Applications
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {shelfApps.map((app) => (
+                <div key={app.id} className="border-2 border-gray-700 bg-gray-50 p-3 rounded flex items-center justify-between gap-3 shadow-sm hover:bg-blue-50/40 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl bg-white p-1 rounded border border-gray-400">{app.authorAvatar || app.creatorAvatar || '📦'}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-gray-900">{app.name}</span>
+                        <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300">
+                          {app.version}
+                        </span>
+                        <span className="text-gray-500 text-xs font-mono">License: {app.licenseKey}</span>
+                        <button
+                          onClick={() => handleCopyLicense(app.id, app.licenseKey)}
+                          className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-0.5"
+                          title="Copy license key"
+                        >
+                          {copiedKeyId === app.id ? <Check size={10} className="text-green-700" /> : <Copy size={10} />}
+                          <span>{copiedKeyId === app.id ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                      <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
+                      <div className="text-[11px] text-gray-500 font-mono mt-1 flex items-center gap-2">
+                        <span>Acquired: {app.purchasedDate}</span>
+                        <span>&middot;</span>
+                        <span>Database: {app.sqliteDatabase} (WAL Mode)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={app.liveUrl || `https://${app.id}.nates-software.com`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-w95 btn-w95-primary text-xs py-1 px-3 flex items-center gap-1 font-bold"
+                    >
+                      <ExternalLink size={12} /> Launch &rarr;
+                    </a>
+                    <a
+                      href={`https://gitsmith.nates-software.com?repo=${app.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold"
+                    >
+                      <Folder size={12} /> Git Repo
+                    </a>
+                    <a
+                      href={`data:text/plain;charset=utf-8,--%20SQLite%20Database%20Backup%20for%20${app.name}%0A--%20App%20ID:%20${app.id}%0A--%20WAL%20Journal%20Clean%0A`}
+                      download={`${app.id}.sqlite`}
+                      className="btn-w95 text-xs py-1 px-2 flex items-center gap-1"
+                      title="Download database snapshot"
+                    >
+                      <Download size={12} /> Export DB
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: Published Apps & Active Forks */}
+        {activeTab === 'forks' && (
+          <div className="space-y-3 max-w-4xl mx-auto">
+            <div className="border-b pb-2 mb-2 flex justify-between items-center">
+              <div>
+                <span className="font-bold text-base text-w95-blue">Published Shareware &amp; Live Drops</span>
+                <p className="text-gray-600 text-xs">Manage apps you created and deployed to the 12:01 AM Daily Drops board.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {APPS_DATA.map(app => (
+                <div key={app.id} className="border-2 border-gray-700 bg-blue-50/60 p-3 rounded flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl bg-white p-1 rounded border border-gray-400">{app.authorAvatar}</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-w95-blue">{app.name}</span>
+                        <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300 font-mono">
+                          {app.version}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-600 mt-0.5">{app.upvotes} upvotes &middot; {app.forkCount} downstream forks</div>
+                      <div className="text-[11px] text-green-700 font-mono font-bold mt-1">Live URL: {app.liveUrl}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={app.liveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-w95 btn-w95-primary text-xs py-1 px-3 flex items-center gap-1 font-bold"
+                    >
+                      <ExternalLink size={12} /> Open App
+                    </a>
+                    <a
+                      href={`https://gitsmith.nates-software.com?repo=${app.id}`}
+                      className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1"
+                    >
+                      <Folder size={12} /> View Code
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: Profile Settings */}
         {activeTab === 'profile' && (
           <form onSubmit={handleSaveProfile} className="max-w-2xl mx-auto space-y-3">
             <div className="border-b pb-2 mb-3">
@@ -209,104 +347,35 @@ export const ProfileView: React.FC = () => {
           </form>
         )}
 
-        {/* TAB 2: My Shelf */}
-        {activeTab === 'shelf' && (
-          <div className="space-y-3 max-w-4xl mx-auto">
-            <div className="border-b pb-2 mb-2 flex justify-between items-center">
-              <div>
-                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; Local Database Volume</span>
-                <p className="text-gray-600 text-xs">All software you own and hold license title to. Download offline binaries or backup live SQLite files.</p>
-              </div>
-              <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
-                {shelfApps.length} Owned Applications
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              {shelfApps.map((app) => (
-                <div key={app.id} className="border-2 border-gray-700 bg-gray-50 p-3 rounded flex items-center justify-between gap-3 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl bg-white p-1 rounded border border-gray-400">{app.creatorAvatar || '📦'}</span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-gray-900">{app.name}</span>
-                        <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300">
-                          {app.version}
-                        </span>
-                        <span className="text-gray-500 text-xs font-mono">License: {app.licenseKey}</span>
-                      </div>
-                      <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
-                      <div className="text-[11px] text-gray-500 font-mono mt-1">
-                        Acquired: {app.purchasedDate} &middot; Local Database: {app.localDbSize || '1.4 MB'} (WAL Mode)
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <a
-                      href="data:text/plain;charset=utf-8,SQLite%203.45%20Format"
-                      download={`${app.appId || app.id}-backup.sqlite`}
-                      className="btn-w95 text-xs py-1 px-2 flex items-center gap-1"
-                    >
-                      <Download size={12} /> Backup .sqlite
-                    </a>
-                    <button className="btn-w95 text-xs py-1 px-2">
-                      🍎 Download DMG
-                    </button>
-                    <button className="btn-w95 btn-w95-primary text-xs py-1 px-3">
-                      Launch &rarr;
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: Forks */}
-        {activeTab === 'forks' && (
-          <div className="space-y-3 max-w-4xl mx-auto">
-            <div className="border-b pb-2 mb-2 flex justify-between items-center">
-              <div>
-                <span className="font-bold text-base text-w95-blue">Published Listings &amp; Active Forks</span>
-                <p className="text-gray-600 text-xs">Manage apps you authored or modified via SLOPSHOP.</p>
-              </div>
-              <button className="btn-w95 btn-w95-primary text-xs py-1 px-2 flex items-center gap-1">
-                <Plus size={12} /> Publish New App
-              </button>
-            </div>
-
-            <div className="border-2 border-gray-700 bg-blue-50 p-3 rounded flex items-center justify-between">
-              <div>
-                <div className="font-bold text-sm text-w95-blue">⚡ WallArt Canvas Pro v2.4.0</div>
-                <div className="text-xs text-gray-600">Created by @nate &middot; 384 upvotes &middot; 112 downstream forks</div>
-                <div className="text-[11px] text-green-700 font-bold mt-1">Total Royalty Earnings: $920.00 (Settled)</div>
-              </div>
-              <button className="btn-w95 text-xs py-1 px-3">
-                Manage Listing
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* TAB 4: Activity */}
         {activeTab === 'activity' && (
           <div className="space-y-3 max-w-3xl mx-auto">
             <div className="border-b pb-2 mb-2">
               <span className="font-bold text-base text-w95-blue">My Comments &amp; Maker Discussions</span>
-              <p className="text-gray-600 text-xs">Recent reviews, feature requests, and feedback left on drops.</p>
+              <p className="text-gray-600 text-xs">Recent discussions, maker notes, and replies on 12:01 AM Daily Drops.</p>
             </div>
 
             <div className="space-y-2">
-              <div className="bg-gray-50 border p-3 rounded">
-                <div className="flex justify-between items-center text-xs mb-1">
-                  <span className="font-bold text-w95-blue">Commented on WallArt Canvas Pro:</span>
-                  <span className="text-gray-400 font-mono text-[11px]">45 mins ago</span>
+              <div className="bg-gray-50 border p-3 rounded space-y-1">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-w95-blue">Maker Note on DroneHunter 95:</span>
+                  <span className="text-gray-400 font-mono text-[11px]">12:01 AM UTC</span>
                 </div>
                 <p className="text-gray-800 text-xs">
-                  "Thanks Josh! In the next drop I\'m adding local GPU background segmentation so you can preview custom matting against actual photos of your room wall."
+                  "Built with pure HTML5 Canvas + Web Audio API shotgun audio. All scores persist directly to your local SQLite database without third-party servers."
                 </p>
-                <div className="text-[11px] text-orange-600 font-bold mt-1">👍 19 Upvotes</div>
+                <div className="text-[11px] text-orange-600 font-bold mt-1">👍 24 Upvotes</div>
+              </div>
+
+              <div className="bg-gray-50 border p-3 rounded space-y-1">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-w95-blue">Maker Note on Certified Mailer:</span>
+                  <span className="text-gray-400 font-mono text-[11px]">12:01 AM UTC</span>
+                </div>
+                <p className="text-gray-800 text-xs">
+                  "Flattens DOCX/PDF to 300 DPI pixels to prevent print layout skew, and logs digital signature receipts into SQLite."
+                </p>
+                <div className="text-[11px] text-orange-600 font-bold mt-1">👍 18 Upvotes</div>
               </div>
             </div>
           </div>
