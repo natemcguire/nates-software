@@ -18,13 +18,13 @@ import {
 
 describe("SLOP CLI Core Command Handlers", () => {
   describe("slop fork <slug>", () => {
-    it("should fork default slug (nate/wallart) into isolated worktree with SQLite volume", () => {
+    it("should fork default slug (nate/dronehunter) into isolated worktree with SQLite volume", () => {
       const res = handleFork();
       expect(res.success).toBe(true);
       expect(res.command).toBe("fork");
-      expect(res.data.slug).toBe("nate/wallart");
-      expect(res.data.worktreePath).toContain("/tmp/slop-wallart-");
-      expect(res.data.sqlitePath).toBe("/data/wallart.sqlite");
+      expect(res.data.slug).toBe("nate/dronehunter");
+      expect(res.data.worktreePath).toContain("/tmp/slop-");
+      expect(res.data.sqlitePath).toBe("/data/dronehunter.sqlite");
       expect(res.data.walMode).toBe(true);
       expect(res.data.memoryCapMb).toBe(256);
       expect(res.data.port).toBeGreaterThanOrEqual(3001);
@@ -190,7 +190,7 @@ describe("SLOP CLI Core Command Handlers", () => {
 
   describe("runSlopCli router", () => {
     it("should route all commands cleanly", () => {
-      expect(runSlopCli(["fork", "nate/wallart"]).success).toBe(true);
+      expect(runSlopCli(["fork", "nate/dronehunter"]).success).toBe(true);
       expect(runSlopCli(["push"]).success).toBe(true);
       expect(runSlopCli(["mod", "feat_triptych"]).success).toBe(true);
       expect(runSlopCli(["dyno", "--bench"]).success).toBe(true);
@@ -245,8 +245,8 @@ describe("Executable ./bin/slop Shell Execution", () => {
   it("should execute ./bin/slop shelf successfully", () => {
     const stdout = execSync("./bin/slop shelf", { cwd: repoRoot, encoding: "utf8" });
     expect(stdout).toContain("[SHELF]");
-    expect(stdout).toContain("WallArt Canvas Pro");
-    expect(stdout).toContain("SOV-WALLART-9812-77F2");
+    expect(stdout).toContain("DroneHunter 95");
+    expect(stdout).toContain("SOV-DRONE-9812-77F2");
   });
 
   it("should execute ./bin/slop login successfully", () => {

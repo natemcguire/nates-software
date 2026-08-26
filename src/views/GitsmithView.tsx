@@ -40,121 +40,102 @@ export interface GitsmithRepo {
   };
   tags: string[];
   liveUrl: string;
+  liveAppUrl?: string;
   files: { name: string; type: 'file' | 'dir'; size?: string; content?: string }[];
 }
 
 export const GITSMITH_REPOS: GitsmithRepo[] = [
   {
-    id: 'wallart',
-    name: 'wallart',
-    owner: 'nate',
-    avatar: '⚡',
-    description: 'AI photo-to-canvas rendering engine, multi-panel gallery wall previewer, and custom print layout studio (300 DPI export).',
-    stars: 384,
-    forks: 112,
-    language: 'TypeScript / React 19',
-    license: 'MIT (Sovereign Shareware)',
-    sqlitePath: '/data/wallart.sqlite (WAL mode)',
-    branch: 'main',
-    lastCommit: {
-      sha: '5c030af',
-      message: 'feat(canvas): optimize 3D matrix triptych splitter & color profiles',
-      author: 'nate',
-      time: '12 mins ago',
-      verified: true
-    },
-    tags: ['Photo Studio', 'Canvas Prints', 'Gallery Wall', 'Next.js 16', 'SQLite WAL'],
-    liveUrl: 'https://nates-software.pages.dev/?app=wallart',
-    files: [
-      { name: 'src', type: 'dir' },
-      { name: 'migrations', type: 'dir' },
-      { name: 'package.json', type: 'file', size: '1.2 KB', content: `{\n  "name": "wallart-canvas-pro",\n  "version": "2.4.0",\n  "private": true,\n  "dependencies": {\n    "react": "^19.0.0",\n    "canvas": "^2.11.2",\n    "better-sqlite3": "^11.8.1"\n  }\n}` },
-      { name: 'slop.config.json', type: 'file', size: '420 B', content: `{\n  "appId": "wallart",\n  "name": "WallArt Canvas Pro",\n  "sqlite": "/data/wallart.sqlite",\n  "memoryCapMb": 256\n}` },
-      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# WallArt Canvas Pro\n\nSovereign 3D wall art studio with local SQLite persistence.\n\n## Clone\n\`\`\`bash\nslop fork nate/wallart\n\`\`\`` }
-    ]
-  },
-  {
     id: 'dronehunter',
     name: 'dronehunter',
     owner: 'nate',
     avatar: '🎯',
-    description: 'Tactical 360° radar sweep HUD & anti-drone battery with real-time intercept telemetry logging to SQLite in WAL mode.',
-    stars: 128,
-    forks: 34,
-    language: 'TypeScript / HTML5 Canvas',
-    license: 'MIT (Sovereign Shareware)',
+    description: 'Fast-paced retro browser shooter inspired by Duck Hunt. Double-barrel shotgun, laughing dog animations, drone explosions, and local SQLite high score telemetry in WAL mode.',
+    stars: 420,
+    forks: 88,
+    language: 'TypeScript / Pixel Art Engine',
+    license: 'MIT Sovereign Shareware',
     sqlitePath: '/data/dronehunter.sqlite (WAL mode)',
     branch: 'main',
     lastCommit: {
-      sha: '9f4a10c',
-      message: 'feat(radar): add AN/MPQ-64 Sentinel sweep HUD and EMP fire controls',
+      sha: '5cdee6f',
+      message: 'feat(arcade): Duck Hunt style shotgun shooter with SQLite WAL high scores',
       author: 'nate',
-      time: '3 mins ago',
+      time: '12 mins ago',
       verified: true
     },
-    tags: ['Arcade', 'Radar', 'Defense', 'SQLite WAL', 'Metal Shaders'],
-    liveUrl: 'https://nates-software.pages.dev/?app=dronehunter',
+    tags: ['Arcade', 'Retro', 'Duck Hunt', 'SQLite WAL', 'Web Audio'],
+    liveUrl: 'https://dronehunter.pages.dev',
+    liveAppUrl: 'https://dronehunter.pages.dev',
     files: [
-      { name: 'src', type: 'dir' },
+      { name: 'assets', type: 'dir' },
       { name: 'migrations', type: 'dir' },
-      { name: 'migrations/001_initial_scores.sql', type: 'file', size: '580 B', content: `CREATE TABLE IF NOT EXISTS radar_intercepts (\n  id TEXT PRIMARY KEY,\n  target_type TEXT NOT NULL,\n  azimuth REAL NOT NULL,\n  range_meters REAL NOT NULL,\n  confirmed_kill INTEGER NOT NULL DEFAULT 1,\n  intercept_timestamp INTEGER NOT NULL\n);` },
-      { name: 'package.json', type: 'file', size: '890 B', content: `{\n  "name": "dronehunter-95",\n  "version": "1.0.0",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build"\n  }\n}` },
-      { name: 'slop.config.json', type: 'file', size: '380 B', content: `{\n  "appId": "dronehunter",\n  "name": "DroneHunter 95",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256\n}` },
-      { name: 'README.md', type: 'file', size: '1.9 KB', content: `# DroneHunter 95\n\nTactical Radar Interceptor & Anti-Drone Battery with SQLite Telemetry.\n\n## Play\n\`\`\`bash\nslop fork nate/dronehunter\n\`\`\`` }
+      { name: 'migrations/001_initial_scores.sql', type: 'file', size: '580 B', content: `CREATE TABLE IF NOT EXISTS high_scores (\n  id TEXT PRIMARY KEY,\n  player_name TEXT NOT NULL,\n  score INTEGER NOT NULL,\n  drones_shot INTEGER NOT NULL,\n  recorded_at INTEGER NOT NULL\n);` },
+      { name: 'index.html', type: 'file', size: '42.3 KB', content: `<!doctype html>\n<html>...Duck Hunt Arcade Engine...</html>` },
+      { name: 'package.json', type: 'file', size: '740 B', content: `{\n  "name": "dronehunter",\n  "version": "1.0.0"\n}` },
+      { name: 'slop.config.json', type: 'file', size: '410 B', content: `{\n  "appId": "dronehunter",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256\n}` },
+      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# DroneHunter 95\n\nRetro Duck Hunt arcade shooter.` }
     ]
   },
   {
-    id: 'retro-calc',
-    name: 'retro-calc',
-    owner: 'sam',
-    avatar: '👨‍💻',
-    description: 'Local-first green-phosphor accounting calculator with double-entry compound ledgers and OCR receipt scanning.',
-    stars: 248,
-    forks: 84,
-    language: 'React 19 / WASM',
-    license: 'MIT (Sovereign Shareware)',
-    sqlitePath: '/data/app.sqlite (WAL mode)',
-    branch: 'main',
-    lastCommit: {
-      sha: '4a19e2b',
-      message: 'feat(ocr): splice optical character recognition receipt parser into ledger',
-      author: 'sam',
-      time: '45 mins ago',
-      verified: true
-    },
-    tags: ['Finance', 'SQLite', 'Local-First', 'React 19', 'Accounting'],
-    liveUrl: 'https://nates-software.pages.dev/?app=retro-calc',
-    files: [
-      { name: 'src', type: 'dir' },
-      { name: 'package.json', type: 'file', size: '940 B', content: `{\n  "name": "retro-calc",\n  "version": "1.2.0",\n  "dependencies": { "react": "^19.0.0" }\n}` },
-      { name: 'README.md', type: 'file', size: '1.4 KB', content: `# RetroCalc Pro\n\nLocal-first compound accounting ledger.` }
-    ]
-  },
-  {
-    id: 'sailtrack',
-    name: 'sailtrack',
+    id: 'certified-mailer',
+    name: 'certified-mailer',
     owner: 'nate',
-    avatar: '⛵',
-    description: 'Offline marine navigation, tactical regatta polar velocity solver, and race telemetry logger.',
-    stars: 192,
+    avatar: '📫',
+    description: 'Private legal dispute and operational correspondence engine. Renders manifests to flattened high-DPI PDFs, tracks Electronic Return Receipts (ERR), and connects to LetterStream / Lob APIs.',
+    stars: 312,
     forks: 46,
-    language: 'React 19 / NMEA 0183',
-    license: 'Apache-2.0',
-    sqlitePath: '/data/telemetry.sqlite (WAL mode)',
+    language: 'Python 3.12 / CLI',
+    license: 'MIT Sovereign Legal Tool',
+    sqlitePath: '/data/certified-mailer.sqlite (WAL mode)',
     branch: 'main',
     lastCommit: {
-      sha: '3d81b90',
-      message: 'feat(polar): optimize true wind speed angle curves and target VMG',
+      sha: '9f0412b',
+      message: 'feat(mail): PDF flattening and Electronic Return Receipt (ERR) pipeline',
       author: 'nate',
-      time: '2 hours ago',
+      time: '35 mins ago',
       verified: true
     },
-    tags: ['Marine', 'GPS', 'Mapping', 'Offline', 'Regatta'],
-    liveUrl: 'https://nates-software.pages.dev/?app=sailtrack',
+    tags: ['Legal', 'USPS', 'Postal', 'Dispute', 'SQLite WAL'],
+    liveUrl: 'https://certified-mailer.pages.dev',
+    liveAppUrl: 'https://certified-mailer.pages.dev',
     files: [
       { name: 'src', type: 'dir' },
-      { name: 'package.json', type: 'file', size: '1.1 KB', content: `{\n  "name": "sailtrack-gps",\n  "version": "2.1.0"\n}` },
-      { name: 'README.md', type: 'file', size: '1.6 KB', content: `# SailTrack GPS\n\nTactical Regatta Telemetry HUD & Polar Speed Optimization.` }
+      { name: 'tools', type: 'dir' },
+      { name: 'tools/flatten_pdf.py', type: 'file', size: '1.8 KB', content: `import fitz\n# Flatten verified PDF pages to 300 DPI pixels` },
+      { name: 'pyproject.toml', type: 'file', size: '590 B', content: `[project]\nname = "certified-mailer"` },
+      { name: 'slop.config.json', type: 'file', size: '480 B', content: `{\n  "appId": "certified-mailer",\n  "sqlite": "/data/certified-mailer.sqlite"\n}` },
+      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# Certified Mailer\n\nPrivate operational-mail tooling.` }
+    ]
+  },
+  {
+    id: 'picfitai',
+    name: 'picfitai',
+    owner: 'nate',
+    avatar: '✨',
+    description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with sovereign single-file SQLite user credits ledger.',
+    stars: 284,
+    forks: 62,
+    language: 'Google Gemini Vision / PHP',
+    license: 'MIT AI Studio Tool',
+    sqlitePath: '/data/picfitai.sqlite (WAL mode)',
+    branch: 'main',
+    lastCommit: {
+      sha: '4d88e01',
+      message: 'feat(gemini): 4K virtual try-on neural diffusion rendering pipeline',
+      author: 'nate',
+      time: '1h ago',
+      verified: true
+    },
+    tags: ['AI', 'Fashion', 'Gemini', 'Try-On', 'SQLite WAL'],
+    liveUrl: 'https://picfitai.pages.dev',
+    liveAppUrl: 'https://picfitai.pages.dev',
+    files: [
+      { name: 'images', type: 'dir' },
+      { name: 'includes', type: 'dir' },
+      { name: 'includes/AIService.php', type: 'file', size: '14.2 KB', content: `<?php\nclass AIService { ... }` },
+      { name: 'slop.config.json', type: 'file', size: '490 B', content: `{\n  "appId": "picfitai",\n  "sqlite": "/data/picfitai.sqlite"\n}` },
+      { name: 'README.md', type: 'file', size: '5.5 KB', content: `# PicFit.ai\n\nAI Virtual Try-On Studio.` }
     ]
   }
 ];

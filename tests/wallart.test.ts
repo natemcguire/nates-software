@@ -1,19 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { WALLART_PRESETS, calculateRenderResolution } from '../src/lib/wallartDomain';
+import { INITIAL_APPS } from '../src/data/mockData';
+import { GITSMITH_REPOS } from '../src/views/GitsmithView';
 
-describe('WallArt Canvas Pro 300 DPI Render Engine', () => {
-  it('should accurately calculate 24x36 300 DPI print canvas resolution', () => {
-    const res = calculateRenderResolution(24, 36, 300);
-    expect(res.pixelWidth).toBe(7200);
-    expect(res.pixelHeight).toBe(10800);
-    expect(res.totalMegapixels).toBe(78);
-    expect(res.estimatedTiffMb).toBeGreaterThan(200);
+describe('Real Sovereign Shareware Apps Suite (Zero Mock Apps)', () => {
+  it('should only contain the 3 real active projects (dronehunter, certified-mailer, picfitai)', () => {
+    const appIds = INITIAL_APPS.map(a => a.id);
+    expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'picfitai']);
+    expect(appIds).not.toContain('wallart');
+    expect(appIds).not.toContain('retro-calc');
+    expect(appIds).not.toContain('sailtrack');
   });
 
-  it('should validate all built-in wallart presets have 300 DPI', () => {
-    WALLART_PRESETS.forEach(p => {
-      expect(p.dpi).toBe(300);
-      expect(['walnut', 'oak', 'black', 'canvas-wrap']).toContain(p.frameStyle);
+  it('should configure single-file SQLite databases in WAL mode for all 3 apps', () => {
+    INITIAL_APPS.forEach(app => {
+      expect(app.sqlitePath).toMatch(/^\/data\/[a-z-]+\.sqlite$/);
+      expect(app.storage).toContain('WAL');
+      expect(app.creator).toBe('nate');
     });
+  });
+
+  it('should point all Gitsmith repository live links directly to their sovereign subdomains', () => {
+    expect(GITSMITH_REPOS.length).toBe(3);
+    expect(GITSMITH_REPOS[0].liveAppUrl).toBe('https://dronehunter.pages.dev');
+    expect(GITSMITH_REPOS[1].liveAppUrl).toBe('https://certified-mailer.pages.dev');
+    expect(GITSMITH_REPOS[2].liveAppUrl).toBe('https://picfitai.pages.dev');
   });
 });

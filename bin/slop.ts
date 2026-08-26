@@ -7,7 +7,7 @@
 import { PRESET_FEATURES, validateAstFeature, type ASTFeaturePackage } from "../src/lib/slopshopDomain.ts";
 import { calculateDynoGrade } from "../src/lib/dynoDomain.ts";
 import { RigRuntimeBackend, MEMORY_CAP_MB } from "../src/lib/rigBackend.ts";
-import { APPS_DATA } from "../src/data/mockData.ts";
+import { INITIAL_APPS as APPS_DATA } from "../src/data/mockData.ts";
 
 export interface SlopCommandResult {
   readonly success: boolean;
@@ -18,42 +18,42 @@ export interface SlopCommandResult {
 
 export const SHELF_TITLES = [
   {
-    id: "shelf-wa-01",
-    appId: "wallart",
-    name: "WallArt Canvas Pro",
-    version: "v2.4.0",
-    tagline: "High-DPI museum canvas splits and frame previewer with local SQLite persistence.",
-    licenseKey: "SOV-WALLART-9812-77F2",
+    id: "shelf-dh-01",
+    appId: "dronehunter",
+    name: "DroneHunter 95",
+    version: "v1.0.0",
+    tagline: "Retro Duck Hunt-Style Arcade Drone Shooter with SQLite High Scores.",
+    licenseKey: "SOV-DRONE-9812-77F2",
     purchasedDate: "Aug 24, 2026",
     localDbSize: "14.8 MB",
-    creatorAvatar: "⚡"
+    creatorAvatar: "🎯"
   },
   {
-    id: "shelf-rc-02",
-    appId: "retro-calc",
-    name: "RetroCalc Pro",
-    version: "v1.2.0",
-    tagline: "Local-first accounting calculator with SQLite persistence and receipt scanning.",
-    licenseKey: "SOV-RETRO-4401-90B1",
+    id: "shelf-cm-02",
+    appId: "certified-mailer",
+    name: "Certified Mailer",
+    version: "v1.0.0",
+    tagline: "USPS Certified Mail, Electronic Return Receipt (ERR) & Dispute Tooling.",
+    licenseKey: "SOV-CERTMAIL-4401-90B1",
     purchasedDate: "Aug 22, 2026",
     localDbSize: "1.4 MB",
-    creatorAvatar: "👨‍💻"
+    creatorAvatar: "📫"
   },
   {
-    id: "shelf-st-03",
-    appId: "sailtrack",
-    name: "SailTrack GPS",
-    version: "v2.1.0",
-    tagline: "Offline marine navigation, polar chart calculator, and race telemetry logger.",
-    licenseKey: "SOV-SAIL-1109-34K9",
+    id: "shelf-pf-03",
+    appId: "picfitai",
+    name: "PicFit.ai",
+    version: "v1.0.0",
+    tagline: "AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision.",
+    licenseKey: "SOV-PICFIT-1109-34K9",
     purchasedDate: "Aug 20, 2026",
     localDbSize: "4.2 MB",
-    creatorAvatar: "⛵"
+    creatorAvatar: "✨"
   }
 ];
 
 export function handleFork(slugArg?: string): SlopCommandResult {
-  const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/wallart";
+  const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/dronehunter";
   const appId = slug.includes("/") ? slug.split("/")[1] : slug;
   const worktreeId = `slop-${appId}-${Date.now().toString(36)}`;
   const worktreePath = `/tmp/${worktreeId}`;
@@ -97,7 +97,7 @@ export function handlePush(): SlopCommandResult {
   const output = [
     `[GITSMITH] Running pre-push verification:`,
     `  ✔ 100% test assertions passed (0 failures)`,
-    `  ✔ Single-file SQLite WAL integrity verified (/data/app.sqlite)`,
+    `  ✔ Single-file SQLite WAL integrity verified (/data/certified-mailer.sqlite)`,
     `  ✔ CAS compare-and-swap update: refs/heads/main -> 5c030af (OK)`,
     `🚀 Deployed live to ephemeral portal in 1.18s!`
   ].join("\n");
@@ -309,9 +309,9 @@ export function handleStatus(): SlopCommandResult {
 
 export function handleList(): SlopCommandResult {
   const drops = [
-    { rank: 1, name: "WallArt Canvas Pro", version: "v2.4.0", creator: "@nate", upvotes: 384, forks: 112, storage: "SQLite WAL" },
-    { rank: 2, name: "RetroCalc Pro", version: "v1.2.0", creator: "@sam", upvotes: 248, forks: 84, storage: "SQLite WAL" },
-    { rank: 3, name: "SailTrack GPS", version: "v2.1.0", creator: "@nate", upvotes: 192, forks: 46, storage: "SQLite WAL" }
+    { rank: 1, name: "DroneHunter 95", version: "v1.0.0", creator: "@nate", upvotes: 420, forks: 88, storage: "SQLite WAL" },
+    { rank: 2, name: "Certified Mailer", version: "v1.0.0", creator: "@nate", upvotes: 312, forks: 46, storage: "SQLite WAL" },
+    { rank: 3, name: "PicFit.ai", version: "v1.0.0", creator: "@nate", upvotes: 284, forks: 62, storage: "SQLite WAL" }
   ];
 
   const lines = [

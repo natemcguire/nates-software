@@ -55,158 +55,162 @@ export const INITIAL_APPS: AppListing[] = [
     name: "DroneHunter 95",
     creator: "nate",
     creatorAvatar: "🎯",
-    tagline: "Tactical Radar Interceptor & Anti-Drone Battery with SQLite Telemetry",
-    description: "Real-time 360° radar sweep HUD and tactical counter-drone missile interceptor. Records telemetry, target locks, and kill confirmations directly to /data/dronehunter.sqlite in WAL mode.",
+    tagline: "Retro Duck Hunt-Style Arcade Drone Shooter with SQLite High Scores",
+    description: "Fast-paced arcade browser game inspired by classic Duck Hunt. Double-barrel shotgun reloads, laughing dog animations, drone explosions, and local SQLite high score telemetry in WAL mode.",
     version: "1.0.0",
     price: "$19.00",
-    upvotes: 42,
-    forks: 0,
-    forkCount: 0,
+    upvotes: 420,
+    forks: 88,
+    forkCount: 88,
     lineageDepth: 0,
-    license: "Sovereign Shareware Title",
+    license: "MIT Sovereign Shareware",
     sqlitePath: "/data/dronehunter.sqlite",
     storage: "Single-file SQLite WAL (/data/dronehunter.sqlite)",
-    moddabilityScore: 96,
-    mergeCleanliness: "99.8% clean",
+    moddabilityScore: 98,
+    mergeCleanliness: "100% clean",
     screenshots: [
-      "https://images.unsplash.com/photo-1508614589041-895b88991e3e?auto=format&fit=crop&w=1000&q=80",
-      "https://images.unsplash.com/photo-1527977966376-1c8408f9f108?auto=format&fit=crop&w=1000&q=80"
+      "/dronehunter-ephemeral-screenshot.png",
+      "https://nates-software.pages.dev/dronehunter-ephemeral-screenshot.png"
     ],
-    techStack: ["HTML5 Canvas", "WASM SQLite 3.45", "Web Audio API", "Metal Shaders"],
-    tags: ["Defense", "Radar", "SQLite", "Simulation"],
+    techStack: ["HTML5 Canvas", "Pixel Art Engine", "WASM SQLite 3.45", "Web Audio API"],
+    tags: ["Arcade", "Retro", "Duck Hunt", "SQLite WAL"],
     binaries: {
       mac: "DroneHunter-1.0.0.dmg (16.4MB)",
       win: "DroneHunter-Setup.exe (19.8MB)",
       linux: "DroneHunter.AppImage (17.2MB)",
-      ios: "TestFlight Public Beta"
+      ios: "TestFlight Link Active"
     },
     comments: [
       {
         id: "c-dh1",
         author: "josh",
         avatar: "⛵",
-        time: "5 mins ago",
-        text: "Radar sweep is smooth as butter. Just tested the EMP counter-measure against 3 targets and zero WAL locks.",
-        upvotes: 6
-      }
-    ]
-  },
-  {
-    id: "wallart",
-    name: "WallArt Canvas Pro",
-    creator: "nate",
-    creatorAvatar: "⚡",
-    tagline: "Custom Frame Matting & Multi-Panel Triptych Splits (300 DPI Export)",
-    description: "Transform photos into museum-quality gallery wall canvases. Supports Solid Walnut, Natural Oak, Matte Black, and Gallery Wrap frames across Single, 3-Piece Triptych, and 4-Grid displays.",
-    version: "2.4.0",
-    price: "$25.00",
-    upvotes: 384,
-    forks: 112,
-    forkCount: 112,
-    lineageDepth: 0,
-    license: "Sovereign Shareware Title",
-    sqlitePath: "/data/wallart.sqlite",
-    storage: "Single-file SQLite WAL (/data/wallart.sqlite)",
-    moddabilityScore: 98,
-    mergeCleanliness: "99.8% clean",
-    screenshots: [
-      "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80",
-      "https://images.unsplash.com/photo-1582561424760-0321d75e81fa?auto=format&fit=crop&w=1000&q=80"
-    ],
-    techStack: ["React 19", "3D Canvas Matrix", "WASM SQLite 3.45", "300 DPI TIFF Engine"],
-    tags: ["Design", "Art", "SQLite", "Local-First"],
-    binaries: {
-      mac: "WallArt-2.4.0.dmg (24.1MB)",
-      win: "WallArt-Setup.exe (28.4MB)",
-      linux: "WallArt.AppImage (25.0MB)",
-      ios: "TestFlight Link Active"
-    },
-    comments: [
+        time: "10 mins ago",
+        text: "The Duck Hunt dog laughing animation when the drone escapes is pure nostalgia. Runs like a dream.",
+        upvotes: 24,
+        isMaker: false
+      },
       {
-        id: "c-1",
-        author: "josh",
-        avatar: "⛵",
-        time: "2 hours ago",
-        text: "The 3-panel triptych split on solid walnut with custom photo upload is incredible.",
-        upvotes: 14
+        id: "c-dh2",
+        author: "nate",
+        avatar: "⚡",
+        time: "Just now",
+        text: "Pushed the raw HTML5 arcade engine with /data/dronehunter.sqlite WAL logging.",
+        upvotes: 38,
+        isMaker: true
       }
     ]
   },
   {
-    id: "retro-calc",
-    name: "RetroCalc Pro",
-    creator: "sam",
-    creatorAvatar: "👨‍💻",
-    tagline: "Terminal-Style Compound Accounting Ledger with SQLite Journaling",
-    description: "Classic green-phosphor financial engine with double-entry bookkeeping and zero cloud lock-in.",
-    version: "1.2.0",
-    price: "$15.00",
-    upvotes: 248,
-    forks: 84,
-    forkCount: 84,
-    parentApp: "calc-core",
-    lineageDepth: 1,
-    license: "Sovereign Shareware Title",
-    sqlitePath: "/data/app.sqlite",
-    storage: "Single-file SQLite WAL (/data/app.sqlite)",
-    moddabilityScore: 94,
-    mergeCleanliness: "99.4% clean",
-    screenshots: [
-      "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1000&q=80"
-    ],
-    techStack: ["React 19", "SQLite WAL", "WASM 3.45"],
-    tags: ["Finance", "SQLite", "Local-First", "React 19"],
-    binaries: {
-      mac: "RetroCalc-1.2.0.dmg (14.2MB)",
-      win: "RetroCalc-Setup-1.2.0.exe (18.4MB)",
-      linux: "RetroCalc-1.2.0.AppImage (16.1MB)",
-      ios: "Apple TestFlight Public Beta Link"
-    },
-    comments: []
-  },
-  {
-    id: "sailtrack",
-    name: "SailTrack GPS",
+    id: "certified-mailer",
+    name: "Certified Mailer",
     creator: "nate",
-    creatorAvatar: "⛵",
-    tagline: "Tactical Regatta Telemetry HUD & Polar Speed Optimization",
-    description: "High-precision NMEA polar velocity solver and tactical racing marks recorder.",
-    version: "2.1.0",
-    price: "$35.00",
-    upvotes: 192,
+    creatorAvatar: "📫",
+    tagline: "USPS Certified Mail, Electronic Return Receipt (ERR) & Dispute Tooling",
+    description: "Private legal dispute and operational correspondence engine. Renders manifests to flattened high-DPI PDFs (preventing provider font substitutions), tracks Electronic Return Receipts (ERR), and connects to LetterStream and Lob APIs.",
+    version: "1.0.0",
+    price: "$29.00",
+    upvotes: 312,
     forks: 46,
     forkCount: 46,
     lineageDepth: 0,
-    license: "Sovereign Shareware Title",
-    sqlitePath: "/data/telemetry.sqlite",
-    storage: "Single-file SQLite WAL (/data/telemetry.sqlite)",
-    moddabilityScore: 91,
-    mergeCleanliness: "98.8% clean",
+    license: "MIT Sovereign Legal Tool",
+    sqlitePath: "/data/certified-mailer.sqlite",
+    storage: "Single-file SQLite WAL (/data/certified-mailer.sqlite)",
+    moddabilityScore: 95,
+    mergeCleanliness: "99.9% clean",
     screenshots: [
-      "https://images.unsplash.com/photo-1500917293891-ef795e70e1f6?auto=format&fit=crop&w=1000&q=80"
+      "/certified-mailer-screenshot.png"
     ],
-    techStack: ["React 19", "NMEA 0183 Engine", "SQLite Telemetry"],
-    tags: ["Marine", "GPS", "Mapping", "Offline"],
+    techStack: ["Python 3.12", "Docx/PDF Renderer", "SQLite WAL", "USPS CASS API"],
+    tags: ["Legal", "USPS", "Postal", "Dispute", "SQLite WAL"],
     binaries: {
-      mac: "SailTrack-2.1.0.dmg (18.0MB)",
-      win: "SailTrack-Setup.exe (22.1MB)",
-      linux: "SailTrack.AppImage (19.4MB)",
-      ios: "TestFlight Link Active"
+      mac: "certified-mailer-darwin-arm64 (14.2MB)",
+      win: "certified-mailer-win-x64.exe (18.1MB)",
+      linux: "certified-mailer-linux-x64 (15.0MB)",
+      ios: "CLI Tooling"
     },
-    comments: []
-  }
-];
-
-export const APPS_DATA: AppListing[] = INITIAL_APPS;
-
-export const INBOX_THREADS: InboxThread[] = [
+    comments: [
+      {
+        id: "c-cm1",
+        author: "sam",
+        avatar: "👨‍💻",
+        time: "1 hour ago",
+        text: "The PDF flattening step is brilliant — completely solved font distortion when uploading to postal print queues.",
+        upvotes: 18
+      }
+    ]
+  },
   {
-    id: "1",
-    from: "Sam Altman (@sam)",
-    subject: "PR #14: Spliced OCR Receipt Scanner into RetroCalc",
-    time: "12 mins ago",
-    body: "Hey Nate, I completed the optical character recognition feature on refs/features/receipt-ocr/v1.2.0. Parsed 22 AST nodes and applied 004_receipts.sql. All 4 automated test assertions passed in 0.04s.",
-    unread: true,
-    featureRef: "refs/features/receipt-ocr/v1.2.0"
+    id: "picfitai",
+    name: "PicFit.ai",
+    creator: "nate",
+    creatorAvatar: "✨",
+    tagline: "AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision",
+    description: "Hyper-realistic virtual fitting room powered by Google Gemini Vision. Seamlessly drape outfits onto portrait photos with sovereign single-file SQLite user credits ledger.",
+    version: "1.0.0",
+    price: "$39.00",
+    upvotes: 284,
+    forks: 62,
+    forkCount: 62,
+    lineageDepth: 0,
+    license: "MIT AI Studio Tool",
+    sqlitePath: "/data/picfitai.sqlite",
+    storage: "Single-file SQLite WAL (/data/picfitai.sqlite)",
+    moddabilityScore: 97,
+    mergeCleanliness: "99.5% clean",
+    screenshots: [
+      "/picfitai-screenshot.png"
+    ],
+    techStack: ["Google Gemini Vision", "Neural Mesh Warping", "PHP / TS", "SQLite WAL"],
+    tags: ["AI", "Fashion", "Gemini", "Try-On", "SQLite WAL"],
+    binaries: {
+      mac: "PicFitAI-1.0.0.dmg (32.4MB)",
+      win: "PicFitAI-Setup.exe (38.1MB)",
+      linux: "PicFitAI.AppImage (34.0MB)",
+      ios: "Web App Active"
+    },
+    comments: [
+      {
+        id: "c-pf1",
+        author: "alex",
+        avatar: "🎨",
+        time: "3 hours ago",
+        text: "Outfit synthesis with Gemini Vision keeps face and body contours completely intact. Instant 4K render.",
+        upvotes: 15
+      }
+    ]
   }
 ];
+
+export const MOCK_INBOX_THREADS: InboxThread[] = [
+  {
+    id: "th-1",
+    from: "josh@eastbayprojects.com",
+    subject: "🎯 DroneHunter High Score WAL Sync",
+    time: "10:14 AM",
+    body: "Nate, the high score table in /data/dronehunter.sqlite is syncing flawlessly under concurrent dog animations. Ready for the 12:01 AM batch.",
+    unread: true,
+    featureRef: "refs/features/dronehunter-highscores"
+  },
+  {
+    id: "th-2",
+    from: "sam@husbandlabs.com",
+    subject: "📫 Certified Mailer Electronic Return Receipts",
+    time: "Yesterday",
+    body: "Tested the PDF flattening tool on the dispute letter generator. Zero font metric substitutions on LetterStream upload.",
+    unread: false,
+    featureRef: "refs/features/certified-mailer-err"
+  },
+  {
+    id: "th-3",
+    from: "nate@eastbayprojects.com",
+    subject: "✨ PicFit.ai Gemini Vision Try-On Release",
+    time: "Aug 24",
+    body: "Virtual Try-On catalog is loaded. Credit debits are recorded directly to /data/picfitai.sqlite in WAL mode.",
+    unread: false,
+    featureRef: "refs/features/picfitai-gemini"
+  }
+];
+
+export const APPS_DATA = INITIAL_APPS;
