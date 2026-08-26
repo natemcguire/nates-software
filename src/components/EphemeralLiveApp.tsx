@@ -177,9 +177,23 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-ping" />
           <span className="font-bold text-sm text-green-300 font-mono">LIVE EPHEMERAL MAIN BUILD</span>
-          <span className="bg-gray-800 text-gray-300 px-2 py-0.5 rounded text-[11px] font-mono">
-            dyno://{app.creator}/{app.id}:3004
-          </span>
+          <a
+            href={`https://${app.id}.nates-software.pages.dev`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              if (typeof window !== 'undefined' && window.location.hostname.includes('pages.dev')) {
+                window.open(`https://${app.id}.nates-software.pages.dev`, '_blank');
+              } else {
+                window.open(`/?app=${app.id}`, '_blank');
+              }
+            }}
+            className="bg-blue-950 text-blue-300 hover:text-white px-2 py-0.5 rounded text-[11px] font-mono hover:bg-blue-900 transition-colors flex items-center gap-1 border border-blue-700 cursor-pointer shadow-sm"
+            title={`Click to open https://${app.id}.nates-software.pages.dev in a new tab`}
+          >
+            <span>{app.id}.nates-software.pages.dev</span>
+            <span>↗</span>
+          </a>
         </div>
 
         {/* The AMP-style HOLD TO SHIP button */}

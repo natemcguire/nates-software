@@ -120,12 +120,23 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
 
         {/* Tab Switcher & Pop Out Button */}
         <div className="flex items-center gap-1 bg-gray-200 p-1 border border-gray-400 rounded">
-          <button
-            onClick={() => { setActiveTab('preview'); playClickSound(); }}
-            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'preview' ? 'btn-w95-primary' : ''}`}
-          >
-            <Play size={13} /> Live App
-          </button>
+          <div className="flex items-center">
+            <button
+              onClick={() => { setActiveTab('preview'); playClickSound(); }}
+              className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'preview' ? 'btn-w95-primary' : ''}`}
+            >
+              <Play size={13} /> Live App
+            </button>
+            <a
+              href={`https://${app.id}.nates-software.pages.dev`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-w95 text-xs py-1 px-1.5 ml-0.5 text-blue-800"
+              title={`Open https://${app.id}.nates-software.pages.dev in new window`}
+            >
+              <ExternalLink size={12} />
+            </a>
+          </div>
           <button
             onClick={() => { setActiveTab('sqlite'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'sqlite' ? 'btn-w95-primary' : ''}`}

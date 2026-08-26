@@ -1,3 +1,5 @@
+import { EphemeralLiveApp } from './components/EphemeralLiveApp';
+import { INITIAL_APPS } from './data/mockData';
 import React, { useState } from 'react';
 import { useWindowManager } from './hooks/useWindowManager';
 import { DesktopIcon } from './components/DesktopIcon';
@@ -17,6 +19,45 @@ import { TerminalView } from './views/TerminalView';
 import { playClickSound } from './lib/soundEngine';
 
 export function App() {
+  // Check if standalone app mode is requested via URL search or subdomain
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const requestedAppId = urlParams?.get('app') || (typeof window !== 'undefined' ? window.location.hostname.split('.')[0] : null);
+  const standaloneApp = requestedAppId ? INITIAL_APPS.find(a => a.id === requestedAppId || a.name.toLowerCase().replace(/[^a-z0-9]/g, '') === requestedAppId) : null;
+
+  if (standaloneApp) {
+    return (
+      <div className="fixed inset-0 bg-[#ece9d8] flex flex-col font-tahoma text-xs overflow-hidden">
+        {/* Retro Header Bar for Standalone App */}
+        <div className="bg-w95-blue text-white p-2 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="text-base">{standaloneApp.creatorAvatar}</span>
+            <span className="font-bold text-sm font-mono">{standaloneApp.name}</span>
+            <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
+              {standaloneApp.version}
+            </span>
+            <span className="text-gray-300 font-mono text-[11px]">
+              https://{standaloneApp.id}.nates-software.pages.dev
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <a
+              href="/"
+              className="btn-w95 text-xs py-1 px-3 font-bold text-black bg-gray-200 hover:bg-white"
+            >
+              ⚡ Return to Nate's Software Web OS
+            </a>
+          </div>
+        </div>
+
+        {/* Full Viewport App Body */}
+        <div className="flex-1 overflow-auto p-2">
+          <EphemeralLiveApp app={standaloneApp} />
+        </div>
+      </div>
+    );
+  }
+
   const {
     windows,
     activeWindowId,
