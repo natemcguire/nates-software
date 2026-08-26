@@ -83,7 +83,7 @@ export const DynoView: React.FC = () => {
           <Gauge size={16} className="text-yellow-400" />
           <span className="font-bold text-sm text-yellow-300 font-mono">DYNO WORKSTATION AI BENCHMARK</span>
           <span className="bg-green-900 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded border border-green-500 font-mono">
-            ● LOCAL-FIRST SOVEREIGN
+            ● LOCAL-FIRST EXECUTION
           </span>
         </div>
 
@@ -182,7 +182,7 @@ export const DynoView: React.FC = () => {
 
                 <div className="bg-gray-50 border p-2.5 rounded text-xs space-y-1.5">
                   <div className="font-bold text-gray-800 flex items-center gap-1">
-                    <ShieldCheck size={13} className="text-green-700" /> Sovereign Guarantee:
+                    <ShieldCheck size={13} className="text-green-700" /> Local-First Privacy:
                   </div>
                   <p className="text-gray-600 text-[11px] leading-relaxed">
                     DYNO runs entirely on your local metal. Your benchmark report is saved to <code className="bg-gray-200 px-1 font-mono">~/.dyno/report.json</code> with zero data sent anywhere unless you click sync.

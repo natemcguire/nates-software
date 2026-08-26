@@ -120,7 +120,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
           <div className="space-y-5 max-w-3xl mx-auto py-2">
             <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-900 text-white p-4 rounded-lg shadow-md border border-blue-700">
               <h2 className="text-lg font-black tracking-tight mb-1 flex items-center gap-2">
-                ⚡ The Sovereign Maker Guide: From Local Repo to 12:01 AM Drop
+                ⚡ The Maker Guide: From Local Repo to 12:01 AM Drop
               </h2>
               <p className="text-xs text-blue-200 leading-relaxed">
                 Follow the standard developer flow to initialize your project, mount a single-file SQLite database, run verification proofs, and deploy to HOTWIRE.
@@ -160,7 +160,7 @@ $ slop --help</pre>
                 </h3>
               </div>
               <p className="text-xs text-gray-600">
-                Initialize your application with sovereign shareware metadata and SQLite schema:
+                Initialize your application with open source shareware metadata and SQLite schema:
               </p>
               <ul className="text-xs text-gray-700 space-y-1 pl-4 list-disc font-sans">
                 <li><b>Project Directory:</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">{app.id || 'dronehunter'}</code></li>
@@ -194,14 +194,14 @@ $ slop push
 
 Output:
   ┌────────────────────────────────────────────────────────────┐
-  │ ⚡ SLOP CLI v1.0.0 (Sovereign Shareware &amp; AI Speed Shop)   │
+  │ ⚡ SLOP CLI v1.0.0 (Open Source Shareware &amp; AI Speed Shop)   │
   └────────────────────────────────────────────────────────────┘
   [GITSMITH] Initiating 'slop push' from local repository...
     ✔ Checking single-file SQLite database ({app.sqlitePath || '/data/dronehunter.sqlite'})... (PRAGMA journal_mode = WAL)
     ✔ Running pre-push verification tests... (100% Green)
     ✔ Packing CAS commit SHA: 5cdee6f
     ✔ Pushing drop to HOTWIRE (https://nates-software.pages.dev/api/drops)...
-  🚀 Deployed live to sovereign subdomain in 1.18s!</pre>
+  🚀 Deployed live to subdomain in 1.18s!</pre>
             </div>
 
             {/* Step 4 */}

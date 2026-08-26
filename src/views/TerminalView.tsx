@@ -10,7 +10,7 @@ interface TerminalLine {
 export const TerminalView: React.FC = () => {
   const [history, setHistory] = useState<TerminalLine[]>([
     { text: "Nate's Software Suite DOS/UNIX Shell v2.4.0 (x86_64-apple-darwin)", type: 'system' },
-    { text: "Type 'help' for a list of available commands. Sovereign SQLite WAL active.", type: 'system' },
+    { text: "Type 'help' for a list of available commands. SQLite WAL mode active.", type: 'system' },
     { text: "", type: 'output' }
   ]);
 
@@ -170,7 +170,7 @@ export const TerminalView: React.FC = () => {
       {/* Top Terminal Info Bar */}
       <div className="border-b border-gray-800 pb-2 mb-2 flex items-center justify-between text-gray-500 text-[11px]">
         <span className="flex items-center gap-1.5 text-yellow-400">
-          <TerminalIcon size={13} /> TERMINAL.EXE — SOVEREIGN INTERACTIVE SHELL
+          <TerminalIcon size={13} /> TERMINAL.EXE — INTERACTIVE SHELL
         </span>
         <span className="flex items-center gap-1 text-green-500 font-mono">
           <Sparkles size={11} /> 1000 BAUD · VT100

@@ -403,7 +403,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             <div className="border border-slate-700 rounded-lg p-3 bg-slate-900/60 space-y-2">
               <div className="font-bold text-xs text-white">70 / 20 / 10 Revenue Settlement Rule</div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                When any downstream maker forks <strong>{app.name}</strong> and receives license payments, the sovereign contract automatically deposits <strong>70%</strong> to the fork author, <strong>20%</strong> to @{app.author || app.creator}, and <strong>10%</strong> to the perpetual protocol pool.
+                When any downstream maker forks <strong>{app.name}</strong> and receives license payments, the revenue protocol automatically deposits <strong>70%</strong> to the fork author, <strong>20%</strong> to @{app.author || app.creator}, and <strong>10%</strong> to the perpetual protocol pool.
               </p>
             </div>
 

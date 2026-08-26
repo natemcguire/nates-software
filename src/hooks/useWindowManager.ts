@@ -171,7 +171,7 @@ export function useWindowManager() {
     },
     terminal: {
       id: 'terminal',
-      title: "TERMINAL.EXE — [Sovereign Interactive DOS Shell]",
+      title: "TERMINAL.EXE — [Interactive DOS Shell]",
       icon: '💻',
       isOpen: false,
       isMinimized: false,

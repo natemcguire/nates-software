@@ -187,7 +187,7 @@ export const SlopshopView: React.FC = () => {
           <div className="p-3 border-b border-slate-700 bg-[#1e293b] flex items-center justify-between">
             <span className="font-bold text-white text-xs font-mono flex items-center gap-1.5">
               <Folder size={14} className="text-sky-400" />
-              <span>Sovereign Projects</span>
+              <span>Local-First Projects</span>
             </span>
             <span className="text-[10px] text-slate-400 font-mono">~/Projects/</span>
           </div>

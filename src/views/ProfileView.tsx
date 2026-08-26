@@ -9,7 +9,7 @@ export const ProfileView: React.FC = () => {
   const [username, setUsername] = useState('nate');
   const [displayName, setDisplayName] = useState('Nate McGuire');
   const [avatar, setAvatar] = useState('⚡');
-  const [bio, setBio] = useState('Founder at East Bay Projects. Building shareware for sovereign users.');
+  const [bio, setBio] = useState('Founder at East Bay Projects. Building shareware for indie developers.');
   const [sshKey, setSshKey] = useState('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY8... nate@macmini');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -214,7 +214,7 @@ export const ProfileView: React.FC = () => {
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
               <div>
-                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; Sovereign Disk</span>
+                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; Local Database Volume</span>
                 <p className="text-gray-600 text-xs">All software you own and hold license title to. Download offline binaries or backup live SQLite files.</p>
               </div>
               <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">

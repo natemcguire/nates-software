@@ -337,7 +337,7 @@ export const RigRuntimeView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-blue-50 border-2 border-w95-blue p-3 rounded space-y-2">
               <span className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
-                <Layers size={14} /> Sovereign SQLite Disk Export
+                <Layers size={14} /> SQLite Disk Export
               </span>
               <p className="text-gray-700 text-xs">
                 Export any running container's complete, uncorrupted SQLite database file to your local computer with zero locks.

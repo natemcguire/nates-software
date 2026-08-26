@@ -245,7 +245,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             ) : filteredApps.length === 0 ? (
               <div className="p-8 text-center space-y-2">
                 <div className="text-2xl">🔍</div>
-                <div className="font-bold text-xs text-slate-700">No sovereign apps found</div>
+                <div className="font-bold text-xs text-slate-700">No apps found</div>
                 <p className="text-[11px] text-slate-500">No drops matched "{searchQuery}". Try searching for another tag or stack.</p>
               </div>
             ) : (

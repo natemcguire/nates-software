@@ -57,7 +57,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     stars: 420,
     forks: 88,
     language: 'TypeScript / Canvas Game',
-    license: 'MIT Sovereign Shareware',
+    license: 'MIT Open Source Shareware',
     sqlitePath: '/data/dronehunter.sqlite (WAL mode)',
     branch: 'main',
     lastCommit: {
@@ -116,7 +116,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     name: 'picfitai',
     owner: 'nate',
     avatar: '✨',
-    description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with sovereign single-file SQLite user credits ledger.',
+    description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with single-file SQLite user credits ledger.',
     stars: 284,
     forks: 62,
     language: 'PHP 8.2 / SQLite',
@@ -233,7 +233,7 @@ export const GitsmithView: React.FC = () => {
     );
   };
 
-  const codeLines = (activeFile?.content || `# ${selectedRepo.name}\n\nSovereign repository running on GITSMITH.`).split('\n');
+  const codeLines = (activeFile?.content || `# ${selectedRepo.name}\n\nGit repository running on GITSMITH.`).split('\n');
 
   return (
     <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
@@ -628,7 +628,7 @@ export const GitsmithView: React.FC = () => {
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
                   <div className="text-slate-400 mb-1 font-bold">10% Protocol Pool</div>
                   <div className="text-2xl font-black text-amber-400">$5.00 / $50.00</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Perpetual sovereign hosting &amp; compute</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Platform hosting &amp; compute</div>
                 </div>
               </div>
             </div>
