@@ -11,9 +11,12 @@ import {
   Database,
   Network,
   Bot,
+  CreditCard,
   X
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAuth } from '../context/AuthContext';
+import { CheckoutModal } from './CheckoutModal';
 import { useAlert } from '../context/AlertContext';
 
 interface ArtifactSandboxProps {
@@ -30,6 +33,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   onOpenPostEditor
 }) => {
   const { showAlert } = useAlert();
+  const { user, openAuthModal } = useAuth();
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'sqlite' | 'code' | 'console'>('preview');
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
@@ -72,20 +77,28 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     e.preventDefault();
     if (!newCommentText.trim()) return;
 
+    if (!user) {
+      showAlert("Please log in or create an account to post comments.", "Sign In Required", "warning");
+      openAuthModal('login');
+      return;
+    }
+
     playClickSound();
+    const cleanText = newCommentText.trim();
+    setNewCommentText('');
+
     const commentObj: AppComment = {
       id: `c-${Date.now()}`,
-      author: 'nate',
-      avatar: '⚡',
+      author: `@${user.username}`,
+      avatar: user.avatar || '⚡',
       time: 'Just now',
       timestamp: 'Just now',
-      text: newCommentText.trim(),
+      text: cleanText,
       upvotes: 1,
-      isMaker: true
+      isMaker: user.username === 'nate' || user.username === 'josh'
     };
 
     setComments([commentObj, ...comments]);
-    setNewCommentText('');
     playSuccessChime();
 
     try {
@@ -94,8 +107,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appId: app.id,
-          author: 'nate',
-          text: commentObj.text
+          author: user.username,
+          avatar: user.avatar || '⚡',
+          text: cleanText
         })
       });
     } catch {}
@@ -379,11 +393,21 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              playClickSound();
+              setShowCheckoutModal(true);
+            }}
+            className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm"
+          >
+            <CreditCard size={12} />
+            <span>Register License (${app.id === 'certified-mailer' ? '25' : app.id === 'picfitai' ? '20' : '15'})</span>
+          </button>
           <a
             href={app.liveUrl || `https://${app.id}.nates-software.com`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
+            className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
           >
             <ExternalLink size={12} /> Launch Live App &rarr;
           </a>
@@ -588,6 +612,19 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
       )}
 
+      {/* Stripe Marketplace Checkout Modal */}
+      <CheckoutModal
+        isOpen={showCheckoutModal}
+        onClose={() => setShowCheckoutModal(false)}
+        app={app}
+        onSuccess={(licenseKey) => {
+          showAlert(
+            `Payment Succeeded! License key minted:\n\n🔑 ${licenseKey}\n\nYour purchase has been saved to your Shelf with automated 70/20/10 lineage royalty distribution.`,
+            "License Registered",
+            "success"
+          );
+        }}
+      />
     </div>
   );
 };

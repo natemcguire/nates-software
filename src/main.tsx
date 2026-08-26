@@ -1,3 +1,10 @@
+// Register Sovereign Service Worker
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 import { AlertProvider } from './context/AlertContext';
 import React from 'react';
 import ReactDOM from 'react-dom/client';

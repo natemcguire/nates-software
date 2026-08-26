@@ -1,5 +1,5 @@
-// GET /api/comments?app_id=wallart
-// POST /api/comments
+// GET /api/comments?app_id=dronehunter
+// POST /api/comments - Submit feedback or maker commentary
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -17,11 +17,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       if (appId) {
         query += ` WHERE c.app_id = ? ORDER BY c.created_at DESC`;
         const { results } = await env.DB.prepare(query).bind(appId).all();
-        return Response.json({ success: true, comments: results });
+        return Response.json({ success: true, comments: results || [] });
       } else {
         query += ` ORDER BY c.created_at DESC LIMIT 50`;
         const { results } = await env.DB.prepare(query).all();
-        return Response.json({ success: true, comments: results });
+        return Response.json({ success: true, comments: results || [] });
       }
     }
     return Response.json({ success: true, comments: [] });
@@ -32,21 +32,37 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    const { appId, text, author } = await request.json();
-    if (!appId || !text) {
+    const { appId, text, author = 'nate', avatar = '⚡' } = await request.json() as any;
+    if (!appId || !text || text.trim().length === 0) {
       return Response.json({ success: false, error: 'appId and text are required' }, { status: 400 });
     }
 
-    const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(author || 'nate').first();
-    const userId = user ? user.id : 'usr_nate';
-    const commentId = `c_${Date.now()}`;
+    const cleanText = text.trim();
+    const commentId = `c_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
 
-    await env.DB.prepare(`
-      INSERT INTO comments (id, app_id, user_id, text, upvotes)
-      VALUES (?, ?, ?, ?, 1)
-    `).bind(commentId, appId, userId, text).run();
+    if (env && env.DB) {
+      const user = await env.DB.prepare('SELECT id, avatar_url FROM users WHERE username = ?').bind(author).first();
+      const userId = user ? (user as any).id : 'usr_nate';
 
-    return Response.json({ success: true, commentId });
+      await env.DB.prepare(`
+        INSERT INTO comments (id, app_id, user_id, text, upvotes)
+        VALUES (?, ?, ?, ?, 1)
+      `).bind(commentId, appId, userId, cleanText).run();
+    }
+
+    return Response.json({
+      success: true,
+      commentId,
+      comment: {
+        id: commentId,
+        appId,
+        author: `@${author.replace(/^@/, '')}`,
+        avatar,
+        text: cleanText,
+        time: 'Just now',
+        upvotes: 1
+      }
+    });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }

@@ -19,6 +19,7 @@ import {
   X
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAuth } from '../context/AuthContext';
 
 export const ChatView: React.FC = () => {
   const [messages, setMessages] = useState<IrcMessage[]>(INITIAL_CHAT_MESSAGES);
@@ -40,31 +41,52 @@ export const ChatView: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Periodic poll or initial fetch from API
+  const { user } = useAuth();
+
+  // Sync current nick with logged-in user
   useEffect(() => {
-    fetch('/api/chat?channel=%23lounge')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.messages && data.messages.length > 0) {
-          const apiMsgs: IrcMessage[] = data.messages.map((m: any) => ({
-            id: m.id,
-            channel: m.channel,
-            sender: m.sender,
-            type: m.type,
-            text: m.text,
-            isOp: !!m.isOp,
-            timestamp: m.timestamp || new Date().toISOString(),
-            timeFormatted: formatIrcTime(new Date(m.timestamp || Date.now()))
-          }));
-          setMessages(prev => {
-            const existingIds = new Set(prev.map(p => p.id));
-            const newOnes = apiMsgs.filter(m => !existingIds.has(m.id));
-            return filterUnexpiredIrcMessages([...prev, ...newOnes]);
-          });
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (user && user.username) {
+      setCurrentNick(user.username);
+    }
+  }, [user]);
+
+  // Live 3-Second Heartbeat Polling for #lounge
+  useEffect(() => {
+    const fetchLatestMessages = () => {
+      fetch('/api/chat?channel=%23lounge')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.messages && data.messages.length > 0) {
+            const apiMsgs: IrcMessage[] = data.messages.map((m: any) => ({
+              id: m.id,
+              channel: m.channel,
+              sender: m.sender,
+              type: m.type || 'PRIVMSG',
+              text: m.text,
+              isOp: m.sender === 'nate' || m.sender === 'josh',
+              timestamp: m.timestamp || new Date().toISOString(),
+              timeFormatted: formatIrcTime(new Date(m.timestamp || Date.now()))
+            }));
+
+            setMessages(prev => {
+              const existingIds = new Set(prev.map(p => p.id));
+              const newOnes = apiMsgs.filter(m => !existingIds.has(m.id));
+              if (newOnes.length > 0) {
+                // Play notification chime for incoming messages from others
+                const fromOther = newOnes.some(n => n.sender !== currentNick);
+                if (fromOther) playSuccessChime();
+              }
+              return filterUnexpiredIrcMessages([...prev, ...newOnes]);
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchLatestMessages();
+    const interval = setInterval(fetchLatestMessages, 3000);
+    return () => clearInterval(interval);
+  }, [currentNick]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
