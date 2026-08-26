@@ -141,19 +141,26 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         <div className="flex items-center gap-1 bg-gray-200 p-1 border border-gray-400 rounded">
           <div className="flex items-center">
             <button
-              onClick={() => { setActiveTab('preview'); playClickSound(); }}
-              className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'preview' ? 'btn-w95-primary' : ''}`}
+              onClick={() => {
+                setActiveTab('preview');
+                playClickSound();
+              }}
+              className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'preview' ? 'btn-w95-primary font-bold' : ''}`}
             >
               <Play size={13} /> Live App
             </button>
             <a
-              href={app.liveUrl || `https://${app.id}.nates-software.com`}
+              href={`https://${app.id}.nates-software.com`}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-w95 text-xs py-1 px-1.5 ml-0.5 text-blue-800"
-              title={`Open ${app.liveUrl || `https://${app.id}.nates-software.com`} in new window`}
+              className="btn-w95 text-xs py-1 px-2 ml-0.5 text-blue-900 font-bold flex items-center gap-1 hover:bg-blue-100"
+              title={`Open https://${app.id}.nates-software.com in new tab`}
+              onClick={() => {
+                playClickSound();
+              }}
             >
               <ExternalLink size={12} />
+              <span>{app.id}.nates-software.com</span>
             </a>
           </div>
           <button
