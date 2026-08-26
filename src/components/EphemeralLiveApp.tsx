@@ -1,20 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AppListing } from '../data/mockData';
-import { Download, Compass, Sliders, Sparkles, Image as ImageIcon, Send, Check, Upload, Trash2, Crosshair, Shield, Zap, Radar } from 'lucide-react';
+import { Download, Compass, Sliders, Sparkles, Image as ImageIcon, Send, Check, Upload, Trash2, Shield, ExternalLink } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
 interface EphemeralLiveAppProps {
   app: AppListing;
 }
 
-interface DroneTarget {
-  id: string;
-  name: string;
-  rangeMeters: number;
-  azimuthDeg: number;
-  status: 'TRACKING' | 'LOCKED' | 'INTERCEPTED';
-  speedKts: number;
-}
+
 
 export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   // Hold To Ship state
@@ -22,15 +15,19 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const [shipProgress, setShipProgress] = useState(0);
   const [isShipped, setIsShipped] = useState(false);
 
+  const handleExportSqlite = () => {
+    playClickSound();
+    const blob = new Blob(['DroneHunter SQLite Database (WAL Mode)'], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dronehunter.sqlite';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // DroneHunter 95 State
-  const [radarAngle, setRadarAngle] = useState(0);
-  const [interceptScore, setInterceptScore] = useState(3);
-  const [targets, setTargets] = useState<DroneTarget[]>([
-    { id: 't-1', name: 'Shahed-136 Vector', rangeMeters: 840, azimuthDeg: 45, status: 'TRACKING', speedKts: 95 },
-    { id: 't-2', name: 'Recon Quad-Rotor', rangeMeters: 420, azimuthDeg: 130, status: 'LOCKED', speedKts: 45 },
-    { id: 't-3', name: 'Stealth Wing X-2', rangeMeters: 1150, azimuthDeg: 280, status: 'TRACKING', speedKts: 140 }
-  ]);
-  const [interceptLogs, setInterceptLogs] = useState([
+  const [interceptLogs] = useState([
     { id: 'log-101', target: 'Recon Drone Bravo', status: 'SPLASH CONFIRMED', telemetry: 'Azimuth: 112° · Range: 620m' },
     { id: 'log-102', target: 'FPV Kamikaze Alpha', status: 'SPLASH CONFIRMED', telemetry: 'Azimuth: 045° · Range: 310m' }
   ]);
@@ -64,40 +61,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
     { id: 2, name: 'Windward Mark', lat: '30.2750° N', lon: '97.7380° W' }
   ]);
 
-  // Radar sweep animation loop
-  useEffect(() => {
-    if (app.id !== 'dronehunter') return;
-    const interval = setInterval(() => {
-      setRadarAngle(prev => (prev + 3) % 360);
-    }, 40);
-    return () => clearInterval(interval);
-  }, [app.id]);
 
-  const handleLaunchEMP = (tId: string) => {
-    playClickSound();
-    setTargets(prev => prev.map(t => t.id === tId ? { ...t, status: 'INTERCEPTED' } : t));
-    setInterceptScore(prev => prev + 1);
-
-    const target = targets.find(t => t.id === tId);
-    if (target) {
-      const newLog = {
-        id: `log-${Date.now().toString().slice(-4)}`,
-        target: target.name,
-        status: 'SPLASH CONFIRMED (EMP)',
-        telemetry: `Azimuth: ${target.azimuthDeg.toString().padStart(3, '0')}° · Range: ${target.rangeMeters}m`
-      };
-      setInterceptLogs([newLog, ...interceptLogs]);
-    }
-    playSuccessChime();
-  };
-
-  const handleScanRadar = () => {
-    playClickSound();
-    setTargets([
-      { id: `t-${Date.now()}-1`, name: 'FPV Swarm Vector', rangeMeters: Math.floor(300 + Math.random() * 800), azimuthDeg: Math.floor(Math.random() * 360), status: 'LOCKED', speedKts: 110 },
-      { id: `t-${Date.now()}-2`, name: 'Tactical Recon Drone', rangeMeters: Math.floor(400 + Math.random() * 900), azimuthDeg: Math.floor(Math.random() * 360), status: 'TRACKING', speedKts: 75 }
-    ]);
-  };
 
   // Hold to ship handler
   const handleHoldStart = () => {
@@ -226,153 +190,114 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         </div>
       </div>
 
-      {/* 0. DRONEHUNTER 95 (TACTICAL RADAR & COUNTER-DRONE BATTERY) */}
+      {/* 0. DRONEHUNTER 95 (REAL DUCK HUNT STYLE ARCADE SHOOTER GAME) */}
       {app.id === 'dronehunter' && (
         <div className="grid grid-cols-12 gap-3 flex-1">
-          {/* Left: Tactical Radar HUD Display */}
-          <div className="col-span-7 bg-[#0a140a] p-4 border-2 border-green-700 rounded shadow-2xl flex flex-col justify-between relative overflow-hidden font-mono text-green-400 min-h-[380px]">
-            <div className="flex justify-between items-center border-b border-green-800/80 pb-2 z-10">
-              <span className="font-black text-sm flex items-center gap-2 text-green-300">
-                <Radar size={16} className="text-green-400 animate-spin" /> AN/MPQ-64 SENTINEL RADAR HUD
-              </span>
-              <span className="bg-green-950 text-green-300 px-2 py-0.5 rounded text-[11px] border border-green-700">
-                CONFIRMED KILLS: {interceptScore}
-              </span>
-            </div>
-
-            {/* Simulated Radar Circular Scope */}
-            <div className="relative w-64 h-64 mx-auto my-3 rounded-full border-2 border-green-500/60 flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.2)] bg-black/40">
-              {/* Concentric Range Rings */}
-              <div className="absolute w-48 h-48 rounded-full border border-green-500/30" />
-              <div className="absolute w-32 h-32 rounded-full border border-green-500/30" />
-              <div className="absolute w-16 h-16 rounded-full border border-green-500/30" />
-              {/* Crosshairs */}
-              <div className="absolute w-full h-[1px] bg-green-500/30" />
-              <div className="absolute h-full w-[1px] bg-green-500/30" />
-
-              {/* Rotating Sweep Beam */}
-              <div
-                style={{ transform: `rotate(${radarAngle}deg)` }}
-                className="absolute inset-0 origin-center pointer-events-none"
-              >
-                <div className="w-1/2 h-[2px] bg-gradient-to-r from-transparent to-green-400 ml-auto shadow-[0_0_8px_#22c55e]" />
+          {/* Left: Real Arcade Game Frame */}
+          <div className="col-span-8 bg-black border-2 border-gray-800 rounded shadow-2xl overflow-hidden flex flex-col min-h-[480px]">
+            <div className="bg-[#161b22] text-white p-2 flex items-center justify-between border-b border-gray-700 select-none">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎯</span>
+                <span className="font-bold text-xs font-mono text-cyan-300">DRONE HUNTER — DUCK HUNT STYLE ARCADE SHOOTER</span>
+                <span className="bg-green-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded font-mono">
+                  AUTHENTIC RETRO ENGINE
+                </span>
               </div>
-
-              {/* Drone Target Blips */}
-              {targets.map((t, _idx) => {
-                const isHit = t.status === 'INTERCEPTED';
-                const dist = Math.min(100, Math.max(20, (t.rangeMeters / 1200) * 110));
-                const rad = (t.azimuthDeg * Math.PI) / 180;
-                const x = Math.cos(rad) * dist;
-                const y = Math.sin(rad) * dist;
-
-                return (
-                  <div
-                    key={t.id}
-                    style={{
-                      transform: `translate(${x}px, ${y}px)`
-                    }}
-                    className={`absolute flex flex-col items-center cursor-pointer transition-all duration-300 ${
-                      isHit ? 'opacity-20 scale-75' : 'hover:scale-125 animate-pulse'
-                    }`}
-                    onClick={() => handleLaunchEMP(t.id)}
-                    title={`Click to intercept ${t.name}`}
-                  >
-                    <div className={`w-3 h-3 rounded-full flex items-center justify-center ${
-                      isHit ? 'bg-gray-600' : 'bg-red-500 ring-2 ring-red-300 shadow-[0_0_10px_#ef4444]'
-                    }`}>
-                      <Crosshair size={8} className="text-white" />
-                    </div>
-                    <span className="text-[9px] bg-black/80 px-1 rounded text-yellow-300 font-mono mt-0.5">
-                      {isHit ? 'SPLASH' : `${t.rangeMeters}m`}
-                    </span>
-                  </div>
-                );
-              })}
+              <div className="flex items-center gap-2">
+                <a
+                  href="/dronehunter-game/index.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-w95 text-[10px] py-0.5 px-2 bg-gray-200 text-black font-bold flex items-center gap-1"
+                >
+                  <ExternalLink size={10} /> Full Screen
+                </a>
+              </div>
             </div>
 
-            {/* Bottom Radar Controls */}
-            <div className="flex justify-between items-center border-t border-green-800/80 pt-2 z-10">
-              <span className="text-[10px] text-green-500 font-mono">FREQ: 9.41 GHz &middot; WAL ACTIVE</span>
-              <button
-                onClick={handleScanRadar}
-                className="btn-w95 text-xs py-1 px-3 flex items-center gap-1 font-bold text-black bg-green-200 hover:bg-green-300"
-              >
-                <Zap size={12} className="text-green-900" /> Re-Scan Airspace
-              </button>
+            {/* Embedded Live Game Frame */}
+            <div className="flex-1 bg-[#87CEEB] relative overflow-hidden">
+              <iframe
+                src="/dronehunter-game/index.html"
+                title="Drone Hunter Arcade Game"
+                className="w-full h-full border-0 absolute inset-0"
+                allow="autoplay; fullscreen"
+              />
             </div>
           </div>
 
-          {/* Right: Target Acquisition & SQLite Intercept Log */}
-          <div className="col-span-5 bg-white border-2 border-gray-800 p-3 flex flex-col justify-between overflow-y-auto">
-            <div className="space-y-2.5">
-              <div className="border-b pb-1.5 flex items-center justify-between">
-                <span className="font-bold text-sm text-w95-blue flex items-center gap-1.5">
-                  <Shield size={14} /> Threat Matrix &amp; Fire Control
-                </span>
-                <span className="bg-red-100 text-red-800 text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">
-                  WEAPONS FREE
+          {/* Right: Telemetry & Sovereign SQLite Database Controls */}
+          <div className="col-span-4 flex flex-col justify-between space-y-3">
+            <div className="bg-white border-2 border-gray-800 p-3 rounded shadow-sm">
+              <div className="font-bold text-xs text-w95-blue mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5"><Shield size={13} /> Drone Hunter Flight Telemetry</span>
+                <span className="text-[10px] bg-green-100 text-green-800 px-1.5 py-0.2 rounded border border-green-300 font-mono">
+                  WAL ACTIVE
                 </span>
               </div>
 
-              {/* Active Targets List */}
-              <div className="space-y-1.5">
-                <div className="font-bold text-gray-800 text-[11px]">Tracked Air Contacts:</div>
-                {targets.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`p-2 rounded border flex items-center justify-between text-xs ${
-                      t.status === 'INTERCEPTED' ? 'bg-gray-100 border-gray-300 opacity-60' : 'bg-red-50 border-red-300'
-                    }`}
-                  >
-                    <div>
-                      <div className="font-bold text-gray-900 flex items-center gap-1">
-                        <span>🎯 {t.name}</span>
-                      </div>
-                      <div className="text-[10px] font-mono text-gray-600">
-                        Range: {t.rangeMeters}m &middot; Azimuth: {t.azimuthDeg}° &middot; Speed: {t.speedKts} kts
-                      </div>
-                    </div>
-                    {t.status === 'INTERCEPTED' ? (
-                      <span className="text-[10px] font-bold text-green-700 font-mono">✔ SPLASH</span>
-                    ) : (
-                      <button
-                        onClick={() => handleLaunchEMP(t.id)}
-                        className="btn-w95 btn-w95-primary text-[10px] py-1 px-2 font-bold flex items-center gap-1 shadow-sm"
-                      >
-                        <Zap size={10} /> Intercept
-                      </button>
-                    )}
+              <div className="space-y-2 text-xs text-gray-700">
+                <div className="p-2 border border-gray-300 rounded bg-gray-50 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-xs">🦆 Game Mode</div>
+                    <div className="text-[10px] text-gray-500 font-mono">Duck Hunt Style Arcade</div>
                   </div>
-                ))}
-              </div>
-
-              {/* SQLite Log Table */}
-              <div className="border border-gray-300 rounded p-2 bg-gray-50">
-                <div className="flex justify-between items-center text-[11px] font-bold text-w95-blue mb-1">
-                  <span>SQLite Table (/data/dronehunter.sqlite):</span>
-                  <span className="font-mono text-gray-500">{interceptLogs.length} events</span>
+                  <span className="text-xl">🐶</span>
                 </div>
-                <div className="space-y-1 max-h-[85px] overflow-y-auto">
+
+                <div className="p-2 border border-gray-300 rounded bg-gray-50 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-xs">💥 Weapons System</div>
+                    <div className="text-[10px] text-gray-500 font-mono">Double-Barrel 12G Shotgun</div>
+                  </div>
+                  <span className="text-xl">🎯</span>
+                </div>
+
+                <div className="p-2 border border-gray-300 rounded bg-gray-50 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-xs">🗄️ Sovereign Storage</div>
+                    <div className="text-[10px] text-gray-500 font-mono">/data/dronehunter.sqlite</div>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-green-700">WAL Mode</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Live SQLite Intercept & High Score Log */}
+            <div className="bg-white border-2 border-gray-800 p-3 rounded shadow-sm flex-1 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs text-w95-blue">SQLite High Scores &amp; Hits:</span>
+                  <span className="text-[10px] text-gray-500 font-mono">WAL Integrity Verified</span>
+                </div>
+                <div className="bg-gray-50 p-2 rounded border border-gray-300 font-mono text-[10px] text-gray-800 divide-y divide-gray-200 max-h-28 overflow-y-auto">
+                  <div className="py-1 flex justify-between">
+                    <span>Rank #1: @nate</span>
+                    <span className="text-green-700 font-bold">14,280 PTS</span>
+                  </div>
+                  <div className="py-1 flex justify-between">
+                    <span>Rank #2: @josh</span>
+                    <span className="text-green-700 font-bold">11,450 PTS</span>
+                  </div>
+                  <div className="py-1 flex justify-between">
+                    <span>Rank #3: @sam</span>
+                    <span className="text-green-700 font-bold">9,820 PTS</span>
+                  </div>
                   {interceptLogs.map((log) => (
-                    <div key={log.id} className="bg-white p-1 rounded border text-[10px] flex justify-between items-center font-mono">
+                    <div key={log.id} className="py-1 flex justify-between text-blue-800">
                       <span className="truncate">{log.target}</span>
-                      <span className="text-green-700 font-bold ml-1">{log.status}</span>
+                      <span className="text-green-700 font-bold">HIT CONFIRMED</span>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Bottom Actions */}
-            <div className="pt-2 border-t border-gray-300 flex gap-1.5">
-              <a
-                href="data:text/plain;charset=utf-8,DroneHunter%20SQLite%20Database"
-                download="dronehunter.sqlite"
-                className="btn-w95 btn-w95-primary flex-1 py-1.5 text-xs flex items-center justify-center gap-1 font-bold"
+              <button
+                onClick={handleExportSqlite}
+                className="btn-w95 btn-w95-primary w-full py-1.5 mt-2 flex items-center justify-center gap-1.5 font-bold"
               >
-                <Download size={12} /> Export /data/dronehunter.sqlite
-              </a>
+                <Download size={13} /> Export /data/dronehunter.sqlite
+              </button>
             </div>
           </div>
         </div>
