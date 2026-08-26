@@ -128,11 +128,11 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({ app, onFork, o
               <Play size={13} /> Live App
             </button>
             <a
-              href={`https://${app.id}.pages.dev`}
+              href={app.liveUrl || `https://${app.id}.nates-software.com`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-w95 text-xs py-1 px-1.5 ml-0.5 text-blue-800"
-              title={`Open https://${app.id}.pages.dev in new window`}
+              title={`Open ${app.liveUrl || `https://${app.id}.nates-software.com`} in new window`}
             >
               <ExternalLink size={12} />
             </a>

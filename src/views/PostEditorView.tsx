@@ -17,6 +17,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
 
   const [name, setName] = useState(app.name);
   const [tagline, setTagline] = useState(app.tagline);
+  const [liveUrl, setLiveUrl] = useState(app.liveUrl || '');
   const [description, setDescription] = useState(app.description);
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
@@ -51,6 +52,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
       ...app,
       name,
       tagline,
+      liveUrl: liveUrl.trim() || undefined,
       description,
       version,
       price,
@@ -240,7 +242,25 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 value={tagline}
                 onChange={(e) => setTagline(e.target.value)}
                 className="w-full p-2 border border-gray-400 text-xs bg-gray-50 focus:bg-white"
+                placeholder="e.g. AI Virtual Try-On Studio with Gemini Vision"
               />
+            </div>
+
+            <div>
+              <label className="font-bold text-gray-800 block mb-1 flex items-center justify-between">
+                <span>🌐 Live URL (if already running live):</span>
+                <span className="text-[11px] font-normal text-blue-700">Optional · Custom domain or production endpoint</span>
+              </label>
+              <input
+                type="url"
+                value={liveUrl}
+                onChange={(e) => setLiveUrl(e.target.value)}
+                className="w-full p-2 border-2 border-blue-600 font-mono text-xs bg-blue-50/40 focus:bg-white rounded"
+                placeholder="https://picfit.ai or https://myapp.com"
+              />
+              <p className="text-[11px] text-gray-500 mt-1">
+                If your app is already hosted externally on a VPS, DreamHost, or custom server, enter the live URL so the "▷ Live App" button links directly to it.
+              </p>
             </div>
 
             <div>

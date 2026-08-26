@@ -6,6 +6,7 @@ export const RigRuntimeView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'onboard' | 'fleet' | 'storage'>('onboard');
   const [copiedRemote, setCopiedRemote] = useState(false);
   const [copiedPush, setCopiedPush] = useState(false);
+  const [liveProdUrl, setLiveProdUrl] = useState('https://picfit.ai');
   const [isBuilding, setIsBuilding] = useState(false);
   const [fleet, setFleet] = useState<RigContainer[]>([...INITIAL_FLEET]);
   const [restartingIds, setRestartingIds] = useState<Set<string>>(new Set());
@@ -181,6 +182,24 @@ export const RigRuntimeView: React.FC = () => {
                   <div className="bg-black text-green-400 p-2 font-mono text-[11px] rounded border border-gray-700 truncate">
                     $ {pushCmd}
                   </div>
+                </div>
+
+                {/* Step 3: Optional Live URL */}
+                <div className="bg-gray-50 border border-gray-300 p-2.5 rounded space-y-1.5 mb-2.5">
+                  <div className="font-bold text-gray-900 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span className="bg-w95-blue text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">3</span>
+                      Live Production URL (Optional):
+                    </span>
+                    <span className="text-[10px] text-blue-700 font-mono">External Host</span>
+                  </div>
+                  <input
+                    type="url"
+                    value={liveProdUrl}
+                    onChange={(e) => setLiveProdUrl(e.target.value)}
+                    className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white"
+                    placeholder="https://picfit.ai or https://myapp.com"
+                  />
                 </div>
 
                 {/* Step 3: Invariants */}

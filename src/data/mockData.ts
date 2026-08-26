@@ -35,6 +35,7 @@ export interface AppListing {
     ios: string;
   };
   screenshots: string[];
+  liveUrl?: string;
   techStack: string[];
   comments?: AppComment[];
 }
@@ -56,6 +57,7 @@ export const INITIAL_APPS: AppListing[] = [
     creator: "nate",
     creatorAvatar: "🎯",
     tagline: "Retro Duck Hunt-Style Arcade Drone Shooter with SQLite High Scores",
+    liveUrl: "https://dronehunter.nates-software.com",
     description: "Fast-paced arcade browser game inspired by classic Duck Hunt. Double-barrel shotgun reloads, laughing dog animations, drone explosions, and local SQLite high score telemetry in WAL mode.",
     version: "1.0.0",
     price: "$19.00",
@@ -107,6 +109,7 @@ export const INITIAL_APPS: AppListing[] = [
     creator: "nate",
     creatorAvatar: "📫",
     tagline: "USPS Certified Mail, Electronic Return Receipt (ERR) & Dispute Tooling",
+    liveUrl: "https://certified-mailer.nates-software.com",
     description: "Private legal dispute and operational correspondence engine. Renders manifests to flattened high-DPI PDFs (preventing provider font substitutions), tracks Electronic Return Receipts (ERR), and connects to LetterStream and Lob APIs.",
     version: "1.0.0",
     price: "$29.00",
@@ -147,6 +150,7 @@ export const INITIAL_APPS: AppListing[] = [
     creator: "nate",
     creatorAvatar: "✨",
     tagline: "AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision",
+    liveUrl: "https://picfit.ai",
     description: "Hyper-realistic virtual fitting room powered by Google Gemini Vision. Seamlessly drape outfits onto portrait photos with sovereign single-file SQLite user credits ledger.",
     version: "1.0.0",
     price: "$39.00",
