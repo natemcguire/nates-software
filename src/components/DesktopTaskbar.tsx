@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { Volume2, VolumeX, ShieldCheck, ZoomIn } from 'lucide-react';
 import { toggleSound, isSoundEnabled, playClickSound } from '../lib/soundEngine';
 
 export interface TaskbarTab {
@@ -13,9 +13,16 @@ export interface TaskbarTab {
 interface DesktopTaskbarProps {
   tabs: TaskbarTab[];
   onStartClick: () => void;
+  displayScale?: number;
+  onCycleScale?: () => void;
 }
 
-export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({ tabs, onStartClick }) => {
+export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
+  tabs,
+  onStartClick,
+  displayScale = 1.0,
+  onCycleScale
+}) => {
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
 
   const handleToggleSound = () => {
@@ -24,12 +31,14 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({ tabs, onStartCli
     if (next) playClickSound();
   };
 
+  const scalePercent = Math.round(displayScale * 100);
+
   return (
     <div className="fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
       {/* Start Button */}
       <button
         onClick={() => { playClickSound(); onStartClick(); }}
-        className="h-7 px-3.5 flex items-center gap-1.5 font-bold border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0] active:border-gray-800"
+        className="h-7 px-3.5 flex items-center gap-1.5 font-bold border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0] active:border-gray-800 hover:bg-gray-100"
       >
         <span className="text-base">⚡</span>
         <span>Start</span>
@@ -55,8 +64,20 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({ tabs, onStartCli
         ))}
       </div>
 
-      {/* System Tray (Audio, Clock, Status) */}
+      {/* System Tray (Scale / Audio / Clock / Status) */}
       <div className="h-7 px-2.5 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-2.5">
+        {/* Scale Switcher Button */}
+        {onCycleScale && (
+          <button
+            onClick={() => { playClickSound(); onCycleScale(); }}
+            className="hover:scale-105 transition-transform flex items-center gap-1 text-[11px] font-mono font-bold bg-white/60 px-1.5 py-0.5 rounded border border-gray-400 text-blue-900 shadow-sm"
+            title={`Current View Zoom: ${scalePercent}%. Click to cycle scale (100% -> 115% -> 130%)`}
+          >
+            <ZoomIn size={12} />
+            <span>{scalePercent}%</span>
+          </button>
+        )}
+
         <button
           onClick={handleToggleSound}
           className="hover:scale-110 transition-transform text-gray-700"
@@ -64,9 +85,11 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({ tabs, onStartCli
         >
           {soundOn ? <Volume2 size={14} className="text-blue-900" /> : <VolumeX size={14} className="text-gray-500" />}
         </button>
+
         <span title="Sovereign Single-File SQLite Active" className="flex items-center">
           <ShieldCheck size={14} className="text-green-700" />
         </span>
+
         <span className="font-mono text-[11px] text-gray-800">
           {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>

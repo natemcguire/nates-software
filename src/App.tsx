@@ -73,6 +73,24 @@ export function App() {
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
+  // Responsive Display Scale (Auto-detect large screens or user cycle)
+  const getInitialScale = () => {
+    if (typeof window === 'undefined') return 1.0;
+    const w = window.innerWidth;
+    if (w >= 2200) return 1.30;
+    if (w >= 1600) return 1.15;
+    return 1.0;
+  };
+
+  const [displayScale, setDisplayScale] = useState<number>(getInitialScale);
+
+  const cycleScale = () => {
+    setDisplayScale(prev => {
+      if (prev <= 1.0) return 1.15;
+      if (prev <= 1.15) return 1.30;
+      return 1.0;
+    });
+  };
 
   // Desktop selection rubberband box
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
@@ -386,6 +404,8 @@ export function App() {
       <DesktopTaskbar
         tabs={taskbarTabs}
         onStartClick={() => setStartMenuOpen(prev => !prev)}
+        displayScale={displayScale}
+        onCycleScale={cycleScale}
       />
     </div>
   );

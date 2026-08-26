@@ -1,3 +1,4 @@
+import { useAlert } from '../context/AlertContext';
 import React, { useState, useEffect } from 'react';
 import { APPS_DATA, AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
@@ -38,6 +39,7 @@ const BLANK_DRAFT_APP: AppListing = {
 };
 
 export const HotwireView: React.FC = () => {
+  const { showAlert } = useAlert();
   const [apps, setApps] = useState<AppListing[]>(APPS_DATA);
   const [selectedApp, setSelectedApp] = useState<AppListing>(APPS_DATA[0]);
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
@@ -292,7 +294,7 @@ export const HotwireView: React.FC = () => {
                 <Award size={14} className="text-yellow-700" /> Daily Drop Streak Protocol
               </div>
               <p className="text-yellow-800 text-[11px] leading-relaxed">
-                Makers who ship at least 1 verified, single-file SQLite release every 24 hours earn front-page boost algorithms and fee waivers.
+                Makers who push the most verified code releases and CAS commits every 24 hours earn front-page boost algorithms, maker streak badges, and protocol fee waivers.
               </p>
             </div>
 
@@ -398,8 +400,8 @@ export const HotwireView: React.FC = () => {
             <div className="flex-1 overflow-hidden">
               <ArtifactSandbox
                 app={selectedApp}
-                onFork={() => alert(`Forked ${selectedApp.name} into SLOPSHOP worktree!`)}
-                onOpenAI={() => alert(`Launching Claude / Codex session for ${selectedApp.name}...`)}
+                onFork={() => showAlert(`Forked ${selectedApp.name} into isolated SLOPSHOP worktree (/tmp/slop-${selectedApp.id})!`, 'SLOPSHOP — Fork Created', 'success')}
+                onOpenAI={() => showAlert(`Launching Claude & Codex AI mod session for ${selectedApp.name}...`, 'AI Agent Bridge', 'info')}
                 onEditPost={startEditCurrent}
               />
             </div>

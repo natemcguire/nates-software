@@ -15,20 +15,41 @@ export interface WindowState {
   zIndex: number;
 }
 
-const getInitialPos = (offset: number) => {
-  const w = typeof window !== 'undefined' ? window.innerWidth : 1200;
-  const isWide = w > 1400;
-  const initX = isWide ? Math.max(40, Math.floor((w - 1040) / 2) + offset) : 40 + offset;
-  return { x: initX, y: 30 + offset };
+const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: number) => {
+  const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
+  const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
+  
+  // Scale window dimensions up on high-res displays
+  const isHighRes = screenW >= 1600;
+  const isUltraWide = screenW >= 2000;
+  
+  const w = isUltraWide 
+    ? Math.min(Math.round(defaultW * 1.2), screenW - 120)
+    : isHighRes 
+    ? Math.min(Math.round(defaultW * 1.1), screenW - 80)
+    : Math.min(defaultW, screenW - 40);
+
+  const h = isHighRes 
+    ? Math.min(Math.round(defaultH * 1.1), screenH - 120)
+    : Math.min(defaultH, screenH - 80);
+
+  const posX = Math.max(30, Math.floor((screenW - w) / 2) + offset);
+  const posY = Math.max(25, Math.floor((screenH - h - 40) / 2) + offset);
+
+  return { x: posX, y: posY, width: w, height: h };
 };
 
 export function useWindowManager() {
-  const pos1 = getInitialPos(0);
-  const pos2 = getInitialPos(25);
-  const pos3 = getInitialPos(50);
-  const pos4 = getInitialPos(35);
-  const pos5 = getInitialPos(45);
-  const pos6 = getInitialPos(15);
+  const mktgConfig = getResponsiveWindowConfig(0, 1080, 680);
+  const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
+  const slopshopConfig = getResponsiveWindowConfig(45, 1120, 700);
+  const inboxConfig = getResponsiveWindowConfig(35, 1120, 700);
+  const rigConfig = getResponsiveWindowConfig(40, 1060, 640);
+  const papersConfig = getResponsiveWindowConfig(15, 1140, 720);
+  const dynoConfig = getResponsiveWindowConfig(30, 1000, 600);
+  const profileConfig = getResponsiveWindowConfig(20, 1100, 700);
+  const gitsmithConfig = getResponsiveWindowConfig(35, 1180, 740);
+  const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
 
   const [windows, setWindows] = useState<Record<string, WindowState>>({
     mktg: {
@@ -38,10 +59,10 @@ export function useWindowManager() {
       isOpen: true,
       isMinimized: false,
       isMaximized: false,
-      x: pos1.x,
-      y: pos1.y,
-      width: 1020,
-      height: 660,
+      x: mktgConfig.x,
+      y: mktgConfig.y,
+      width: mktgConfig.width,
+      height: mktgConfig.height,
       zIndex: 10
     },
     hotwire: {
@@ -51,10 +72,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos2.x,
-      y: pos2.y,
-      width: 1140,
-      height: 700,
+      x: hotwireConfig.x,
+      y: hotwireConfig.y,
+      width: hotwireConfig.width,
+      height: hotwireConfig.height,
       zIndex: 11
     },
     slopshop: {
@@ -64,10 +85,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos3.x,
-      y: pos3.y,
-      width: 1040,
-      height: 660,
+      x: slopshopConfig.x,
+      y: slopshopConfig.y,
+      width: slopshopConfig.width,
+      height: slopshopConfig.height,
       zIndex: 12
     },
     inbox: {
@@ -77,10 +98,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos4.x,
-      y: pos4.y,
-      width: 1080,
-      height: 680,
+      x: inboxConfig.x,
+      y: inboxConfig.y,
+      width: inboxConfig.width,
+      height: inboxConfig.height,
       zIndex: 13
     },
     rig: {
@@ -90,10 +111,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos5.x,
-      y: pos5.y,
-      width: 980,
-      height: 600,
+      x: rigConfig.x,
+      y: rigConfig.y,
+      width: rigConfig.width,
+      height: rigConfig.height,
       zIndex: 14
     },
     papers: {
@@ -103,10 +124,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos6.x,
-      y: pos6.y,
-      width: 1060,
-      height: 680,
+      x: papersConfig.x,
+      y: papersConfig.y,
+      width: papersConfig.width,
+      height: papersConfig.height,
       zIndex: 15
     },
     dyno: {
@@ -116,10 +137,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos1.x + 30,
-      y: pos1.y + 30,
-      width: 960,
-      height: 560,
+      x: dynoConfig.x,
+      y: dynoConfig.y,
+      width: dynoConfig.width,
+      height: dynoConfig.height,
       zIndex: 16
     },
     profile: {
@@ -129,23 +150,23 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos1.x + 20,
-      y: pos1.y + 20,
-      width: 1040,
-      height: 660,
+      x: profileConfig.x,
+      y: profileConfig.y,
+      width: profileConfig.width,
+      height: profileConfig.height,
       zIndex: 17
     },
     gitsmith: {
       id: 'gitsmith',
-      title: 'GITSMITH — [GitHub-Style Bare Git Forge & Repos]',
+      title: "GITSMITH — [GitHub-Style Bare Git Forge & Repos]",
       icon: '📁',
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos2.x + 30,
-      y: pos2.y + 30,
-      width: 1100,
-      height: 700,
+      x: gitsmithConfig.x,
+      y: gitsmithConfig.y,
+      width: gitsmithConfig.width,
+      height: gitsmithConfig.height,
       zIndex: 19
     },
     terminal: {
@@ -155,10 +176,10 @@ export function useWindowManager() {
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
-      x: pos3.x,
-      y: pos3.y,
-      width: 840,
-      height: 520,
+      x: terminalConfig.x,
+      y: terminalConfig.y,
+      width: terminalConfig.width,
+      height: terminalConfig.height,
       zIndex: 18
     }
   });
@@ -169,52 +190,52 @@ export function useWindowManager() {
   const focusWindow = useCallback((id: string) => {
     setActiveWindowId(id);
     setTopZ(prev => {
-      const nextZ = prev + 1;
-      setWindows(wins => ({
-        ...wins,
-        [id]: { ...wins[id], zIndex: nextZ, isMinimized: false }
+      const next = prev + 1;
+      setWindows(curr => ({
+        ...curr,
+        [id]: { ...curr[id], zIndex: next, isMinimized: false }
       }));
-      return nextZ;
+      return next;
     });
   }, []);
 
   const openWindow = useCallback((id: string) => {
-    setWindows(wins => {
-      const win = wins[id];
-      if (!win) return wins;
+    setWindows(curr => {
+      const target = curr[id];
+      if (!target) return curr;
       return {
-        ...wins,
-        [id]: { ...win, isOpen: true, isMinimized: false }
+        ...curr,
+        [id]: { ...target, isOpen: true, isMinimized: false }
       };
     });
     focusWindow(id);
   }, [focusWindow]);
 
   const closeWindow = useCallback((id: string) => {
-    setWindows(wins => ({
-      ...wins,
-      [id]: { ...wins[id], isOpen: false }
+    setWindows(curr => ({
+      ...curr,
+      [id]: { ...curr[id], isOpen: false }
     }));
   }, []);
 
   const minimizeWindow = useCallback((id: string) => {
-    setWindows(wins => ({
-      ...wins,
-      [id]: { ...wins[id], isMinimized: true }
+    setWindows(curr => ({
+      ...curr,
+      [id]: { ...curr[id], isMinimized: true }
     }));
   }, []);
 
   const toggleMaximizeWindow = useCallback((id: string) => {
-    setWindows(wins => {
-      const win = wins[id];
-      if (!win) return wins;
+    setWindows(curr => {
+      const target = curr[id];
+      if (!target) return curr;
 
-      if (win.isMaximized) {
-        const prev = win.prevBounds || { x: 100, y: 50, width: 1020, height: 660 };
+      if (target.isMaximized) {
+        const prev = target.prevBounds || { x: 100, y: 50, width: 1080, height: 680 };
         return {
-          ...wins,
+          ...curr,
           [id]: {
-            ...win,
+            ...target,
             isMaximized: false,
             x: prev.x,
             y: prev.y,
@@ -224,11 +245,16 @@ export function useWindowManager() {
         };
       } else {
         return {
-          ...wins,
+          ...curr,
           [id]: {
-            ...win,
+            ...target,
             isMaximized: true,
-            prevBounds: { x: win.x, y: win.y, width: win.width, height: win.height },
+            prevBounds: {
+              x: target.x,
+              y: target.y,
+              width: target.width,
+              height: target.height
+            },
             x: 0,
             y: 0,
             width: window.innerWidth,
@@ -241,28 +267,28 @@ export function useWindowManager() {
   }, [focusWindow]);
 
   const updateWindowPosition = useCallback((id: string, x: number, y: number) => {
-    setWindows(wins => {
-      const win = wins[id];
-      if (!win || win.isMaximized) return wins;
+    setWindows(curr => {
+      const target = curr[id];
+      if (!target || target.isMaximized) return curr;
       return {
-        ...wins,
-        [id]: { ...win, x: Math.max(0, x), y: Math.max(0, y) }
+        ...curr,
+        [id]: { ...target, x: Math.max(0, x), y: Math.max(0, y) }
       };
     });
   }, []);
 
-  const updateWindowSize = useCallback((id: string, width: number, height: number, x?: number, y?: number) => {
-    setWindows(wins => {
-      const win = wins[id];
-      if (!win || win.isMaximized) return wins;
+  const updateWindowSize = useCallback((id: string, w: number, h: number, x?: number, y?: number) => {
+    setWindows(curr => {
+      const target = curr[id];
+      if (!target || target.isMaximized) return curr;
       return {
-        ...wins,
+        ...curr,
         [id]: {
-          ...win,
-          width: Math.max(500, width),
-          height: Math.max(380, height),
-          x: x !== undefined ? Math.max(0, x) : win.x,
-          y: y !== undefined ? Math.max(0, y) : win.y
+          ...target,
+          width: Math.max(540, w),
+          height: Math.max(400, h),
+          x: x !== undefined ? Math.max(0, x) : target.x,
+          y: y !== undefined ? Math.max(0, y) : target.y
         }
       };
     });
