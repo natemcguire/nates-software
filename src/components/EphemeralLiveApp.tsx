@@ -229,13 +229,65 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 />
               </div>
             ) : app.id === 'picfitai' ? (
-              <div className="flex-1 bg-white border-2 border-gray-800 rounded overflow-hidden relative">
-                <iframe
-                  src="https://picfitai.nates-software.com"
-                  title="PicFit.ai Hosted App"
-                  className="w-full h-full border-0 absolute inset-0"
-                  allow="autoplay; camera; microphone"
-                />
+              <div className="flex-1 bg-gradient-to-b from-gray-50 to-pink-50/30 border-2 border-gray-400 rounded-lg p-6 flex flex-col justify-between overflow-y-auto">
+                <div className="space-y-4 max-w-2xl mx-auto w-full">
+                  <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-lg flex items-start gap-3 shadow-sm">
+                    <div className="text-2xl">⚠️</div>
+                    <div>
+                      <div className="font-bold text-sm text-amber-900 mb-1">
+                        Native PHP Backend Repository Detected
+                      </div>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        This repository is a native PHP 8.2 &amp; SQLite backend (<code className="bg-amber-100 px-1 py-0.5 rounded font-mono">index.php</code>, <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">generate.php</code>, <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">config.php</code>). Cloudflare Pages cannot execute raw PHP templates without a container runner or static export.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-white border-2 border-gray-300 p-3.5 rounded-lg text-center space-y-2 shadow-sm">
+                      <div className="text-2xl">💻</div>
+                      <div className="font-bold text-xs text-gray-900">Run on Localhost</div>
+                      <p className="text-[10px] text-gray-500 font-mono">http://localhost:8000</p>
+                      <button
+                        onClick={() => setViewMode('local')}
+                        className="btn-w95 btn-w95-primary w-full py-1 text-[11px] font-bold"
+                      >
+                        Connect Local Dev
+                      </button>
+                    </div>
+
+                    <div className="bg-white border-2 border-gray-300 p-3.5 rounded-lg text-center space-y-2 shadow-sm">
+                      <div className="text-2xl">📁</div>
+                      <div className="font-bold text-xs text-gray-900">Inspect Raw Code</div>
+                      <p className="text-[10px] text-gray-500 font-mono">Untouched PHP Source</p>
+                      <button
+                        onClick={() => setViewMode('code')}
+                        className="btn-w95 w-full py-1 text-[11px] font-bold"
+                      >
+                        View in Code Explorer
+                      </button>
+                    </div>
+
+                    <div className="bg-white border-2 border-gray-300 p-3.5 rounded-lg text-center space-y-2 shadow-sm">
+                      <div className="text-2xl">🌐</div>
+                      <div className="font-bold text-xs text-gray-900">Live Production</div>
+                      <p className="text-[10px] text-gray-500 font-mono">https://picfit.ai</p>
+                      <a
+                        href="https://picfit.ai"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-w95 w-full py-1 text-[11px] font-bold flex items-center justify-center gap-1"
+                      >
+                        <span>Open picfit.ai</span>
+                        <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-center text-[11px] text-gray-500 font-mono pt-4 border-t border-gray-300">
+                  Zero Code Modification Invariant: Untouched byte-for-byte repository files preserved.
+                </div>
               </div>
             ) : (
               /* For apps with external subdomains or web builds */

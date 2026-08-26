@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { INITIAL_APPS, AppListing } from '../data/mockData';
-import { Wrench, Sparkles, Terminal, Shield } from 'lucide-react';
+import { Wrench, Sparkles, Terminal, Folder, HardDrive, CheckCircle2 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
 
@@ -181,46 +181,74 @@ export const SlopshopView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full font-tahoma text-xs overflow-hidden">
-      {/* Step 1: Project Selector Header */}
-      <div className="bg-[#161b22] text-white p-3 border-2 border-gray-800 rounded mb-3 flex items-center justify-between shadow-md flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-base font-bold text-yellow-300">1. Select Project to Mod:</span>
-          <div className="flex items-center gap-1.5">
-            {INITIAL_APPS.map((app) => (
-              <button
-                key={app.id}
-                onClick={() => handleSelectApp(app)}
-                className={`px-3 py-1.5 rounded font-bold text-xs flex items-center gap-1.5 transition-all ${
-                  selectedAppId === app.id
-                    ? 'bg-blue-600 text-white ring-2 ring-blue-300 shadow-md'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 hover:text-white border border-gray-700'
-                }`}
-              >
-                <span>{app.creatorAvatar}</span>
-                <span>{app.name}</span>
-                <span className="text-[10px] font-mono opacity-75">({app.version})</span>
-              </button>
-            ))}
+      {/* 3-Column Split: Left File Explorer / Center Feature Bay / Right Terminal */}
+      <div className="grid grid-cols-12 gap-3 flex-1 overflow-hidden p-1">
+        {/* COLUMN 1: Left Old-School File Explorer & Project Tree */}
+        <div className="col-span-3 bg-[#ece9d8] border-2 border-gray-600 rounded p-2.5 flex flex-col justify-between overflow-y-auto shadow-sm select-none">
+          <div>
+            <div className="bg-w95-blue text-white px-2 py-1 font-bold text-xs flex items-center justify-between rounded-t mb-2">
+              <span className="flex items-center gap-1.5"><Folder size={13} /> Sovereign Projects</span>
+              <span className="text-[10px] opacity-80 font-mono">~/Projects/</span>
+            </div>
+
+            <div className="space-y-1 bg-white border border-gray-500 p-1.5 rounded shadow-inner min-h-[220px]">
+              {INITIAL_APPS.map((app) => {
+                const isSelected = selectedAppId === app.id;
+                return (
+                  <div
+                    key={app.id}
+                    onClick={() => handleSelectApp(app)}
+                    className={`p-2 rounded cursor-pointer transition-colors flex items-start gap-2 ${
+                      isSelected
+                        ? 'bg-[#000080] text-white font-bold'
+                        : 'text-gray-900 hover:bg-[#d8e4f8]'
+                    }`}
+                  >
+                    <span className="text-base mt-0.5">{app.creatorAvatar}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs truncate">{app.name}</div>
+                      <div className={`text-[10px] font-mono truncate ${isSelected ? 'text-blue-200' : 'text-gray-500'}`}>
+                        {app.sqlitePath}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Selected Project Specs */}
+            <div className="mt-3 bg-white border border-gray-500 p-2.5 rounded text-[11px] space-y-1.5 shadow-inner">
+              <div className="font-bold text-gray-800 flex items-center gap-1">
+                <HardDrive size={12} className="text-blue-700" /> Active Worktree
+              </div>
+              <div className="font-mono text-gray-600 text-[10px] bg-gray-100 p-1 rounded border break-all">
+                /tmp/slop-{selectedApp.id}
+              </div>
+              <div className="flex items-center justify-between text-gray-700 text-[10px]">
+                <span>Moddability:</span>
+                <span className="font-bold text-green-700">{selectedApp.moddabilityScore}/100</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-700 text-[10px]">
+                <span>Lineage Depth:</span>
+                <span className="font-bold">{selectedApp.lineageDepth} Ancestors</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-gray-600 font-mono pt-2 border-t border-gray-400 mt-2">
+            ● SQLite WAL Mode Active
           </div>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-[11px] text-green-400 bg-black/50 px-2.5 py-1 rounded border border-green-800">
-          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span>Worktree: /tmp/slop-{selectedApp.id}</span>
-        </div>
-      </div>
-
-      {/* Main Split: Left Feature Bay / Right Terminal HUD */}
-      <div className="grid grid-cols-12 gap-3 flex-1 overflow-hidden">
-        {/* Left: AST Feature Packages & Custom AI Prompt */}
-        <div className="col-span-7 bg-white border-2 border-gray-800 p-3.5 flex flex-col justify-between overflow-y-auto shadow-sm">
+        {/* COLUMN 2: AST Feature Packages & Custom AI Prompt */}
+        <div className="col-span-5 bg-white border-2 border-gray-800 p-3 flex flex-col justify-between overflow-y-auto shadow-sm">
           <div>
-            <div className="flex items-center justify-between border-b pb-2 mb-3">
-              <span className="font-bold text-sm text-w95-blue flex items-center gap-1.5">
-                <Wrench size={15} /> 2. Compatible AST Features for {selectedApp.name}
+            <div className="flex items-center justify-between border-b pb-2 mb-2.5">
+              <span className="font-bold text-xs text-w95-blue flex items-center gap-1.5">
+                <Wrench size={14} /> Compatible AST Features ({selectedApp.name})
               </span>
               <span className="text-[10px] bg-purple-100 text-purple-800 font-mono font-bold px-2 py-0.5 rounded">
-                AST Engine v4.2
+                v4.2 AST
               </span>
             </div>
 
@@ -231,86 +259,74 @@ export const SlopshopView: React.FC = () => {
                   onClick={() => handleSelectFeature(f)}
                   className={`p-2.5 border-2 rounded cursor-pointer transition-all ${
                     selectedFeature.id === f.id
-                      ? 'bg-blue-50 border-w95-blue shadow-sm'
-                      : 'bg-gray-50 border-gray-300 hover:border-gray-500'
+                      ? 'border-purple-600 bg-purple-50 ring-1 ring-purple-400 shadow-sm'
+                      : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <div className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                      <Sparkles size={13} className="text-purple-600" /> {f.name}
-                    </div>
+                    <span className="font-bold text-xs text-gray-900 flex items-center gap-1">
+                      <Sparkles size={12} className="text-purple-600" /> {f.name}
+                    </span>
                     <span className="text-[10px] bg-green-100 text-green-800 px-1.5 py-0.2 rounded font-mono font-bold">
                       {f.cleanliness}
                     </span>
                   </div>
-                  <p className="text-gray-600 text-[11px] leading-relaxed mb-1.5">{f.description}</p>
-                  <div className="flex items-center justify-between text-[10px] font-mono text-gray-500 bg-white/80 p-1 rounded border border-gray-200">
+                  <p className="text-[11px] text-gray-600 mb-1.5 leading-tight">{f.description}</p>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-gray-500 bg-white p-1 rounded border">
                     <span className="truncate">{f.ref}</span>
-                    <span className="text-blue-900 font-bold ml-2">{f.astNodes}</span>
+                    <span className="text-purple-700 font-bold ml-1">{f.astNodes}</span>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Custom AI Mechanic Prompt */}
-            <div className="border-2 border-gray-400 p-2.5 rounded bg-gray-50 mb-2">
-              <label className="block font-bold text-gray-800 text-xs mb-1">
+            {/* Custom AI Prompt Input */}
+            <div className="border-2 border-gray-400 p-2.5 rounded bg-gray-50">
+              <label className="block font-bold text-gray-800 mb-1 text-[11px]">
                 Custom AI Mechanic / AST Mod Instructions:
               </label>
               <textarea
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value)}
-                className="w-full border border-gray-400 p-2 font-mono text-xs bg-white rounded h-16 resize-none focus:outline-none focus:border-blue-600"
-                placeholder="Describe custom AST components or SQLite schema changes to inject..."
+                className="w-full h-14 border border-gray-400 p-1.5 font-mono text-xs rounded resize-none"
+                placeholder="Describe modifications to splice..."
               />
             </div>
           </div>
 
-          <div className="pt-2 border-t flex items-center justify-between">
-            <span className="text-gray-600 text-[11px] flex items-center gap-1">
-              <Shield size={13} className="text-green-700" /> Zero local port collisions guaranteed (3001..3010)
-            </span>
+          <div className="pt-2 border-t mt-2 flex items-center justify-between">
+            <span className="text-[10px] text-gray-500 font-mono">Port 3004..3010 Reserved</span>
             <button
               onClick={handleWeld}
               disabled={isWelding}
-              className="btn-w95 btn-w95-primary px-5 py-2 font-bold text-xs flex items-center gap-1.5 shadow-md"
+              className="btn-w95 btn-w95-primary font-bold text-xs py-2 px-5 flex items-center gap-1.5 shadow-md"
             >
-              <Wrench size={13} /> {isWelding ? 'WELDING AST NODES...' : '⚡ Weld Feature & Mod →'}
+              <Wrench size={13} />
+              <span>{isWelding ? 'SPLICING AST NODES...' : '⚡ Weld Feature & Mod'}</span>
             </button>
           </div>
         </div>
 
-        {/* Right: Isolated Worktree Terminal HUD */}
-        <div className="col-span-5 bg-black border-2 border-gray-800 p-3 flex flex-col justify-between font-mono text-green-400 rounded shadow-inner overflow-hidden">
-          <div className="flex items-center justify-between border-b border-green-800/80 pb-2 text-[11px]">
-            <span className="flex items-center gap-1 text-green-300 font-bold">
-              <Terminal size={13} /> SLOPSHOP ISOLATED WORKTREE TERMINAL
+        {/* COLUMN 3: Isolated Worktree Terminal HUD */}
+        <div className="col-span-4 bg-black border-2 border-gray-800 p-3 rounded flex flex-col justify-between font-mono text-xs shadow-inner overflow-hidden">
+          <div className="flex items-center justify-between border-b border-gray-800 pb-1.5 mb-2 text-gray-400 text-[11px]">
+            <span className="flex items-center gap-1.5 text-green-400 font-bold">
+              <Terminal size={13} /> WORKTREE TERMINAL
             </span>
-            <span className="text-gray-400">Stream at 1000 Baud</span>
+            <span className="text-gray-500">1000 Baud</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-2 space-y-1 text-[11px] leading-relaxed select-text">
-            {terminalLogs.map((log, idx) => (
-              <div
-                key={idx}
-                className={
-                  log.startsWith('$')
-                    ? 'text-yellow-300 font-bold mt-1'
-                    : log.includes('ERROR')
-                    ? 'text-red-400 font-bold'
-                    : log.includes('Clean') || log.includes('green') || log.includes('PASS')
-                    ? 'text-emerald-300 font-bold'
-                    : 'text-green-400'
-                }
-              >
-                {log}
-              </div>
+          <div className="flex-1 overflow-y-auto space-y-1 text-green-400 text-[11px] select-text pr-1">
+            {terminalLogs.map((log, i) => (
+              <div key={i} className="leading-tight">{log}</div>
             ))}
           </div>
 
-          <div className="border-t border-green-800/80 pt-2 flex items-center justify-between text-[10px] text-green-600">
-            <span>✔ Isolated Worktree · Zero Lock Contentions</span>
-            <span className="text-green-400 font-bold">AST STATUS: CLEAN</span>
+          <div className="border-t border-gray-800 pt-2 mt-2 flex items-center justify-between text-[10px] text-gray-500">
+            <span className="flex items-center gap-1 text-green-500">
+              <CheckCircle2 size={11} /> 0 Lock Collisions
+            </span>
+            <span className="text-cyan-400 font-bold">AST STATUS: READY</span>
           </div>
         </div>
       </div>
