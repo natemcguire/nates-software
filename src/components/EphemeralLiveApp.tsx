@@ -122,8 +122,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   };
 
   const getLiveUrl = (appId: string) => {
-    if (appId === 'picfitai') return 'https://picfit.ai';
-    if (appId === 'dronehunter') return 'https://dronehunter.nates-software.com';
     return `https://${appId}.nates-software.com`;
   };
   const liveUrl = getLiveUrl(app.id);
@@ -233,8 +231,8 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
             ) : app.id === 'picfitai' ? (
               <div className="flex-1 bg-white border-2 border-gray-800 rounded overflow-hidden relative">
                 <iframe
-                  src="https://picfit.ai/"
-                  title="PicFit.ai Live Production App"
+                  src="https://picfitai.nates-software.com"
+                  title="PicFit.ai Hosted App"
                   className="w-full h-full border-0 absolute inset-0"
                   allow="autoplay; camera; microphone"
                 />
