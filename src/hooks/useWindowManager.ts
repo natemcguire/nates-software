@@ -162,7 +162,7 @@ export function useWindowManager() {
       icon: '📁',
       isOpen: false,
       isMinimized: false,
-      isMaximized: false,
+      isMaximized: true,
       x: gitsmithConfig.x,
       y: gitsmithConfig.y,
       width: gitsmithConfig.width,

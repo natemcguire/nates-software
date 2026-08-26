@@ -17,7 +17,8 @@ import {
   Folder,
   FileText
 } from 'lucide-react';
-import { playClickSound } from '../lib/soundEngine';
+import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAlert } from '../context/AlertContext';
 
 export interface GitsmithRepo {
   id: string;
@@ -53,7 +54,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     description: 'Fast-paced retro browser shooter inspired by Duck Hunt. Double-barrel shotgun, laughing dog animations, drone explosions, and local SQLite high score telemetry in WAL mode.',
     stars: 420,
     forks: 88,
-    language: 'TypeScript / Pixel Art Engine',
+    language: 'TypeScript / Canvas Game',
     license: 'MIT Sovereign Shareware',
     sqlitePath: '/data/dronehunter.sqlite (WAL mode)',
     branch: 'main',
@@ -65,16 +66,17 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Arcade', 'Retro', 'Duck Hunt', 'SQLite WAL', 'Web Audio'],
-    liveUrl: 'https://dronehunter.pages.dev',
+    liveUrl: 'https://dronehunter.nates-software.com',
     liveAppUrl: 'https://dronehunter.pages.dev',
     files: [
       { name: 'assets', type: 'dir' },
       { name: 'migrations', type: 'dir' },
-      { name: 'migrations/001_initial_scores.sql', type: 'file', size: '580 B', content: `CREATE TABLE IF NOT EXISTS high_scores (\n  id TEXT PRIMARY KEY,\n  player_name TEXT NOT NULL,\n  score INTEGER NOT NULL,\n  drones_shot INTEGER NOT NULL,\n  recorded_at INTEGER NOT NULL\n);` },
-      { name: 'index.html', type: 'file', size: '42.3 KB', content: `<!doctype html>\n<html>...Duck Hunt Arcade Engine...</html>` },
-      { name: 'package.json', type: 'file', size: '740 B', content: `{\n  "name": "dronehunter",\n  "version": "1.0.0"\n}` },
-      { name: 'slop.config.json', type: 'file', size: '410 B', content: `{\n  "appId": "dronehunter",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256\n}` },
-      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# DroneHunter 95\n\nRetro Duck Hunt arcade shooter.` }
+      { name: 'migrations/001_initial_scores.sql', type: 'file', size: '580 B', content: `-- SQLite WAL Scoreboard Table\nCREATE TABLE IF NOT EXISTS high_scores (\n  id TEXT PRIMARY KEY,\n  player_name TEXT NOT NULL,\n  score INTEGER NOT NULL,\n  drones_shot INTEGER NOT NULL,\n  accuracy_pct REAL NOT NULL,\n  recorded_at INTEGER NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_scores ON high_scores(score DESC);` },
+      { name: 'src/game.ts', type: 'file', size: '14.8 KB', content: `// DroneHunter 95 - Duck Hunt Style Canvas Arcade\nexport class DroneHunterGame {\n  private canvas: HTMLCanvasElement;\n  private ctx: CanvasRenderingContext2D;\n  private score: number = 0;\n  private shells: number = 2;\n\n  constructor(canvasId: string) {\n    this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;\n    this.ctx = this.canvas.getContext('2d')!;\n    this.initAudioAndSprites();\n  }\n\n  public shoot(x: number, y: number): boolean {\n    if (this.shells <= 0) return false;\n    this.shells--;\n    this.playShotgunSound();\n    return this.checkHit(x, y);\n  }\n}` },
+      { name: 'index.html', type: 'file', size: '4.2 KB', content: `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>DroneHunter 95</title>\n  <link rel="stylesheet" href="/assets/game.css">\n</head>\n<body>\n  <canvas id="game-canvas" width="800" height="600"></canvas>\n  <script type="module" src="/src/game.ts"></script>\n</body>\n</html>` },
+      { name: 'package.json', type: 'file', size: '740 B', content: `{\n  "name": "dronehunter",\n  "version": "1.0.0",\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build",\n    "test": "vitest run"\n  }\n}` },
+      { name: 'slop.config.json', type: 'file', size: '410 B', content: `{\n  "appId": "dronehunter",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256,\n  "ports": [3001, 3010]\n}` },
+      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# 🎯 DroneHunter 95\n\nRetro Duck Hunt arcade shooter with local SQLite WAL high score telemetry.\n\n## Quick Start\n\`\`\`bash\n$ slop fork nate/dronehunter\n$ npm install && npm run dev\n\`\`\`` }
     ]
   },
   {
@@ -97,15 +99,15 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Legal', 'USPS', 'Postal', 'Dispute', 'SQLite WAL'],
-    liveUrl: 'https://certified-mailer.pages.dev',
+    liveUrl: 'https://certified-mailer.nates-software.com',
     liveAppUrl: 'https://certified-mailer.pages.dev',
     files: [
-      { name: 'src', type: 'dir' },
       { name: 'tools', type: 'dir' },
-      { name: 'tools/flatten_pdf.py', type: 'file', size: '1.8 KB', content: `import fitz\n# Flatten verified PDF pages to 300 DPI pixels` },
-      { name: 'pyproject.toml', type: 'file', size: '590 B', content: `[project]\nname = "certified-mailer"` },
+      { name: 'tools/flatten_pdf.py', type: 'file', size: '1.8 KB', content: `import fitz  # PyMuPDF\nimport sys\n\ndef rasterize_and_flatten_pdf(input_path: str, output_path: str, dpi: int = 300):\n    """Flattens DOCX/PDF pages to 300 DPI pixels to prevent postal printer metric distortions."""\n    doc = fitz.open(input_path)\n    out_doc = fitz.open()\n    for page in doc:\n        pix = page.get_pixmap(dpi=dpi)\n        img_pdf = fitz.open("pdf", pix.pdf_bytes())\n        out_doc.insert_pdf(img_pdf)\n    out_doc.save(output_path)\n    print(f"Successfully flattened {len(doc)} pages to {output_path}")` },
+      { name: 'tools/build_dispute_letter.py', type: 'file', size: '4.2 KB', content: `from docx import Document\nimport datetime\n\ndef generate_dispute_manifest(account_id: str, dispute_reason: str, creditor: str):\n    doc = Document()\n    doc.add_heading('FORMAL NOTICE OF DISPUTE - FCRA § 623', 0)\n    doc.add_paragraph(f'Date: {datetime.date.today()}')\n    doc.add_paragraph(f'To: {creditor}')\n    doc.add_paragraph(f'Account Reference: {account_id}')\n    doc.add_paragraph(f'Basis for Dispute: {dispute_reason}')\n    return doc` },
+      { name: 'pyproject.toml', type: 'file', size: '590 B', content: `[project]\nname = "certified-mailer"\nversion = "1.0.0"\nrequires-python = ">=3.12"\ndependencies = [\n    "pymupdf>=1.23.0",\n    "python-docx>=1.1.0",\n    "requests>=2.31.0"\n]` },
       { name: 'slop.config.json', type: 'file', size: '480 B', content: `{\n  "appId": "certified-mailer",\n  "sqlite": "/data/certified-mailer.sqlite"\n}` },
-      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# Certified Mailer\n\nPrivate operational-mail tooling.` }
+      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# 📫 Certified Mailer\n\nPrivate dispute correspondence engine with USPS Electronic Return Receipts.` }
     ]
   },
   {
@@ -116,7 +118,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with sovereign single-file SQLite user credits ledger.',
     stars: 284,
     forks: 62,
-    language: 'Google Gemini Vision / PHP',
+    language: 'PHP 8.2 / SQLite',
     license: 'MIT AI Studio Tool',
     sqlitePath: '/data/picfitai.sqlite (WAL mode)',
     branch: 'main',
@@ -128,24 +130,28 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['AI', 'Fashion', 'Gemini', 'Try-On', 'SQLite WAL'],
-    liveUrl: 'https://picfitai.pages.dev',
+    liveUrl: 'https://picfit.ai',
     liveAppUrl: 'https://picfitai.pages.dev',
     files: [
-      { name: 'images', type: 'dir' },
       { name: 'includes', type: 'dir' },
-      { name: 'includes/AIService.php', type: 'file', size: '14.2 KB', content: `<?php\nclass AIService { ... }` },
+      { name: 'includes/nav.php', type: 'file', size: '5.1 KB', content: `<?php\n// Reusable Navigation Component\n$user = Session::getCurrentUser();\n?>\n<div class="header-nav">\n    <a href="/" class="logo">PicFit.ai</a>\n    <div class="nav-buttons">\n        <a href="/pricing.php" class="nav-btn secondary">Pricing</a>\n        <a href="/generate.php" class="nav-btn">Get Started</a>\n    </div>\n</div>` },
+      { name: 'index.php', type: 'file', size: '12.4 KB', content: `<?php\n// PicFit.ai Landing Page with Blurred Outfit Background Gallery\nrequire_once 'includes/bootstrap.php';\n?>\n<!DOCTYPE html>\n<html>\n<head>\n  <title>PicFit.ai - AI Virtual Try-On</title>\n</head>\n<body>\n  <!-- Authentic Polaroid Background -->\n  <div class="main-container">\n    <h1>PicFit.ai</h1>\n    <p>Try on outfits with AI</p>\n  </div>\n</body>\n</html>` },
+      { name: 'generate.php', type: 'file', size: '18.2 KB', content: `<?php\n// Check Your Fit Studio\nrequire_once 'includes/bootstrap.php';\n// Load 36 Emmy Red Carpet Dresses and Curated Wardrobe\n?>` },
+      { name: 'pricing.php', type: 'file', size: '4.8 KB', content: `<?php\n// Simple, Fair Credit Packs\n// Starter ($9.99), Studio Pro ($24.99), Agency ($49.99)\n?>` },
       { name: 'slop.config.json', type: 'file', size: '490 B', content: `{\n  "appId": "picfitai",\n  "sqlite": "/data/picfitai.sqlite"\n}` },
-      { name: 'README.md', type: 'file', size: '5.5 KB', content: `# PicFit.ai\n\nAI Virtual Try-On Studio.` }
+      { name: 'README.md', type: 'file', size: '5.5 KB', content: `# ✨ PicFit.ai\n\nAI Virtual Try-On Studio powered by Google Gemini Vision.` }
     ]
   }
 ];
 
 export const GitsmithView: React.FC = () => {
+  const { showAlert } = useAlert();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo>(GITSMITH_REPOS[0]);
   const [activeFile, setActiveFile] = useState<any>(GITSMITH_REPOS[0].files[2]);
   const [copiedClone, setCopiedClone] = useState(false);
-  const [activeTab, setActiveTab] = useState<'repos' | 'code' | 'commits'>('repos');
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [activeTab, setActiveTab] = useState<'code' | 'commits' | 'lineage'>('code');
 
   const filteredRepos = GITSMITH_REPOS.filter(repo => {
     const q = searchQuery.toLowerCase();
@@ -158,64 +164,86 @@ export const GitsmithView: React.FC = () => {
 
   const handleCopyClone = (repo: GitsmithRepo) => {
     playClickSound();
-    const url = `git clone ssh://git@git.nates-software.com:2222/${repo.owner}/${repo.name}.git`;
+    const url = `git clone ssh://git@nates-software.com:2222/${repo.owner}/${repo.name}.git`;
     navigator.clipboard.writeText(url);
     setCopiedClone(true);
     setTimeout(() => setCopiedClone(false), 2000);
   };
 
+  const handleCopyCode = () => {
+    if (!activeFile?.content) return;
+    playClickSound();
+    navigator.clipboard.writeText(activeFile.content);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleForkSlop = (repo: GitsmithRepo) => {
+    playSuccessChime();
+    const cmd = `slop fork ${repo.owner}/${repo.name}`;
+    navigator.clipboard.writeText(cmd);
+    showAlert(
+      `Fork command copied to clipboard:\n\n$ ${cmd}\n\nRun this in your terminal to create an isolated worktree with local SQLite volume mounted at /tmp/slop-${repo.id}!`,
+      "SLOP Fork Command Ready",
+      "success"
+    );
+  };
+
+  // Split code into lines for syntax line numbering
+  const codeLines = (activeFile?.content || `# ${selectedRepo.name}\n\nSovereign repository running on GITSMITH.`).split('\n');
+
   return (
-    <div className="flex flex-col h-full bg-[#0d1117] text-[#c9d1d9] font-sans text-xs overflow-hidden">
-      {/* GitHub / Gitsmith Top Forge Navigation Bar */}
-      <div className="bg-[#161b22] border-b border-[#30363d] px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 select-none">
+    <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
+      {/* Top Forge Navigation Bar */}
+      <div className="bg-[#1e293b] border-b border-slate-700 px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#21262d] px-2.5 py-1 rounded-md border border-[#30363d]">
-            <Code size={16} className="text-[#58a6ff]" />
-            <span className="font-bold text-white text-sm tracking-wide">GITSMITH</span>
-            <span className="bg-[#1f6feb] text-white text-[10px] font-mono px-1.5 py-0.2 rounded font-bold">FORGE</span>
+          <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-md border border-slate-700 shadow-inner">
+            <Code size={16} className="text-sky-400" />
+            <span className="font-bold text-white text-sm tracking-wide font-mono">GITSMITH</span>
+            <span className="bg-sky-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">FORGE</span>
           </div>
-          <span className="text-[#8b949e] font-mono text-[11px] hidden sm:inline">
-            ssh://git@gitsmith.dev · Ed25519 CAS Verification Active
+          <span className="text-slate-400 font-mono text-xs hidden sm:inline">
+            ssh://git@nates-software.com · Ed25519 CAS Verification Active
           </span>
         </div>
 
-        {/* Global Stats Banner */}
-        <div className="flex items-center gap-3 text-[11px]">
-          <div className="flex items-center gap-1.5 bg-[#21262d] px-2.5 py-1 rounded border border-[#30363d]">
-            <ShieldCheck size={13} className="text-[#3fb950]" />
-            <span className="text-white font-mono">SSH Verified (@nate)</span>
+        {/* Global Stats Badges */}
+        <div className="flex items-center gap-2.5 text-xs font-mono">
+          <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-emerald-400">
+            <ShieldCheck size={14} />
+            <span>SSH Verified (@nate)</span>
           </div>
-          <div className="flex items-center gap-1.5 bg-[#21262d] px-2.5 py-1 rounded border border-[#30363d]">
-            <Sparkles size={13} className="text-[#f0883e]" />
-            <span className="text-white font-mono">70/20/10 Lineage Pool</span>
+          <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-amber-400">
+            <Sparkles size={14} />
+            <span>70/20/10 Lineage Pool</span>
           </div>
         </div>
       </div>
 
       {/* Main Forge Body Grid */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Repository Sidebar / List */}
-        <div className="w-80 border-r border-[#30363d] bg-[#0d1117] flex flex-col overflow-hidden">
+        {/* Left Column: Repository Sidebar (Fixed Width, High Contrast) */}
+        <div className="w-80 border-r border-slate-700 bg-[#0f172a] flex flex-col overflow-hidden">
           {/* Search Header */}
-          <div className="p-3 border-b border-[#30363d] bg-[#161b22]">
+          <div className="p-3 border-b border-slate-700 bg-[#1e293b]">
             <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-2 text-[#8b949e]" />
+              <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Find a repository, tag, or maker..."
+                placeholder="Find a repository or tag..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#0d1117] border border-[#30363d] rounded px-2.5 py-1.5 pl-8 text-xs text-white placeholder-[#8b949e] focus:outline-none focus:border-[#58a6ff]"
+                className="w-full bg-[#0f172a] border border-slate-600 rounded-md px-3 py-1.5 pl-8 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-400 shadow-inner"
               />
             </div>
-            <div className="flex items-center justify-between text-[10px] text-[#8b949e] mt-2 px-0.5">
+            <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1 font-mono">
               <span>{filteredRepos.length} Repositories</span>
-              <span className="text-[#58a6ff]">All Sovereign Bare Repos</span>
+              <span className="text-sky-400 font-bold">Sovereign Bare Repos</span>
             </div>
           </div>
 
           {/* Repo List Items */}
-          <div className="flex-1 overflow-y-auto divide-y divide-[#21262d]">
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-800">
             {filteredRepos.map(repo => {
               const isSelected = selectedRepo.id === repo.id;
               return (
@@ -224,30 +252,32 @@ export const GitsmithView: React.FC = () => {
                   onClick={() => {
                     playClickSound();
                     setSelectedRepo(repo);
-                    setActiveFile(repo.files[2] || repo.files[0]);
+                    setActiveFile(repo.files.find(f => f.type === 'file') || repo.files[0]);
                   }}
-                  className={`p-3 cursor-pointer transition-colors ${
-                    isSelected ? 'bg-[#161b22] border-l-2 border-[#58a6ff]' : 'hover:bg-[#161b22]/50'
+                  className={`p-3.5 cursor-pointer transition-all ${
+                    isSelected
+                      ? 'bg-slate-800/90 border-l-4 border-sky-400 shadow-sm'
+                      : 'hover:bg-slate-800/50 text-slate-300'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1.5 font-semibold text-sm">
-                      <span>{repo.avatar}</span>
-                      <span className="text-[#58a6ff] hover:underline">{repo.owner}/{repo.name}</span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2 font-bold text-sm">
+                      <span className="text-base">{repo.avatar}</span>
+                      <span className={isSelected ? 'text-sky-300' : 'text-white'}>{repo.owner}/{repo.name}</span>
                     </div>
-                    <span className="text-[10px] font-mono text-[#8b949e] bg-[#21262d] px-1.5 py-0.5 rounded border border-[#30363d]">
+                    <span className="text-[10px] font-mono text-slate-300 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
                       {repo.branch}
                     </span>
                   </div>
 
-                  <p className="text-[#8b949e] text-[11px] line-clamp-2 mb-2 leading-relaxed">
+                  <p className="text-slate-400 text-xs line-clamp-2 mb-2 leading-relaxed">
                     {repo.description}
                   </p>
 
-                  <div className="flex items-center gap-3 text-[10px] text-[#8b949e]">
-                    <span className="flex items-center gap-1"><CircleDot size={10} className="text-[#f1e05a]" /> {repo.language.split('/')[0]}</span>
-                    <span className="flex items-center gap-1"><Star size={10} /> {repo.stars}</span>
-                    <span className="flex items-center gap-1"><GitFork size={10} /> {repo.forks}</span>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
+                    <span className="flex items-center gap-1"><CircleDot size={11} className="text-amber-400" /> {repo.language.split('/')[0]}</span>
+                    <span className="flex items-center gap-1"><Star size={11} className="text-yellow-400" /> {repo.stars}</span>
+                    <span className="flex items-center gap-1"><GitFork size={11} className="text-sky-400" /> {repo.forks}</span>
                   </div>
                 </div>
               );
@@ -255,27 +285,27 @@ export const GitsmithView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: Selected Repo Detail View (GitHub Style) */}
-        <div className="flex-1 flex flex-col bg-[#0d1117] overflow-y-auto p-4">
-          {/* Repo Title Header */}
-          <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 mb-4">
+        {/* Right Column: Selected Repo Detail View (GitHub IDE Style) */}
+        <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3">
+          {/* Repo Title Header Banner */}
+          <div className="bg-[#1e293b] border border-slate-700 rounded-lg p-4 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
                   <span className="text-2xl">{selectedRepo.avatar}</span>
                   <h1 className="text-xl font-bold text-white flex items-center gap-1.5 font-mono">
-                    <span className="text-[#8b949e] font-normal">{selectedRepo.owner}</span>
-                    <span className="text-[#8b949e]">/</span>
-                    <span className="text-[#58a6ff]">{selectedRepo.name}</span>
+                    <span className="text-slate-400 font-normal">{selectedRepo.owner}</span>
+                    <span className="text-slate-500">/</span>
+                    <span className="text-sky-400 font-black">{selectedRepo.name}</span>
                   </h1>
-                  <span className="bg-[#21262d] text-[#8b949e] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#30363d]">
+                  <span className="bg-slate-900 text-slate-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
                     Public
                   </span>
-                  <span className="bg-[#238636]/20 text-[#3fb950] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#238636]/40">
+                  <span className="bg-emerald-950 text-emerald-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-700">
                     Shareware Title
                   </span>
                 </div>
-                <p className="text-sm text-[#8b949e] max-w-3xl leading-relaxed">
+                <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
                   {selectedRepo.description}
                 </p>
               </div>
@@ -287,164 +317,247 @@ export const GitsmithView: React.FC = () => {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => playClickSound()}
-                  className="bg-[#238636] hover:bg-[#2ea043] text-white px-3 py-1.5 rounded-md font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md"
                 >
                   <Play size={13} fill="currentColor" />
-                  <span>View Live App</span>
-                  <ExternalLink size={11} />
+                  <span>▷ View Live App</span>
+                  <ExternalLink size={12} />
                 </a>
 
                 <button
-                  onClick={() => {
-                    playClickSound();
-                    window.open(`/?app=${selectedRepo.id}`, '_blank');
-                  }}
-                  className="bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  onClick={() => handleForkSlop(selectedRepo)}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                  title="Fork into local worktree with SLOP CLI"
                 >
-                  <GitFork size={13} className="text-[#58a6ff]" />
+                  <GitFork size={13} className="text-sky-400" />
                   <span>Fork with SLOP</span>
-                  <span className="bg-[#30363d] px-1.5 py-0.2 rounded text-[10px] text-[#8b949e]">{selectedRepo.forks}</span>
+                  <span className="bg-slate-900 px-1.5 py-0.5 rounded text-[10px] text-slate-300 font-mono">{selectedRepo.forks}</span>
                 </button>
 
                 <button
                   onClick={() => handleCopyClone(selectedRepo)}
-                  className="bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] border border-[#30363d] px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
                   title="Copy git clone SSH command"
                 >
-                  {copiedClone ? <Check size={13} className="text-[#3fb950]" /> : <Copy size={13} />}
-                  <span>{copiedClone ? 'Copied!' : 'Clone'}</span>
+                  {copiedClone ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                  <span>{copiedClone ? 'Copied SSH!' : 'Clone'}</span>
                 </button>
               </div>
             </div>
 
-            {/* Quick Meta Stats Bar */}
-            <div className="pt-3 border-t border-[#30363d] flex items-center justify-between text-xs text-[#8b949e] flex-wrap gap-2">
+            {/* Meta Stats Bar */}
+            <div className="pt-3 border-t border-slate-700 flex items-center justify-between text-xs text-slate-300 flex-wrap gap-2 font-mono">
               <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1 text-white font-mono">
-                  <GitBranch size={13} className="text-[#58a6ff]" /> {selectedRepo.branch}
+                <span className="flex items-center gap-1.5 text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+                  <GitBranch size={13} /> {selectedRepo.branch}
                 </span>
-                <span>Storage: <strong className="text-white font-mono">{selectedRepo.sqlitePath}</strong></span>
-                <span>License: <strong className="text-white font-mono">{selectedRepo.license}</strong></span>
+                <span>Storage: <strong className="text-emerald-400 font-semibold">{selectedRepo.sqlitePath}</strong></span>
+                <span>License: <strong className="text-white">{selectedRepo.license}</strong></span>
               </div>
 
               {/* Verified Commit Badge */}
-              <div className="flex items-center gap-2 bg-[#21262d] px-2.5 py-1 rounded border border-[#30363d]">
-                <Clock size={12} />
-                <span>Latest Commit:</span>
-                <span className="text-[#58a6ff] font-mono">{selectedRepo.lastCommit.sha}</span>
+              <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded border border-slate-700">
+                <Clock size={13} className="text-slate-400" />
+                <span className="text-slate-400">Latest Commit:</span>
+                <span className="text-sky-400 font-bold">{selectedRepo.lastCommit.sha}</span>
                 <span className="text-white">"{selectedRepo.lastCommit.message}"</span>
-                <span className="bg-[#238636]/20 text-[#3fb950] font-mono text-[9px] px-1.5 py-0.2 rounded font-bold border border-[#238636]/40">
+                <span className="bg-emerald-950 text-emerald-300 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-emerald-700">
                   Ed25519 Verified
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Repo Navigation Tabs (Code, Commits) */}
-          <div className="flex items-center gap-2 border-b border-[#30363d] mb-3 select-none">
+          {/* Sub Tabs: Code & Files / Commit Log / Lineage */}
+          <div className="flex items-center gap-2 border-b border-slate-700 select-none">
             <button
-              onClick={() => { playClickSound(); setActiveTab('repos'); }}
-              className={`px-3 py-1.5 border-b-2 font-semibold text-xs flex items-center gap-1.5 ${
-                activeTab === 'repos' ? 'border-[#f78166] text-white' : 'border-transparent text-[#8b949e] hover:text-[#c9d1d9]'
+              onClick={() => { playClickSound(); setActiveTab('code'); }}
+              className={`px-4 py-2 border-b-2 font-bold text-xs flex items-center gap-2 transition-colors ${
+                activeTab === 'code'
+                  ? 'border-sky-400 text-sky-400 bg-slate-800/40 rounded-t'
+                  : 'border-transparent text-slate-400 hover:text-white'
               }`}
             >
-              <Code size={13} /> Code & Files
+              <Code size={14} /> Code &amp; Files
             </button>
             <button
               onClick={() => { playClickSound(); setActiveTab('commits'); }}
-              className={`px-3 py-1.5 border-b-2 font-semibold text-xs flex items-center gap-1.5 ${
-                activeTab === 'commits' ? 'border-[#f78166] text-white' : 'border-transparent text-[#8b949e] hover:text-[#c9d1d9]'
+              className={`px-4 py-2 border-b-2 font-bold text-xs flex items-center gap-2 transition-colors ${
+                activeTab === 'commits'
+                  ? 'border-sky-400 text-sky-400 bg-slate-800/40 rounded-t'
+                  : 'border-transparent text-slate-400 hover:text-white'
               }`}
             >
-              <Clock size={13} /> Commit Log & CAS Reflog
+              <Clock size={14} /> Commit Log &amp; CAS Reflog
+            </button>
+            <button
+              onClick={() => { playClickSound(); setActiveTab('lineage'); }}
+              className={`px-4 py-2 border-b-2 font-bold text-xs flex items-center gap-2 transition-colors ${
+                activeTab === 'lineage'
+                  ? 'border-sky-400 text-sky-400 bg-slate-800/40 rounded-t'
+                  : 'border-transparent text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles size={14} /> 70/20 Lineage Settlement
             </button>
           </div>
 
-          {/* Code Viewer Container */}
-          {activeTab === 'repos' && (
-            <div className="border border-[#30363d] rounded-lg overflow-hidden bg-[#161b22]">
-              {/* File Tree Bar & File Name */}
-              <div className="bg-[#21262d] px-3 py-2 border-b border-[#30363d] flex items-center justify-between">
-                <div className="flex items-center gap-2 font-mono text-xs text-white">
-                  <FileCode size={14} className="text-[#58a6ff]" />
-                  <span>{selectedRepo.name} / {activeFile?.name || 'README.md'}</span>
+          {/* Tab 1: Code & Files (High Contrast IDE Viewer with Line Numbers) */}
+          {activeTab === 'code' && (
+            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] shadow-md flex flex-col">
+              {/* File Breadcrumb & Action Bar */}
+              <div className="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between font-mono text-xs">
+                <div className="flex items-center gap-2 text-white font-bold">
+                  <FileCode size={15} className="text-sky-400" />
+                  <span>{selectedRepo.name}</span>
+                  <span className="text-slate-500">/</span>
+                  <span className="text-sky-300">{activeFile?.name || 'README.md'}</span>
                 </div>
-                <div className="text-[11px] text-[#8b949e] font-mono">
-                  {activeFile?.size || 'Raw UTF-8'} · Lineage Depth 0
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-400 text-[11px]">
+                    {codeLines.length} lines · {activeFile?.size || 'Raw UTF-8'}
+                  </span>
+                  <button
+                    onClick={handleCopyCode}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-[11px] flex items-center gap-1 font-mono transition-colors"
+                  >
+                    {copiedCode ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                    <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="flex flex-col md:flex-row">
-                {/* File List */}
-                <div className="w-full md:w-60 border-b md:border-b-0 md:border-r border-[#30363d] bg-[#0d1117] p-2 space-y-1">
-                  <div className="text-[10px] font-bold text-[#8b949e] uppercase px-2 py-1 tracking-wider">Repository Files</div>
-                  {selectedRepo.files.map((file, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        playClickSound();
-                        if (file.content) setActiveFile(file);
-                      }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded flex items-center justify-between text-xs font-mono transition-colors ${
-                        activeFile?.name === file.name ? 'bg-[#1f6feb] text-white' : 'text-[#8b949e] hover:bg-[#161b22] hover:text-white'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2">
-                        {file.type === 'dir' ? <Folder size={13} className="text-[#58a6ff]" /> : <FileText size={13} />}
-                        {file.name}
-                      </span>
-                      {file.size && <span className="text-[10px] opacity-70">{file.size}</span>}
-                    </button>
-                  ))}
+              <div className="flex flex-col md:flex-row min-h-[360px]">
+                {/* File List Tree Sidebar */}
+                <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-slate-700 bg-[#0f172a] p-2 space-y-1">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 tracking-wider font-mono">
+                    Repository Files
+                  </div>
+                  {selectedRepo.files.map((file, idx) => {
+                    const isFileActive = activeFile?.name === file.name;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          playClickSound();
+                          if (file.content) setActiveFile(file);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 rounded-md flex items-center justify-between text-xs font-mono transition-colors ${
+                          isFileActive
+                            ? 'bg-sky-600 text-white font-bold shadow'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 truncate">
+                          {file.type === 'dir' ? (
+                            <Folder size={14} className="text-sky-400 shrink-0" />
+                          ) : (
+                            <FileText size={14} className={isFileActive ? 'text-white' : 'text-slate-400 shrink-0'} />
+                          )}
+                          <span className="truncate">{file.name}</span>
+                        </span>
+                        {file.size && <span className="text-[10px] opacity-75 shrink-0">{file.size}</span>}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Code Content View */}
-                <div className="flex-1 p-4 font-mono text-xs bg-[#0d1117] text-[#c9d1d9] overflow-x-auto">
-                  <pre className="leading-relaxed">
-                    <code>{activeFile?.content || `# ${selectedRepo.name}\n\nSovereign repository running on GITSMITH bare forge.`}</code>
-                  </pre>
+                {/* Line-Numbered Code Editor Viewport */}
+                <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-x-auto text-slate-100 flex">
+                  {/* Line Numbers Gutter */}
+                  <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1">
+                    {codeLines.map((_: string, i: number) => (
+                      <div key={i} className="leading-relaxed">{i + 1}</div>
+                    ))}
+                  </div>
+
+                  {/* Code Text Content */}
+                  <div className="pl-4 flex-1 space-y-1 overflow-x-auto select-text font-mono text-slate-200">
+                    {codeLines.map((line: string, i: number) => (
+                      <div key={i} className="leading-relaxed whitespace-pre font-mono">
+                        {line || ' '}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Commit Log Tab */}
+          {/* Tab 2: Commit Log & CAS Reflog */}
           {activeTab === 'commits' && (
-            <div className="border border-[#30363d] rounded-lg overflow-hidden bg-[#161b22] p-4 space-y-3">
-              <div className="font-mono text-sm font-bold text-white mb-2">Immutable CAS Commit Ledger</div>
+            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-3 shadow-md">
+              <div className="font-mono text-sm font-bold text-white mb-2 flex items-center justify-between">
+                <span>Immutable CAS Commit Ledger</span>
+                <span className="text-xs text-emerald-400 font-normal">● refs/heads/main (Atomic Reflog)</span>
+              </div>
+
               <div className="space-y-2 font-mono text-xs">
-                <div className="bg-[#0d1117] p-3 rounded border border-[#30363d] flex items-center justify-between">
+                <div className="bg-[#0f172a] p-3.5 rounded-lg border border-slate-700 flex items-center justify-between">
                   <div>
-                    <div className="text-white font-semibold">{selectedRepo.lastCommit.message}</div>
-                    <div className="text-[#8b949e] text-[11px] mt-0.5">
-                      Committed by @{selectedRepo.lastCommit.author} ({selectedRepo.lastCommit.time})
+                    <div className="text-white font-bold text-sm">{selectedRepo.lastCommit.message}</div>
+                    <div className="text-slate-400 text-xs mt-1">
+                      Authored by <strong className="text-sky-300">@{selectedRepo.lastCommit.author}</strong> ({selectedRepo.lastCommit.time})
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="bg-[#21262d] text-[#58a6ff] px-2 py-1 rounded border border-[#30363d]">
-                      commit {selectedRepo.lastCommit.sha}
+                    <span className="bg-slate-800 text-sky-400 px-2.5 py-1 rounded border border-slate-700 font-bold">
+                      {selectedRepo.lastCommit.sha}
                     </span>
-                    <span className="bg-[#238636]/20 text-[#3fb950] px-2 py-1 rounded border border-[#238636]/40 font-bold text-[10px]">
-                      VERIFIED
+                    <span className="bg-emerald-950 text-emerald-300 px-2 py-1 rounded border border-emerald-700 font-bold text-[10px]">
+                      VERIFIED ED25519
                     </span>
                   </div>
                 </div>
 
-                <div className="bg-[#0d1117] p-3 rounded border border-[#30363d] flex items-center justify-between opacity-80">
+                <div className="bg-[#0f172a] p-3.5 rounded-lg border border-slate-700 flex items-center justify-between opacity-80">
                   <div>
                     <div className="text-white font-semibold">chore(genesis): initial commit and single-file SQLite schema initialization</div>
-                    <div className="text-[#8b949e] text-[11px] mt-0.5">
-                      Committed by @{selectedRepo.owner} (Aug 24, 2026)
+                    <div className="text-slate-400 text-xs mt-1">
+                      Authored by <strong className="text-sky-300">@{selectedRepo.owner}</strong> (Aug 24, 2026)
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="bg-[#21262d] text-[#8b949e] px-2 py-1 rounded border border-[#30363d]">
-                      commit 1a04b8e
+                    <span className="bg-slate-800 text-slate-400 px-2.5 py-1 rounded border border-slate-700 font-bold">
+                      1a04b8e
                     </span>
-                    <span className="bg-[#238636]/20 text-[#3fb950] px-2 py-1 rounded border border-[#238636]/40 font-bold text-[10px]">
+                    <span className="bg-emerald-950 text-emerald-300 px-2 py-1 rounded border border-emerald-700 font-bold text-[10px]">
                       VERIFIED
                     </span>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab 3: Lineage Settlement */}
+          {activeTab === 'lineage' && (
+            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-4 shadow-md">
+              <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+                <div>
+                  <h3 className="font-bold text-sm text-white">70% Maker / 20% Lineage Ancestor Settlement</h3>
+                  <p className="text-xs text-slate-400">Mathematical splits automatically credited upon license purchase or fork fee.</p>
+                </div>
+                <span className="bg-amber-950 text-amber-300 border border-amber-700 px-2.5 py-1 rounded text-xs font-mono font-bold">
+                  Immutable Protocol Rule
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 font-mono text-xs">
+                <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
+                  <div className="text-slate-400 mb-1 font-bold">70% Direct Maker</div>
+                  <div className="text-2xl font-black text-emerald-400">$35.00 / $50.00</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Directly paid to @{selectedRepo.owner}</div>
+                </div>
+                <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
+                  <div className="text-slate-400 mb-1 font-bold">20% Ancestor Lineage</div>
+                  <div className="text-2xl font-black text-sky-400">$10.00 / $50.00</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Distributed across upstream parent makers</div>
+                </div>
+                <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
+                  <div className="text-slate-400 mb-1 font-bold">10% Protocol Pool</div>
+                  <div className="text-2xl font-black text-amber-400">$5.00 / $50.00</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Perpetual sovereign hosting &amp; compute</div>
                 </div>
               </div>
             </div>
