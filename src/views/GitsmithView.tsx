@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   GitBranch,
   GitFork,
@@ -15,7 +15,9 @@ import {
   Clock,
   CircleDot,
   Folder,
-  FileText
+  FileText,
+  GripVertical,
+  Globe
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
@@ -75,8 +77,8 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       { name: 'src/game.ts', type: 'file', size: '14.8 KB', content: `// DroneHunter 95 - Duck Hunt Style Canvas Arcade\nexport class DroneHunterGame {\n  private canvas: HTMLCanvasElement;\n  private ctx: CanvasRenderingContext2D;\n  private score: number = 0;\n  private shells: number = 2;\n\n  constructor(canvasId: string) {\n    this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;\n    this.ctx = this.canvas.getContext('2d')!;\n    this.initAudioAndSprites();\n  }\n\n  public shoot(x: number, y: number): boolean {\n    if (this.shells <= 0) return false;\n    this.shells--;\n    this.playShotgunSound();\n    return this.checkHit(x, y);\n  }\n}` },
       { name: 'index.html', type: 'file', size: '4.2 KB', content: `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>DroneHunter 95</title>\n  <link rel="stylesheet" href="/assets/game.css">\n</head>\n<body>\n  <canvas id="game-canvas" width="800" height="600"></canvas>\n  <script type="module" src="/src/game.ts"></script>\n</body>\n</html>` },
       { name: 'package.json', type: 'file', size: '740 B', content: `{\n  "name": "dronehunter",\n  "version": "1.0.0",\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build",\n    "test": "vitest run"\n  }\n}` },
-      { name: 'slop.config.json', type: 'file', size: '410 B', content: `{\n  "appId": "dronehunter",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256,\n  "ports": [3001, 3010]\n}` },
-      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# 🎯 DroneHunter 95\n\nRetro Duck Hunt arcade shooter with local SQLite WAL high score telemetry.\n\n## Quick Start\n\`\`\`bash\n$ slop fork nate/dronehunter\n$ npm install && npm run dev\n\`\`\`` }
+      { name: 'slop.config.json', type: 'file', size: '410 B', content: `{\n  "appId": "dronehunter",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256\n}` },
+      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# 🎯 DroneHunter 95\n\nRetro Duck Hunt arcade shooter with local SQLite WAL high score telemetry.` }
     ]
   },
   {
@@ -103,10 +105,9 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     liveAppUrl: 'https://certified-mailer.pages.dev',
     files: [
       { name: 'tools', type: 'dir' },
-      { name: 'tools/flatten_pdf.py', type: 'file', size: '1.8 KB', content: `import fitz  # PyMuPDF\nimport sys\n\ndef rasterize_and_flatten_pdf(input_path: str, output_path: str, dpi: int = 300):\n    """Flattens DOCX/PDF pages to 300 DPI pixels to prevent postal printer metric distortions."""\n    doc = fitz.open(input_path)\n    out_doc = fitz.open()\n    for page in doc:\n        pix = page.get_pixmap(dpi=dpi)\n        img_pdf = fitz.open("pdf", pix.pdf_bytes())\n        out_doc.insert_pdf(img_pdf)\n    out_doc.save(output_path)\n    print(f"Successfully flattened {len(doc)} pages to {output_path}")` },
-      { name: 'tools/build_dispute_letter.py', type: 'file', size: '4.2 KB', content: `from docx import Document\nimport datetime\n\ndef generate_dispute_manifest(account_id: str, dispute_reason: str, creditor: str):\n    doc = Document()\n    doc.add_heading('FORMAL NOTICE OF DISPUTE - FCRA § 623', 0)\n    doc.add_paragraph(f'Date: {datetime.date.today()}')\n    doc.add_paragraph(f'To: {creditor}')\n    doc.add_paragraph(f'Account Reference: {account_id}')\n    doc.add_paragraph(f'Basis for Dispute: {dispute_reason}')\n    return doc` },
-      { name: 'pyproject.toml', type: 'file', size: '590 B', content: `[project]\nname = "certified-mailer"\nversion = "1.0.0"\nrequires-python = ">=3.12"\ndependencies = [\n    "pymupdf>=1.23.0",\n    "python-docx>=1.1.0",\n    "requests>=2.31.0"\n]` },
-      { name: 'slop.config.json', type: 'file', size: '480 B', content: `{\n  "appId": "certified-mailer",\n  "sqlite": "/data/certified-mailer.sqlite"\n}` },
+      { name: 'tools/flatten_pdf.py', type: 'file', size: '1.8 KB', content: `import fitz  # PyMuPDF\n\ndef rasterize_and_flatten_pdf(input_path: str, output_path: str, dpi: int = 300):\n    doc = fitz.open(input_path)\n    out_doc = fitz.open()\n    for page in doc:\n        pix = page.get_pixmap(dpi=dpi)\n        img_pdf = fitz.open("pdf", pix.pdf_bytes())\n        out_doc.insert_pdf(img_pdf)\n    out_doc.save(output_path)` },
+      { name: 'tools/build_dispute_letter.py', type: 'file', size: '4.2 KB', content: `from docx import Document\nimport datetime\n\ndef generate_dispute_manifest(account_id: str, dispute_reason: str, creditor: str):\n    doc = Document()\n    doc.add_heading('FORMAL NOTICE OF DISPUTE - FCRA § 623', 0)\n    doc.add_paragraph(f'Date: {datetime.date.today()}')\n    return doc` },
+      { name: 'pyproject.toml', type: 'file', size: '590 B', content: `[project]\nname = "certified-mailer"\nversion = "1.0.0"\nrequires-python = ">=3.12"` },
       { name: 'README.md', type: 'file', size: '3.1 KB', content: `# 📫 Certified Mailer\n\nPrivate dispute correspondence engine with USPS Electronic Return Receipts.` }
     ]
   },
@@ -134,12 +135,89 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     liveAppUrl: 'https://picfitai.pages.dev',
     files: [
       { name: 'includes', type: 'dir' },
-      { name: 'includes/nav.php', type: 'file', size: '5.1 KB', content: `<?php\n// Reusable Navigation Component\n$user = Session::getCurrentUser();\n?>\n<div class="header-nav">\n    <a href="/" class="logo">PicFit.ai</a>\n    <div class="nav-buttons">\n        <a href="/pricing.php" class="nav-btn secondary">Pricing</a>\n        <a href="/generate.php" class="nav-btn">Get Started</a>\n    </div>\n</div>` },
-      { name: 'index.php', type: 'file', size: '12.4 KB', content: `<?php\n// PicFit.ai Landing Page with Blurred Outfit Background Gallery\nrequire_once 'includes/bootstrap.php';\n?>\n<!DOCTYPE html>\n<html>\n<head>\n  <title>PicFit.ai - AI Virtual Try-On</title>\n</head>\n<body>\n  <!-- Authentic Polaroid Background -->\n  <div class="main-container">\n    <h1>PicFit.ai</h1>\n    <p>Try on outfits with AI</p>\n  </div>\n</body>\n</html>` },
-      { name: 'generate.php', type: 'file', size: '18.2 KB', content: `<?php\n// Check Your Fit Studio\nrequire_once 'includes/bootstrap.php';\n// Load 36 Emmy Red Carpet Dresses and Curated Wardrobe\n?>` },
-      { name: 'pricing.php', type: 'file', size: '4.8 KB', content: `<?php\n// Simple, Fair Credit Packs\n// Starter ($9.99), Studio Pro ($24.99), Agency ($49.99)\n?>` },
-      { name: 'slop.config.json', type: 'file', size: '490 B', content: `{\n  "appId": "picfitai",\n  "sqlite": "/data/picfitai.sqlite"\n}` },
+      { name: 'includes/nav.php', type: 'file', size: '5.1 KB', content: `<?php\n$user = Session::getCurrentUser();\n?>\n<div class="header-nav"><a href="/" class="logo">PicFit.ai</a></div>` },
+      { name: 'index.php', type: 'file', size: '12.4 KB', content: `<?php\nrequire_once 'includes/bootstrap.php';\n?>\n<!DOCTYPE html>\n<html><head><title>PicFit.ai</title></head><body><h1>PicFit.ai</h1></body></html>` },
+      { name: 'generate.php', type: 'file', size: '18.2 KB', content: `<?php\n// 36 Emmy Red Carpet Dresses & Curated Try-On Wardrobe\n?>` },
       { name: 'README.md', type: 'file', size: '5.5 KB', content: `# ✨ PicFit.ai\n\nAI Virtual Try-On Studio powered by Google Gemini Vision.` }
+    ]
+  },
+  {
+    id: 'baby',
+    name: 'baby',
+    owner: 'nate',
+    avatar: '👶',
+    description: 'Markdown-based personal knowledge base app with single-file SQLite backend. Full-text search, live graph backlinks, and ultra-fast Next.js 16 frontend.',
+    stars: 198,
+    forks: 34,
+    language: 'Next.js 16 / TypeScript',
+    license: 'MIT Sovereign KB',
+    sqlitePath: '/data/baby.sqlite (WAL mode)',
+    branch: 'main',
+    lastCommit: {
+      sha: '3c1902a',
+      message: 'feat(search): FTS5 full-text indexing and backlinks graph visualizer',
+      author: 'nate',
+      time: '2h ago',
+      verified: true
+    },
+    tags: ['Knowledge Base', 'Markdown', 'Next.js', 'FTS5', 'Port 3001'],
+    liveUrl: 'http://localhost:3001',
+    files: [
+      { name: 'src/lib/db.ts', type: 'file', size: '3.4 KB', content: `import Database from 'better-sqlite3';\nexport const db = new Database('/data/baby.sqlite');\ndb.pragma('journal_mode = WAL');` },
+      { name: 'package.json', type: 'file', size: '820 B', content: `{\n  "name": "baby",\n  "version": "1.0.0"\n}` },
+      { name: 'README.md', type: 'file', size: '2.1 KB', content: `# 👶 Baby Knowledge Base\n\nNext.js 16 markdown knowledge base with better-sqlite3.` }
+    ]
+  },
+  {
+    id: 'sailtrack',
+    name: 'sailtrack',
+    owner: 'josh',
+    avatar: '⛵',
+    description: 'Real-time NMEA marine telemetry and polar curve overlay. Analyzes wind angles, boat velocity, and sail trim profiles with sub-second SQLite journal logging.',
+    stars: 175,
+    forks: 29,
+    language: 'Rust / WebAssembly',
+    license: 'MIT Marine Telemetry',
+    sqlitePath: '/data/sailtrack.sqlite (WAL mode)',
+    branch: 'main',
+    lastCommit: {
+      sha: '8e104cd',
+      message: 'feat(nmea): high-frequency 10Hz GPS polar vector smoothing',
+      author: 'josh',
+      time: '4h ago',
+      verified: true
+    },
+    tags: ['Marine', 'NMEA', 'Rust', 'WASM', 'Polar Charts'],
+    liveUrl: 'https://sailtrack.pages.dev',
+    files: [
+      { name: 'src/lib.rs', type: 'file', size: '8.4 KB', content: `// Marine Polar Curve Synthesizer in Rust\n#[wasm_bindgen]\npub fn calculate_vmg(twa: f64, tws: f64) -> f64 {\n    // VMG calculation\n    tws * (twa.to_radians()).cos()\n}` },
+      { name: 'README.md', type: 'file', size: '2.4 KB', content: `# ⛵ SailTrack NMEA HUD\n\nReal-time marine telemetry and polar curves.` }
+    ]
+  },
+  {
+    id: 'retrocalc',
+    name: 'retrocalc',
+    owner: 'sam',
+    avatar: '🧮',
+    description: 'WASM-accelerated financial accounting engine with double-entry ledger verification and automated sales tax compliance schedules.',
+    stars: 142,
+    forks: 21,
+    language: 'C++ / WebAssembly',
+    license: 'MIT Financial Engine',
+    sqlitePath: '/data/retrocalc.sqlite (WAL mode)',
+    branch: 'main',
+    lastCommit: {
+      sha: '1b993ef',
+      message: 'feat(ledger): GAAP double-entry verification with zero floating point drift',
+      author: 'sam',
+      time: '1d ago',
+      verified: true
+    },
+    tags: ['Accounting', 'WASM', 'Ledger', 'Finance'],
+    liveUrl: 'https://retrocalc.pages.dev',
+    files: [
+      { name: 'src/calc.cpp', type: 'file', size: '6.2 KB', content: `// Double-Entry Ledger Engine in C++\n#include <iostream>\n// Exact integer cent rounding` },
+      { name: 'README.md', type: 'file', size: '1.9 KB', content: `# 🧮 RetroCalc Accounting Engine` }
     ]
   }
 ];
@@ -148,10 +226,55 @@ export const GitsmithView: React.FC = () => {
   const { showAlert } = useAlert();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo>(GITSMITH_REPOS[0]);
-  const [activeFile, setActiveFile] = useState<any>(GITSMITH_REPOS[0].files[2]);
+  const [activeFile, setActiveFile] = useState<any>(GITSMITH_REPOS[0].files.find(f => f.type === 'file') || GITSMITH_REPOS[0].files[0]);
   const [copiedClone, setCopiedClone] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'commits' | 'lineage'>('code');
+
+  // Interactive Resizable Split Panes
+  const [sidebarWidth, setSidebarWidth] = useState<number>(320);
+  const [fileTreeWidth, setFileTreeWidth] = useState<number>(240);
+  const isDraggingSidebar = useRef(false);
+  const isDraggingFileTree = useRef(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingSidebar.current) {
+        setSidebarWidth(Math.max(220, Math.min(520, e.clientX)));
+      }
+      if (isDraggingFileTree.current) {
+        setFileTreeWidth(Math.max(160, Math.min(460, e.clientX - sidebarWidth)));
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDraggingSidebar.current = false;
+      isDraggingFileTree.current = false;
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [sidebarWidth]);
+
+  const startResizeSidebar = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSidebar.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const startResizeFileTree = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingFileTree.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
 
   const filteredRepos = GITSMITH_REPOS.filter(repo => {
     const q = searchQuery.toLowerCase();
@@ -189,7 +312,6 @@ export const GitsmithView: React.FC = () => {
     );
   };
 
-  // Split code into lines for syntax line numbering
   const codeLines = (activeFile?.content || `# ${selectedRepo.name}\n\nSovereign repository running on GITSMITH.`).split('\n');
 
   return (
@@ -197,13 +319,17 @@ export const GitsmithView: React.FC = () => {
       {/* Top Forge Navigation Bar */}
       <div className="bg-[#1e293b] border-b border-slate-700 px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-md border border-slate-700 shadow-inner">
+          <div 
+            onClick={() => { playClickSound(); setSearchQuery(''); }}
+            className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-md border border-slate-700 shadow-inner cursor-pointer hover:border-sky-400 transition-colors"
+          >
             <Code size={16} className="text-sky-400" />
             <span className="font-bold text-white text-sm tracking-wide font-mono">GITSMITH</span>
             <span className="bg-sky-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">FORGE</span>
           </div>
-          <span className="text-slate-400 font-mono text-xs hidden sm:inline">
-            ssh://git@nates-software.com · Ed25519 CAS Verification Active
+          <span className="text-slate-400 font-mono text-xs hidden sm:inline flex items-center gap-1.5">
+            <Globe size={13} className="text-sky-400" />
+            <span>gitsmith.nates-software.com · Public Bare Repositories</span>
           </span>
         </div>
 
@@ -220,25 +346,28 @@ export const GitsmithView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Forge Body Grid */}
+      {/* Main Forge Body Grid with Resizable Split Panes */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Repository Sidebar (Fixed Width, High Contrast) */}
-        <div className="w-80 border-r border-slate-700 bg-[#0f172a] flex flex-col overflow-hidden">
+        {/* Left Column: Repository Sidebar (Drag-Resizable Width) */}
+        <div 
+          style={{ width: `${sidebarWidth}px`, minWidth: '220px', maxWidth: '520px' }}
+          className="border-r border-slate-700 bg-[#0f172a] flex flex-col overflow-hidden shrink-0"
+        >
           {/* Search Header */}
           <div className="p-3 border-b border-slate-700 bg-[#1e293b]">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
               <input
                 type="text"
-                placeholder="Find a repository or tag..."
+                placeholder="Find a repository or maker..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[#0f172a] border border-slate-600 rounded-md px-3 py-1.5 pl-8 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-400 shadow-inner"
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1 font-mono">
-              <span>{filteredRepos.length} Repositories</span>
-              <span className="text-sky-400 font-bold">Sovereign Bare Repos</span>
+              <span className="font-bold text-slate-300">{filteredRepos.length} Public Repos</span>
+              <span className="text-sky-400 font-bold">All Makers</span>
             </div>
           </div>
 
@@ -285,8 +414,17 @@ export const GitsmithView: React.FC = () => {
           </div>
         </div>
 
+        {/* DRAG RESIZER 1: Between Sidebar and Main Bay */}
+        <div
+          onMouseDown={startResizeSidebar}
+          className="w-1.5 hover:w-2 bg-slate-800 hover:bg-sky-500 cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
+          title="Drag to resize repository sidebar"
+        >
+          <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
+        </div>
+
         {/* Right Column: Selected Repo Detail View (GitHub IDE Style) */}
-        <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3 min-w-0">
           {/* Repo Title Header Banner */}
           <div className="bg-[#1e293b] border border-slate-700 rounded-lg p-4 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
@@ -402,9 +540,9 @@ export const GitsmithView: React.FC = () => {
             </button>
           </div>
 
-          {/* Tab 1: Code & Files (High Contrast IDE Viewer with Line Numbers) */}
+          {/* Tab 1: Code & Files with Resizable File Tree and Line Numbers */}
           {activeTab === 'code' && (
-            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] shadow-md flex flex-col">
+            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] shadow-md flex flex-col flex-1 min-h-[420px]">
               {/* File Breadcrumb & Action Bar */}
               <div className="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between font-mono text-xs">
                 <div className="flex items-center gap-2 text-white font-bold">
@@ -427,9 +565,12 @@ export const GitsmithView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex flex-col md:flex-row min-h-[360px]">
-                {/* File List Tree Sidebar */}
-                <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-slate-700 bg-[#0f172a] p-2 space-y-1">
+              <div className="flex flex-1 overflow-hidden">
+                {/* File List Tree Sidebar (Drag-Resizable Width) */}
+                <div 
+                  style={{ width: `${fileTreeWidth}px`, minWidth: '160px', maxWidth: '460px' }}
+                  className="bg-[#0f172a] p-2 space-y-1 overflow-y-auto shrink-0"
+                >
                   <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 tracking-wider font-mono">
                     Repository Files
                   </div>
@@ -462,10 +603,19 @@ export const GitsmithView: React.FC = () => {
                   })}
                 </div>
 
+                {/* DRAG RESIZER 2: Between File Tree and Code Editor */}
+                <div
+                  onMouseDown={startResizeFileTree}
+                  className="w-1.5 hover:w-2 bg-slate-800 hover:bg-sky-500 cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
+                  title="Drag to resize file tree panel"
+                >
+                  <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
+                </div>
+
                 {/* Line-Numbered Code Editor Viewport */}
-                <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-x-auto text-slate-100 flex">
+                <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-auto text-slate-100 flex min-w-0">
                   {/* Line Numbers Gutter */}
-                  <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1">
+                  <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1 shrink-0">
                     {codeLines.map((_: string, i: number) => (
                       <div key={i} className="leading-relaxed">{i + 1}</div>
                     ))}

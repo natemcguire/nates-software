@@ -59,6 +59,23 @@ export function App() {
     );
   }
 
+  // Standalone Subdomain Routing for GITSMITH (e.g. gitsmith.nates-software.com or ?view=gitsmith or /gitsmith)
+  const isGitsmithStandalone = typeof window !== 'undefined' && (
+    window.location.hostname.startsWith('gitsmith.') ||
+    window.location.hostname.startsWith('git.') ||
+    window.location.pathname.startsWith('/gitsmith') ||
+    window.location.pathname.startsWith('/forge') ||
+    new URLSearchParams(window.location.search).get('view') === 'gitsmith'
+  );
+
+  if (isGitsmithStandalone) {
+    return (
+      <div className="fixed inset-0 bg-[#0f172a] flex flex-col font-sans text-xs overflow-hidden">
+        <GitsmithView />
+      </div>
+    );
+  }
+
   const {
     windows,
     activeWindowId,

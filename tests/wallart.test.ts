@@ -20,7 +20,7 @@ describe('Real Sovereign Shareware Apps Suite (Zero Mock Apps)', () => {
   });
 
   it('should point all Gitsmith repository live links directly to their sovereign subdomains', () => {
-    expect(GITSMITH_REPOS.length).toBe(3);
+    expect(GITSMITH_REPOS.length).toBeGreaterThanOrEqual(3);
     expect(GITSMITH_REPOS[0].liveAppUrl).toBe('https://dronehunter.pages.dev');
     expect(GITSMITH_REPOS[1].liveAppUrl).toBe('https://certified-mailer.pages.dev');
     expect(GITSMITH_REPOS[2].liveAppUrl).toBe('https://picfitai.pages.dev');
