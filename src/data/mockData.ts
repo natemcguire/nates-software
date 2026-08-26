@@ -78,10 +78,9 @@ export const INITIAL_APPS: AppListing[] = [
     badge: '#1 Product of the Day',
     makerPitch: 'I wanted an authentic 1995 Duck Hunt experience in pure HTML5 Canvas with local SQLite WAL high-scores and zero telemetry bloat. Grab your mouse, shoot the drones, and don\'t let the dog laugh at you!',
     voters: [
-      { name: 'Nate McGuire', handle: '@nate', avatar: '⚡' },
+      { name: 'Nate McGuire', handle: '@nate', avatar: '🎯' },
       { name: 'Josh McGuire', handle: '@josh', avatar: '⛵' },
-      { name: 'Sam Altman', handle: '@sam', avatar: '🤖' },
-      { name: 'Alex Rivera', handle: '@alex', avatar: '🎨' }
+      { name: 'Sam (AI)', handle: '@sam', avatar: '🤖' }
     ],
     screenshots: [
       'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80',
@@ -105,7 +104,7 @@ export const INITIAL_APPS: AppListing[] = [
       },
       {
         id: 'c2',
-        author: 'Sam Altman (@sam)',
+        author: 'Sam (@sam)',
         avatar: '🤖',
         text: 'Clean architecture. Single-file SQLite WAL mode runs with zero latency.',
         timestamp: '2h ago'
@@ -138,9 +137,9 @@ export const INITIAL_APPS: AppListing[] = [
     badge: '#2 Product of the Day',
     makerPitch: 'Automates FCRA dispute letters and USPS certified mailings. Flattens DOCX/PDF to 300 DPI pixels to prevent print layout skew, and logs digital signature receipts into SQLite.',
     voters: [
-      { name: 'Nate McGuire', handle: '@nate', avatar: '⚡' },
+      { name: 'Nate McGuire', handle: '@nate', avatar: '📫' },
       { name: 'Josh McGuire', handle: '@josh', avatar: '⛵' },
-      { name: 'Elena Rostova', handle: '@elena', avatar: '⚖️' }
+      { name: 'Sam (AI)', handle: '@sam', avatar: '🤖' }
     ],
     screenshots: [
       'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
@@ -156,8 +155,8 @@ export const INITIAL_APPS: AppListing[] = [
       },
       {
         id: 'c3',
-        author: 'LegalTech Weekly',
-        avatar: '⚖️',
+        author: 'Josh McGuire (@josh)',
+        avatar: '⛵',
         text: 'Essential for FCRA § 623 dispute compliance. 300 DPI rasterization avoids all printer metric errors.',
         timestamp: '3h ago'
       }
@@ -189,8 +188,9 @@ export const INITIAL_APPS: AppListing[] = [
     badge: '#3 Product of the Day',
     makerPitch: 'Try on red carpet dresses, suits, and curated fashion looks on your own photos using Google Gemini Vision neural diffusion.',
     voters: [
-      { name: 'Nate McGuire', handle: '@nate', avatar: '⚡' },
-      { name: 'Sarah Chen', handle: '@sarah', avatar: '👗' }
+      { name: 'Nate McGuire', handle: '@nate', avatar: '✨' },
+      { name: 'Josh McGuire', handle: '@josh', avatar: '⛵' },
+      { name: 'Sam (AI)', handle: '@sam', avatar: '🤖' }
     ],
     screenshots: [
       'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80'

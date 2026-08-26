@@ -202,9 +202,7 @@ export const DEFAULT_PORT: number = 6667;
 export const INITIAL_ONLINE_USERS: IrcUser[] = [
   { nick: 'nate', isOp: true, isVoiced: true, ident: 'nate', host: 'nates-software.com', avatar: '🎯' },
   { nick: 'josh', isOp: true, isVoiced: true, ident: 'josh', host: 'eastbay.dev', avatar: '⛵' },
-  { nick: 'sam', isOp: false, isVoiced: true, ident: 'sam', host: 'wasm.org', avatar: '🤖' },
-  { nick: 'alex', isOp: false, isVoiced: false, ident: 'alex', host: 'maker.net', avatar: '🎨' },
-  { nick: 'elena', isOp: false, isVoiced: true, ident: 'elena', host: 'legaltech.io', avatar: '⚖️' }
+  { nick: 'sam', isOp: false, isVoiced: true, ident: 'sam', host: 'ai.nates-software.com', avatar: '🤖' }
 ];
 
 export const INITIAL_CHAT_MESSAGES: IrcMessage[] = [
