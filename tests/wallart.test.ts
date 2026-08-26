@@ -3,14 +3,13 @@ import { INITIAL_APPS } from '../src/data/mockData';
 import { GITSMITH_REPOS } from '../src/views/GitsmithView';
 
 describe('Real Sovereign Shareware Apps Suite (Zero Mock Apps)', () => {
-  it('should contain real authentic projects and zero fake mockup apps', () => {
+  it('should strictly contain only the 3 sovereign shareware apps (dronehunter, certified-mailer, picfitai)', () => {
     const appIds = INITIAL_APPS.map(a => a.id);
-    expect(appIds).toContain('dronehunter');
-    expect(appIds).toContain('certified-mailer');
-    expect(appIds).toContain('picfitai');
-    expect(appIds).toContain('baby');
+    expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'picfitai']);
     expect(appIds).not.toContain('wallart');
     expect(appIds).not.toContain('retro-calc');
+    expect(appIds).not.toContain('baby');
+    expect(appIds).not.toContain('sailtrack');
   });
 
   it('should configure single-file SQLite databases in WAL mode for all sovereign apps', () => {
@@ -22,7 +21,7 @@ describe('Real Sovereign Shareware Apps Suite (Zero Mock Apps)', () => {
   });
 
   it('should point all Gitsmith repository live links directly to their sovereign subdomains', () => {
-    expect(GITSMITH_REPOS.length).toBeGreaterThanOrEqual(3);
+    expect(GITSMITH_REPOS.length).toBe(3);
     expect(GITSMITH_REPOS[0].liveAppUrl).toBe('https://dronehunter.pages.dev');
     expect(GITSMITH_REPOS[1].liveAppUrl).toBe('https://certified-mailer.pages.dev');
     expect(GITSMITH_REPOS[2].liveAppUrl).toBe('https://picfitai.pages.dev');

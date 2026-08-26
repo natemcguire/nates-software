@@ -68,7 +68,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Arcade', 'Retro', 'Duck Hunt', 'SQLite WAL', 'Web Audio'],
-    liveUrl: 'https://dronehunter.nates-software.com',
+    liveUrl: 'https://dronehunter.pages.dev',
     liveAppUrl: 'https://dronehunter.pages.dev',
     files: [
       { name: 'assets', type: 'dir' },
@@ -101,7 +101,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: true
     },
     tags: ['Legal', 'USPS', 'Postal', 'Dispute', 'SQLite WAL'],
-    liveUrl: 'https://certified-mailer.nates-software.com',
+    liveUrl: 'https://certified-mailer.pages.dev',
     liveAppUrl: 'https://certified-mailer.pages.dev',
     files: [
       { name: 'tools', type: 'dir' },
@@ -139,85 +139,6 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       { name: 'index.php', type: 'file', size: '12.4 KB', content: `<?php\nrequire_once 'includes/bootstrap.php';\n?>\n<!DOCTYPE html>\n<html><head><title>PicFit.ai</title></head><body><h1>PicFit.ai</h1></body></html>` },
       { name: 'generate.php', type: 'file', size: '18.2 KB', content: `<?php\n// 36 Emmy Red Carpet Dresses & Curated Try-On Wardrobe\n?>` },
       { name: 'README.md', type: 'file', size: '5.5 KB', content: `# ✨ PicFit.ai\n\nAI Virtual Try-On Studio powered by Google Gemini Vision.` }
-    ]
-  },
-  {
-    id: 'baby',
-    name: 'baby',
-    owner: 'nate',
-    avatar: '👶',
-    description: 'Markdown-based personal knowledge base app with single-file SQLite backend. Full-text search, live graph backlinks, and ultra-fast Next.js 16 frontend.',
-    stars: 198,
-    forks: 34,
-    language: 'Next.js 16 / TypeScript',
-    license: 'MIT Sovereign KB',
-    sqlitePath: '/data/baby.sqlite (WAL mode)',
-    branch: 'main',
-    lastCommit: {
-      sha: '3c1902a',
-      message: 'feat(search): FTS5 full-text indexing and backlinks graph visualizer',
-      author: 'nate',
-      time: '2h ago',
-      verified: true
-    },
-    tags: ['Knowledge Base', 'Markdown', 'Next.js', 'FTS5', 'Port 3001'],
-    liveUrl: 'http://localhost:3001',
-    files: [
-      { name: 'src/lib/db.ts', type: 'file', size: '3.4 KB', content: `import Database from 'better-sqlite3';\nexport const db = new Database('/data/baby.sqlite');\ndb.pragma('journal_mode = WAL');` },
-      { name: 'package.json', type: 'file', size: '820 B', content: `{\n  "name": "baby",\n  "version": "1.0.0"\n}` },
-      { name: 'README.md', type: 'file', size: '2.1 KB', content: `# 👶 Baby Knowledge Base\n\nNext.js 16 markdown knowledge base with better-sqlite3.` }
-    ]
-  },
-  {
-    id: 'sailtrack',
-    name: 'sailtrack',
-    owner: 'josh',
-    avatar: '⛵',
-    description: 'Real-time NMEA marine telemetry and polar curve overlay. Analyzes wind angles, boat velocity, and sail trim profiles with sub-second SQLite journal logging.',
-    stars: 175,
-    forks: 29,
-    language: 'Rust / WebAssembly',
-    license: 'MIT Marine Telemetry',
-    sqlitePath: '/data/sailtrack.sqlite (WAL mode)',
-    branch: 'main',
-    lastCommit: {
-      sha: '8e104cd',
-      message: 'feat(nmea): high-frequency 10Hz GPS polar vector smoothing',
-      author: 'josh',
-      time: '4h ago',
-      verified: true
-    },
-    tags: ['Marine', 'NMEA', 'Rust', 'WASM', 'Polar Charts'],
-    liveUrl: 'https://sailtrack.pages.dev',
-    files: [
-      { name: 'src/lib.rs', type: 'file', size: '8.4 KB', content: `// Marine Polar Curve Synthesizer in Rust\n#[wasm_bindgen]\npub fn calculate_vmg(twa: f64, tws: f64) -> f64 {\n    // VMG calculation\n    tws * (twa.to_radians()).cos()\n}` },
-      { name: 'README.md', type: 'file', size: '2.4 KB', content: `# ⛵ SailTrack NMEA HUD\n\nReal-time marine telemetry and polar curves.` }
-    ]
-  },
-  {
-    id: 'retrocalc',
-    name: 'retrocalc',
-    owner: 'sam',
-    avatar: '🧮',
-    description: 'WASM-accelerated financial accounting engine with double-entry ledger verification and automated sales tax compliance schedules.',
-    stars: 142,
-    forks: 21,
-    language: 'C++ / WebAssembly',
-    license: 'MIT Financial Engine',
-    sqlitePath: '/data/retrocalc.sqlite (WAL mode)',
-    branch: 'main',
-    lastCommit: {
-      sha: '1b993ef',
-      message: 'feat(ledger): GAAP double-entry verification with zero floating point drift',
-      author: 'sam',
-      time: '1d ago',
-      verified: true
-    },
-    tags: ['Accounting', 'WASM', 'Ledger', 'Finance'],
-    liveUrl: 'https://retrocalc.pages.dev',
-    files: [
-      { name: 'src/calc.cpp', type: 'file', size: '6.2 KB', content: `// Double-Entry Ledger Engine in C++\n#include <iostream>\n// Exact integer cent rounding` },
-      { name: 'README.md', type: 'file', size: '1.9 KB', content: `# 🧮 RetroCalc Accounting Engine` }
     ]
   }
 ];
