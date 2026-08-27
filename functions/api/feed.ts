@@ -1,75 +1,86 @@
-// GET /api/feed - RSS 2.0 & JSON Feed 1.1 Syndication for 12:01 AM Daily Drops
-import { generateFeedResponse, rankDrops, DropRankingInput } from '../../src/lib/hotwireBackend';
+// GET /api/feed - RSS 2.0 XML & JSON Feed v1.1 Syndication Engine
+// Live syndication for AI agents, newsletters, and Hacker News scrapers
+
+import { INITIAL_APPS } from '../../src/data/mockData';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const url = new URL(request.url);
-    const formatParam = url.searchParams.get('format');
-    const format = formatParam === 'json' ? 'json' : formatParam === 'rss' ? 'rss' : 'auto';
-    const acceptHeader = request.headers.get('Accept') || '';
+    const format = url.searchParams.get('format') || 'xml';
+    const baseUrl = 'https://nates-software.com';
 
-    let drops: DropRankingInput[] = [];
-
+    let apps = INITIAL_APPS;
     if (env && env.DB) {
-      try {
-        const { results } = await env.DB.prepare(`
-          SELECT 
-            a.id, a.name, a.tagline, a.description, a.upvotes, a.forks, a.version, 
-            a.license, a.price, a.moddability_score AS moddabilityScore, 
-            a.merge_cleanliness AS mergeCleanliness, a.storage,
-            a.screenshots, a.binaries, a.tags, a.created_at AS createdAt,
-            u.username AS creator, u.avatar_url AS creatorAvatar, u.is_verified_maker AS isVerifiedMaker
-          FROM app_listings a
-          JOIN users u ON a.creator_id = u.id
-          ORDER BY a.created_at DESC
-          LIMIT 50
-        `).all();
-
-        drops = (results || []).map((r: any) => {
-          let screenshots: string[] = [];
-          let binaries: Record<string, string> = {};
-          let tags: string[] = [];
-
-          try { screenshots = Array.isArray(JSON.parse(r.screenshots)) ? JSON.parse(r.screenshots) : []; } catch {}
-          try { binaries = typeof JSON.parse(r.binaries) === 'object' && JSON.parse(r.binaries) !== null ? JSON.parse(r.binaries) : {}; } catch {}
-          try { tags = Array.isArray(JSON.parse(r.tags)) ? JSON.parse(r.tags) : []; } catch {}
-
-          return {
-            ...r,
-            screenshots,
-            binaries,
-            tags,
-            createdAt: r.createdAt || new Date().toISOString()
-          };
-        });
-      } catch (dbErr) {
-        // Fallback if query fails
-        drops = [];
+      const { results } = await env.DB.prepare(`
+        SELECT id, name, tagline, description, price, version, creator_id, created_at
+        FROM app_listings
+        ORDER BY created_at DESC
+        LIMIT 20
+      `).all();
+      if (results && results.length > 0) {
+        apps = results as any;
       }
     }
 
-    // Rank drops for the feed
-    const rankedDrops = rankDrops(drops, { now: new Date() });
+    if (format === 'json') {
+      const jsonFeed = {
+        version: 'https://jsonfeed.org/version/1.1',
+        title: "Nate's Software — Daily Sovereign Shareware Drops",
+        home_page_url: baseUrl,
+        feed_url: `${baseUrl}/api/feed?format=json`,
+        description: 'Curated 12:01 AM UTC daily shareware releases, single-file SQLite applications, and 70/20/10 lineage mods.',
+        icon: `${baseUrl}/icon-512.svg`,
+        favicon: `${baseUrl}/favicon.ico`,
+        items: apps.map(app => ({
+          id: `${baseUrl}/#app-${app.id}`,
+          url: `https://${app.id}.nates-software.com`,
+          title: `${app.name} (${app.version || 'v1.0.0'})`,
+          content_text: `${app.tagline || app.description}. Single-file SQLite storage (WAL mode). Shareware license: ${app.price || '$15.00'} (70% maker, 20% lineage royalty).`,
+          date_published: new Date().toISOString(),
+          authors: [{ name: app.author || app.creator || 'Nate McGuire', url: `${baseUrl}/profile` }]
+        }))
+      };
 
-    const { body, contentType } = generateFeedResponse(
-      rankedDrops.length > 0 ? rankedDrops : drops,
-      format,
-      request.url,
-      acceptHeader
-    );
+      return new Response(JSON.stringify(jsonFeed, null, 2), {
+        headers: {
+          'Content-Type': 'application/feed+json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
 
-    return new Response(body, {
-      status: 200,
+    // Default: RSS 2.0 XML
+    const itemsXml = apps.map(app => `
+    <item>
+      <title><![CDATA[${app.name} (${app.version || 'v1.0.0'}) - ${app.tagline || 'Sovereign Shareware'}]]></title>
+      <link>https://${app.id}.nates-software.com</link>
+      <guid isPermaLink="false">nates-software-${app.id}-${app.version || '1.0.0'}</guid>
+      <pubDate>${new Date().toUTCString()}</pubDate>
+      <description><![CDATA[${app.description || app.tagline} · Single-file SQLite WAL storage · Shareware License ${app.price || '$15.00'}]]></description>
+      <author>nate@nates-software.com (@${app.author || app.creator || 'nate'})</author>
+      <category>Shareware</category>
+    </item>`).join('');
+
+    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Nate's Software — Daily Sovereign Shareware Drops</title>
+    <link>${baseUrl}</link>
+    <description>Curated 12:01 AM UTC daily shareware releases, single-file SQLite applications, and 70/20/10 lineage mods.</description>
+    <language>en-us</language>
+    <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
+    <atom:link href="${baseUrl}/api/feed" rel="self" type="application/rss+xml" />
+    ${itemsXml}
+  </channel>
+</rss>`;
+
+    return new Response(rssXml.trim(), {
       headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=60, s-maxage=300',
+        'Content-Type': 'application/rss+xml; charset=utf-8',
         'Access-Control-Allow-Origin': '*'
       }
     });
   } catch (err: any) {
-    return new Response(`Error generating feed: ${err.message || 'Internal error'}`, {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-    });
+    return new Response(`Error generating syndication feed: ${err.message}`, { status: 500 });
   }
 };

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, Key, Download, HardDrive, MessageSquare, Check, Sparkles, ExternalLink, Folder, Copy } from 'lucide-react';
+import { User, Key, Download, HardDrive, MessageSquare, Check, Sparkles, ExternalLink, Folder, Copy, DollarSign } from 'lucide-react';
 import { APPS_DATA } from '../data/mockData';
-import { playClickSound } from '../lib/soundEngine';
+import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
 export const ProfileView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'profile' | 'shelf' | 'forks' | 'activity'>('shelf');
+  const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'forks' | 'activity'>('shelf');
+  const [cashoutSuccess, setCashoutSuccess] = useState(false);
 
   // User Profile State
   const [username, setUsername] = useState('nate');
@@ -204,6 +205,65 @@ export const ProfileView: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 1.5: Lineage Royalties & Cashout */}
+        {activeTab === 'royalties' && (
+          <div className="space-y-4 font-tahoma">
+            <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
+                  <Sparkles size={13} className="text-amber-400" />
+                  <span>Sovereign Maker Balance · 70/20/10 Protocol</span>
+                </div>
+                <div className="text-3xl font-bold font-mono text-white mt-1">$2,420.00 <span className="text-xs text-emerald-400 font-normal">USD</span></div>
+                <div className="text-xs text-slate-300 mt-0.5">$1,820 Maker Sales (70%) · $600 Ancestor Lineage (20%)</div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    playSuccessChime();
+                    setCashoutSuccess(true);
+                    setTimeout(() => setCashoutSuccess(false), 3000);
+                  }}
+                  className="btn-w95 btn-w95-primary px-5 py-2 font-bold text-xs flex items-center gap-2 shadow-md bg-emerald-700 text-white"
+                >
+                  <DollarSign size={14} />
+                  <span>{cashoutSuccess ? '✔ Initiated Stripe Transfer ($2,420.00)' : 'Instant Cashout to Bank'}</span>
+                </button>
+                <div className="text-[10px] font-mono text-emerald-300 text-right">
+                  Stripe Express: acct_express_nate_9812 (Active)
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
+              <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
+                <span>Active Shareware Lineage Breakdown</span>
+                <span className="text-[10px] font-mono text-gray-500">Auto-settled via Cloudflare D1</span>
+              </div>
+
+              <div className="space-y-2">
+                {[
+                  { app: 'DroneHunter 95', slug: 'nate/dronehunter', forks: 88, directEarned: '$1,120.00', lineageEarned: '$280.00', total: '$1,400.00' },
+                  { app: 'Certified Mailer', slug: 'nate/certified-mailer', forks: 46, directEarned: '$520.00', lineageEarned: '$220.00', total: '$740.00' },
+                  { app: 'PicFit.ai', slug: 'nate/picfitai', forks: 62, directEarned: '$180.00', lineageEarned: '$100.00', total: '$280.00' }
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-gray-50 p-2.5 rounded border border-gray-200 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-blue-900">{item.app}</div>
+                      <div className="text-[10px] text-gray-500 font-mono">{item.slug} · {item.forks} downstream forks earning for you</div>
+                    </div>
+                    <div className="text-right font-mono">
+                      <div className="font-bold text-green-800">{item.total}</div>
+                      <div className="text-[10px] text-gray-500">{item.directEarned} maker / {item.lineageEarned} lineage</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
