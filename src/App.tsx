@@ -70,6 +70,7 @@ import { RetroWindow } from './components/RetroWindow';
 import { DesktopTaskbar } from './components/DesktopTaskbar';
 import { StartMenu } from './components/StartMenu';
 
+import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
 import { HotwireView } from './views/HotwireView';
 import { SlopshopView } from './views/SlopshopView';
@@ -286,6 +287,11 @@ export function App() {
       {/* Desktop App Icons Grid */}
       <div className="absolute top-4 left-4 grid grid-flow-col grid-rows-7 gap-2 z-10">
         <DesktopIcon
+          label="SETUP.EXE (Quickstart)"
+          icon="🚀"
+          onClick={() => { playClickSound(); openWindow('setup'); }}
+        />
+        <DesktopIcon
           label="README_FIRST.TXT"
           icon="📄"
           onClick={() => { playClickSound(); openWindow('mktg'); }}
@@ -348,6 +354,30 @@ export function App() {
       </div>
 
       {/* Floating Application Windows */}
+
+      {/* 0. SETUP.EXE — 1-Click Fork Quickstart Wizard */}
+      <RetroWindow
+        windowState={windows.setup}
+        isActive={activeWindowId === 'setup'}
+        onFocus={() => focusWindow('setup')}
+        onClose={() => closeWindow('setup')}
+        onMinimize={() => minimizeWindow('setup')}
+        onToggleMaximize={() => toggleMaximizeWindow('setup')}
+        onMove={(x, y) => updateWindowPosition('setup', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('setup', w, h, x, y)}
+      >
+        <SetupWizardView
+          onOpenSandbox={() => {
+            openWindow('hotwire');
+          }}
+          onOpenTerminal={() => {
+            openWindow('terminal');
+          }}
+          onOpenForge={() => {
+            openWindow('gitsmith');
+          }}
+        />
+      </RetroWindow>
 
       {/* 0. Marketing / About Readme */}
       <RetroWindow

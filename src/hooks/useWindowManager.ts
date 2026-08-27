@@ -40,7 +40,8 @@ const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: n
 };
 
 export function useWindowManager() {
-  const mktgConfig = getResponsiveWindowConfig(0, 1080, 680);
+  const setupConfig = getResponsiveWindowConfig(0, 880, 580);
+  const mktgConfig = getResponsiveWindowConfig(10, 1080, 680);
   const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
   const slopshopConfig = getResponsiveWindowConfig(45, 1120, 700);
   const inboxConfig = getResponsiveWindowConfig(35, 1120, 700);
@@ -53,6 +54,19 @@ export function useWindowManager() {
   const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
 
   const [windows, setWindows] = useState<Record<string, WindowState>>({
+    setup: {
+      id: 'setup',
+      title: "SETUP.EXE — [Welcome & 1-Click Fork Quickstart Wizard]",
+      icon: '🚀',
+      isOpen: true,
+      isMinimized: false,
+      isMaximized: false,
+      x: setupConfig.x,
+      y: setupConfig.y,
+      width: setupConfig.width,
+      height: setupConfig.height,
+      zIndex: 100
+    },
     mktg: {
       id: 'mktg',
       title: "About Nate's Software — [README_FIRST.TXT]",
