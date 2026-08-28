@@ -20,8 +20,9 @@ import {
   Globe
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
-import { useAuth } from '../context/AuthContext';
-import { useAlert } from '../context/AlertContext';
+
+import { ForkWithAiModal } from '../components/ForkWithAiModal';
+import { Bot } from 'lucide-react';
 
 export interface GitsmithRepo {
   id: string;
@@ -148,12 +149,12 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
 ];
 
 export const GitsmithView: React.FC = () => {
-  const { showAlert } = useAlert();
-  const { isAuthenticated, openAuthModal } = useAuth();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo>(GITSMITH_REPOS[0]);
   const [activeFile, setActiveFile] = useState<any>(GITSMITH_REPOS[0].files.find(f => f.type === 'file') || GITSMITH_REPOS[0].files[0]);
   const [copiedClone, setCopiedClone] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'commits' | 'lineage'>('code');
 
@@ -227,21 +228,7 @@ export const GitsmithView: React.FC = () => {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  const handleForkSlop = (repo: GitsmithRepo) => {
-    if (!isAuthenticated) {
-      showAlert("Authentication Required: You must log in or create an account to fork repositories or push code to GITSMITH.", "Sign In Required", "warning");
-      openAuthModal('login');
-      return;
-    }
-    playSuccessChime();
-    const cmd = `slop fork ${repo.owner}/${repo.name}`;
-    navigator.clipboard.writeText(cmd);
-    showAlert(
-      `Fork command copied to clipboard:\n\n$ ${cmd}\n\nRun this in your terminal to create an isolated worktree with local SQLite volume mounted at /tmp/slop-${repo.id}!`,
-      "SLOP Fork Command Ready",
-      "success"
-    );
-  };
+
 
   const codeLines = (activeFile?.content || `# ${selectedRepo.name}\n\nGit repository running on GITSMITH.`).split('\n');
 
@@ -394,13 +381,16 @@ export const GitsmithView: React.FC = () => {
                 </a>
 
                 <button
-                  onClick={() => handleForkSlop(selectedRepo)}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-                  title="Fork into local worktree with SLOP CLI"
+                  onClick={() => {
+                    playSuccessChime();
+                    setShowForkModal(true);
+                  }}
+                  className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold px-3.5 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition-all shadow-md border border-amber-400"
+                  title="Fork into isolated worktree with Claude Code / AGY / Cursor"
                 >
-                  <GitFork size={13} className="text-sky-400" />
-                  <span>Fork with SLOP</span>
-                  <span className="bg-slate-900 px-1.5 py-0.5 rounded text-[10px] text-slate-300 font-mono">{selectedRepo.forks}</span>
+                  <Bot size={14} className="text-yellow-200" />
+                  <span>⚡ Fork with AI</span>
+                  <span className="bg-amber-900/60 px-1.5 py-0.5 rounded text-[10px] text-amber-200 font-mono">{selectedRepo.forks}</span>
                 </button>
 
                 <button
@@ -645,6 +635,20 @@ export const GitsmithView: React.FC = () => {
           )}
         </div>
       </div>
+      {/* 1-Click Fork & Code with AI Modal */}
+      <ForkWithAiModal
+        isOpen={showForkModal}
+        onClose={() => setShowForkModal(false)}
+        app={{
+          id: selectedRepo.id,
+          name: selectedRepo.name,
+          version: 'v1.0.0',
+          author: selectedRepo.owner,
+          creator: selectedRepo.owner,
+          avatar: selectedRepo.avatar,
+          creatorAvatar: selectedRepo.avatar
+        }}
+      />
     </div>
   );
 };

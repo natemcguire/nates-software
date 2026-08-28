@@ -3,7 +3,6 @@ import { AppListing, AppComment } from '../data/mockData';
 import { EphemeralLiveApp } from './EphemeralLiveApp';
 import {
   Play,
-  Sparkles,
   Image as ImageIcon,
   MessageSquare,
   Edit3,
@@ -17,6 +16,7 @@ import {
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { CheckoutModal } from './CheckoutModal';
+import { ForkWithAiModal } from './ForkWithAiModal';
 import { useAlert } from '../context/AlertContext';
 
 interface ArtifactSandboxProps {
@@ -35,6 +35,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const { showAlert } = useAlert();
   const { user, openAuthModal } = useAuth();
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'sqlite' | 'code' | 'console'>('preview');
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
@@ -376,11 +377,12 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           <button
             onClick={() => {
               playSuccessChime();
-              setShowAiModal(true);
+              setShowForkModal(true);
             }}
-            className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5"
+            className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 bg-amber-50 font-bold border border-amber-400 text-amber-950 shadow-sm"
           >
-            <Sparkles size={13} className="text-purple-700" /> Open AI Session
+            <Bot size={13} className="text-purple-700" />
+            <span>⚡ Fork with AI</span>
           </button>
           {onOpenPostEditor && (
             <button
@@ -611,6 +613,13 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         </div>
       )}
+
+      {/* 1-Click Fork & Code with AI Modal */}
+      <ForkWithAiModal
+        isOpen={showForkModal}
+        onClose={() => setShowForkModal(false)}
+        app={app}
+      />
 
       {/* Stripe Marketplace Checkout Modal */}
       <CheckoutModal
