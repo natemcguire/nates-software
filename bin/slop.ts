@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
  * SLOP CLI — OFFICIAL SOVEREIGN DEVELOPER TOOL
- * Manage sovereign apps, AST feature modding, micro-dynos, and local AI benchmarks.
+ * Sovereign Local-first Operations Protocol: Fork -> AI Agent Code -> Push.
  */
 
-import { PRESET_FEATURES, validateAstFeature, type ASTFeaturePackage } from "../src/lib/slopshopDomain.ts";
 import { calculateDynoGrade } from "../src/lib/dynoDomain.ts";
 import { RigRuntimeBackend, MEMORY_CAP_MB } from "../src/lib/rigBackend.ts";
 import { INITIAL_APPS as APPS_DATA } from "../src/data/mockData.ts";
@@ -72,7 +71,7 @@ export function handleFork(slugArg?: string): SlopCommandResult {
     `  Mounted local SQLite volume ${sqlitePath} (WAL mode).`,
     `  Bound port ${port} cleanly (Micro-dyno container allocated).`,
     `  Memory cap strictly enforced: ${MEMORY_CAP_MB}MB.`,
-    `✔ Ready to mod in your IDE or AI agent.`
+    `✔ Ready to code with Claude Code, AGY, Cursor, or Aider.`
   ].join("\n");
 
   console.log(output);
@@ -119,99 +118,35 @@ export function handlePush(): SlopCommandResult {
   };
 }
 
-export function handleMod(featureArg?: string): SlopCommandResult {
-  if (!featureArg || featureArg.trim().length === 0) {
-    const available = PRESET_FEATURES.map(f => `  - ${f.id} (${f.name})`).join("\n");
-    const msg = `Feature identifier required. Available features:\n${available}`;
-    console.error(`[SLOPSHOP ERROR] ${msg}`);
-    return {
-      success: false,
-      command: "mod",
-      message: msg,
-      data: { availableFeatures: PRESET_FEATURES }
-    };
-  }
+export function handleDrop(args: string[] = []): SlopCommandResult {
+  const target = args[0] || "dronehunter";
+  const appId = target.replace(/^[./]+/, "").split("/").pop() || "dronehunter";
+  const nameArg = args.find(a => a.startsWith("--name="))?.split("=")[1] || (appId.charAt(0).toUpperCase() + appId.slice(1));
+  const priceArg = args.find(a => a.startsWith("--price="))?.split("=")[1] || "15";
+  const priceCents = parseInt(priceArg, 10) * 100 || 1500;
 
-  const query = featureArg.toLowerCase().trim();
-  const normalizedQuery = query.replace(/[^a-z0-9]/g, "");
-  let feature = PRESET_FEATURES.find(
-    f => {
-      const fNorm = f.id.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const fClean = f.id.toLowerCase().replace(/^feat_/, "").replace(/[^a-z0-9]/g, "");
-      return f.id.toLowerCase() === query ||
-             f.id.toLowerCase().replace(/^feat_/, "") === query ||
-             fNorm === normalizedQuery ||
-             fClean === normalizedQuery ||
-             normalizedQuery.includes(fClean) ||
-             fClean.includes(normalizedQuery) ||
-             f.name.toLowerCase().includes(query);
-    }
-  );
+  const lines = [
+    `[HOTWIRE PUBLISHER] Packaging ${nameArg} for 12:01 AM UTC Daily Drop...`,
+    `  ✔ Verified single-file SQLite database: /data/${appId}.sqlite (WAL mode)`,
+    `  ✔ Pre-flight test proofs: 5/5 passed (Zero-leakage, Memory cap 256MB)`,
+    `  ✔ Shareware License terms: $${(priceCents / 100).toFixed(2)} with 70/20/10 lineage royalty split`,
+    `  ✔ Queued for Batch #85 rollover at 00:01:00 UTC`,
+    `🚀 Published! Live preview active at: https://${appId}.nates-software.com`
+  ];
 
-  if (!feature) {
-    // Construct dynamic feature package if valid identifier
-    const cleanId = query.startsWith("feat_") ? query : `feat_${query}`;
-    const dynamicPkg: ASTFeaturePackage = {
-      id: cleanId,
-      name: `${featureArg.charAt(0).toUpperCase() + featureArg.slice(1)} Feature Mod`,
-      version: "1.0.0",
-      targetApp: "wallart",
-      ref: `refs/features/${cleanId.replace(/^feat_/, "")}/v1.0.0`,
-      description: `Custom AST feature mod for ${featureArg}`,
-      author: "@nate",
-      astNodesAdded: 16,
-      tablesCreated: [`${cleanId.replace(/^feat_/, "").replace(/[^a-z0-9]/g, "_")}_items`],
-      walMode: true,
-      cleanlinessScore: 99.5
-    };
-
-    const valResult = validateAstFeature(dynamicPkg);
-    if (!valResult.valid) {
-      const msg = `Invalid feature package: ${valResult.errors.join(", ")}`;
-      console.error(`[SLOPSHOP ERROR] ${msg}`);
-      return {
-        success: false,
-        command: "mod",
-        message: msg
-      };
-    }
-    feature = valResult.data;
-  }
-
-  const valResult = validateAstFeature(feature);
-  if (!valResult.valid) {
-    const msg = `Feature validation failed: ${valResult.errors.join(", ")}`;
-    console.error(`[SLOPSHOP ERROR] ${msg}`);
-    return {
-      success: false,
-      command: "mod",
-      message: msg
-    };
-  }
-
-  const validFeature = valResult.data;
-
-  const output = [
-    `[SLOPSHOP] Splicing AST feature package: ${validFeature.name} (${validFeature.version})...`,
-    `  ✔ Manifest validated (${validFeature.ref})`,
-    `  ✔ Spliced ${validFeature.astNodesAdded} AST nodes into target host`,
-    `  ✔ Created SQLite tables: [${validFeature.tablesCreated.join(", ")}] in WAL mode`,
-    `  ✔ Cleanliness score: ${validFeature.cleanlinessScore}% (0 syntax collisions)`,
-    `✔ Feature mod welded successfully.`
-  ].join("\n");
-
-  console.log(output);
+  console.log(lines.join("\n"));
 
   return {
     success: true,
-    command: "mod",
-    message: `Feature ${validFeature.name} welded successfully`,
+    command: "drop",
+    message: `Published ${nameArg} for 12:01 AM UTC Daily Drop`,
     data: {
-      feature: validFeature,
-      astNodesAdded: validFeature.astNodesAdded,
-      tablesCreated: validFeature.tablesCreated,
-      cleanlinessScore: validFeature.cleanlinessScore,
-      walMode: validFeature.walMode
+      appId,
+      name: nameArg,
+      priceCents,
+      walVerified: true,
+      batch: 85,
+      liveUrl: `https://${appId}.nates-software.com`
     }
   };
 }
@@ -261,7 +196,7 @@ export function handleTest(): SlopCommandResult {
     "Single-file SQLite WAL mode invariant (0 lock contentions)",
     "Memory Governor 256MB cap enforcement (OOM exit 137 prevention)",
     "Micro-Dyno Port Allocator range [3001..3010] collision avoidance",
-    "AST Feature Splicer syntax tree integrity & cleanliness",
+    "Lineage Ledger 70/20/10 exact cent conservation",
     "GITSMITH CAS compare-and-swap atomic ref verification"
   ];
 
@@ -397,53 +332,20 @@ export function handleLogin(): SlopCommandResult {
   };
 }
 
-export function handleDrop(args: string[] = []): SlopCommandResult {
-  const target = args[0] || "dronehunter";
-  const appId = target.replace(/^[./]+/, "").split("/").pop() || "dronehunter";
-  const nameArg = args.find(a => a.startsWith("--name="))?.split("=")[1] || (appId.charAt(0).toUpperCase() + appId.slice(1));
-  const priceArg = args.find(a => a.startsWith("--price="))?.split("=")[1] || "15";
-  const priceCents = parseInt(priceArg, 10) * 100 || 1500;
-
-  const lines = [
-    `[HOTWIRE PUBLISHER] Packaging ${nameArg} for 12:01 AM UTC Daily Drop...`,
-    `  ✔ Verified single-file SQLite database: /data/${appId}.sqlite (WAL mode)`,
-    `  ✔ Pre-flight test proofs: 5/5 passed (Zero-leakage, Memory cap 256MB)`,
-    `  ✔ Shareware License terms: $${(priceCents / 100).toFixed(2)} with 70/20/10 lineage royalty split`,
-    `  ✔ Queued for Batch #85 rollover at 00:01:00 UTC`,
-    `🚀 Published! Live preview active at: https://${appId}.nates-software.com`
-  ];
-
-  console.log(lines.join("\n"));
-
-  return {
-    success: true,
-    command: "drop",
-    message: `Published ${nameArg} for 12:01 AM UTC Daily Drop`,
-    data: {
-      appId,
-      name: nameArg,
-      priceCents,
-      walVerified: true,
-      batch: 85,
-      liveUrl: `https://${appId}.nates-software.com`
-    }
-  };
-}
-
 export function printHelp(): SlopCommandResult {
   const helpText = `
 Usage: slop <command> [options]
 
 Official SLOP CLI (Sovereign Local-first Operations Protocol)
+Developer Loop: FORK -> AI CODES IN WORKTREE -> TEST -> PUSH
 
 Commands:
   slop fork <slug>     Clone app into isolated worktree with local SQLite volume
+  slop test            Run sovereign runtime verification test assertions
+  slop push            Verify single-file SQLite WAL and push CAS commit ref
   slop drop [slug]     Package and queue app for 12:01 AM UTC Daily Drop
   slop publish [slug]  Alias for slop drop
-  slop push            Run test proofs, verify single-file SQLite WAL, push CAS ref
-  slop mod <feature>   Splice feature AST package into local project
   slop dyno [--bench]  Measure local hardware AI token velocity
-  slop test            Run sovereign runtime verification test assertions
   slop status          Inspect micro-containers & active ports (3001..3010)
   slop list            Query 12:01 AM daily drops on Cloudflare D1
   slop shelf           Display owned software titles & license keys
@@ -473,9 +375,6 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
     case "push":
       return handlePush();
 
-    case "mod":
-      return handleMod(rawArgs[1]);
-
     case "dyno":
       const isBench = rawArgs.includes("--bench") || rawArgs.includes("-b");
       return handleDyno(isBench);
@@ -501,21 +400,16 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
       return printHelp();
 
     default:
-      console.error(`Unknown command: ${command}. Run "slop help" for usage.`);
+      const msg = `Unknown command: ${command}. Run "slop help" for usage.`;
+      console.error(msg);
       return {
         success: false,
         command,
-        message: `Unknown command: ${command}. Run "slop help" for usage.`
+        message: msg
       };
   }
 }
 
-// Auto-run if executed directly via node CLI
-if (
-  typeof process !== "undefined" &&
-  process.argv &&
-  process.argv[1] &&
-  (process.argv[1].endsWith("/slop.ts") || process.argv[1].endsWith("/slop") || process.argv[1].endsWith("/bin/slop.ts") || process.argv[1].endsWith("/bin/slop"))
-) {
+if (typeof process !== "undefined" && process.argv && process.argv[1]?.endsWith("slop")) {
   runSlopCli();
 }

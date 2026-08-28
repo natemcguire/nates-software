@@ -9,7 +9,6 @@ import * as profileApi from '../functions/api/profile';
 import * as shelfApi from '../functions/api/shelf';
 import * as upvoteApi from '../functions/api/upvote';
 import * as dynoApi from '../functions/api/dyno';
-import * as spliceApi from '../functions/api/splice';
 import * as feedApi from '../functions/api/feed';
 
 import { INITIAL_APPS } from '../src/data/mockData';
@@ -171,22 +170,7 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 7. AST Feature Splicer API (/api/splice)
-  describe('7. AST Feature Splicer API (/api/splice)', () => {
-    it('should reject AST splice requests with missing host or feature', async () => {
-      const mockEnv = {};
-      const req = new Request('http://localhost/api/splice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
 
-      const res = await spliceApi.onRequestPost({ request: req, env: mockEnv });
-      const data = await res.json();
-      expect(data.success).toBe(false);
-      expect(data.error).toContain('Supply featureIds or features');
-    });
-  });
 
   // 8.5 Profile, Shelf, Inbox, & Comments APIs
   describe('8.5 Profile, Shelf, Inbox, & Comments APIs', () => {

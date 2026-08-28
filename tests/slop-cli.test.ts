@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   handleFork,
   handlePush,
-  handleMod,
+  handleDrop,
   handleDyno,
   handleTest,
   handleStatus,
@@ -13,7 +13,7 @@ import {
   runSlopCli
 } from '../bin/slop.ts';
 
-describe('SLOP CLI Core Command Handlers', () => {
+describe('SLOP CLI — Sovereign Developer Loop (Fork -> AI Code -> Push)', () => {
 
   describe('slop fork <slug>', () => {
     it('should fork default slug (nate/dronehunter) into isolated worktree with SQLite volume', () => {
@@ -37,6 +37,16 @@ describe('SLOP CLI Core Command Handlers', () => {
     });
   });
 
+  describe('slop test', () => {
+    it('should run and pass all sovereign verification proofs before pushing', () => {
+      const res = handleTest();
+      expect(res.success).toBe(true);
+      expect(res.command).toBe('test');
+      expect(res.data.passedProofs).toBe(5);
+      expect(res.data.totalProofs).toBe(5);
+    });
+  });
+
   describe('slop push', () => {
     it('should run test proofs, verify single-file SQLite WAL, and push CAS ref', () => {
       const res = handlePush();
@@ -49,40 +59,14 @@ describe('SLOP CLI Core Command Handlers', () => {
     });
   });
 
-  describe('slop mod <feature>', () => {
-    it('should splice known preset feature (feat_dronehunter_scores)', () => {
-      const res = handleMod('feat_dronehunter_scores');
+  describe('slop drop / slop publish', () => {
+    it('should package app and queue for 12:01 AM UTC daily drop', () => {
+      const res = handleDrop(['dronehunter', '--name=DroneHunter 95', '--price=15']);
       expect(res.success).toBe(true);
-      expect(res.command).toBe('mod');
-      expect(res.data.feature.id).toBe('feat_dronehunter_scores');
-      expect(res.data.astNodesAdded).toBe(16);
-      expect(res.data.cleanlinessScore).toBe(99.8);
-      expect(res.data.tablesCreated).toContain('high_scores');
-    });
-
-    it('should splice feature using short alias (dronehunter-scores)', () => {
-      const res = handleMod('dronehunter-scores');
-      expect(res.success).toBe(true);
-      expect(res.data.feature.id).toBe('feat_dronehunter_scores');
-    });
-
-    it('should splice pdf-raster feature (pdf-rasterizer)', () => {
-      const res = handleMod('pdf-rasterizer');
-      expect(res.success).toBe(true);
-      expect(res.data.feature.id).toBe('feat_pdf_raster');
-      expect(res.data.tablesCreated).toContain('pdf_raster_caches');
-    });
-
-    it('should dynamically create and weld valid custom feature mod', () => {
-      const res = handleMod('custom-soundtrack');
-      expect(res.success).toBe(true);
-      expect(res.data.feature.id).toBe('feat_custom-soundtrack');
-    });
-
-    it('should fail gracefully when feature identifier is missing', () => {
-      const res = handleMod(undefined);
-      expect(res.success).toBe(false);
-      expect(res.message).toContain('Feature identifier required');
+      expect(res.command).toBe('drop');
+      expect(res.data.appId).toBe('dronehunter');
+      expect(res.data.priceCents).toBe(1500);
+      expect(res.data.batch).toBe(85);
     });
   });
 
@@ -99,16 +83,6 @@ describe('SLOP CLI Core Command Handlers', () => {
       const res = handleDyno(true);
       expect(res.success).toBe(true);
       expect(res.data.tokensPerSec).toBe(168.2);
-    });
-  });
-
-  describe('slop test', () => {
-    it('should run and pass all sovereign verification proofs', () => {
-      const res = handleTest();
-      expect(res.success).toBe(true);
-      expect(res.command).toBe('test');
-      expect(res.data.passedProofs).toBe(5);
-      expect(res.data.totalProofs).toBe(5);
     });
   });
 
@@ -158,18 +132,19 @@ describe('SLOP CLI Core Command Handlers', () => {
       expect(res.success).toBe(true);
       expect(res.message).toContain('Official SLOP CLI');
       expect(res.message).toContain('slop fork');
+      expect(res.message).toContain('slop test');
       expect(res.message).toContain('slop push');
-      expect(res.message).toContain('slop mod');
     });
   });
 
   describe('runSlopCli router', () => {
     it('should route all commands cleanly', () => {
       expect(runSlopCli(['fork', 'nate/dronehunter']).success).toBe(true);
-      expect(runSlopCli(['push']).success).toBe(true);
-      expect(runSlopCli(['mod', 'feat_dronehunter_scores']).success).toBe(true);
-      expect(runSlopCli(['dyno', '--bench']).success).toBe(true);
       expect(runSlopCli(['test']).success).toBe(true);
+      expect(runSlopCli(['push']).success).toBe(true);
+      expect(runSlopCli(['drop', 'dronehunter']).success).toBe(true);
+      expect(runSlopCli(['publish', 'dronehunter']).success).toBe(true);
+      expect(runSlopCli(['dyno', '--bench']).success).toBe(true);
       expect(runSlopCli(['status']).success).toBe(true);
       expect(runSlopCli(['list']).success).toBe(true);
       expect(runSlopCli(['shelf']).success).toBe(true);
