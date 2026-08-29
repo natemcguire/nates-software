@@ -494,7 +494,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject comment submission with 400 when text or appId are empty', async () => {
       const reqEmptyText = new Request('http://localhost/api/comments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ appId: 'dronehunter', text: '   ' })
       });
       const res1 = await commentsApi.onRequestPost({ request: reqEmptyText, env: { DB: ctx.d1 } });
@@ -502,7 +502,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
 
       const reqEmptyApp = new Request('http://localhost/api/comments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ appId: '', text: 'Valid text' })
       });
       const res2 = await commentsApi.onRequestPost({ request: reqEmptyApp, env: { DB: ctx.d1 } });
@@ -848,20 +848,11 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data.success).toBe(false);
     });
 
-    /**
-     * PROVEN GAP 2: Comments API Error Swallowing on Foreign Key Violation
-     *
-     * In `functions/api/comments.ts` lines 48-54:
-     * When inserting a comment for a non-existent `app_id` or `user_id`, SQLite with foreign keys
-     * enabled throws `FOREIGN KEY constraint failed`.
-     * The `try { ... } catch {}` block silently swallows the error without setting an error status,
-     * returning `HTTP 200 { success: true, commentId: '...', comment: { ... } }`.
-     */
-    it('proves that Comments API swallows D1 foreign key constraint failure for non-existent app and reports simulated success', async () => {
+    it('rejects comments for non-existent apps without simulating persistence', async () => {
       const nonExistentAppId = 'app_nonexistent_xyz';
       const req = new Request('http://localhost/api/comments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           appId: nonExistentAppId,
           text: 'Comment on non-existent app',
@@ -872,20 +863,14 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const res = await commentsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
-      // Current behavior: returns 200 with simulated comment object
-      expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
-
-      // PROOF OF PERSISTENCE FAILURE: Verify that the comment was NOT persisted in D1
-      const commentInDb = await ctx.d1.prepare('SELECT * FROM comments WHERE id = ?').bind(data.commentId).first();
-      expect(commentInDb).toBeNull();
+      expect(res.status).toBe(404);
+      expect(data.success).toBe(false);
     });
 
-    it.skip('CONTRACT GAP: Comments API should return HTTP 400/500 when comment insertion fails foreign key constraint', async () => {
-      // Documenting expected contract behavior:
+    it('fails closed when a comment cannot satisfy persistence constraints', async () => {
       const req = new Request('http://localhost/api/comments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           appId: 'app_nonexistent_xyz',
           text: 'Comment on non-existent app',

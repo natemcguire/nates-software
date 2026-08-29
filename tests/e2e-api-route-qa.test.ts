@@ -202,7 +202,8 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       const req = new Request('http://localhost/api/comments?app_id=dronehunter', { method: 'GET' });
       const res = await commentsApi.onRequestGet({ request: req, env: mockEnv });
       const data = await res.json();
-      expect(data).toHaveProperty('success');
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
     });
 
     it('should query canonical developer benchmark leaderboard from dynoApi', async () => {

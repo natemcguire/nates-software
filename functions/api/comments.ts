@@ -1,72 +1,63 @@
-// GET /api/comments?app_id=dronehunter
-// POST /api/comments - Submit feedback or maker commentary
+import { requireAuth } from './_auth';
+
+const APP_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const MAX_COMMENT_LENGTH = 2000;
+
+const json = (body: unknown, status = 200) => Response.json(body, {
+  status,
+  headers: { 'Cache-Control': 'no-store' }
+});
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
-  try {
-    const url = new URL(request.url);
-    const appId = url.searchParams.get('app_id') || url.searchParams.get('appId');
+  if (!env?.DB) return json({ success: false, error: 'Comment storage is unavailable.' }, 503);
+  const appId = new URL(request.url).searchParams.get('app_id') || new URL(request.url).searchParams.get('appId');
+  if (appId && !APP_ID.test(appId)) return json({ success: false, error: 'Invalid appId.' }, 400);
 
-    let query = `
-      SELECT 
-        c.id, c.app_id AS appId, c.text, c.upvotes, c.created_at AS time,
-        u.username AS author, u.avatar_url AS avatar, u.is_verified_maker AS isMaker
-      FROM comments c
-      JOIN users u ON c.user_id = u.id
-    `;
-    if (env && env.DB) {
-      if (appId) {
-        query += ` WHERE c.app_id = ? ORDER BY c.created_at DESC`;
-        const { results } = await env.DB.prepare(query).bind(appId).all();
-        return Response.json({ success: true, comments: results || [] });
-      } else {
-        query += ` ORDER BY c.created_at DESC LIMIT 50`;
-        const { results } = await env.DB.prepare(query).all();
-        return Response.json({ success: true, comments: results || [] });
-      }
-    }
-    return Response.json({ success: true, comments: [] });
-  } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+  try {
+    const base = `SELECT c.id, c.app_id AS appId, c.text, c.upvotes,
+      c.created_at AS time, u.username AS author, u.avatar_url AS avatar,
+      u.is_verified_maker AS isMaker
+      FROM comments c JOIN users u ON c.user_id = u.id`;
+    const query = appId
+      ? env.DB.prepare(`${base} WHERE c.app_id = ? ORDER BY c.created_at DESC, c.id ASC`).bind(appId)
+      : env.DB.prepare(`${base} ORDER BY c.created_at DESC, c.id ASC LIMIT 50`);
+    const { results } = await query.all();
+    return json({ success: true, comments: results || [] });
+  } catch (error: any) {
+    return json({ success: false, error: `Comment query failed: ${error.message}` }, 503);
   }
 };
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
+  const auth = await requireAuth(request, env);
+  if (auth.errorResponse || !auth.user) return auth.errorResponse || json({ success: false, error: 'Unauthorized' }, 401);
+  if (!env?.DB) return json({ success: false, error: 'Comment storage is unavailable.' }, 503);
+
+  let body: any;
   try {
-    const { appId, text, author, avatar } = await request.json() as any;
-    if (!appId || !text || text.trim().length === 0) {
-      return Response.json({ success: false, error: 'appId and text are required' }, { status: 400 });
-    }
+    body = await request.json();
+  } catch {
+    return json({ success: false, error: 'Request body must be valid JSON.' }, 400);
+  }
+  const appId = String(body?.appId || '').trim();
+  const text = String(body?.text || '').trim();
+  if (!appId || !text) return json({ success: false, error: 'appId and text are required' }, 400);
+  if (!APP_ID.test(appId)) return json({ success: false, error: 'Invalid appId.' }, 400);
+  if (text.length > MAX_COMMENT_LENGTH) return json({ success: false, error: `text must be ${MAX_COMMENT_LENGTH} characters or fewer` }, 400);
 
-    const cleanText = text.trim();
-    const commentId = `c_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-    const rawAuthor = author || 'nate';
-    const commentAuthor = rawAuthor.startsWith('@') ? rawAuthor : `@${rawAuthor}`;
-    const commentAvatar = avatar || '⚡';
-    const userId = `usr_${rawAuthor.replace(/^@/, '')}`;
-
-    if (env && env.DB) {
-      try {
-        await env.DB.prepare(`
-          INSERT INTO comments (id, app_id, user_id, text, upvotes)
-          VALUES (?, ?, ?, ?, 1)
-        `).bind(commentId, appId, userId, cleanText).run();
-      } catch {}
-    }
-
-    return Response.json({
-      success: true,
-      commentId,
-      comment: {
-        id: commentId,
-        appId,
-        author: commentAuthor,
-        avatar: commentAvatar,
-        text: cleanText,
-        time: 'Just now',
-        upvotes: 1
-      }
-    });
-  } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+  try {
+    const app = await env.DB.prepare('SELECT id FROM app_listings WHERE id = ?').bind(appId).first();
+    if (!app) return json({ success: false, error: 'App listing not found.' }, 404);
+    const commentId = `c_${crypto.randomUUID().replaceAll('-', '')}`;
+    await env.DB.prepare(`INSERT INTO comments (id, app_id, user_id, text, upvotes)
+      VALUES (?, ?, ?, ?, 0)`).bind(commentId, appId, auth.user.id, text).run();
+    const comment = await env.DB.prepare(`SELECT c.id, c.app_id AS appId, c.text, c.upvotes,
+      c.created_at AS time, u.username AS author, u.avatar_url AS avatar,
+      u.is_verified_maker AS isMaker
+      FROM comments c JOIN users u ON u.id = c.user_id WHERE c.id = ?`).bind(commentId).first();
+    if (!comment) return json({ success: false, error: 'Stored comment could not be confirmed.' }, 503);
+    return json({ success: true, commentId, comment }, 201);
+  } catch (error: any) {
+    return json({ success: false, error: `Comment persistence failed: ${error.message}` }, 503);
   }
 };
