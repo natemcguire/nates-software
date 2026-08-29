@@ -170,7 +170,12 @@ export class GitsmithSshTransport {
     if (this.config.sshEnabled !== true) return;
     if (!this.config.sshHost?.trim()) throw new Error('GITSMITH_SSH_HOST is required when SSH transport is enabled.');
     const hostKey = this.ensureHostKey();
-    this.server = new Server({ hostKeys: [hostKey], ident: 'SSH-2.0-GITSMITH' }, client => {
+    // ssh2 prepends the RFC 4253 `SSH-2.0-` protocol marker.
+    this.server = new Server({ hostKeys: [hostKey], ident: 'GITSMITH' }, client => {
+      // Probes such as ssh-keyscan intentionally try several incompatible
+      // algorithm sets and reset rejected sockets. Those are per-connection
+      // failures, not process-level transport failures.
+      client.on('error', () => {});
       client.on('authentication', (ctx: AuthContext) => {
         if (ctx.method !== 'publickey' || ctx.username !== 'git') return ctx.reject();
         const keyType = ctx.key.algo;

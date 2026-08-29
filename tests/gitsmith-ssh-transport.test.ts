@@ -55,6 +55,8 @@ describe('GITSMITH SSH transport', () => {
     await transport.start();
     const port = transport.getStatus().port!;
     expect(transport.getStatus()).toEqual(expect.objectContaining({ configured: true, active: true }));
+    const scanned = await execFileAsync('ssh-keyscan', ['-T', '5', '-p', String(port), '127.0.0.1']);
+    expect(scanned.stdout).toContain('ssh-ed25519');
 
     const checkout = path.join(root, 'checkout');
     const sshCommand = `ssh -i ${keyPath} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null`;
