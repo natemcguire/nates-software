@@ -291,8 +291,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
   // ==========================================================================
   // 3. GIT FORGE & CAS MERGE CONTRACTS (/api/git)
   // ==========================================================================
-  describe('3. GITSMITH Forge CAS & Ref Failure Contracts (/api/git)', () => {
-    it('should reject push with 400 when required fields are missing', async () => {
+  describe('3. GITSMITH control-plane boundary contracts (/api/git)', () => {
+    it('should reject unsupported control-plane actions', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -303,50 +303,53 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(res.status).toBe(400);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toContain('required fields');
+      expect(data.error).toContain('Supported control-plane action');
     });
 
-    it('should reject push with 400 for invalid git ref paths', async () => {
+    it('should reject direct ref mutation without the Git gateway', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: 'dronehunter',
+          action: 'ref-update',
+          repositoryId: 'dronehunter',
           ref: 'heads/main', // missing refs/ prefix
           newSha: '1111111111111111111111111111111111111111'
         })
       });
 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(501);
       const data = await res.json();
       expect(data.success).toBe(false);
     });
 
-    it('should reject push with 400 for invalid commit SHA format', async () => {
+    it('should reject caller-selected commit validation policy at this boundary', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: 'dronehunter',
+          action: 'ref-update',
+          repositoryId: 'dronehunter',
           ref: 'refs/heads/main',
           newSha: 'not_a_valid_sha'
         })
       });
 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(501);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toContain('Invalid commit SHA');
+      expect(data.error).toContain('GITSMITH gateway');
     });
 
-    it('should reject push with 403 on protected branches when signed commit is required but missing/invalid', async () => {
+    it('should not let a caller turn signature policy on or off', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: 'dronehunter',
+          action: 'ref-update',
+          repositoryId: 'dronehunter',
           ref: 'refs/heads/main',
           newSha: '2222222222222222222222222222222222222222',
           requireSignedCommit: true
@@ -354,19 +357,20 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       });
 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(501);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toContain('Protected ref requires signature');
+      expect(data.error).toContain('GITSMITH gateway');
     });
 
-    it('should reject push with 409 conflict when CAS expectedOldSha mismatches remote HEAD in D1', async () => {
+    it('should not treat a stale D1 projection as authoritative CAS state', async () => {
       // Seeded SHA for dronehunter refs/heads/main is '5c030af'
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: 'dronehunter',
+          action: 'cas',
+          repositoryId: 'dronehunter',
           ref: 'refs/heads/main',
           expectedOldSha: '0000000000000000000000000000000000000000', // Mismatch! Real remote is 5c030af
           newSha: '3333333333333333333333333333333333333333'
@@ -374,22 +378,21 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       });
 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(501);
       const data = await res.json();
 
       expect(data.success).toBe(false);
-      expect(data.stale).toBe(true);
-      expect(data.retryable).toBe(true);
-      expect(data.currentRemoteHeadSha).toBe('5c030af');
+      expect(data.error).toContain('GITSMITH gateway');
     });
 
-    it('should persist atomic CAS push to git_refs and git_commits in D1 when expectedOldSha matches', async () => {
+    it('should leave legacy D1 refs untouched when a direct CAS is attempted', async () => {
       const newSha = '4444444444444444444444444444444444444444';
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: 'dronehunter',
+          action: 'cas',
+          repositoryId: 'dronehunter',
           ref: 'refs/heads/main',
           expectedOldSha: '5c030af', // matches seeded remote HEAD
           newSha,
@@ -398,31 +401,29 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       });
 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(501);
       const data = await res.json();
-      expect(data.success).toBe(true);
+      expect(data.success).toBe(false);
 
       // Verify D1 ref table was updated
       const refInDb = await ctx.d1.prepare('SELECT sha FROM git_refs WHERE repo_id = ? AND ref = ?').bind('dronehunter', 'refs/heads/main').first();
-      expect((refInDb as any).sha).toBe(newSha);
+      expect((refInDb as any).sha).toBe('5c030af');
 
       // Verify D1 commit table has new commit row
       const commitInDb = await ctx.d1.prepare('SELECT * FROM git_commits WHERE sha = ?').bind(newSha).first();
-      expect(commitInDb).not.toBeNull();
-      expect((commitInDb as any).repo_id).toBe('dronehunter');
+      expect(commitInDb).toBeNull();
     });
 
-    it('should advertise real D1 ref SHA via Git Smart HTTP info-refs endpoint', async () => {
+    it('should reject incomplete smart HTTP advertisement from Pages Functions', async () => {
       const req = new Request('http://localhost/api/git?action=info-refs&appId=dronehunter&service=git-receive-pack', {
         method: 'GET'
       });
 
       const res = await gitApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(200);
-      expect(res.headers.get('Content-Type')).toBe('application/x-git-receive-pack-advertisement');
+      expect(res.status).toBe(501);
 
-      const body = await res.text();
-      expect(body).toContain('5c030af refs/heads/main');
+      const body = await res.json();
+      expect(body.error).toContain('GITSMITH gateway');
     });
   });
 
@@ -944,7 +945,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
      * If the committer user does not exist in `users`, the insert fails foreign key constraint,
      * but is caught in `try { ... } catch {}`.
      */
-    it('proves that Git Forge swallows auto-provisioning foreign key error when committer does not exist in D1', async () => {
+    it('proves that the control plane no longer auto-provisions listings from caller-controlled committers', async () => {
       const unknownAppId = 'app_auto_prov_test';
       const unknownCommitter = 'ghostcommitter_123';
       const newSha = '5555555555555555555555555555555555555555';
@@ -953,7 +954,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: unknownAppId,
+          action: 'cas',
+          repositoryId: unknownAppId,
           ref: 'refs/heads/main',
           newSha,
           committer: unknownCommitter
@@ -963,9 +965,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
-      // Current behavior: CAS returns success: true
-      expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
+      expect(res.status).toBe(501);
+      expect(data.success).toBe(false);
 
       // PROOF: App listing was NOT provisioned because creator_id 'usr_ghostcommitter_123' does not exist in users table
       const appInDb = await ctx.d1.prepare('SELECT * FROM app_listings WHERE id = ?').bind(unknownAppId).first();
