@@ -6,7 +6,12 @@ const envFor = (ctx: TestD1Context) => ({
   DB: ctx.d1,
   TERMINAL_TICKET_SECRET: 'ticket-secret-for-tests',
   TERMINAL_GATEWAY_URL: 'https://terminal.example.test',
-  TERMINAL_GATEWAY_SERVICE_SECRET: 'gateway-secret-for-tests'
+  TERMINAL_GATEWAY_SERVICE_SECRET: 'gateway-secret-for-tests',
+  __TERMINAL_GATEWAY_FETCH: async () => Response.json({
+    isProductionVps: true,
+    isolationType: 'vps',
+    features: { ephemeralWorkspaces: true, autoCleanup: true }
+  })
 });
 
 describe('ephemeral terminal ticket lifecycle', () => {
@@ -92,6 +97,26 @@ describe('ephemeral terminal ticket lifecycle', () => {
     expect(response.status).toBe(503);
     const body = await response.json() as any;
     expect(body.error).toContain('not configured');
+  });
+
+  it('does not mint or consume quota unless a production VPS gateway verifies cleanup', async () => {
+    const env = {
+      ...envFor(ctx),
+      __TERMINAL_GATEWAY_FETCH: async () => Response.json({
+        isProductionVps: false,
+        isolationType: 'process',
+        features: { ephemeralWorkspaces: true, autoCleanup: true }
+      })
+    };
+    const response = await terminalApi.onRequestPost({
+      request: new Request('https://nates-software.com/api/terminal-session', {
+        method: 'POST', headers: { Authorization: 'Bearer test_token_nate' }
+      }),
+      env
+    });
+    expect(response.status).toBe(503);
+    expect((await response.json() as any).error).toContain('VPS gateway is unavailable');
+    expect(await ctx.d1.prepare('SELECT count(*) AS count FROM terminal_session_tickets').first('count')).toBe(0);
   });
 
   it('enforces 10-ticket daily rate limit per user', async () => {

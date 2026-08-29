@@ -25,6 +25,32 @@ async function signTicket(payload: Record<string, unknown>, secret: string): Pro
   return `${encoded}.${base64Url(signature)}`;
 }
 
+async function productionGatewayReady(env: any): Promise<boolean> {
+  let gatewayUrl: URL;
+  try {
+    gatewayUrl = new URL(env.TERMINAL_GATEWAY_URL);
+  } catch {
+    return false;
+  }
+  if (gatewayUrl.protocol !== 'https:') return false;
+  const request = env.__TERMINAL_GATEWAY_FETCH || fetch;
+  try {
+    const capabilitiesUrl = new URL('/capabilities', gatewayUrl);
+    const response = await request(capabilitiesUrl.toString(), {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(4_000)
+    });
+    if (!response.ok) return false;
+    const capabilities = await response.json();
+    return capabilities?.isProductionVps === true
+      && capabilities?.isolationType === 'vps'
+      && capabilities?.features?.ephemeralWorkspaces === true
+      && capabilities?.features?.autoCleanup === true;
+  } catch {
+    return false;
+  }
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   const action = new URL(request.url).searchParams.get('action') || 'mint';
   if (!['mint', 'redeem', 'close'].includes(action)) {
@@ -78,6 +104,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   if (auth.errorResponse) return auth.errorResponse;
   if (!env.TERMINAL_TICKET_SECRET || !env.TERMINAL_GATEWAY_URL) {
     return Response.json({ success: false, error: 'Ephemeral terminal service is not configured' }, { status: 503 });
+  }
+  if (!(await productionGatewayReady(env))) {
+    return Response.json({
+      success: false,
+      error: 'Ephemeral VPS gateway is unavailable or has not verified its isolation and cleanup guarantees'
+    }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
 
   const now = Math.floor(Date.now() / 1000);
