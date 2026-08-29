@@ -77,6 +77,8 @@ export interface SlopFeatureManifest {
     readonly recommendedModel: string;
   };
   readonly lineageContract: {
+    readonly status: 'proposal_only';
+    readonly activation: 'verified commerce sale after publication';
     readonly makerHandle: string;
     readonly royaltySplit: {
       readonly maker: string;
@@ -657,6 +659,8 @@ export function generateFeatureManifest(params: {
       recommendedModel: toolMeta.recommendedModel
     },
     lineageContract: {
+      status: 'proposal_only',
+      activation: 'verified commerce sale after publication',
       makerHandle: handle,
       royaltySplit: {
         maker: '70%',
@@ -689,7 +693,7 @@ export function generateLocalAgentPlan(params: {
   const prompt = params.customPrompt || params.feature.prompt;
   const toolMeta = getAgentTool(params.agent);
   const sanitizedFeatureId = params.feature.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
-  const worktreeDir = params.customWorktreeDir || `/tmp/slop-${params.coordinate.appId}-${sanitizedFeatureId}`;
+  const worktreeDir = params.customWorktreeDir || '<worktree-path-printed-by-slop>';
   const branchName = `feature/${sanitizedFeatureId}`;
   const escapedPrompt = escapeShellDoubleQuotes(prompt);
 
@@ -712,23 +716,24 @@ export function generateLocalAgentPlan(params: {
       break;
   }
 
-  // Complete one-line terminal command
-  const singleLineCommand = `git clone ${params.coordinate.repoUrl} "${worktreeDir}" && cd "${worktreeDir}" && git checkout -b ${branchName} && ${agentInvokeCmd}`;
+  // Installation is authoritative and completes before SLOP offers to launch an
+  // engine. Never chain an agent process behind an unverified clone/install.
+  const singleLineCommand = `slop fork ${params.coordinate.slug}`;
 
   // 4 Concrete Local Workflow Steps
   const steps: LocalWorkflowStep[] = [
     {
       stepNumber: 1,
-      title: 'Clone into Isolated Local Worktree',
-      command: `git clone ${params.coordinate.repoUrl} "${worktreeDir}" && cd "${worktreeDir}" && git checkout -b ${branchName}`,
-      description: `Clones ${params.coordinate.name} into an isolated development folder to protect the production branch and app-owned runtime state.`,
-      requiredEvidence: 'Clean working directory created with git status OK'
+      title: 'Install into a Verified Local Worktree',
+      command: singleLineCommand,
+      description: `SLOP installs ${params.coordinate.name}, verifies the worktree, then asks which engine to start. Choose 0 if you want to save the manifest before launching an agent.`,
+      requiredEvidence: 'SLOP prints the created worktree path and successful install/test evidence'
     },
     {
       stepNumber: 2,
-      title: `Synthesize Feature with ${toolMeta.shortName}`,
-      command: agentInvokeCmd,
-      description: `Launches ${toolMeta.name} locally inside the isolated directory to modify ${params.feature.targetFiles.join(', ')}.`,
+      title: `Create Feature Branch & Start ${toolMeta.shortName}`,
+      command: `cd "${worktreeDir}" && git switch -c ${branchName} && ${agentInvokeCmd}`,
+      description: `After installation succeeds, create the feature branch and launch ${toolMeta.name} inside that verified worktree to modify ${params.feature.targetFiles.join(', ')}.`,
       requiredEvidence: 'Synthesized file changes matching specification prompt'
     },
     {

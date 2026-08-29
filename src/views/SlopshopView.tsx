@@ -88,8 +88,8 @@ export const SlopshopView: React.FC = () => {
     setCopiedMainCmd(true);
     setTimeout(() => setCopiedMainCmd(false), 2000);
     showAlert(
-      `Local agent launch command copied to clipboard!\n\n$ ${plan.singleLineCommand}\n\nPaste into your local workstation terminal to clone the worktree and run ${plan.agent.name}.`,
-      "Local Agent Command Copied",
+      `Verified install command copied!\n\n$ ${plan.singleLineCommand}\n\nSLOP completes the install first and only then asks which engine to start.`,
+      "Install Command Copied",
       "success"
     );
   };
@@ -463,10 +463,10 @@ export const SlopshopView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Maker Handle & Payout Royalty */}
+                {/* Draft attribution and conditional sale policy */}
                 <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between flex-wrap gap-3 font-mono text-xs">
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400">Maker Handle:</span>
+                    <span className="text-slate-400">Draft Maker Attribution:</span>
                     <input
                       type="text"
                       value={makerHandle}
@@ -476,7 +476,7 @@ export const SlopshopView: React.FC = () => {
                     />
                   </div>
                   <div className="text-slate-400 text-[11px] flex items-center gap-2">
-                    <span>Guaranteed Royalty Lineage:</span>
+                    <span>Proposed Sale Policy (verified only on publication + sale):</span>
                     <span className="text-emerald-400 font-bold">70% Maker</span>
                     <span>·</span>
                     <span className="text-sky-400">20% Root Ancestor</span>
@@ -492,7 +492,7 @@ export const SlopshopView: React.FC = () => {
                     className="bg-slate-800 hover:bg-slate-700 text-slate-100 px-4 py-2 rounded-lg font-mono font-bold flex items-center gap-2 border border-slate-700 transition-colors shadow"
                   >
                     {copiedMainCmd ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                    <span>Copy Local 1-Liner</span>
+                    <span>Copy Verified Install Command</span>
                   </button>
 
                   <button
@@ -502,7 +502,7 @@ export const SlopshopView: React.FC = () => {
                     }}
                     className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono px-5 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-all"
                   >
-                    <span>Generate Local Agent Command &amp; Manifest</span>
+                    <span>Review Post-Install Agent Plan &amp; Manifest</span>
                     <ArrowRight size={14} />
                   </button>
                 </div>
@@ -518,7 +518,7 @@ export const SlopshopView: React.FC = () => {
                 <div>
                   <div className="font-bold text-white font-mono text-xs flex items-center gap-2">
                     <Terminal size={15} className="text-amber-400" />
-                    <span>Local Terminal Execution Blueprint: {activePreset.name}</span>
+                    <span>Install-First Execution Blueprint: {activePreset.name}</span>
                   </div>
                   <div className="text-[11px] text-slate-400 font-mono mt-0.5">
                     Target: <span className="text-sky-300">{coordinate.name}</span> · Agent: <span className="text-amber-300">{plan.agent.name}</span> · Worktree: <code className="text-slate-300">{plan.worktreeDir}</code>
@@ -531,7 +531,7 @@ export const SlopshopView: React.FC = () => {
                     className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono px-4 py-1.5 rounded-md text-xs flex items-center gap-1.5 shadow transition-colors"
                   >
                     {copiedMainCmd ? <Check size={13} /> : <Copy size={13} />}
-                    <span>{copiedMainCmd ? 'Copied 1-Liner!' : 'Copy 1-Liner Command'}</span>
+                    <span>{copiedMainCmd ? 'Install Command Copied!' : 'Copy Install Command'}</span>
                   </button>
                 </div>
               </div>
@@ -541,7 +541,7 @@ export const SlopshopView: React.FC = () => {
                 <div className="flex items-center justify-between text-slate-400 text-[11px] font-mono border-b border-slate-800/80 pb-2">
                   <span className="flex items-center gap-1.5 text-slate-300 font-bold">
                     <Terminal size={12} className="text-emerald-400" />
-                    <span>WORKSTATION TERMINAL 1-LINER:</span>
+                    <span>WORKSTATION INSTALL COMMAND:</span>
                   </span>
                   <span className="text-emerald-400">Runs locally on your host shell</span>
                 </div>
@@ -551,7 +551,7 @@ export const SlopshopView: React.FC = () => {
                 </div>
 
                 <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between pt-1">
-                  <span>Isolates working directory at {plan.worktreeDir}</span>
+                  <span>SLOP prints the verified working directory after install</span>
                   <span>Branch: {plan.branchName}</span>
                 </div>
               </div>

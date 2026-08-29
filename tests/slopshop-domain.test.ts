@@ -129,6 +129,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(manifest.localAgent.tool).toBe('agy');
       expect(manifest.localAgent.command).toContain('agy "');
       expect(manifest.lineageContract.makerHandle).toBe('@josh');
+      expect(manifest.lineageContract.status).toBe('proposal_only');
+      expect(manifest.lineageContract.activation).toBe('verified commerce sale after publication');
       expect(manifest.lineageContract.royaltySplit.maker).toBe('70%');
       expect(manifest.lineageContract.royaltySplit.ancestor).toBe('20%');
       expect(manifest.evidenceRequirements.typecheckRequired).toBe(true);
@@ -160,12 +162,12 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       const plan = generateLocalAgentPlan({ coordinate: coord, feature, agent: 'slop' });
 
       expect(manifest.localAgent.command).toBe('slop mod refs/features/dh-radar/v1.0.0');
-      expect(plan.steps[1].command).toBe(manifest.localAgent.command);
-      expect(plan.singleLineCommand).toContain('slop mod refs/features/dh-radar/v1.0.0');
+      expect(plan.steps[1].command).toContain(manifest.localAgent.command);
+      expect(plan.singleLineCommand).toBe('slop fork nate/dronehunter');
       expect(plan.singleLineCommand).not.toContain('slop dyno');
     });
 
-    it('should generate concrete single-line terminal command for AGY', () => {
+    it('should install before offering to start AGY', () => {
       const coord = getAppCoordinate('dronehunter');
       const feature = getFeaturePresets('dronehunter')[0];
       const plan = generateLocalAgentPlan({
@@ -174,10 +176,11 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
         agent: 'agy'
       });
 
-      expect(plan.singleLineCommand).toContain('git clone https://github.com/natemcguire/dronehunter.git');
-      expect(plan.singleLineCommand).toContain('/tmp/slop-dronehunter-dh-radar');
-      expect(plan.singleLineCommand).toContain('git checkout -b feature/dh-radar');
-      expect(plan.singleLineCommand).toContain('agy "');
+      expect(plan.singleLineCommand).toBe('slop fork nate/dronehunter');
+      expect(plan.singleLineCommand).not.toContain('agy');
+      expect(plan.worktreeDir).toBe('<worktree-path-printed-by-slop>');
+      expect(plan.steps[1].command).toContain('git switch -c feature/dh-radar');
+      expect(plan.steps[1].command).toContain('agy "');
       expect(plan.steps.length).toBe(4);
       expect(plan.manifestJson).toContain('"appId": "dronehunter"');
     });
@@ -191,8 +194,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
         agent: 'claude'
       });
 
-      expect(plan.steps[0].title).toContain('Clone into Isolated Local Worktree');
-      expect(plan.steps[0].command).toContain('git clone');
+      expect(plan.steps[0].title).toContain('Install into a Verified Local Worktree');
+      expect(plan.steps[0].command).toBe('slop fork nate/certified-mailer');
       expect(plan.steps[0].requiredEvidence).toBeDefined();
 
       expect(plan.steps[1].title).toContain('Claude');
