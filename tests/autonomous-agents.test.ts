@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   HostedRigManager,
   AutonomousMergeWorker,
-  AgentCampaignManager
+  AgentCampaignManager,
+  type RigStorageSnapshotAdapter
 } from '../src/lib/autonomousAgents';
 import { createMergeJob } from '../src/lib/forgeDomain';
 
@@ -35,12 +36,29 @@ describe('Hosted RIG and Autonomous Agents Runtime', () => {
     expect(manager.getEnvironments().length).toBe(0);
   });
 
-  it('should take and restore real SQLite WAL point-in-time snapshots with checksums', () => {
+  it('should require a real provider for storage snapshots', () => {
     const manager = new HostedRigManager();
-    const snapshot = manager.snapshotWal('certified-mailer', '/data/certified-mailer.sqlite', 2048000);
+    expect(() => manager.snapshotWal('certified-mailer')).toThrow('no provider adapter');
+  });
 
-    expect(snapshot.snapshotId).toMatch(/^snap_certified-mailer_/);
-    expect(snapshot.sha256Checksum).toMatch(/^sha256_/);
+  it('should accept and restore provider-backed snapshots with validated evidence', () => {
+    const digest = 'a'.repeat(64);
+    const adapter: RigStorageSnapshotAdapter = {
+      createSnapshot: ({ appId, storagePath }) => ({
+        snapshotId: 'snap_provider_001',
+        appId,
+        sqlitePath: storagePath,
+        byteSize: 2048000,
+        sha256Checksum: digest,
+        createdAt: '2026-08-29T12:00:00.000Z'
+      }),
+      restoreSnapshot: () => ({ restored: true, evidenceDigest: 'b'.repeat(64) })
+    };
+    const manager = new HostedRigManager(adapter);
+    const snapshot = manager.snapshotWal('certified-mailer', '/data/certified-mailer.sqlite');
+
+    expect(snapshot.snapshotId).toBe('snap_provider_001');
+    expect(snapshot.sha256Checksum).toBe(digest);
     expect(snapshot.byteSize).toBe(2048000);
 
     const restoreRes = manager.restoreWal('certified-mailer', snapshot.snapshotId);

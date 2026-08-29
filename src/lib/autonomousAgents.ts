@@ -5,7 +5,7 @@
  * 1. Hosted ephemeral app environments with scale-to-zero and 256MB cap
  * 2. Autonomous AI merge workers with sandboxed test proofs
  * 3. Resource metering (MB-seconds, token velocity, IOPS)
- * 4. Real SQLite WAL snapshot and point-in-time restore
+ * 4. Provider-backed storage snapshots with validated evidence
  * 5. Agent inbox and multi-fork campaign fan-out
  * 6. Multi-runtime support (Browser WASM, Node Dyno, Micro-Container, Cloudflare Worker)
  */
@@ -42,6 +42,17 @@ export interface WalSnapshot {
   readonly createdAt: string;
 }
 
+export interface RigStorageSnapshotAdapter {
+  createSnapshot(input: {
+    readonly appId: string;
+    readonly storagePath: string;
+  }): WalSnapshot;
+  restoreSnapshot(input: {
+    readonly appId: string;
+    readonly snapshot: WalSnapshot;
+  }): { readonly restored: boolean; readonly evidenceDigest: string };
+}
+
 export interface AgentProposal {
   readonly id: string;
   readonly agentName: string;
@@ -70,6 +81,8 @@ export class HostedRigManager {
   private governor = new RigMemoryGovernor();
   private environments = new Map<string, HostedAppEnvironment>();
   private snapshots = new Map<string, WalSnapshot[]>();
+
+  public constructor(private readonly storageAdapter?: RigStorageSnapshotAdapter) {}
 
   public provisionEnvironment(params: {
     appId: string;
@@ -147,18 +160,22 @@ export class HostedRigManager {
     return reclaimed;
   }
 
-  public snapshotWal(appId: string, sqlitePath = `/data/${appId}.sqlite`, byteSize = 1048576): WalSnapshot {
-    const snapshotId = `snap_${appId}_${Date.now().toString(36)}`;
-    const sha256Checksum = `sha256_${Math.random().toString(36).substring(2, 12)}`;
-    
-    const snapshot: WalSnapshot = {
-      snapshotId,
-      appId,
-      sqlitePath,
-      byteSize,
-      sha256Checksum,
-      createdAt: new Date().toISOString()
-    };
+  public snapshotWal(appId: string, sqlitePath = `/data/${appId}.sqlite`): WalSnapshot {
+    if (!this.storageAdapter) {
+      throw new Error('Storage snapshot unavailable: no provider adapter is configured.');
+    }
+
+    const snapshot = this.storageAdapter.createSnapshot({ appId, storagePath: sqlitePath });
+    if (
+      snapshot.appId !== appId ||
+      snapshot.sqlitePath !== sqlitePath ||
+      !Number.isSafeInteger(snapshot.byteSize) ||
+      snapshot.byteSize < 0 ||
+      !/^[a-f0-9]{64}$/i.test(snapshot.sha256Checksum) ||
+      Number.isNaN(Date.parse(snapshot.createdAt))
+    ) {
+      throw new Error('Storage provider returned invalid snapshot evidence.');
+    }
 
     const list = this.snapshots.get(appId) || [];
     list.push(snapshot);
@@ -174,10 +191,16 @@ export class HostedRigManager {
       throw new Error(`Snapshot ${snapshotId} not found for app ${appId}`);
     }
 
-    return {
-      restored: true,
-      snapshot
-    };
+    if (!this.storageAdapter) {
+      throw new Error('Storage restore unavailable: no provider adapter is configured.');
+    }
+
+    const result = this.storageAdapter.restoreSnapshot({ appId, snapshot });
+    if (!result.restored || !/^[a-f0-9]{64}$/i.test(result.evidenceDigest)) {
+      throw new Error('Storage provider did not return valid restore evidence.');
+    }
+
+    return { restored: true, snapshot };
   }
 
   public getEnvironments(): HostedAppEnvironment[] {
