@@ -757,6 +757,31 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
         protocol: 'ssh', configured: false, active: false
       }));
     });
+
+    it('reports the externally reachable SSH proxy port instead of the internal listener port', async () => {
+      const checker = new GatewayHealthChecker();
+      checker.setTransportStatus({
+        protocol: 'ssh', configured: true, active: true,
+        host: 'forge.proxy.example', port: 10609
+      });
+      const config = {
+        reposRoot: tempRoot,
+        controlPlaneUrl: 'http://localhost:8788',
+        gatewayToken: GATEWAY_SECRET,
+        sshEnabled: true,
+        sshHost: 'forge.proxy.example',
+        sshPort: 2222,
+        sshPublicPort: 10609
+      };
+      const fetchOk: typeof fetch = async () => Response.json({ success: true, claimed: [] });
+      const dispatcher = new ForgeOutboxDispatcher(config, { fetchOverride: fetchOk });
+      dispatcher.startPolling(10_000);
+      const readiness = await checker.getReadiness(config, dispatcher, true, fetchOk);
+      dispatcher.stopPolling();
+      expect(readiness.checks.transport).toEqual(expect.objectContaining({
+        active: true, host: 'forge.proxy.example', port: 10609
+      }));
+    });
   });
 
   // =========================================================================

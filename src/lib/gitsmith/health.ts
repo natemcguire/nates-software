@@ -149,8 +149,8 @@ export class GatewayHealthChecker {
           protocol: 'ssh',
           configured: transportConfigured,
           active: transportActive,
-          host: config.sshHost || undefined,
-          port: config.sshPort,
+          host: this.transportStatus.host || config.sshHost || undefined,
+          port: this.transportStatus.port || config.sshPublicPort || config.sshPort,
           error: transportError
         }
       },
