@@ -753,6 +753,9 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
       expect(active.ready).toBe(true);
       expect(active.checks.git.available).toBe(true);
       expect(active.checks.storage.writable).toBe(true);
+      expect(active.checks.transport).toEqual(expect.objectContaining({
+        protocol: 'ssh', configured: false, active: false
+      }));
     });
   });
 

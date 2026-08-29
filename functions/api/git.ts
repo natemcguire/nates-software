@@ -51,7 +51,13 @@ async function gatewayReadiness(env: any) {
         git: payload?.checks?.git?.available === true,
         storage: payload?.checks?.storage?.writable === true,
         controlPlane: payload?.checks?.controlPlane?.reachable === true,
-        dispatcher: payload?.checks?.dispatcher?.running === true
+        dispatcher: payload?.checks?.dispatcher?.running === true,
+        transport: payload?.checks?.transport?.active === true
+      },
+      transport: {
+        protocol: 'ssh',
+        configured: payload?.checks?.transport?.configured === true,
+        active: payload?.checks?.transport?.active === true
       },
       checkedAt: payload?.timestamp || new Date().toISOString()
     };

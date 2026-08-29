@@ -15,6 +15,9 @@ export const DEFAULT_DEV_CONFIG: GatewayConfig = {
   reposRoot: path.resolve(process.cwd(), '.gitsmith-repos'),
   controlPlaneUrl: 'http://localhost:8788',
   gatewayToken: '',
+  sshEnabled: false,
+  sshHost: '',
+  sshPort: 22,
   productionEnabled: false,
   isProduction: false,
   port: 8789,
@@ -204,6 +207,9 @@ export function loadGatewayConfigFromEnv(env: Record<string, string | undefined>
     : (isProd ? '' : DEFAULT_DEV_CONFIG.controlPlaneUrl);
 
   const gatewayToken = env.GITSMITH_GATEWAY_TOKEN?.trim() || '';
+  const sshEnabled = env.GITSMITH_SSH_ENABLED === 'true';
+  const sshHost = env.GITSMITH_SSH_HOST?.trim() || '';
+  const sshPort = env.GITSMITH_SSH_PORT ? parseInt(env.GITSMITH_SSH_PORT, 10) : 22;
 
   const productionEnabled = env.GITSMITH_PRODUCTION_ENABLED === 'true';
 
@@ -218,6 +224,9 @@ export function loadGatewayConfigFromEnv(env: Record<string, string | undefined>
     reposRoot,
     controlPlaneUrl,
     gatewayToken,
+    sshEnabled,
+    sshHost,
+    sshPort: isNaN(sshPort) ? 22 : sshPort,
     productionEnabled,
     isProduction: isProd,
     port: isNaN(port!) ? DEFAULT_DEV_CONFIG.port : port,

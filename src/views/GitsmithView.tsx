@@ -220,6 +220,7 @@ export const GitsmithView: React.FC = () => {
   const [showBundledExamples, setShowBundledExamples] = useState(false);
   const [gatewayReady, setGatewayReady] = useState(false);
   const [gatewayCheckState, setGatewayCheckState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
+  const [transportReady, setTransportReady] = useState(false);
   const [showCreateRepo, setShowCreateRepo] = useState(false);
   const [newRepoSlug, setNewRepoSlug] = useState('');
   const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
@@ -254,9 +255,11 @@ export const GitsmithView: React.FC = () => {
       const payload = await response.json();
       const ready = response.ok && payload?.success === true && payload?.ready === true;
       setGatewayReady(ready);
+      setTransportReady(payload?.transport?.active === true);
       setGatewayCheckState(ready ? 'ready' : 'unavailable');
     } catch {
       setGatewayReady(false);
+      setTransportReady(false);
       setGatewayCheckState('unavailable');
     }
   };
@@ -413,7 +416,11 @@ export const GitsmithView: React.FC = () => {
           </div>
           <div className={`flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 ${gatewayCheckState === 'ready' ? 'text-emerald-400' : gatewayCheckState === 'checking' ? 'text-amber-400' : 'text-red-400'}`}>
             <CircleDot size={14} />
-            <span>{gatewayCheckState === 'ready' ? 'Gateway ready' : gatewayCheckState === 'checking' ? 'Checking gateway' : 'Gateway unavailable'}</span>
+            <span>{gatewayCheckState === 'ready' ? 'Storage gateway ready' : gatewayCheckState === 'checking' ? 'Checking gateway' : 'Gateway unavailable'}</span>
+          </div>
+          <div className={`flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 ${transportReady ? 'text-emerald-400' : 'text-amber-400'}`}>
+            <GitBranch size={14} />
+            <span>{transportReady ? 'SSH transport ready' : 'SSH transport pending'}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-amber-400">
             <Sparkles size={14} />
@@ -640,6 +647,9 @@ export const GitsmithView: React.FC = () => {
 
                 <button
                   onClick={() => {
+                    if (selectedRepo.source === 'canonical' && !transportReady) {
+                      return showAlert('This repository is provisioned, but GITSMITH SSH transport has not been activated. No fork or remote was created.', 'SSH Transport Pending', 'error');
+                    }
                     playSuccessChime();
                     setShowForkModal(true);
                   }}
@@ -652,7 +662,12 @@ export const GitsmithView: React.FC = () => {
                 </button>
 
                 <button
-                  onClick={() => handleCopyClone(selectedRepo)}
+                  onClick={() => {
+                    if (selectedRepo.source === 'canonical' && !transportReady) {
+                      return showAlert('No install command was copied because the canonical repository has no active SSH transport yet.', 'SSH Transport Pending', 'error');
+                    }
+                    handleCopyClone(selectedRepo);
+                  }}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
                   title="Copy SLOP install command"
                 >

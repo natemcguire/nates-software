@@ -57,6 +57,7 @@ describe('GITSMITH canonical repository view model', () => {
 
     expect(html).toContain('LOADING CANONICAL FORGE');
     expect(html).toContain('Loading the forge');
+    expect(html).toContain('SSH transport pending');
     expect(html).not.toContain('nate/dronehunter');
     expect(html).not.toContain('$35.00 / $50.00');
   });

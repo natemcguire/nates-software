@@ -12,7 +12,8 @@ describe('GITSMITH public gateway readiness projection', () => {
         git: { available: true, version: '2.39.5' },
         storage: { writable: true, root: '/secret/path' },
         controlPlane: { reachable: true, url: 'https://internal.example' },
-        dispatcher: { running: true, processedCount: 12 }
+        dispatcher: { running: true, processedCount: 12 },
+        transport: { protocol: 'ssh', configured: false, active: false }
       }
     }));
 
@@ -32,7 +33,8 @@ describe('GITSMITH public gateway readiness projection', () => {
       ready: true,
       configured: true,
       active: true,
-      checks: { git: true, storage: true, controlPlane: true, dispatcher: true },
+      checks: { git: true, storage: true, controlPlane: true, dispatcher: true, transport: false },
+      transport: { protocol: 'ssh', configured: false, active: false },
       checkedAt: '2026-08-29T20:41:05.510Z'
     });
     expect(JSON.stringify(payload)).not.toContain('/secret/path');

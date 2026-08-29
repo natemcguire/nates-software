@@ -90,6 +90,15 @@ export class GatewayHealthChecker {
     // 4. Probe Dispatcher stats
     const dispatcherStats = dispatcher ? dispatcher.getStats() : { running: false, processedCount: 0, lastPolledAt: null };
 
+    // Provisioning readiness and end-user Git transport readiness are distinct.
+    // The current gateway may safely own bare storage and outbox work without
+    // claiming that makers can clone or push over SSH.
+    const transportConfigured = config.sshEnabled === true && Boolean(config.sshHost?.trim());
+    const transportActive = false;
+    const transportError = transportConfigured
+      ? 'SSH transport is configured but no active SSH listener has attested readiness.'
+      : 'SSH transport is not configured.';
+
     // Truthful distinction between configured and active
     const isConfigured = storageConfigured && cpConfigured && Boolean(config.gatewayToken);
     const isActive =
@@ -130,6 +139,14 @@ export class GatewayHealthChecker {
           running: dispatcherStats.running,
           processedCount: dispatcherStats.processedCount,
           lastPolledAt: dispatcherStats.lastPolledAt || undefined
+        },
+        transport: {
+          protocol: 'ssh',
+          configured: transportConfigured,
+          active: transportActive,
+          host: config.sshHost || undefined,
+          port: config.sshPort,
+          error: transportError
         }
       },
       timestamp: new Date().toISOString()

@@ -7,6 +7,9 @@ export interface GatewayConfig {
   readonly reposRoot: string;
   readonly controlPlaneUrl: string;
   readonly gatewayToken: string;
+  readonly sshEnabled?: boolean;
+  readonly sshHost?: string;
+  readonly sshPort?: number;
   readonly productionEnabled?: boolean;
   readonly isProduction?: boolean;
   readonly port?: number;
@@ -191,6 +194,14 @@ export interface GatewayReadinessStatus {
       readonly running: boolean;
       readonly processedCount: number;
       readonly lastPolledAt?: string;
+    };
+    readonly transport: {
+      readonly protocol: 'ssh';
+      readonly configured: boolean;
+      readonly active: boolean;
+      readonly host?: string;
+      readonly port?: number;
+      readonly error?: string;
     };
   };
   readonly timestamp: string;
