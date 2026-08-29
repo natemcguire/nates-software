@@ -155,7 +155,7 @@ export const SHELF_TITLES = [
 
 export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandResult {
   const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/dronehunter";
-  const appId = slug.includes("/") ? slug.split("/")[1] : slug;
+  const appId = (slug.replace(/\/+$/, '').split('/').pop() || slug).replace(/\.git$/i, '');
   const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
   const targetDir = destDirArg || `${cwd}/${appId}`;
 
@@ -336,14 +336,24 @@ export function handleFork(slugArg?: string): SlopCommandResult {
         fsMod.mkdirSync(worktreePath, { recursive: true });
       }
 
-      // Check if local source project exists
+      // Resolve a real canonical source. Missing titles fail; SLOP never creates
+      // an unrelated starter and calls it a fork.
       if (slug.startsWith("file://") || slug.startsWith("/") || fsMod.existsSync(slug)) {
         const sourcePath = slug.startsWith("file://") ? slug.slice(7) : slug;
-        if (fsMod.existsSync(sourcePath)) {
-          try {
-            runCommandSync(`git clone --depth 1 file://${sourcePath} "${worktreePath}"`, { stdio: "pipe", timeout: 8000, throwError: true });
-          } catch {}
+        if (!fsMod.existsSync(sourcePath)) throw new Error(`Canonical source does not exist: ${sourcePath}`);
+        runCommandSync(`git clone --depth 1 file://${sourcePath} "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+      } else if (appId === 'picfitai') {
+        runCommandSync(`git clone --depth 1 "https://github.com/natemcguire/picfitai.git" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
+      } else if (appId === 'certified-mailer') {
+        const pathMod = getPath();
+        const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
+        const localCanonical = pathMod?.resolve(pathMod.dirname(modulePath), '../../certified-mailer');
+        if (!localCanonical || !fsMod.existsSync(`${localCanonical}/.git`)) {
+          throw new Error('Certified Mailer has no published canonical Git source yet; no placeholder fork was created.');
         }
+        runCommandSync(`git clone --depth 1 file://${localCanonical} "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+      } else if (appId !== 'dronehunter') {
+        throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
       }
 
       // Drone Hunter ships with SLOP as a complete, dependency-free starter.
@@ -368,36 +378,12 @@ export function handleFork(slugArg?: string): SlopCommandResult {
         fsMod.writeFileSync(`${worktreePath}/README.md`, `# Drone Hunter 95\n\nA dependency-free, local browser arcade game.\n\nRun \`npm run dev\`, then open the printed local URL. Scores and preferences remain in this browser's local storage.\n`);
       }
 
-      // If not cloned from local, create a real runnable project template in worktree
-      if (!fsMod.existsSync(`${worktreePath}/package.json`)) {
-        const starterPkg = {
-          name: `${appId}-fork`,
-          version: "1.0.0",
-          description: `Fork of ${slug}. Go Fork, and Multiply!`,
-          scripts: {
-            dev: "vite --port " + port,
-            build: "vite build"
-          },
-          dependencies: {
-            react: "^19.0.0",
-            "react-dom": "^19.0.0"
-          }
-        };
-        fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify(starterPkg, null, 2) + "\n");
-        fsMod.writeFileSync(`${worktreePath}/README.md`, `# 🚀 ${appId}\nForked from ${slug}. Go Fork, and Multiply!\n`);
-        fsMod.writeFileSync(`${worktreePath}/slop.json`, JSON.stringify({ name: appId, price: 15, handle: "nate" }, null, 2) + "\n");
-
-        // Initialize real git repo
-        try {
-          runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 5000, throwError: true });
-          runCommandSync(`git -C "${worktreePath}" config user.name "Nate McGuire"`, { stdio: "pipe", timeout: 3000, throwError: true });
-          runCommandSync(`git -C "${worktreePath}" config user.email "nate@nates-software.com"`, { stdio: "pipe", timeout: 3000, throwError: true });
-          runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 3000, throwError: true });
-          runCommandSync(`git -C "${worktreePath}" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 5000, throwError: true });
-          runCommandSync(`git -C "${worktreePath}" remote add slop ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`, { stdio: "pipe", timeout: 3000 });
-        } catch (gitErr: any) {
-          throw new Error(`Git initialization failed: ${gitErr.message}`);
-        }
+      // A fork without canonical source content is a failure, never a generated
+      // template with invented ancestry.
+      const hasProjectManifest = ['package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'index.html']
+        .some(name => fsMod.existsSync(`${worktreePath}/${name}`));
+      if (!hasProjectManifest) {
+        throw new Error(`Canonical source for ${slug} did not contain a recognized runnable project; no placeholder fork was created.`);
       }
 
       // A copied bundled starter still needs a real Git repository before the
@@ -406,7 +392,6 @@ export function handleFork(slugArg?: string): SlopCommandResult {
         runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
         runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 15000, throwError: true });
         runCommandSync(`git -C "${worktreePath}" -c user.name="SLOP Installer" -c user.email="installer@nates-software.com" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 15000, throwError: true });
-        runCommandSync(`git -C "${worktreePath}" remote add slop ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`, { stdio: "pipe", timeout: 3000 });
       }
 
       if (!fsMod.existsSync(worktreePath)) {
@@ -416,12 +401,13 @@ export function handleFork(slugArg?: string): SlopCommandResult {
   } catch (err: any) {
     forkError = err.stderr ? err.stderr.toString().trim() : (err.message || 'Fork failed');
     success = false;
+    try { getFs()?.rmSync(worktreePath, { recursive: true, force: true }); } catch {}
   }
 
   const output = [
     `[SLOP] ${success ? 'Forked' : 'Failed to fork'} ${slug} into isolated worktree ${worktreePath}...`,
     success ? `  ✔ Created directory on disk: ${worktreePath}` : `  ✖ Error: ${forkError}`,
-    success ? `  ✔ Git remote "slop" configured` : ``,
+    success ? `  ✔ Canonical Git ancestry preserved (publication remote not provisioned)` : ``,
     success ? `  ✔ Suggested local dev port: ${port}` : ``,
     success ? `  ✔ RIG resource profile available: ${MEMORY_CAP_MB}MB cap (not started)` : ``,
     success ? `  ✔ Installation complete. No LLM or IDE was launched.` : ``,
@@ -504,10 +490,8 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         targetRemote = args[0];
       } else if (remotes.includes("slop")) {
         targetRemote = "slop";
-      } else if (remotes.includes("origin")) {
-        targetRemote = "origin";
       } else {
-        throw new Error('No Git remote is configured. Add a reachable repository remote before pushing.');
+        throw new Error('No provisioned "slop" publication remote is configured. SLOP will not push the upstream origin.');
       }
 
       // 5. Execute git push with strict connect timeout

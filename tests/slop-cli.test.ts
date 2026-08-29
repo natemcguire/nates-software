@@ -67,6 +67,13 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.slug).toBe('nate/certified-mailer');
       expect(res.data.appId).toBe('certified-mailer');
     });
+
+    it('should reject unknown titles without inventing a starter project', () => {
+      const res = handleFork('nate/unknown-title');
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('no placeholder fork was created');
+      expect(existsSync(res.data.worktreePath)).toBe(false);
+    });
   });
 
   describe('slop test', () => {

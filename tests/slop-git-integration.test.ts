@@ -132,6 +132,23 @@ describe('Local Bare Repository Git Integration', () => {
     expect(pushRes.data.error).toBeDefined();
   });
 
+  it('should never push an upstream origin when no provisioned slop remote exists', () => {
+    const originOnlyPath = join(testRootDir, 'origin-only-work-app');
+    mkdirSync(originOnlyPath, { recursive: true });
+    execSync('git init -b main', { cwd: originOnlyPath, stdio: 'pipe' });
+    execSync('git config user.name "Nate McGuire"', { cwd: originOnlyPath, stdio: 'pipe' });
+    execSync('git config user.email "nate@nates-software.com"', { cwd: originOnlyPath, stdio: 'pipe' });
+    writeFileSync(join(originOnlyPath, 'README.md'), '# Origin must remain untouched\n');
+    execSync('git add -A && git commit -m "initial"', { cwd: originOnlyPath, stdio: 'pipe' });
+    execSync(`git remote add origin "file://${bareRepoPath}"`, { cwd: originOnlyPath, stdio: 'pipe' });
+
+    process.chdir(originOnlyPath);
+    const pushRes = handlePush();
+    expect(pushRes.success).toBe(false);
+    expect(pushRes.data.pushedGit).toBe(false);
+    expect(pushRes.data.error).toContain('No provisioned "slop" publication remote');
+  });
+
   it('should fail truthfully when pushing from a non-git directory', () => {
     const nonGitDir = join(testRootDir, 'plain-folder');
     mkdirSync(nonGitDir, { recursive: true });
@@ -165,7 +182,7 @@ describe('Local Bare Repository Git Integration', () => {
   });
 
   it('should fork a project into an isolated real worktree with git repository initialized', () => {
-    const forkRes = handleFork('retro-arcade');
+    const forkRes = handleFork(workRepoPath);
 
     expect(forkRes.success).toBe(true);
     expect(forkRes.command).toBe('fork');
@@ -176,11 +193,17 @@ describe('Local Bare Repository Git Integration', () => {
     const worktreePath = forkRes.data.worktreePath;
     expect(existsSync(worktreePath)).toBe(true);
     expect(existsSync(join(worktreePath, 'package.json'))).toBe(true);
-    expect(existsSync(join(worktreePath, 'slop.json'))).toBe(true);
     expect(existsSync(join(worktreePath, 'README.md'))).toBe(true);
     expect(existsSync(join(worktreePath, '.git'))).toBe(true);
 
     // Clean up created worktree
     rmSync(worktreePath, { recursive: true, force: true });
+  });
+
+  it('never fabricates a placeholder when canonical fork source is missing', () => {
+    const forkRes = handleFork('nate/not-a-real-title');
+    expect(forkRes.success).toBe(false);
+    expect(forkRes.message).toContain('no placeholder fork was created');
+    expect(existsSync(forkRes.data.worktreePath)).toBe(false);
   });
 });
