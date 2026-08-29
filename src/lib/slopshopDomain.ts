@@ -631,7 +631,7 @@ export function generateFeatureManifest(params: {
       agentCmd = `claude "${escaped}"`;
       break;
     case 'slop':
-      agentCmd = `slop fork ${params.coordinate.slug}`;
+      agentCmd = `slop mod refs/features/${params.feature.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-')}/v1.0.0`;
       break;
     case 'aider':
       agentCmd = `aider --message "${escaped}"`;
@@ -711,7 +711,7 @@ export function generateLocalAgentPlan(params: {
       agentInvokeCmd = `claude "${escapedPrompt}"`;
       break;
     case 'slop':
-      agentInvokeCmd = `slop dyno --bench`;
+      agentInvokeCmd = `slop mod refs/features/${sanitizedFeatureId}/v1.0.0`;
       break;
     case 'aider':
       agentInvokeCmd = `aider --message "${escapedPrompt}"`;

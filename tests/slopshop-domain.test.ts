@@ -152,6 +152,18 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
   });
 
   describe('Local Agent Plan & Command Generation', () => {
+    it('should hand the same feature ref to SLOP in the manifest and local plan', () => {
+      const coord = getAppCoordinate('dronehunter');
+      const feature = getFeaturePresets('dronehunter')[0];
+      const manifest = generateFeatureManifest({ coordinate: coord, feature, agent: 'slop' });
+      const plan = generateLocalAgentPlan({ coordinate: coord, feature, agent: 'slop' });
+
+      expect(manifest.localAgent.command).toBe('slop mod refs/features/dh-radar/v1.0.0');
+      expect(plan.steps[1].command).toBe(manifest.localAgent.command);
+      expect(plan.singleLineCommand).toContain('slop mod refs/features/dh-radar/v1.0.0');
+      expect(plan.singleLineCommand).not.toContain('slop dyno');
+    });
+
     it('should generate concrete single-line terminal command for AGY', () => {
       const coord = getAppCoordinate('dronehunter');
       const feature = getFeaturePresets('dronehunter')[0];
