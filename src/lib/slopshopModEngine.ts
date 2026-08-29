@@ -1072,7 +1072,9 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     `  ✔ Applied ${applyResult.applied.length} file change(s) with a reversible transaction snapshot`,
     testResult ? `  ✔ Repository tests (${testResult.executable} ${testResult.args.join(' ')}): ${testResult.passed ? 'PASSED' : 'FAILED'} in ${testResult.durationMs}ms` : '  ✔ Test execution skipped by configuration',
     `  ✔ Evidence digest: ${evidenceDigest}`,
-    `\n🚀 Feature modification verified! Publication is an explicit separate step:\n   Run "slop push" to publish to GITSMITH and deploy to Hotwire.`
+    `\nFeature modification verified locally. Publication is a separate explicit step.\n` +
+      `Review and commit the changes, then use "slop push" only after configuring the intended Git remote. ` +
+      `That command pushes Git; it does not deploy or publish a HOTWIRE listing.`
   ].join('\n');
 
   return {
