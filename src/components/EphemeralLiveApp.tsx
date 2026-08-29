@@ -4,6 +4,7 @@ import { ExternalLink, Shield } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 import { CertifiedMailerStudio } from './CertifiedMailerStudio';
 import { PicFitStudio } from './PicFitStudio';
+import { WallArtStudio } from './WallArtStudio';
 
 interface EphemeralLiveAppProps {
   app: AppListing;
@@ -23,9 +24,15 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
-          <span className="bg-yellow-100 text-yellow-900 px-2 py-0.5 rounded border border-yellow-300 flex items-center gap-1 font-bold">
-            <Shield size={11} /> 2 / 10 Max Sessions
-          </span>
+          {app.id === 'wallart' ? (
+            <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold">
+              <Shield size={11} /> Client-Side Sandbox
+            </span>
+          ) : (
+            <span className="bg-yellow-100 text-yellow-900 px-2 py-0.5 rounded border border-yellow-300 flex items-center gap-1 font-bold">
+              <Shield size={11} /> 2 / 10 Max Sessions
+            </span>
+          )}
           <a
             href={liveUrl}
             target="_blank"
@@ -54,9 +61,28 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
           <div className="flex-1 overflow-hidden">
             <CertifiedMailerStudio />
           </div>
-        ) : (
+        ) : app.id === 'picfitai' ? (
           <div className="flex-1 overflow-hidden">
             <PicFitStudio />
+          </div>
+        ) : app.id === 'wallart' ? (
+          <div className="flex-1 overflow-hidden">
+            <WallArtStudio />
+          </div>
+        ) : (
+          <div className="flex-1 bg-[#ece9d8] p-8 flex flex-col items-center justify-center text-center font-tahoma">
+            <div className="bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black p-6 max-w-md shadow-md">
+              <div className="text-2xl mb-2">⚠️</div>
+              <h2 className="font-bold text-sm text-gray-900 mb-2">Application Sandbox Unavailable</h2>
+              <p className="text-xs text-gray-700 mb-4">
+                No interactive sandbox runner is registered for &quot;{app.name}&quot; ({app.id}).
+              </p>
+              <div className="bg-white border border-gray-400 p-2 text-[11px] font-mono text-gray-600 text-left">
+                Status: UNREGISTERED_SANDBOX_RUNTIME<br />
+                App ID: {app.id}<br />
+                Version: {app.version}
+              </div>
+            </div>
           </div>
         )}
       </div>

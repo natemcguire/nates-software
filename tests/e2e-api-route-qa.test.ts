@@ -20,10 +20,10 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
   // 1. Data Integrity & Invariants (No Mock Leakage)
   describe('1. Data Integrity & App Catalog Invariants', () => {
-    it('should strictly contain exactly 3 shareware titles', () => {
-      expect(INITIAL_APPS.length).toBe(3);
+    it('should strictly contain real shareware titles', () => {
+      expect(INITIAL_APPS.length).toBe(4);
       const appIds = INITIAL_APPS.map(a => a.id);
-      expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'picfitai']);
+      expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'picfitai', 'wallart']);
     });
 
     it('should have matching GITSMITH repositories with valid owners and files', () => {

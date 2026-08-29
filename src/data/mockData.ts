@@ -211,6 +211,50 @@ export const INITIAL_APPS: AppListing[] = [
         isMaker: true
       }
     ]
+  },
+  {
+    id: 'wallart',
+    name: 'WallArt Canvas Pro',
+    tagline: 'Interactive Canvas Split & Living Room Wall Art Studio',
+    description: 'Browser-first wall art visualizer and source-resolution inspector. Supports single, triptych, and 4-grid canvas splits with finish previews, custom wall colors, and a 300-PPI target comparison.',
+    author: 'nate',
+    authorAvatar: '🖼️',
+    creator: 'nate',
+    creatorAvatar: '🖼️',
+    version: 'v1.0.0',
+    upvotes: 345,
+    forkCount: 52,
+    forks: 52,
+    tags: ['Wall Art', 'Canvas', 'Print', 'Design', 'Browser-First'],
+    liveUrl: 'https://wallart.nates-software.com',
+    liveAppUrl: 'https://wallart.nates-software.com',
+    sqliteDatabase: '',
+    storage: 'Session-only browser memory; source photos are not uploaded',
+    sqliteSize: 'Not applicable',
+    moddabilityScore: 96,
+    mergeCleanliness: '100% Clean',
+    price: 59.00,
+    badge: 'Staff Pick',
+    makerPitch: 'Preview a photo across single, triptych, and 4-grid layouts, then compare its cropped pixel dimensions with a 300-PPI target before choosing a printer.',
+    voters: [
+      { name: 'Nate McGuire', handle: '@nate', avatar: '🖼️' },
+      { name: 'Josh McGuire', handle: '@josh', avatar: '⛵' },
+      { name: 'Sam (AI)', handle: '@sam', avatar: '🤖' }
+    ],
+    screenshots: [
+      'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=800&q=80'
+    ],
+    isDemo: true,
+    comments: [
+      {
+        id: 'c-wa-1',
+        author: 'Nate McGuire (@nate)',
+        avatar: '🖼️',
+        text: 'Maker Note: The browser keeps your source photo local and compares the active crop with a 300-PPI target. Printer-specific production checks remain with your print provider.',
+        timestamp: '12:01 AM UTC',
+        isMaker: true
+      }
+    ]
   }
 ];
 
