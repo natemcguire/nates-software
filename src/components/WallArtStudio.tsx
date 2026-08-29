@@ -28,7 +28,8 @@ import {
   DEFAULT_WIDTH_INCHES,
   DEFAULT_HEIGHT_INCHES,
   DEFAULT_PANEL_GAP_INCHES,
-  PrintReadinessReport
+  PrintReadinessReport,
+  buildWallArtProductionManifest
 } from '../lib/wallartDomain';
 
 export const WallArtStudio: React.FC = () => {
@@ -40,6 +41,7 @@ export const WallArtStudio: React.FC = () => {
     name: string;
     size: number;
     type: string;
+    sha256: string;
   } | null>(null);
 
   // Studio Configuration State
@@ -100,7 +102,7 @@ export const WallArtStudio: React.FC = () => {
     activeUrlRef.current = newUrl;
 
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       if (attempt !== decodeAttemptRef.current) {
         URL.revokeObjectURL(newUrl);
         return;
@@ -115,13 +117,34 @@ export const WallArtStudio: React.FC = () => {
         return;
       }
 
+      let sha256: string;
+      try {
+        const digestBytes = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+        if (attempt !== decodeAttemptRef.current) {
+          URL.revokeObjectURL(newUrl);
+          return;
+        }
+        sha256 = Array.from(digestBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+      } catch {
+        if (attempt !== decodeAttemptRef.current) {
+          URL.revokeObjectURL(newUrl);
+          return;
+        }
+        URL.revokeObjectURL(newUrl);
+        activeUrlRef.current = null;
+        setStatus('error');
+        setErrorMessage('Failed to fingerprint the source image. Please try the upload again.');
+        setStatusMessage('Error: Failed to fingerprint source image.');
+        return;
+      }
       setImageUrl(newUrl);
       setImageMeta({
         width: img.naturalWidth,
         height: img.naturalHeight,
         name: file.name,
         size: file.size,
-        type: file.type
+        type: file.type,
+        sha256
       });
       setStatus('ready');
       setStatusMessage(`Loaded "${file.name}" (${img.naturalWidth}×${img.naturalHeight} px). Ready for print inspection.`);
@@ -348,6 +371,33 @@ export const WallArtStudio: React.FC = () => {
       setErrorMessage(err.message || 'Failed to export client preview.');
       setStatusMessage(`Export error: ${err.message}`);
     }
+  };
+
+  const handleExportProductionSpec = () => {
+    if (!imageMeta || !readinessReport) return;
+    const manifest = buildWallArtProductionManifest({
+      source: {
+        name: imageMeta.name, mimeType: imageMeta.type, sizeBytes: imageMeta.size,
+        widthPx: imageMeta.width, heightPx: imageMeta.height, sha256: imageMeta.sha256
+      },
+      layout,
+      finish,
+      widthInches,
+      heightInches,
+      gapInches,
+      wallColor,
+      readiness: readinessReport
+    });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `wallart-render-job-${imageMeta.sha256.slice(0, 12)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setStatusMessage(`Exported source-bound renderer job specification for ${imageMeta.name}.`);
+    playSuccessChime();
   };
 
   const finishDef = FINISH_DEFINITIONS[finish];
@@ -724,6 +774,13 @@ export const WallArtStudio: React.FC = () => {
             <p className="text-gray-600 leading-tight">
               This browser preview does not generate print-ready TIFF files or submit print orders. Those actions require a configured renderer and print-service adapter, including printer-specific bleed and color-profile rules.
             </p>
+            <button
+              onClick={handleExportProductionSpec}
+              disabled={!imageMeta || !readinessReport}
+              className="btn-w95 w-full py-1 text-[10px] font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+            >
+              <Download size={11} /> Export Source-Bound Renderer Job
+            </button>
             <button
               disabled
               aria-disabled="true"

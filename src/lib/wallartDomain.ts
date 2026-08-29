@@ -119,6 +119,53 @@ export interface DecodedImageValidationResult {
   height?: number;
 }
 
+export interface WallArtProductionManifestInput {
+  source: { name: string; mimeType: string; sizeBytes: number; widthPx: number; heightPx: number; sha256: string };
+  layout: WallArtLayout;
+  finish: WallArtFinish;
+  widthInches: number;
+  heightInches: number;
+  gapInches: number;
+  wallColor: string;
+  readiness: PrintReadinessReport;
+  createdAt?: string;
+}
+
+/** Source-bound handoff contract for a future isolated TIFF/print renderer. */
+export function buildWallArtProductionManifest(input: WallArtProductionManifestInput) {
+  if (!/^[a-f0-9]{64}$/i.test(input.source.sha256)) throw new Error('A valid source SHA-256 digest is required.');
+  return {
+    schemaVersion: 1,
+    kind: 'wallart-production-render-job',
+    createdAt: input.createdAt || new Date().toISOString(),
+    source: { ...input.source, sha256: input.source.sha256.toLowerCase() },
+    composition: {
+      layout: input.layout,
+      finish: input.finish,
+      wallColor: input.wallColor,
+      widthInches: input.widthInches,
+      heightInches: input.heightInches,
+      panelGapInches: input.gapInches,
+      coverCrop: input.readiness.coverCrop,
+      panels: input.readiness.panels
+    },
+    output: {
+      format: 'image/tiff',
+      targetPpi: PRINT_DPI,
+      requiredWidthPx: input.readiness.requiredWidthPx,
+      requiredHeightPx: input.readiness.requiredHeightPx,
+      printerProfileRequired: true,
+      bleedRulesRequired: true
+    },
+    sourceAssessment: {
+      effectivePpi: input.readiness.effectiveDpi,
+      meetsTarget: input.readiness.isReady,
+      widthShortagePx: input.readiness.widthShortagePx,
+      heightShortagePx: input.readiness.heightShortagePx
+    }
+  } as const;
+}
+
 /**
  * Validates an uploaded file's metadata (MIME type and byte size).
  */

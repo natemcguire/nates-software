@@ -8,6 +8,7 @@ import {
   computeCoverCrop,
   calculatePrintReadiness,
   computePreviewExportPlan,
+  buildWallArtProductionManifest,
   MAX_FILE_SIZE_BYTES,
   PRINT_DPI,
   MIN_DIMENSION_INCHES,
@@ -221,6 +222,69 @@ describe('WallArt Canvas Pro — Domain Validation & Print Math', () => {
       expect(plan.exportHeightPx).toBeLessThanOrEqual(3840);
     });
   });
+
+  describe('Production renderer handoff contract', () => {
+    it('binds exact source bytes and print geometry into a deterministic TIFF job manifest', () => {
+      const readiness = calculatePrintReadiness(12000, 8000, 36, 24, 'triptych', 1.5);
+      const manifest = buildWallArtProductionManifest({
+        source: {
+          name: 'family-room.png',
+          mimeType: 'image/png',
+          sizeBytes: 4_200_000,
+          widthPx: 12000,
+          heightPx: 8000,
+          sha256: 'A'.repeat(64)
+        },
+        layout: 'triptych',
+        finish: 'walnut',
+        widthInches: 36,
+        heightInches: 24,
+        gapInches: 1.5,
+        wallColor: '#f4f1ea',
+        readiness,
+        createdAt: '2026-08-29T12:00:00.000Z'
+      });
+
+      expect(manifest).toMatchObject({
+        schemaVersion: 1,
+        kind: 'wallart-production-render-job',
+        createdAt: '2026-08-29T12:00:00.000Z',
+        source: { sha256: 'a'.repeat(64), widthPx: 12000, heightPx: 8000 },
+        composition: { layout: 'triptych', panelGapInches: 1.5 },
+        output: {
+          format: 'image/tiff',
+          targetPpi: 300,
+          requiredWidthPx: 10800,
+          requiredHeightPx: 7200,
+          printerProfileRequired: true,
+          bleedRulesRequired: true
+        },
+        sourceAssessment: { meetsTarget: true, widthShortagePx: 0, heightShortagePx: 0 }
+      });
+      expect(manifest.composition.panels).toHaveLength(3);
+    });
+
+    it('rejects a renderer job that is not bound to a SHA-256 source digest', () => {
+      const readiness = calculatePrintReadiness(12000, 8000, 36, 24, 'single');
+      expect(() => buildWallArtProductionManifest({
+        source: {
+          name: 'unbound.png',
+          mimeType: 'image/png',
+          sizeBytes: 100,
+          widthPx: 12000,
+          heightPx: 8000,
+          sha256: 'not-a-digest'
+        },
+        layout: 'single',
+        finish: 'black',
+        widthInches: 36,
+        heightInches: 24,
+        gapInches: 1.5,
+        wallColor: '#ffffff',
+        readiness
+      })).toThrow('valid source SHA-256');
+    });
+  });
 });
 
 describe('WallArtStudio Component — First-Run & Capability Honesty', () => {
@@ -260,6 +324,7 @@ describe('WallArtStudio Component — First-Run & Capability Honesty', () => {
 
     // Honest disabled production boundary
     expect(html).toContain('Production TIFF &amp; Print Dispatch');
+    expect(html).toContain('Export Source-Bound Renderer Job');
     expect(html).toContain('Adapter Required');
     expect(html).toContain('require a configured renderer and print-service adapter');
     expect(html).toContain('Production Export Unavailable');
