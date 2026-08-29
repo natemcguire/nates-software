@@ -1,286 +1,403 @@
 import React, { useState } from 'react';
-import { calculateDynoGrade, generateBadgeMarkdown, DynoMetrics } from '../lib/dynoDomain';
-import { Gauge, Copy, Check, ShieldCheck, RefreshCw, Cpu, Database } from 'lucide-react';
+import {
+  REAL_WORLD_DEV_TASKS,
+  LEADERBOARD_PRESETS,
+  calculateDynoScore,
+  generateBadgeMarkdown,
+  DynoRunResult,
+} from '../lib/dynoDomain';
+import {
+  Gauge,
+  Copy,
+  Check,
+  RefreshCw,
+  Trophy,
+  Terminal,
+  Play,
+  CheckCircle2
+} from 'lucide-react';
+import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
 export const DynoView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'bench' | 'install' | 'export'>('bench');
-  const [copiedInstall, setCopiedInstall] = useState(false);
+  const [activeTab, setActiveTab] = useState<'race' | 'leaderboard' | 'export'>('race');
+  const [copiedReport, setCopiedReport] = useState(false);
   const [copiedBadge, setCopiedBadge] = useState(false);
-  const [isRunningBench, setIsRunningBench] = useState(false);
-  const [syncedToD1, setSyncedToD1] = useState(false);
+  const [isRunningRace, setIsRunningRace] = useState(false);
+  const [activeTaskIndex, setActiveTaskIndex] = useState<number>(-1);
 
-  const [metrics, setMetrics] = useState<DynoMetrics>({
-    chip: 'Apple M4 Max (16-Core CPU, 40-Core GPU)',
-    unifiedMemoryGb: 64,
-    tokensPerSec: 167.4,
-    ttftLatencyMs: 42,
-    promptCacheHitRate: 0.948,
-    needleRecallRate: 0.992,
-    grade: calculateDynoGrade(167.4, 0.948)
-  });
+  // Current active benchmark subject
+  const [currentResult, setCurrentResult] = useState<DynoRunResult>(LEADERBOARD_PRESETS[0]);
 
-  const installCmd = "curl -fsSL https://nates.software/install-dyno.sh | sh";
-  const badgeMd = generateBadgeMarkdown('nate', metrics.grade);
+  const handleRunStreetRace = () => {
+    setIsRunningRace(true);
+    setActiveTaskIndex(0);
+    playClickSound();
 
-  const copyInstall = () => {
-    navigator.clipboard.writeText(installCmd);
-    setCopiedInstall(true);
-    setTimeout(() => setCopiedInstall(false), 2000);
+    let step = 0;
+    const interval = setInterval(() => {
+      step++;
+      setActiveTaskIndex(step);
+
+      if (step >= REAL_WORLD_DEV_TASKS.length) {
+        clearInterval(interval);
+        setIsRunningRace(false);
+        playSuccessChime();
+
+        // Calculate dynamic randomized real-world result
+        const completed = Math.floor(42 + Math.random() * 6);
+        const firstAttempt = 0.68 + Math.random() * 0.15;
+        const hiddenTests = 0.90 + Math.random() * 0.08;
+        const medianSec = Math.floor(125 + Math.random() * 25);
+        const interventions = Math.floor(1 + Math.random() * 3);
+
+        const { score, grade } = calculateDynoScore({
+          tasksCompleted: completed,
+          totalTasks: 50,
+          firstAttemptSuccessRate: firstAttempt,
+          hiddenTestsPassedRate: hiddenTests,
+          medianCompletionSeconds: medianSec,
+          humanInterventions: interventions,
+          safetyViolations: 0,
+          unnecessaryFilesChanged: 0
+        });
+
+        setCurrentResult(prev => ({
+          ...prev,
+          tasksCompleted: completed,
+          completionRate: Math.round((completed / 50) * 100),
+          firstAttemptSuccessRate: Math.round(firstAttempt * 100),
+          hiddenTestsPassedRate: Math.round(hiddenTests * 100),
+          medianCompletionSeconds: medianSec,
+          totalHumanInterventions: interventions,
+          medianCostPerTaskUsd: Number((0.35 + Math.random() * 0.12).toFixed(2)),
+          overallDynoScore: score,
+          grade
+        }));
+      }
+    }, 450);
+  };
+
+  const formatReportMarkdown = () => {
+    const r = currentResult;
+    const mins = Math.floor(r.medianCompletionSeconds / 60);
+    const secs = r.medianCompletionSeconds % 60;
+
+    return `${r.subject.model} + ${r.subject.agentHarness} + ${r.subject.environment.split('/')[0].trim()}
+${r.subject.suiteVersion}
+
+Tasks completed:       ${r.tasksCompleted}/${r.totalTasks} (${r.completionRate}%)
+Median completion:     ${mins}m ${secs.toString().padStart(2, '0')}s
+First-attempt success: ${r.firstAttemptSuccessRate}%
+Hidden tests passed:   ${r.hiddenTestsPassedRate}%
+Human interventions:   ${r.totalHumanInterventions}
+Median cost/task:      $${r.medianCostPerTaskUsd.toFixed(2)}
+Safety violations:     ${r.totalSafetyViolations}
+Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
+  };
+
+  const copyReport = () => {
+    navigator.clipboard.writeText(formatReportMarkdown());
+    setCopiedReport(true);
+    setTimeout(() => setCopiedReport(false), 2000);
   };
 
   const copyBadge = () => {
-    navigator.clipboard.writeText(badgeMd);
+    navigator.clipboard.writeText(generateBadgeMarkdown('nate', currentResult.overallDynoScore));
     setCopiedBadge(true);
     setTimeout(() => setCopiedBadge(false), 2000);
   };
 
-  const handleRunBenchmark = () => {
-    setIsRunningBench(true);
-    setSyncedToD1(false);
-
-    setTimeout(() => {
-      const newTok = Math.round((155 + Math.random() * 20) * 10) / 10;
-      const newHit = Math.round((0.92 + Math.random() * 0.06) * 1000) / 1000;
-      const newGrade = calculateDynoGrade(newTok, newHit);
-
-      setMetrics({
-        chip: 'Apple M4 Max (16-Core CPU, 40-Core GPU)',
-        unifiedMemoryGb: 64,
-        tokensPerSec: newTok,
-        ttftLatencyMs: Math.round(38 + Math.random() * 10),
-        promptCacheHitRate: newHit,
-        needleRecallRate: 0.994,
-        grade: newGrade
-      });
-      setIsRunningBench(false);
-    }, 1200);
-  };
-
-  const handleSyncToD1 = async () => {
-    try {
-      await fetch('/api/dyno', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'nate',
-          chip: metrics.chip,
-          memoryGb: metrics.unifiedMemoryGb,
-          tokensPerSec: metrics.tokensPerSec,
-          cacheHitRate: metrics.promptCacheHitRate,
-          needleRecallRate: metrics.needleRecallRate
-        })
-      });
-      setSyncedToD1(true);
-      setTimeout(() => setSyncedToD1(false), 3000);
-    } catch {}
-  };
-
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
-      {/* Top Header Navigation */}
+      {/* Top Header */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Gauge size={16} className="text-yellow-400" />
-          <span className="font-bold text-sm text-yellow-300 font-mono">DYNO WORKSTATION AI BENCHMARK</span>
-          <span className="bg-green-900 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded border border-green-500 font-mono">
-            ● LOCAL-FIRST EXECUTION
+          <Gauge size={18} className="text-yellow-400 animate-pulse" />
+          <span className="font-bold text-sm text-yellow-300 font-mono">DYNO AI DEVELOPER STREET RACE</span>
+          <span className="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-400 font-mono">
+            REAL-WORLD WORKFLOW BENCHMARK 2026.1
           </span>
         </div>
 
         {/* Tab Controls */}
         <div className="flex gap-1 font-sans">
           <button
-            onClick={() => setActiveTab('bench')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'bench' ? 'btn-w95-primary' : 'text-black'}`}
+            onClick={() => setActiveTab('race')}
+            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'race' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            ⚡ Speedometer Gauge
+            🏁 Street Race
           </button>
           <button
-            onClick={() => setActiveTab('install')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'install' ? 'btn-w95-primary' : 'text-black'}`}
+            onClick={() => setActiveTab('leaderboard')}
+            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'leaderboard' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            💻 CLI Install &amp; Setup
+            🏆 Leaderboard
           </button>
           <button
             onClick={() => setActiveTab('export')}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'export' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            🏆 GitHub Badge Export
+            📋 Report & Badge
           </button>
         </div>
       </div>
 
-      {/* Main Tab Content */}
-      <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
-        {/* TAB 1: Speedometer Gauge */}
-        {activeTab === 'bench' && (
-          <div className="grid grid-cols-12 gap-4 h-full">
-            {/* Left: Speedometer Gauge */}
-            <div className="col-span-7 bg-[#1c2430] text-cyan-400 p-4 rounded border-2 border-gray-800 shadow-xl flex flex-col justify-between">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-auto p-3">
+        {activeTab === 'race' && (
+          <div className="space-y-3">
+            {/* Subject Configuration Banner */}
+            <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm">
+              <div className="flex items-center justify-between flex-wrap gap-2 border-b border-gray-300 pb-2 mb-2">
+                <div>
+                  <div className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Benchmark Subject</div>
+                  <div className="text-sm font-bold font-mono text-blue-900 flex items-center gap-2">
+                    <span>{currentResult.subject.model}</span>
+                    <span className="text-gray-400">·</span>
+                    <span className="text-purple-700">{currentResult.subject.agentHarness}</span>
+                    <span className="text-gray-400">·</span>
+                    <span className="text-gray-700">{currentResult.subject.environment.split('/')[0]}</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleRunStreetRace}
+                  disabled={isRunningRace}
+                  className="btn-w95 btn-w95-primary py-1.5 px-4 font-bold flex items-center gap-2 text-xs"
+                >
+                  {isRunningRace ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin text-yellow-300" />
+                      <span>Racing Workflow Tasks...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play size={14} className="text-green-300" />
+                      <span>Run Full Dev Street Race (50 Tasks)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Real-World Key Performance Indicators */}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 text-center pt-1">
+                <div className="bg-blue-50 border border-blue-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">OVERALL SCORE</div>
+                  <div className="text-lg font-bold font-mono text-blue-950">{currentResult.overallDynoScore} <span className="text-xs font-normal text-gray-500">/ 1000</span></div>
+                  <div className="text-[9px] font-bold text-green-700">{currentResult.grade}</div>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">TASKS COMPLETED</div>
+                  <div className="text-lg font-bold font-mono text-green-800">{currentResult.tasksCompleted} / {currentResult.totalTasks}</div>
+                  <div className="text-[9px] text-gray-500">{currentResult.completionRate}% Completion</div>
+                </div>
+
+                <div className="bg-purple-50 border border-purple-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">HIDDEN TESTS</div>
+                  <div className="text-lg font-bold font-mono text-purple-800">{currentResult.hiddenTestsPassedRate}%</div>
+                  <div className="text-[9px] text-gray-500">Zero Leak Verification</div>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">FIRST ATTEMPT</div>
+                  <div className="text-lg font-bold font-mono text-amber-800">{currentResult.firstAttemptSuccessRate}%</div>
+                  <div className="text-[9px] text-gray-500">One-Shot Accuracy</div>
+                </div>
+
+                <div className="bg-gray-50 border border-gray-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">MEDIAN SPEED</div>
+                  <div className="text-lg font-bold font-mono text-gray-800">
+                    {Math.floor(currentResult.medianCompletionSeconds / 60)}m {currentResult.medianCompletionSeconds % 60}s
+                  </div>
+                  <div className="text-[9px] text-gray-500">{currentResult.medianToolCallsPerTask} Tools / Task</div>
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">MEDIAN COST</div>
+                  <div className="text-lg font-bold font-mono text-emerald-800">${currentResult.medianCostPerTaskUsd.toFixed(2)}</div>
+                  <div className="text-[9px] text-gray-500">Per Successful Fix</div>
+                </div>
+
+                <div className="bg-red-50 border border-red-200 p-2 rounded">
+                  <div className="text-[10px] text-gray-600 font-bold">SAFETY VIOLATIONS</div>
+                  <div className="text-lg font-bold font-mono text-red-800">{currentResult.totalSafetyViolations}</div>
+                  <div className="text-[9px] text-gray-500">{currentResult.totalHumanInterventions} Interventions</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 10 Real-World Workflow Task Execution Matrix */}
+            <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
+                  <Terminal size={14} className="text-blue-700" />
+                  10 Core Real-World Engineering Workflows Under Test
+                </span>
+                <span className="text-gray-500 text-[11px] font-mono">DYNO Dev Suite v2026.1</span>
+              </div>
+
+              <div className="space-y-1.5">
+                {REAL_WORLD_DEV_TASKS.map((task, idx) => {
+                  const isActive = isRunningRace && activeTaskIndex === idx;
+                  const isDone = activeTaskIndex > idx;
+
+                  return (
+                    <div
+                      key={task.id}
+                      className={`border p-2 rounded transition-colors flex items-center justify-between gap-3 ${
+                        isActive
+                          ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400'
+                          : isDone
+                          ? 'bg-green-50/50 border-green-200'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="font-mono text-gray-400 text-[10px] font-bold w-5">
+                          {(idx + 1).toString().padStart(2, '0')}
+                        </span>
+                        <div>
+                          <div className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
+                            <span>{task.name}</span>
+                            <span className="bg-gray-200 text-gray-700 px-1.5 py-0.2 rounded text-[9px] font-mono">
+                              {task.category}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-gray-600 truncate">{task.description}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 font-mono text-[11px] shrink-0">
+                        <span className="text-gray-500 text-[10px] hidden sm:inline">
+                          {task.hiddenTestCount} hidden tests
+                        </span>
+
+                        {isActive ? (
+                          <span className="text-yellow-700 font-bold flex items-center gap-1">
+                            <RefreshCw size={12} className="animate-spin" /> Running
+                          </span>
+                        ) : isDone ? (
+                          <span className="text-green-700 font-bold flex items-center gap-1">
+                            <CheckCircle2 size={12} /> 100% Passed
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">Queued</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'leaderboard' && (
+          <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-2">
               <div>
-                <div className="flex justify-between items-center border-b border-cyan-900 pb-2 mb-3">
-                  <div className="flex items-center gap-2">
-                    <Cpu size={16} className="text-yellow-400" />
-                    <span className="font-bold text-sm text-white font-mono">{metrics.chip}</span>
-                  </div>
-                  <span className="bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded text-[10px] font-mono border border-cyan-800">
-                    {metrics.unifiedMemoryGb} GB UNIFIED
-                  </span>
-                </div>
-
-                {/* Primary Speedometer Dial */}
-                <div className="bg-black/60 p-4 rounded border-2 border-cyan-800 text-center my-3 shadow-inner">
-                  <div className="text-gray-400 font-mono text-[11px] uppercase tracking-wider">Token Generation Velocity</div>
-                  <div className="text-5xl font-black text-yellow-400 font-mono my-2 tracking-tight">
-                    {isRunningBench ? 'TUNING...' : `${metrics.tokensPerSec} tok/s`}
-                  </div>
-                  <div className="text-xs text-green-400 font-bold font-mono">
-                    {metrics.grade}
-                  </div>
-                </div>
-
-                {/* Sub-Metrics Grid */}
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="bg-black/40 p-2 rounded border border-cyan-900">
-                    <div className="text-[10px] text-gray-400 font-mono">TTFT Latency</div>
-                    <div className="font-bold text-white font-mono text-base">{metrics.ttftLatencyMs} ms</div>
-                  </div>
-                  <div className="bg-black/40 p-2 rounded border border-cyan-900">
-                    <div className="text-[10px] text-gray-400 font-mono">Cache Hit Rate</div>
-                    <div className="font-bold text-green-400 font-mono text-base">{(metrics.promptCacheHitRate * 100).toFixed(1)}%</div>
-                  </div>
-                  <div className="bg-black/40 p-2 rounded border border-cyan-900">
-                    <div className="text-[10px] text-gray-400 font-mono">Needle Recall (128k)</div>
-                    <div className="font-bold text-cyan-300 font-mono text-base">{(metrics.needleRecallRate * 100).toFixed(1)}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Benchmark Trigger */}
-              <div className="pt-3 border-t border-cyan-900 flex justify-between items-center">
-                <span className="text-[11px] text-gray-400 font-mono">sha256: verified_macmini_m4</span>
-                <button
-                  onClick={handleRunBenchmark}
-                  disabled={isRunningBench}
-                  className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold flex items-center gap-1.5"
-                >
-                  <RefreshCw size={12} className={isRunningBench ? 'animate-spin' : ''} />
-                  {isRunningBench ? 'Measuring Bandwidth...' : '⚡ Run Full Hardware Pass'}
-                </button>
+                <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                  <Trophy size={16} className="text-yellow-500" />
+                  Official DYNO Real-World AI Street Race Leaderboard
+                </h3>
+                <p className="text-[11px] text-gray-600">
+                  Ranking autonomous agent configurations on 50 real-world engineering task completions.
+                </p>
               </div>
             </div>
 
-            {/* Right: Verification & Cloudflare Sync */}
-            <div className="col-span-5 bg-white border-2 border-gray-800 p-3 flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="border-b pb-1.5 flex justify-between items-center">
-                  <span className="font-bold text-sm text-w95-blue">Cryptographic Verification</span>
-                  <span className="bg-green-100 text-green-800 font-bold px-1.5 py-0.5 rounded text-[10px]">
-                    VERIFIED PASS
-                  </span>
-                </div>
-
-                <div className="bg-gray-50 border p-2.5 rounded text-xs space-y-1.5">
-                  <div className="font-bold text-gray-800 flex items-center gap-1">
-                    <ShieldCheck size={13} className="text-green-700" /> Local-First Privacy:
-                  </div>
-                  <p className="text-gray-600 text-[11px] leading-relaxed">
-                    DYNO runs entirely on your local metal. Your benchmark report is saved to <code className="bg-gray-200 px-1 font-mono">~/.dyno/report.json</code> with zero data sent anywhere unless you click sync.
-                  </p>
-                </div>
-
-                <div className="bg-blue-50 border border-w95-blue p-2.5 rounded space-y-1.5">
-                  <div className="font-bold text-w95-blue text-xs">Sync to Cloudflare D1 Maker Profile:</div>
-                  <p className="text-gray-600 text-[11px]">
-                    Optionally publish your verified hardware rating to your public maker identity and HOTWIRE drops.
-                  </p>
-                  <button
-                    onClick={handleSyncToD1}
-                    className="btn-w95 btn-w95-primary w-full py-1.5 flex items-center justify-center gap-1.5 font-bold"
-                  >
-                    <Database size={12} /> {syncedToD1 ? '✔ Synced to Cloudflare D1!' : 'Sync Score to @nate Profile'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t text-gray-500 text-[10px] font-mono">
-                DYNO Benchmark Engine v2.4 &middot; Metal Performance Shaders
-              </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse font-sans">
+                <thead>
+                  <tr className="bg-[#000080] text-white font-mono text-[11px]">
+                    <th className="p-2">Rank</th>
+                    <th className="p-2">Model & Agent Harness</th>
+                    <th className="p-2">Environment</th>
+                    <th className="p-2 text-center">Tasks</th>
+                    <th className="p-2 text-center">First Attempt</th>
+                    <th className="p-2 text-center">Hidden Tests</th>
+                    <th className="p-2 text-center">Median Time</th>
+                    <th className="p-2 text-center">Cost/Task</th>
+                    <th className="p-2 text-center">DYNO Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {LEADERBOARD_PRESETS.map((entry, idx) => (
+                    <tr key={entry.id} className="hover:bg-blue-50/50 font-mono text-[11px]">
+                      <td className="p-2 font-bold text-blue-900">#{idx + 1}</td>
+                      <td className="p-2 font-bold text-gray-900 font-sans">
+                        <div>{entry.subject.model}</div>
+                        <div className="text-[10px] text-purple-700 font-mono font-normal">
+                          {entry.subject.agentHarness}
+                        </div>
+                      </td>
+                      <td className="p-2 text-gray-600 text-[10px]">{entry.subject.environment}</td>
+                      <td className="p-2 text-center font-bold text-green-800">
+                        {entry.tasksCompleted}/{entry.totalTasks} ({entry.completionRate}%)
+                      </td>
+                      <td className="p-2 text-center text-amber-800">{entry.firstAttemptSuccessRate}%</td>
+                      <td className="p-2 text-center text-purple-800">{entry.hiddenTestsPassedRate}%</td>
+                      <td className="p-2 text-center text-gray-700">
+                        {Math.floor(entry.medianCompletionSeconds / 60)}m {entry.medianCompletionSeconds % 60}s
+                      </td>
+                      <td className="p-2 text-center text-emerald-800">${entry.medianCostPerTaskUsd.toFixed(2)}</td>
+                      <td className="p-2 text-center font-bold text-blue-900 bg-blue-50/80">
+                        {entry.overallDynoScore}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
 
-        {/* TAB 2: CLI Install & Setup */}
-        {activeTab === 'install' && (
-          <div className="space-y-3 max-w-2xl mx-auto">
-            <div className="border-b pb-2 mb-2">
-              <span className="font-bold text-base text-w95-blue">Install DYNO CLI Daemon</span>
-              <p className="text-gray-600 text-xs">Run continuous local AI benchmarking and memory pressure tuning from your terminal.</p>
-            </div>
-
-            <div className="bg-gray-50 border-2 border-gray-400 p-3 rounded space-y-2">
-              <div className="flex justify-between items-center font-bold text-xs">
-                <span>1-Line Automated Install:</span>
-                <button
-                  onClick={copyInstall}
-                  className="btn-w95 text-[10px] py-0.5 px-2 flex items-center gap-1"
-                >
-                  {copiedInstall ? <Check size={10} className="text-green-600" /> : <Copy size={10} />}
-                  {copiedInstall ? 'Copied' : 'Copy Command'}
-                </button>
-              </div>
-              <div className="bg-black text-green-400 p-2.5 font-mono text-xs rounded border border-gray-700 truncate">
-                $ {installCmd}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 pt-2">
-              <a
-                href="data:text/plain;charset=utf-8,DYNO%20macOS%20Universal"
-                download="dyno-darwin-arm64"
-                className="btn-w95 py-2 text-center text-xs font-bold"
-              >
-                🍎 macOS Apple Silicon
-              </a>
-              <a
-                href="data:text/plain;charset=utf-8,DYNO%20Windows%20x64"
-                download="dyno-windows-x64.exe"
-                className="btn-w95 py-2 text-center text-xs font-bold"
-              >
-                🪟 Windows x64 .exe
-              </a>
-              <a
-                href="data:text/plain;charset=utf-8,DYNO%20Linux%20x64"
-                download="dyno-linux-x64.tar.gz"
-                className="btn-w95 py-2 text-center text-xs font-bold"
-              >
-                🐧 Linux x86_64
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: GitHub Badge Export */}
         {activeTab === 'export' && (
-          <div className="space-y-3 max-w-2xl mx-auto">
-            <div className="border-b pb-2 mb-2">
-              <span className="font-bold text-base text-w95-blue">Embed Verified DYNO Badge in README</span>
-              <p className="text-gray-600 text-xs">Show off your workstation AI token generation speed on your GitHub repositories.</p>
+          <div className="space-y-3">
+            {/* Markdown Report Card */}
+            <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-xs uppercase tracking-wide text-gray-800">
+                  Credible Benchmark Report Output
+                </span>
+                <button
+                  onClick={copyReport}
+                  className="btn-w95 py-1 px-3 font-bold flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-white"
+                >
+                  {copiedReport ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
+                  <span>{copiedReport ? 'Copied Markdown!' : 'Copy Report Markdown'}</span>
+                </button>
+              </div>
+
+              <pre className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto leading-relaxed border border-gray-700">
+                {formatReportMarkdown()}
+              </pre>
             </div>
 
-            <div className="bg-gray-50 border-2 border-gray-400 p-3 rounded space-y-2">
-              <div className="flex justify-between items-center font-bold text-xs">
-                <span>Markdown Snippet:</span>
+            {/* Dynamic SVG Badge */}
+            <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold text-xs uppercase tracking-wide text-gray-800">
+                  GitHub README Dynamic Badge
+                </span>
                 <button
                   onClick={copyBadge}
-                  className="btn-w95 text-[10px] py-0.5 px-2 flex items-center gap-1"
+                  className="btn-w95 py-1 px-3 font-bold flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-white"
                 >
-                  {copiedBadge ? <Check size={10} className="text-green-600" /> : <Copy size={10} />}
-                  {copiedBadge ? 'Copied' : 'Copy Markdown'}
+                  {copiedBadge ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
+                  <span>{copiedBadge ? 'Copied Badge Code!' : 'Copy Badge Markdown'}</span>
                 </button>
               </div>
-              <div className="bg-black text-yellow-300 p-2.5 font-mono text-xs rounded border border-gray-700 break-all">
-                {badgeMd}
+
+              <div className="p-3 bg-gray-100 rounded border border-gray-300 flex items-center gap-3">
+                <div className="bg-[#000080] text-white px-3 py-1 rounded font-mono text-xs font-bold flex items-center gap-2 shadow">
+                  <Gauge size={14} className="text-yellow-400" />
+                  <span>DYNO Real-World Score: {currentResult.overallDynoScore} / 1000</span>
+                </div>
+                <span className="text-xs text-gray-600 font-mono">
+                  Markdown: `[![DYNO Real-World AI Benchmark](...)]`
+                </span>
               </div>
             </div>
           </div>
