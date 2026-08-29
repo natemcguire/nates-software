@@ -131,9 +131,10 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
   describe('2. Unsupported Lifecycle Events (Refunds/Disputes Fail-Closed)', () => {
     it.each([
       ['charge.refunded', { id: 'ch_refund_1', metadata: { orderId: 'ord_1' } }],
-      ['charge.dispute.created', { id: 'dp_1', metadata: { orderId: 'ord_1' } }],
+      ['charge.expired', { id: 'ch_exp_1', metadata: { orderId: 'ord_1' } }],
       ['payment_intent.payment_failed', { id: 'pi_fail_1', metadata: { orderId: 'ord_1' } }],
       ['customer.subscription.created', { id: 'sub_1' }]
+
     ])('marks unsupported event %s as terminal_failure with explicit error', async (eventType, objectData) => {
       const eventId = `evt_unsupported_${eventType.replace(/\./g, '_')}`;
       await seedInboxEvent(eventId, eventType, objectData);
