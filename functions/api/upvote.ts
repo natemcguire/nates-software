@@ -1,10 +1,11 @@
 // POST /api/upvote - Atomic idempotent upvote counter in D1 with cryptographic voter hashing
 import { validateAndHashVote } from '../../src/lib/hotwireBackend';
+import { requireAuth } from './_auth';
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const body = await request.json().catch(() => ({}));
-    const { appId, voterKey } = body || {};
+    const { appId } = body || {};
     if (!appId || typeof appId !== 'string' || !appId.trim()) {
       return Response.json({ success: false, error: 'appId is required' }, { status: 400 });
     }
@@ -13,9 +14,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
     }
 
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const cleanAppId = appId.trim();
-    const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || 'anonymous_ip';
-    const validation = await validateAndHashVote(cleanAppId, clientIp, voterKey);
+    const validation = await validateAndHashVote(cleanAppId, auth.user!.id, undefined, env.UPVOTE_HASH_SECRET);
 
     if (!validation.valid || !validation.voterHash) {
       return Response.json({ success: false, error: validation.error || 'Invalid vote payload' }, { status: 400 });
@@ -54,7 +57,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         success: true,
         alreadyVoted: true,
         upvotes: currentUpvotes,
-        voterHash: validation.voterHash,
         message: 'Vote already recorded for this drop.'
       });
     }
@@ -62,8 +64,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     return Response.json({
       success: true,
       alreadyVoted: false,
-      upvotes: Number(incrementResult?.results?.[0]?.upvotes ?? currentUpvotes),
-      voterHash: validation.voterHash
+      upvotes: Number(incrementResult?.results?.[0]?.upvotes ?? currentUpvotes)
     });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message || 'Upvote transaction failed' }, { status: 500 });

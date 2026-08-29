@@ -217,7 +217,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             >
               <option value="all" className="bg-slate-900 text-white">All Drops (Cumulative)</option>
               <option value="today" className="bg-slate-900 text-white">Today (Batch #{batchInfo.batchNumber})</option>
-              <option value="yesterday" className="bg-slate-900 text-white">Yesterday (Batch #{Math.max(1, batchInfo.batchNumber - 1)})</option>
               <option value="archive" className="bg-slate-900 text-white">Historical Genesis Archive</option>
             </select>
           </div>

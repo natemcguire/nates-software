@@ -29,7 +29,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject registration with 400 when username or password are missing', async () => {
       const req = new Request('http://localhost/api/auth?action=register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ username: '', password: '' })
       });
 
@@ -233,7 +233,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject upvote with 404 when app does not exist in D1', async () => {
       const req = new Request('http://localhost/api/upvote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ appId: 'non_existent_app_id' })
       });
 
@@ -252,9 +252,9 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'CF-Connecting-IP': '192.168.1.100'
+          Authorization: 'Bearer valid_test_token'
         },
-        body: JSON.stringify({ appId: 'dronehunter', voterKey: 'voter_key_abc' })
+        body: JSON.stringify({ appId: 'dronehunter' })
       });
 
       const res1 = await upvoteApi.onRequestPost({ request: req1, env: { DB: ctx.d1 } });
@@ -268,14 +268,14 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const updatedApp = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('dronehunter').first();
       expect((updatedApp as any).upvotes).toBe(startCount + 1);
 
-      // Second vote from identical voter key + IP -> idempotent no-op
+      // Second vote from the same authenticated account -> idempotent no-op
       const req2 = new Request('http://localhost/api/upvote', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'CF-Connecting-IP': '192.168.1.100'
+          Authorization: 'Bearer valid_test_token'
         },
-        body: JSON.stringify({ appId: 'dronehunter', voterKey: 'voter_key_abc' })
+        body: JSON.stringify({ appId: 'dronehunter' })
       });
 
       const res2 = await upvoteApi.onRequestPost({ request: req2, env: { DB: ctx.d1 } });

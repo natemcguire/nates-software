@@ -205,10 +205,21 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
   // 3. OPTIMISTIC UPVOTE ROLLBACK & ERROR EXPLANATION
   // ==========================================================================
   describe('3. Optimistic Upvote Rollback & Truthful Error Semantics', () => {
+    it('requires a real authenticated account and ignores caller-invented voter identity', async () => {
+      const response = await upvoteApi.onRequestPost({
+        request: new Request('http://localhost/api/upvote', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appId: 'picfitai', voterKey: 'invented-voter' })
+        }),
+        env: { DB: ctx.d1 }
+      });
+      expect(response.status).toBe(401);
+    });
+
     it('should return 404 and fail upvote when app does not exist in D1', async () => {
       const req = new Request('http://localhost/api/upvote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
         body: JSON.stringify({ appId: 'non_existent_app' })
       });
 
@@ -227,9 +238,9 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'CF-Connecting-IP': '198.51.100.25'
+          Authorization: 'Bearer test_token_nate'
         },
-        body: JSON.stringify({ appId: 'picfitai', voterKey: 'test_voter_1' })
+        body: JSON.stringify({ appId: 'picfitai', voterKey: 'ignored-caller-value' })
       });
 
       const res = await upvoteApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
@@ -246,8 +257,8 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     it('should handle repeat upvotes idempotently without runaway count inflation', async () => {
       const req1 = new Request('http://localhost/api/upvote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.88' },
-        body: JSON.stringify({ appId: 'certified-mailer', voterKey: 'voter_idempotent_test' })
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+        body: JSON.stringify({ appId: 'certified-mailer', voterKey: 'first-invented-value' })
       });
       const res1 = await upvoteApi.onRequestPost({ request: req1, env: { DB: ctx.d1 } });
       const data1 = await res1.json();
@@ -256,8 +267,8 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       // Duplicate vote
       const req2 = new Request('http://localhost/api/upvote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.88' },
-        body: JSON.stringify({ appId: 'certified-mailer', voterKey: 'voter_idempotent_test' })
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+        body: JSON.stringify({ appId: 'certified-mailer', voterKey: 'different-invented-value' })
       });
       const res2 = await upvoteApi.onRequestPost({ request: req2, env: { DB: ctx.d1 } });
       const data2 = await res2.json();
@@ -274,8 +285,8 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       // Two concurrent requests with identical voter key
       const createReq = () => new Request('http://localhost/api/upvote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '198.51.100.99' },
-        body: JSON.stringify({ appId: 'dronehunter', voterKey: 'concurrent_voter_race' })
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+        body: JSON.stringify({ appId: 'dronehunter' })
       });
 
       const [res1, res2] = await Promise.all([
@@ -822,8 +833,8 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       // Cast an upvote for cascade-vote-drop
       const voteReq = new Request('http://localhost/api/upvote', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '10.0.0.1' },
-        body: JSON.stringify({ appId: cascadeAppId, voterKey: 'voter_cascade_test' })
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+        body: JSON.stringify({ appId: cascadeAppId })
       });
       const voteRes = await upvoteApi.onRequestPost({ request: voteReq, env: { DB: ctx.d1 } });
       const voteData = await voteRes.json();
