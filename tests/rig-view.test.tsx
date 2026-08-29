@@ -31,6 +31,8 @@ describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
     expect(html).toContain('None (Stateless)');
     expect(html).toContain('SQLite Database');
     expect(html).toContain('Memory Cap');
+    expect(html).toContain('256 MB (Standard)');
+    expect(html).not.toContain('512 MB');
     expect(html).toContain('TTL / Auto-Expiry');
     expect(html).toContain('Launch Demo Plan (Simulation)');
   });

@@ -489,7 +489,7 @@ export const RigRuntimeView: React.FC = () => {
                         onChange={e => setStorageSizeMb(Number(e.target.value) || 64)}
                         className="w-full p-1 border border-gray-400 font-mono text-xs rounded bg-white"
                         min="1"
-                        max="4096"
+                        max="256"
                       />
                     </div>
                   </div>
@@ -507,7 +507,6 @@ export const RigRuntimeView: React.FC = () => {
                   >
                     <option value="128">128 MB</option>
                     <option value="256">256 MB (Standard)</option>
-                    <option value="512">512 MB</option>
                   </select>
                 </div>
                 <div>
