@@ -30,6 +30,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const {
     apps: catalogApps,
     upvoteApp: catalogUpvote,
+    makerLeaderboard,
     isAuthoritativeLive,
     isLoading,
     error: catalogError,
@@ -41,7 +42,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks'>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(new Set());
-  const [selectedBatch, setSelectedBatch] = useState<string>('today');
+  const [selectedBatch, setSelectedBatch] = useState<string>('all');
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
 
   // Sync internal apps and selected app with catalog updates
@@ -57,6 +58,22 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       setSelectedApp(null);
     }
   }, [catalogApps, isAuthoritativeLive]);
+
+  const handleBatchSelect = (batch: string) => {
+    playClickSound();
+    setSelectedBatch(batch);
+    const sort = activeFilter === 'forked' ? 'forks' : activeFilter === 'alltime' ? 'alltime' : 'today';
+    refreshCatalog({ sort, batch });
+  };
+
+  const handleFilterSelect = (filter: 'today' | 'forked' | 'alltime' | 'streaks') => {
+    playClickSound();
+    setActiveFilter(filter);
+    if (filter !== 'streaks') {
+      const sort = filter === 'forked' ? 'forks' : filter === 'alltime' ? 'alltime' : 'today';
+      refreshCatalog({ sort, batch: selectedBatch });
+    }
+  };
 
   // 12:01 AM UTC Live Ticker Countdown & Batch Window Calculation
   const [timeUntilNextDrop, setTimeUntilNextDrop] = useState<string>('00h 00m 00s');
@@ -216,9 +233,10 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             <Calendar size={12} className="text-sky-300" />
             <select
               value={selectedBatch}
-              onChange={(e) => setSelectedBatch(e.target.value)}
+              onChange={(e) => handleBatchSelect(e.target.value)}
               className="bg-transparent text-white focus:outline-none text-[11px] cursor-pointer"
             >
+              <option value="all" className="bg-slate-900 text-white">All Drops (Cumulative)</option>
               <option value="today" className="bg-slate-900 text-white">Today (Batch #{batchInfo.batchNumber})</option>
               <option value="yesterday" className="bg-slate-900 text-white">Yesterday (Batch #{Math.max(1, batchInfo.batchNumber - 1)})</option>
               <option value="archive" className="bg-slate-900 text-white">Historical Genesis Archive</option>
@@ -276,7 +294,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           {/* Filter Tabs */}
           <div className="flex gap-1 mb-1">
             <button
-              onClick={() => { playClickSound(); setActiveFilter('today'); }}
+              onClick={() => handleFilterSelect('today')}
               className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'today' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
@@ -284,7 +302,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               <Flame size={13} className="text-orange-600" /> Today
             </button>
             <button
-              onClick={() => { playClickSound(); setActiveFilter('forked'); }}
+              onClick={() => handleFilterSelect('forked')}
               className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'forked' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
@@ -292,7 +310,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               <GitFork size={13} className="text-green-700" /> Top Forked
             </button>
             <button
-              onClick={() => { playClickSound(); setActiveFilter('alltime'); }}
+              onClick={() => handleFilterSelect('alltime')}
               className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'alltime' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
@@ -300,7 +318,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               <Trophy size={13} className="text-yellow-600" /> All-Time
             </button>
             <button
-              onClick={() => { playClickSound(); setActiveFilter('streaks'); }}
+              onClick={() => handleFilterSelect('streaks')}
               className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'streaks' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
@@ -330,27 +348,48 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                     <Award size={14} className="text-purple-600" />
                     <span>Verified Maker Streak Leaderboard</span>
                   </div>
-                  <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 font-mono">
-                    Demo / Seed Profiles
-                  </span>
+                  {isAuthoritativeLive && makerLeaderboard && makerLeaderboard.length > 0 ? (
+                    <span className="text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 font-mono">
+                      ● D1 Live Verified Makers
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 font-mono">
+                      Demo / Seed Profiles
+                    </span>
+                  )}
                 </div>
-                {MAKER_PROFILES.map((maker, idx) => (
-                  <div key={maker.id} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
-                      <span className="text-xl">{maker.avatar}</span>
-                      <div>
-                        <div className="font-bold text-xs text-slate-800">{maker.name} <span className="text-slate-500 font-normal">{maker.handle}</span></div>
-                        <div className="text-[10px] text-slate-600">{maker.bio}</div>
+                {(isAuthoritativeLive && makerLeaderboard && makerLeaderboard.length > 0 ? makerLeaderboard : MAKER_PROFILES).map((maker: any, idx: number) => {
+                  const isLiveEntry = Boolean(maker.badgeInfo);
+                  const avatar = maker.avatar || '⚡';
+                  const name = maker.displayName || maker.name;
+                  const handle = maker.username ? `@${maker.username}` : maker.handle;
+                  const badgeText = isLiveEntry ? `${maker.badgeInfo.icon} ${maker.currentStreak} Day${maker.currentStreak === 1 ? '' : 's'}` : maker.streakBadge;
+                  const tierTitle = isLiveEntry ? maker.badgeInfo.title : maker.streakTier;
+                  const dropCount = isLiveEntry ? maker.totalDrops : (maker.totalDrops || 0);
+
+                  return (
+                    <div key={maker.id || idx} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
+                        <span className="text-xl">{avatar}</span>
+                        <div>
+                          <div className="font-bold text-xs text-slate-800">
+                            {name} <span className="text-slate-500 font-normal">{handle}</span>
+                            <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
+                          </div>
+                          <div className="text-[10px] text-slate-600">
+                            {maker.bio || 'Verified Local-First shareware maker.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
+                          {badgeText}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
-                        {maker.streakBadge}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : isLoading && apps.length === 0 ? (
               <div className="p-8 text-center space-y-2">
@@ -364,16 +403,24 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                 <div className="font-bold text-xs text-slate-700">
                   {searchQuery.trim()
                     ? 'No apps found'
-                    : isAuthoritativeLive
-                      ? 'No Live Drops in 12:01 AM Batch'
-                      : 'No drops found'}
+                    : selectedBatch === 'yesterday'
+                      ? `No Drops in Yesterday's Batch (#${Math.max(1, batchInfo.batchNumber - 1)})`
+                      : selectedBatch === 'archive'
+                        ? 'No Historical Archived Drops'
+                        : isAuthoritativeLive
+                          ? `No Live Drops in Today's 12:01 AM Batch (#${batchInfo.batchNumber})`
+                          : 'No drops found'}
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {searchQuery.trim()
                     ? `No drops matched "${searchQuery}". Try searching for another tag or creator.`
-                    : isAuthoritativeLive
-                      ? 'The live D1 queue is currently empty. Be the first creator to launch a drop!'
-                      : 'No drops available in this category.'}
+                    : selectedBatch === 'yesterday'
+                      ? `No drops were registered during yesterday's 12:01 AM UTC batch window.`
+                      : selectedBatch === 'archive'
+                        ? `No older archived drops found before current batch window.`
+                        : isAuthoritativeLive
+                          ? `The live 12:01 AM batch (#${batchInfo.batchNumber}) is currently empty. Be the first creator to launch a drop today!`
+                          : 'No drops available in this category.'}
                 </p>
                 {isAuthoritativeLive && !searchQuery.trim() && (
                   <button

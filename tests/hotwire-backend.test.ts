@@ -18,6 +18,11 @@ import {
   generateRssFeed,
   generateJsonFeed,
   generateFeedResponse,
+  getYesterdayBatchWindow,
+  getBatchWindowById,
+  resolveBatchFilter,
+  filterDropsByBatch,
+  buildMakerLeaderboard,
   MAKER_BADGE_TIERS,
   DropRankingInput
 } from '../src/lib/hotwireBackend';
@@ -390,5 +395,89 @@ describe('5. RSS 2.0 & JSON Feed Syndication Generator', () => {
     expect(jsonRes.contentType).toContain('application/feed+json');
     const parsed = JSON.parse(jsonRes.body);
     expect(parsed.version).toBe('https://jsonfeed.org/version/1.1');
+  });
+});
+
+describe('6. Batch Window Querying, Resolution & Maker Leaderboard', () => {
+  it('should calculate yesterday batch window accurately', () => {
+    const testDate = new Date('2026-08-29T12:00:00.000Z');
+    const yesterdayBatch = getYesterdayBatchWindow(testDate);
+    expect(yesterdayBatch.batchId).toBe('drop-2026-08-28');
+    expect(yesterdayBatch.windowStart.toISOString()).toBe('2026-08-28T00:01:00.000Z');
+    expect(yesterdayBatch.windowEnd.toISOString()).toBe('2026-08-29T00:01:00.000Z');
+  });
+
+  it('should parse batch ID into full BatchWindow', () => {
+    const parsed = getBatchWindowById('drop-2026-08-20');
+    expect(parsed).not.toBeNull();
+    expect(parsed!.batchId).toBe('drop-2026-08-20');
+    expect(parsed!.windowStart.toISOString()).toBe('2026-08-20T00:01:00.000Z');
+    expect(parsed!.windowEnd.toISOString()).toBe('2026-08-21T00:01:00.000Z');
+
+    expect(getBatchWindowById('invalid')).toBeNull();
+  });
+
+  it('should resolve batch filter parameters correctly', () => {
+    const now = new Date('2026-08-29T12:00:00.000Z');
+    expect(resolveBatchFilter('all', now).type).toBe('all');
+    expect(resolveBatchFilter(null, now).type).toBe('all');
+
+    const todayFilter = resolveBatchFilter('today', now);
+    expect(todayFilter.type).toBe('today');
+    expect(todayFilter.batchId).toBe('drop-2026-08-29');
+
+    const yesterdayFilter = resolveBatchFilter('yesterday', now);
+    expect(yesterdayFilter.type).toBe('yesterday');
+    expect(yesterdayFilter.batchId).toBe('drop-2026-08-28');
+
+    const archiveFilter = resolveBatchFilter('archive', now);
+    expect(archiveFilter.type).toBe('archive');
+    expect(archiveFilter.isArchive).toBe(true);
+
+    const customFilter = resolveBatchFilter('drop-2026-08-15', now);
+    expect(customFilter.type).toBe('custom');
+    expect(customFilter.batchId).toBe('drop-2026-08-15');
+  });
+
+  it('should filter in-memory drops by batch window', () => {
+    const now = new Date('2026-08-29T12:00:00.000Z');
+    const drops: DropRankingInput[] = [
+      { id: 'today', name: 'Today Drop', upvotes: 10, createdAt: new Date('2026-08-29T06:00:00Z') },
+      { id: 'yesterday', name: 'Yesterday Drop', upvotes: 20, createdAt: new Date('2026-08-28T18:00:00Z') },
+      { id: 'old', name: 'Old Drop', upvotes: 5, createdAt: new Date('2026-08-20T12:00:00Z') }
+    ];
+
+    expect(filterDropsByBatch(drops, 'all', now)).toHaveLength(3);
+    expect(filterDropsByBatch(drops, 'today', now).map(d => d.id)).toEqual(['today']);
+    expect(filterDropsByBatch(drops, 'yesterday', now).map(d => d.id)).toEqual(['yesterday']);
+    expect(filterDropsByBatch(drops, 'archive', now).map(d => d.id)).toEqual(['yesterday', 'old']);
+  });
+
+  it('should build maker streak leaderboard sorted by streak and drops', () => {
+    const makers = [
+      {
+        id: 'usr_1',
+        username: 'alice',
+        displayName: 'Alice',
+        dropDates: ['2026-08-26T12:00:00Z', '2026-08-27T12:00:00Z', '2026-08-28T12:00:00Z'] // 3 streak
+      },
+      {
+        id: 'usr_2',
+        username: 'bob',
+        displayName: 'Bob',
+        dropDates: [
+          '2026-08-22T12:00:00Z', '2026-08-23T12:00:00Z', '2026-08-24T12:00:00Z',
+          '2026-08-25T12:00:00Z', '2026-08-26T12:00:00Z', '2026-08-27T12:00:00Z',
+          '2026-08-28T12:00:00Z' // 7 streak (Hot Streak)
+        ]
+      }
+    ];
+
+    const leaderboard = buildMakerLeaderboard(makers);
+    expect(leaderboard).toHaveLength(2);
+    expect(leaderboard[0].username).toBe('bob');
+    expect(leaderboard[0].badgeInfo.tier).toBe('Hot Streak');
+    expect(leaderboard[1].username).toBe('alice');
+    expect(leaderboard[1].badgeInfo.tier).toBe('Iron Maker');
   });
 });

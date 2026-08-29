@@ -71,6 +71,8 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
         tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
         screenshots,
         binaries: {
+          ...app.binaries,
+          web: liveUrl.trim() || undefined,
           mac: macBinary,
           win: winBinary,
           linux: linuxBinary,

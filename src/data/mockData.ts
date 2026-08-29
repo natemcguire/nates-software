@@ -38,6 +38,7 @@ export interface AppListing {
   moddabilityScore?: number;
   mergeCleanliness?: string;
   binaries?: {
+    web?: string;
     mac?: string;
     win?: string;
     linux?: string;
@@ -46,6 +47,7 @@ export interface AppListing {
     windowsExe?: string;
     linuxAppImage?: string;
     iosIpa?: string;
+    [key: string]: string | undefined;
   };
   voters?: { name: string; avatar: string; handle: string }[];
   makerPitch?: string;

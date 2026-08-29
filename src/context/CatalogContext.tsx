@@ -1,17 +1,21 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { AppListing, INITIAL_APPS } from '../data/mockData';
+import { MakerLeaderboardEntry } from '../lib/hotwireBackend';
 
 export interface CatalogContextType {
   apps: AppListing[];
   demoApps: AppListing[];
   shelfAppIds: Set<string>;
+  makerLeaderboard: MakerLeaderboardEntry[];
   isLoading: boolean;
   isAuthoritativeLive: boolean;
   isDemoData: boolean;
   error: string | null;
+  currentSort: string;
+  currentBatch: string;
   getApp: (id: string) => AppListing | undefined;
   isOwned: (appId: string) => boolean;
-  refreshCatalog: () => Promise<void>;
+  refreshCatalog: (opts?: { sort?: string; batch?: string }) => Promise<void>;
   upvoteApp: (appId: string) => Promise<boolean>;
   submitDrop: (dropData: Partial<AppListing>) => Promise<{ success: boolean; id?: string; error?: string }>;
   recordPurchase: (appId: string, licenseKey: string) => void;
@@ -28,17 +32,29 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Guest first-run initial state: Seed apps marked as demo, shelf completely empty
   const [apps, setApps] = useState<AppListing[]>(SEED_DEMO_APPS);
   const [shelfAppIds, setShelfAppIds] = useState<Set<string>>(new Set<string>());
+  const [makerLeaderboard, setMakerLeaderboard] = useState<MakerLeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthoritativeLive, setIsAuthoritativeLive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentSort, setCurrentSort] = useState<string>('today');
+  const [currentBatch, setCurrentBatch] = useState<string>('all');
 
-  const fetchAuthoritativeCatalog = useCallback(async () => {
+  const fetchAuthoritativeCatalog = useCallback(async (opts?: { sort?: string; batch?: string }) => {
     try {
       setIsLoading(true);
       setError(null);
 
+      const activeSort = opts?.sort || currentSort || 'today';
+      const activeBatch = opts?.batch !== undefined ? opts.batch : currentBatch;
+      setCurrentSort(activeSort);
+      setCurrentBatch(activeBatch);
+
+      const params = new URLSearchParams();
+      if (activeSort) params.set('sort', activeSort);
+      if (activeBatch && activeBatch !== 'all') params.set('batch', activeBatch);
+
       // 1. Fetch live drops from Cloudflare D1
-      const dropsRes = await fetch('/api/drops?sort=today');
+      const dropsRes = await fetch(`/api/drops?${params.toString()}`);
       if (dropsRes.ok) {
         const dropsData = await dropsRes.json();
         if (dropsData.success && Array.isArray(dropsData.drops)) {
@@ -62,6 +78,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               forkCount: Number.isFinite(d.forks) ? d.forks : 0,
               forks: Number.isFinite(d.forks) ? d.forks : 0,
               tags: Array.isArray(d.tags) && d.tags.length > 0 ? d.tags : ['Shareware'],
+              liveUrl: d.liveUrl || d.binaries?.web,
               screenshots: Array.isArray(d.screenshots) && d.screenshots.length > 0
                 ? d.screenshots
                 : ['https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'],
@@ -77,6 +94,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           });
 
           setApps(liveDrops);
+          if (Array.isArray(dropsData.makerLeaderboard)) {
+            setMakerLeaderboard(dropsData.makerLeaderboard);
+          }
           setIsAuthoritativeLive(true);
           setError(null);
         } else {
@@ -114,7 +134,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [currentSort, currentBatch]);
 
   useEffect(() => {
     fetchAuthoritativeCatalog();
@@ -183,7 +203,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           storage: dropData.storage || dropData.sqliteDatabase || '/data/app.sqlite',
           tags: dropData.tags || ['Shareware'],
           screenshots: dropData.screenshots || [],
-          binaries: dropData.binaries || {}
+          binaries: dropData.binaries || {},
+          liveUrl: dropData.liveUrl || (dropData.binaries as any)?.web
         })
       });
 
@@ -195,7 +216,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       // Refresh catalog from authoritative live backend after successful persistence
-      await fetchAuthoritativeCatalog();
+      await fetchAuthoritativeCatalog({ sort: 'today', batch: 'today' });
       return { success: true, id: data.id };
     } catch (err: any) {
       return { success: false, error: err.message || 'Network error during drop persistence' };
@@ -214,10 +235,13 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         apps,
         demoApps: SEED_DEMO_APPS,
         shelfAppIds,
+        makerLeaderboard,
         isLoading,
         isAuthoritativeLive,
         isDemoData: !isAuthoritativeLive,
         error,
+        currentSort,
+        currentBatch,
         getApp,
         isOwned,
         refreshCatalog: fetchAuthoritativeCatalog,

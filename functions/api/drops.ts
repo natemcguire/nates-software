@@ -1,6 +1,6 @@
 import { getSessionUser } from './_auth';
-// GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking and batch rollover metadata
-// POST /api/drops - Authenticated/validated shareware drop publishing
+// GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking, batch window filtering, and live maker streaks
+// POST /api/drops - Authenticated/validated shareware drop publishing with commerce_products synchronization
 
 import {
   getCurrentBatchWindow,
@@ -8,6 +8,8 @@ import {
   rankDrops,
   getMakerBadgeInfo,
   calculateMakerStreakFromHistory,
+  resolveBatchFilter,
+  buildMakerLeaderboard,
   DropRankingInput
 } from '../../src/lib/hotwireBackend';
 import { validateDropSubmission } from '../../src/lib/hotwireDomain';
@@ -21,6 +23,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const now = new Date();
     const currentBatch = getCurrentBatchWindow(now);
     const timeToNext = getTimeToNextDrop(now);
+    const batchFilter = resolveBatchFilter(batchParam, now);
 
     let query = `
       SELECT 
@@ -34,10 +37,28 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       JOIN users u ON a.creator_id = u.id
     `;
 
-    if (batchParam) {
-      // Filter by specific batch if requested
-      query += ` ORDER BY a.created_at DESC LIMIT 100`;
-    } else if (sort === 'forks') {
+    const queryParams: any[] = [];
+    const whereClauses: string[] = [];
+
+    if (batchFilter.type === 'today' && batchFilter.windowStart && batchFilter.windowEnd) {
+      whereClauses.push(`a.created_at >= ? AND a.created_at < ?`);
+      queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
+    } else if (batchFilter.type === 'yesterday' && batchFilter.windowStart && batchFilter.windowEnd) {
+      whereClauses.push(`a.created_at >= ? AND a.created_at < ?`);
+      queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
+    } else if (batchFilter.type === 'archive' && batchFilter.windowEnd) {
+      whereClauses.push(`a.created_at < ?`);
+      queryParams.push(batchFilter.windowEnd.toISOString());
+    } else if (batchFilter.type === 'custom' && batchFilter.windowStart && batchFilter.windowEnd) {
+      whereClauses.push(`a.created_at >= ? AND a.created_at < ?`);
+      queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
+    }
+
+    if (whereClauses.length > 0) {
+      query += ` WHERE ` + whereClauses.join(' AND ');
+    }
+
+    if (sort === 'forks') {
       query += ` ORDER BY a.forks DESC, a.upvotes DESC LIMIT 100`;
     } else if (sort === 'newest') {
       query += ` ORDER BY a.created_at DESC LIMIT 100`;
@@ -49,26 +70,45 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     let results: any[] = [];
     if (env && env.DB) {
-      const dbRes = await env.DB.prepare(query).all();
+      const dbRes = queryParams.length > 0
+        ? await env.DB.prepare(query).bind(...queryParams).all()
+        : await env.DB.prepare(query).all();
       results = dbRes.results || [];
     }
 
-    // Fetch user drop history for maker streak calculation
+    // Fetch user drop history for maker streak calculation and live leaderboard
     let makerStreaks: Record<string, any> = {};
+    let makerLeaderboard: any[] = [];
     try {
-      const { results: userDrops } = await env.DB.prepare(`
-        SELECT creator_id, created_at FROM app_listings ORDER BY created_at ASC
-      `).all();
-      
-      const dropsByCreator: Record<string, string[]> = {};
-      (userDrops || []).forEach((row: any) => {
-        if (!dropsByCreator[row.creator_id]) dropsByCreator[row.creator_id] = [];
-        dropsByCreator[row.creator_id].push(row.created_at);
-      });
+      if (env && env.DB) {
+        const { results: userDrops } = await env.DB.prepare(`
+          SELECT a.creator_id, a.created_at, u.id, u.username, u.display_name AS displayName, u.avatar_url AS avatar, u.bio
+          FROM app_listings a
+          JOIN users u ON a.creator_id = u.id
+          ORDER BY a.created_at ASC
+        `).all();
+        
+        const dropsByCreator: Record<string, { id: string; username: string; displayName: string; avatar: string; bio?: string; dropDates: string[] }> = {};
+        (userDrops || []).forEach((row: any) => {
+          if (!dropsByCreator[row.creator_id]) {
+            dropsByCreator[row.creator_id] = {
+              id: row.id,
+              username: row.username,
+              displayName: row.displayName || row.username,
+              avatar: row.avatar || '⚡',
+              bio: row.bio || '',
+              dropDates: []
+            };
+          }
+          dropsByCreator[row.creator_id].dropDates.push(row.created_at);
+        });
 
-      Object.entries(dropsByCreator).forEach(([creatorId, dates]) => {
-        makerStreaks[creatorId] = calculateMakerStreakFromHistory(dates);
-      });
+        Object.entries(dropsByCreator).forEach(([creatorId, makerData]) => {
+          makerStreaks[creatorId] = calculateMakerStreakFromHistory(makerData.dropDates);
+        });
+
+        makerLeaderboard = buildMakerLeaderboard(Object.values(dropsByCreator));
+      }
     } catch {}
 
     // Robust structural parsing to prevent malformed data from crashing UI
@@ -87,6 +127,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         ...r,
         screenshots: screenshots.length > 0 ? screenshots : ["https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"],
         binaries,
+        liveUrl: binaries?.web || r.liveUrl,
         tags: tags.length > 0 ? tags : ["Shareware"],
         createdAt: r.createdAt || new Date().toISOString(),
         creatorStreak: streakData.currentStreak || 1,
@@ -106,7 +147,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       batchWindow: currentBatch,
       timeToNextDrop: timeToNext,
       sort,
-      drops: finalDrops
+      batch: batchParam || 'all',
+      drops: finalDrops,
+      makerLeaderboard
     });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message || 'Failed to retrieve drops' }, { status: 500 });
@@ -116,7 +159,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const body = await request.json();
-    const { id, name, tagline, description, creator, version, license, price, storage, tags, screenshots, binaries } = body;
+    const { id, name, tagline, description, creator, version, license, price, storage, tags, screenshots, binaries, liveUrl } = body;
 
     // Strict domain validation
     const validation = validateDropSubmission({
@@ -139,6 +182,25 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const creatorHandle = (authUser && authUser.username !== 'nate' ? authUser.username : (creator || authUser?.username || 'nate')).replace(/^@/, '');
     const creatorId = authUser?.id || `usr_${creatorHandle}`;
 
+    // Ensure creator user exists in users table (prevents foreign key errors on unseeded/guest drops)
+    if (env && env.DB) {
+      try {
+        await env.DB.prepare(`
+          INSERT OR IGNORE INTO users (id, username, display_name, role, is_verified_maker)
+          VALUES (?, ?, ?, 'maker', 1)
+        `).bind(creatorId, creatorHandle, creatorHandle).run();
+      } catch {}
+    }
+
+    // Merge liveUrl into binaries.web if provided
+    const mergedBinaries = typeof binaries === 'object' && binaries !== null ? { ...binaries } : {};
+    if (liveUrl && typeof liveUrl === 'string' && liveUrl.trim().length > 0) {
+      mergedBinaries.web = liveUrl.trim();
+    }
+
+    const parsedPriceStr = price || '$15.00';
+    const parsedPriceCents = Math.round(parseFloat(String(parsedPriceStr).replace(/[^0-9.]/g, '') || '15') * 100);
+
     await env.DB.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -160,12 +222,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       creatorId,
       version.trim(),
       license || 'MIT',
-      price || '$15',
+      parsedPriceStr,
       storage || 'App-managed storage',
       JSON.stringify(Array.isArray(tags) ? tags : []),
       JSON.stringify(Array.isArray(screenshots) ? screenshots : []),
-      JSON.stringify(typeof binaries === 'object' && binaries !== null ? binaries : {})
+      JSON.stringify(mergedBinaries)
     ).run();
+
+    // Synchronize with commerce_products so the drop is immediately and truthfully purchasable
+    try {
+      await env.DB.prepare(`
+        INSERT INTO commerce_products (app_id, seller_user_id, price_cents, currency, status)
+        VALUES (?, ?, ?, 'usd', 'active')
+        ON CONFLICT(app_id) DO UPDATE SET
+          price_cents = excluded.price_cents,
+          status = 'active',
+          updated_at = CURRENT_TIMESTAMP
+      `).bind(dropId, creatorId, Math.max(100, parsedPriceCents)).run();
+    } catch {}
 
     const batchWindow = getCurrentBatchWindow();
 

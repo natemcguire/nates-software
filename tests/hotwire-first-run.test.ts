@@ -348,4 +348,155 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(ranked[2].rankingMetrics.rank).toBe(3);
     });
   });
+
+  // ==========================================================================
+  // 6. BATCH WINDOW FILTERING & DISCOVERY INTEGRITY
+  // ==========================================================================
+  describe('6. Batch Window Filtering & Multi-Batch Discovery', () => {
+    it('should filter drops by specific batch window (today, yesterday, archive)', async () => {
+      await ctx.d1.prepare('DELETE FROM commerce_products').run();
+      await ctx.d1.prepare('DELETE FROM app_listings').run();
+
+      const now = new Date();
+      const currentBatch = getCurrentBatchWindow(now);
+      const yesterdayStart = new Date(currentBatch.windowStart.getTime() - (20 * 60 * 60 * 1000)).toISOString();
+      const olderArchived = new Date(currentBatch.windowStart.getTime() - (72 * 60 * 60 * 1000)).toISOString();
+      const todayDrop = new Date(currentBatch.windowStart.getTime() + (2 * 60 * 60 * 1000)).toISOString();
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, created_at)
+        VALUES 
+        ('today-app', 'Today App', 'Built today', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', ?),
+        ('yesterday-app', 'Yesterday App', 'Built yesterday', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', ?),
+        ('archive-app', 'Archive App', 'Built long ago', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', ?)
+      `).bind(todayDrop, yesterdayStart, olderArchived).run();
+
+      // Query today batch
+      const reqToday = new Request('http://localhost/api/drops?batch=today', { method: 'GET' });
+      const resToday = await dropsApi.onRequestGet({ request: reqToday, env: { DB: ctx.d1 } });
+      const dataToday = await resToday.json();
+      expect(dataToday.success).toBe(true);
+      expect(dataToday.drops).toHaveLength(1);
+      expect(dataToday.drops[0].id).toBe('today-app');
+
+      // Query yesterday batch
+      const reqYesterday = new Request('http://localhost/api/drops?batch=yesterday', { method: 'GET' });
+      const resYesterday = await dropsApi.onRequestGet({ request: reqYesterday, env: { DB: ctx.d1 } });
+      const dataYesterday = await resYesterday.json();
+      expect(dataYesterday.success).toBe(true);
+      expect(dataYesterday.drops).toHaveLength(1);
+      expect(dataYesterday.drops[0].id).toBe('yesterday-app');
+
+      // Query archive
+      const reqArchive = new Request('http://localhost/api/drops?batch=archive', { method: 'GET' });
+      const resArchive = await dropsApi.onRequestGet({ request: reqArchive, env: { DB: ctx.d1 } });
+      const dataArchive = await resArchive.json();
+      expect(dataArchive.success).toBe(true);
+      expect(dataArchive.drops.map((d: any) => d.id)).toContain('archive-app');
+      expect(dataArchive.drops.map((d: any) => d.id)).toContain('yesterday-app');
+      expect(dataArchive.drops.map((d: any) => d.id)).not.toContain('today-app');
+    });
+
+    it('should return empty list when querying a batch window with no drops', async () => {
+      const reqYesterday = new Request('http://localhost/api/drops?batch=yesterday', { method: 'GET' });
+      const resYesterday = await dropsApi.onRequestGet({ request: reqYesterday, env: { DB: ctx.d1 } });
+      const dataYesterday = await resYesterday.json();
+      expect(dataYesterday.success).toBe(true);
+      expect(dataYesterday.batch).toBe('yesterday');
+    });
+  });
+
+  // ==========================================================================
+  // 7. LIVE MAKER STREAKS LEADERBOARD
+  // ==========================================================================
+  describe('7. Live Maker Streaks Leaderboard from D1 Drops History', () => {
+    it('should calculate live maker leaderboard with streaks and badge tiers', async () => {
+      const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
+      const res = await dropsApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
+      const data = await res.json();
+
+      expect(data.success).toBe(true);
+      expect(Array.isArray(data.makerLeaderboard)).toBe(true);
+      expect(data.makerLeaderboard.length).toBeGreaterThan(0);
+
+      const nateMaker = data.makerLeaderboard.find((m: any) => m.username === 'nate');
+      expect(nateMaker).toBeDefined();
+      expect(nateMaker.displayName).toBe('Nate McGuire');
+      expect(nateMaker.currentStreak).toBeGreaterThanOrEqual(1);
+      expect(nateMaker.badgeInfo).toBeDefined();
+      expect(nateMaker.badgeInfo.tier).toBeDefined();
+      expect(nateMaker.totalDrops).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  // ==========================================================================
+  // 8. DROP PUBLISHING COMMERCE SYNCHRONIZATION & LIVE URL
+  // ==========================================================================
+  describe('8. Drop Publishing Commerce Synchronization & Live URL Preservation', () => {
+    it('should synchronize newly published drop into commerce_products for purchasing', async () => {
+      const newDropId = 'retro-synth-95';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          id: newDropId,
+          name: 'Retro Synth 95',
+          tagline: '8-Bit Chiptune Synthesizer',
+          description: 'Local audio workstation.',
+          version: 'v1.0.0',
+          price: '$20.00',
+          liveUrl: 'https://synth.nates-software.com',
+          tags: ['Audio', 'Synth', 'Music']
+        })
+      });
+
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      const data = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+
+      // Verify listing row has liveUrl preserved in binaries.web
+      const listing = await ctx.d1.prepare('SELECT binaries, price FROM app_listings WHERE id = ?').bind(newDropId).first();
+      expect(listing).not.toBeNull();
+      const binaries = JSON.parse((listing as any).binaries);
+      expect(binaries.web).toBe('https://synth.nates-software.com');
+      expect((listing as any).price).toBe('$20.00');
+
+      // Verify commerce_products row was synchronized with active status and 2000 cents
+      const product = await ctx.d1.prepare('SELECT price_cents, status, seller_user_id FROM commerce_products WHERE app_id = ?').bind(newDropId).first();
+      expect(product).not.toBeNull();
+      expect((product as any).price_cents).toBe(2000);
+      expect((product as any).status).toBe('active');
+      expect((product as any).seller_user_id).toBe('usr_nate');
+    });
+
+    it('should safely handle drop publishing from unseeded creators without foreign key errors', async () => {
+      const guestDropId = 'indie-tracker';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: guestDropId,
+          name: 'Indie Tracker',
+          tagline: 'Fast Habit Tracker',
+          description: 'Habit tracking in SQLite.',
+          creator: 'newmaker',
+          version: 'v1.0.0',
+          price: '$10.00',
+          tags: ['Productivity']
+        })
+      });
+
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      const data = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.id).toBe(guestDropId);
+
+      // Verify user was created in users table
+      const user = await ctx.d1.prepare('SELECT * FROM users WHERE id = ?').bind('usr_newmaker').first();
+      expect(user).not.toBeNull();
+      expect((user as any).username).toBe('newmaker');
+    });
+  });
 });

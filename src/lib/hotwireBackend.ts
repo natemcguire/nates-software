@@ -323,6 +323,182 @@ export function getDropBatchNumber(dateInput?: Date | string | number, epochDate
   const dayMs = 24 * 60 * 60 * 1000;
   return Math.max(1, Math.floor((windowStart.getTime() - epoch) / dayMs) + 1);
 }
+/**
+ * Calculates the previous day's (yesterday's) 12:01 AM UTC batch window.
+ */
+export function getYesterdayBatchWindow(nowInput?: Date | string | number): BatchWindow {
+  const current = getCurrentBatchWindow(nowInput);
+  const yesterdayDate = new Date(current.windowStart.getTime() - (12 * 60 * 60 * 1000));
+  return getCurrentBatchWindow(yesterdayDate);
+}
+
+/**
+ * Parses a batch ID (e.g. 'drop-2026-08-29') into a full BatchWindow.
+ */
+export function getBatchWindowById(batchId: string): BatchWindow | null {
+  if (!batchId || !batchId.startsWith('drop-')) return null;
+  const parts = batchId.replace(/^drop-/, '').split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts.map(p => parseInt(p, 10));
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+
+  const windowStart = new Date(Date.UTC(y, m - 1, d, ROLLOVER_HOUR_UTC, ROLLOVER_MINUTE_UTC, 0, 0));
+  const windowEnd = new Date(Date.UTC(y, m - 1, d + 1, ROLLOVER_HOUR_UTC, ROLLOVER_MINUTE_UTC, 0, 0));
+  const dayMs = 24 * 60 * 60 * 1000;
+  const batchNumber = Math.max(1, Math.floor((windowStart.getTime() - GENESIS_EPOCH_UTC) / dayMs) + 1);
+
+  const now = new Date();
+  return {
+    batchId,
+    batchNumber,
+    windowStart,
+    windowEnd,
+    isCurrent: now.getTime() >= windowStart.getTime() && now.getTime() < windowEnd.getTime()
+  };
+}
+
+export interface BatchFilterResolution {
+  type: 'all' | 'today' | 'yesterday' | 'archive' | 'custom';
+  windowStart?: Date;
+  windowEnd?: Date;
+  batchId?: string;
+  isArchive?: boolean;
+}
+
+/**
+ * Resolves a batch query parameter into authoritative timestamp bounds.
+ */
+export function resolveBatchFilter(
+  batchParam?: string | null,
+  nowInput?: Date | string | number
+): BatchFilterResolution {
+  if (!batchParam || batchParam === 'all') {
+    return { type: 'all' };
+  }
+
+  const now = normalizeDate(nowInput);
+  const currentBatch = getCurrentBatchWindow(now);
+
+  if (batchParam === 'today') {
+    return {
+      type: 'today',
+      windowStart: currentBatch.windowStart,
+      windowEnd: currentBatch.windowEnd,
+      batchId: currentBatch.batchId
+    };
+  }
+
+  if (batchParam === 'yesterday') {
+    const yesterdayBatch = getYesterdayBatchWindow(now);
+    return {
+      type: 'yesterday',
+      windowStart: yesterdayBatch.windowStart,
+      windowEnd: yesterdayBatch.windowEnd,
+      batchId: yesterdayBatch.batchId
+    };
+  }
+
+  if (batchParam === 'archive') {
+    return {
+      type: 'archive',
+      windowEnd: currentBatch.windowStart,
+      isArchive: true
+    };
+  }
+
+  const customBatch = getBatchWindowById(batchParam);
+  if (customBatch) {
+    return {
+      type: 'custom',
+      windowStart: customBatch.windowStart,
+      windowEnd: customBatch.windowEnd,
+      batchId: customBatch.batchId
+    };
+  }
+
+  return { type: 'all' };
+}
+
+/**
+ * In-memory batch filtering helper for drops arrays.
+ */
+export function filterDropsByBatch(
+  drops: DropRankingInput[],
+  batchParam?: string | null,
+  nowInput?: Date | string | number
+): DropRankingInput[] {
+  if (!drops || drops.length === 0) return [];
+  const filter = resolveBatchFilter(batchParam, nowInput);
+  if (filter.type === 'all') return drops;
+
+  return drops.filter(d => {
+    const createdAt = normalizeDate(d.createdAt).getTime();
+    if (filter.type === 'archive') {
+      return createdAt < filter.windowEnd!.getTime();
+    }
+    if (filter.windowStart && filter.windowEnd) {
+      return createdAt >= filter.windowStart.getTime() && createdAt < filter.windowEnd.getTime();
+    }
+    return true;
+  });
+}
+
+export interface MakerLeaderboardEntry {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+  bio?: string;
+  currentStreak: number;
+  longestStreak: number;
+  totalDrops: number;
+  activeTier: MakerBadgeTier;
+  badgeInfo: MakerBadgeInfo;
+  lastDropDate?: string | null;
+}
+
+/**
+ * Computes deterministic maker streak leaderboard from maker drops history.
+ */
+export function buildMakerLeaderboard(
+  makers: Array<{
+    id: string;
+    username: string;
+    displayName: string;
+    avatar?: string;
+    bio?: string;
+    dropDates: (Date | string | number)[];
+  }>
+): MakerLeaderboardEntry[] {
+  if (!makers || makers.length === 0) return [];
+
+  const leaderboard: MakerLeaderboardEntry[] = makers.map(m => {
+    const streakData = calculateMakerStreakFromHistory(m.dropDates || []);
+    return {
+      id: m.id,
+      username: m.username,
+      displayName: m.displayName || m.username,
+      avatar: m.avatar || '⚡',
+      bio: m.bio || '',
+      currentStreak: streakData.currentStreak,
+      longestStreak: streakData.longestStreak,
+      totalDrops: streakData.totalDrops,
+      activeTier: streakData.activeTier,
+      badgeInfo: streakData.badgeInfo,
+      lastDropDate: streakData.lastDropDate ? streakData.lastDropDate.toISOString() : null
+    };
+  });
+
+  // Sort descending: current streak DESC, longest streak DESC, total drops DESC, username ASC
+  leaderboard.sort((a, b) => {
+    if (b.currentStreak !== a.currentStreak) return b.currentStreak - a.currentStreak;
+    if (b.longestStreak !== a.longestStreak) return b.longestStreak - a.longestStreak;
+    if (b.totalDrops !== a.totalDrops) return b.totalDrops - a.totalDrops;
+    return a.username.localeCompare(b.username);
+  });
+
+  return leaderboard;
+}
 
 // -----------------------------------------------------------------------------
 // 2. Maker Streak Calculator & Badge Tiering

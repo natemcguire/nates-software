@@ -428,11 +428,11 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm"
             >
               <CreditCard size={12} />
-              <span>Register License (${app.id === 'certified-mailer' ? '25' : app.id === 'picfitai' ? '20' : '15'})</span>
+              <span>Register License (${typeof app.price === 'number' ? app.price : (parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15)})</span>
             </button>
           )}
           <a
-            href={app.liveUrl || `https://${app.id}.nates-software.com`}
+            href={app.liveUrl || (app.binaries as any)?.web || `https://${app.id}.nates-software.com`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
