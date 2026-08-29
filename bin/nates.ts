@@ -20,7 +20,7 @@ switch (command.toLowerCase()) {
 Commands:
   nates status       Check active micro-containers and SQLite volumes
   nates list         Query 12:01 AM Daily Drops board on Cloudflare D1
-  nates dyno         Run local workstation AI token velocity benchmark
+  nates dyno         Run real-world AI developer command benchmark
   nates fork <slug>  Clone a Shareware App into an isolated worktree
   nates push         Run test assertions and push CAS ref to gitsmith.dev
   nates login        Configure maker handle and SSH public keys
@@ -43,14 +43,10 @@ Commands:
     break;
 
   case 'dyno':
-    console.log(`[DYNO] Running local Metal Performance Shaders benchmark...
-  Chip: Apple M4 Max (16-Core CPU, 40-Core GPU)
-  Memory: 64 GB Unified
-  Throughput: 167.4 tok/s
-  Cache Hit Rate: 94.8% (TTFT: 42ms)
-  Needle Recall: 99.2%
-  Grade: Grade A+ (M4 Max Velocity)
-✔ Report saved to ~/.dyno/report.json`);
+    console.log(`[DYNO] Running real-world AI developer benchmark...
+  Suite: dyno-standard-dev (v2026.1)
+  Tasks: 7 neutral developer tasks under test
+  Run './bin/slop dyno --bench' for full multi-repetition benchmark.`);
     break;
 
   case 'fork':

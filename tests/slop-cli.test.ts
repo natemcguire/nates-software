@@ -89,18 +89,36 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop dyno', () => {
-    it('should measure local AI hardware velocity', () => {
-      const res = handleDyno(false);
+    it('should execute real baseline task evaluation and return truthful scores', async () => {
+      const res = await handleDyno(['--task=neutral_cli_arg_parser', '--quiet']);
       expect(res.success).toBe(true);
       expect(res.command).toBe('dyno');
-      expect(res.data.tokensPerSec).toBeGreaterThan(100);
-      expect(res.data.grade).toContain('Grade A+');
+      expect(res.data.summary.totalTasks).toBe(1);
+      expect(res.data.run.runner_attestation_digest).toHaveLength(64);
+      expect(res.data.run.raw_trace_sha256).toHaveLength(64);
+      expect(res.data.run.status).toBe('completed');
     });
 
-    it('should run extended benchmark passes when benchFlag is true', () => {
-      const res = handleDyno(true);
+    it('should execute reference calibration suite with 1000 score and Grade S', async () => {
+      const res = await handleDyno(['--task=neutral_cli_arg_parser', '--solve', '--quiet']);
       expect(res.success).toBe(true);
-      expect(res.data.tokensPerSec).toBe(168.2);
+      expect(res.data.summary.dynoScore).toBe(1000);
+      expect(res.data.summary.grade).toContain('Grade S');
+      expect(res.data.summary.tasksPassed).toBe(1);
+    });
+
+    it('should run multi-repetition benchmark and compute reproducible verification', async () => {
+      const res = await handleDyno(['--task=neutral_cli_arg_parser', '--solve', '--bench', '--quiet']);
+      expect(res.success).toBe(true);
+      expect(res.data.run.repetition).toBe(2);
+      expect(res.data.run.verification_status).toBe('reproducible');
+      expect(res.data.summary.dynoScore).toBe(1000);
+    });
+
+    it('should handle non-existent task key with honest error', async () => {
+      const res = await handleDyno(['--task=non_existent_fixture', '--quiet']);
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('not found');
     });
   });
 
@@ -152,27 +170,29 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.message).toContain('slop init');
       expect(res.message).toContain('slop fork');
       expect(res.message).toContain('slop push');
+      expect(res.message).toContain('slop dyno');
     });
   });
 
   describe('runSlopCli router', () => {
-    it('should route all commands cleanly', () => {
-      expect(runSlopCli(['init', 'test-app']).success).toBe(true);
-      expect(runSlopCli(['fork', 'nate/dronehunter']).success).toBe(true);
-      expect(runSlopCli(['test']).success).toBe(true);
-      expect(runSlopCli(['push']).command).toBe('push');
-      expect(runSlopCli(['drop', 'dronehunter']).success).toBe(true);
-      expect(runSlopCli(['publish', 'dronehunter']).success).toBe(true);
-      expect(runSlopCli(['dyno', '--bench']).success).toBe(true);
-      expect(runSlopCli(['status']).success).toBe(true);
-      expect(runSlopCli(['list']).success).toBe(true);
-      expect(runSlopCli(['shelf']).success).toBe(true);
-      expect(runSlopCli(['login']).success).toBe(true);
-      expect(runSlopCli(['help']).success).toBe(true);
+    it('should route all commands cleanly', async () => {
+      expect((await runSlopCli(['init', 'test-app'])).success).toBe(true);
+      expect((await runSlopCli(['fork', 'nate/dronehunter'])).success).toBe(true);
+      expect((await runSlopCli(['test'])).success).toBe(true);
+      expect((await runSlopCli(['push'])).command).toBe('push');
+      expect((await runSlopCli(['drop', 'dronehunter'])).success).toBe(true);
+      expect((await runSlopCli(['publish', 'dronehunter'])).success).toBe(true);
+      const dynoRes = await runSlopCli(['dyno', '--task=neutral_cli_arg_parser', '--solve', '--quiet']);
+      expect(dynoRes.success).toBe(true);
+      expect((await runSlopCli(['status'])).success).toBe(true);
+      expect((await runSlopCli(['list'])).success).toBe(true);
+      expect((await runSlopCli(['shelf'])).success).toBe(true);
+      expect((await runSlopCli(['login'])).success).toBe(true);
+      expect((await runSlopCli(['help'])).success).toBe(true);
     });
 
-    it('should handle unknown command with error', () => {
-      const res = runSlopCli(['invalid-unknown-cmd']);
+    it('should handle unknown command with error', async () => {
+      const res = await runSlopCli(['invalid-unknown-cmd']);
       expect(res.success).toBe(false);
       expect(res.message).toContain('Unknown command');
     });

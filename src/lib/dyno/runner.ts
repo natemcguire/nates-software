@@ -22,7 +22,7 @@ import { DynoTracer } from './trace';
 import { gradeTaskAttempt, GradingOutcome } from './grader';
 import { detectLocalEnvironment } from './environment';
 import { calculateDynoScore, calculateMedian, calculateScoreVariance } from './scoring';
-import { NEUTRAL_DEV_FIXTURES, computeFixtureDigest, computePromptDigest, computeGraderManifestDigest } from './fixtures';
+import { NEUTRAL_DEV_FIXTURES, REFERENCE_SOLUTIONS, computeFixtureDigest, computePromptDigest, computeGraderManifestDigest } from './fixtures';
 import { sha256Json } from './crypto';
 
 export interface DynoRunnerOptions {
@@ -108,7 +108,8 @@ export class DynoRunner {
       sandbox = await DynoSandbox.create({
         initialFiles: task.files,
         tracer,
-        prefix: `dyno-${task.key}-`
+        prefix: `dyno-${task.key}-`,
+        networkPolicy: this.networkPolicy
       });
 
       // 2. Execute agent harness inside sandbox
@@ -368,7 +369,7 @@ export class DynoRunner {
       suite: this.suite,
       attempts: allAttemptResults,
       summary: {
-        totalTasks: this.fixtures.length,
+        totalTasks: totalAttempts,
         tasksPassed: passedAttempts,
         completionRate,
         firstAttemptSuccessRate,
@@ -385,4 +386,102 @@ export class DynoRunner {
       }
     };
   }
+}
+
+/**
+ * Creates a baseline unassisted harness that inspects initial fixture files without editing them.
+ */
+export function createBaselineHarness(
+  modelId = 'unassisted-baseline',
+  harnessName = 'Baseline Unassisted'
+): DynoAgentHarness {
+  return {
+    name: harnessName,
+    version: '1.0.0',
+    modelProvider: 'baseline',
+    modelId,
+    toolManifest: ['read_file'],
+    async execute(ctx) {
+      for (const expectedFile of ctx.task.expectedModifiedFiles) {
+        if (await ctx.sandbox.fileExists(expectedFile)) {
+          await ctx.sandbox.readFile(expectedFile);
+        }
+      }
+      return {
+        humanInterventions: 0,
+        notes: 'Baseline unassisted run without intervention'
+      };
+    }
+  };
+}
+
+/**
+ * Creates a reference harness that applies verified canonical solutions for all task fixtures.
+ */
+export function createReferenceHarness(
+  modelId = 'reference-calibration',
+  harnessName = 'Reference Calibration Solver'
+): DynoAgentHarness {
+  return {
+    name: harnessName,
+    version: '1.0.0',
+    modelProvider: 'reference',
+    modelId,
+    toolManifest: ['read_file', 'write_file'],
+    async execute(ctx) {
+      const solutionFiles = REFERENCE_SOLUTIONS[ctx.task.key];
+      if (solutionFiles) {
+        for (const [relPath, content] of Object.entries(solutionFiles)) {
+          await ctx.sandbox.writeFile(relPath, content);
+        }
+      }
+      return {
+        humanInterventions: 0,
+        notes: 'Reference solution applied for calibration verification'
+      };
+    }
+  };
+}
+
+/**
+ * Creates a generic CLI command harness that executes a user-specified command inside each isolated sandbox.
+ */
+export function createCommandHarness(
+  command: string,
+  modelId = 'custom-cli-agent',
+  harnessName = 'CLI Command Agent'
+): DynoAgentHarness {
+  return {
+    name: harnessName,
+    version: '1.0.0',
+    modelProvider: 'custom',
+    modelId,
+    toolManifest: ['exec', 'read_file', 'write_file', 'list_files'],
+    async execute(ctx) {
+      const startTime = Date.now();
+      const res = await ctx.sandbox.exec(command, [], {
+        cwd: ctx.sandbox.dir,
+        env: {
+          DYNO_TASK_KEY: ctx.task.key,
+          DYNO_TASK_PROMPT: ctx.task.prompt,
+          DYNO_TASK_CATEGORY: ctx.task.category,
+          DYNO_TASK_TITLE: ctx.task.title,
+          DYNO_SANDBOX_DIR: ctx.sandbox.dir,
+          DYNO_TIME_LIMIT_SECONDS: String(ctx.task.timeLimitSeconds)
+        },
+        timeoutMs: (ctx.task.timeLimitSeconds || 60) * 1000,
+        toolName: 'harness_exec',
+        commandClass: 'agent_command'
+      });
+
+      return {
+        tokensUsed: {
+          input: 0,
+          output: 0,
+          cachedInput: 0
+        },
+        notes: `Agent command executed in ${Date.now() - startTime}ms (exit code: ${res.exitCode})`
+      };
+    }
+  };
 }

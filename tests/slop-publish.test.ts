@@ -11,8 +11,8 @@ describe('SLOP CLI Publisher (slop drop / slop publish)', () => {
     expect(res.data.batch).toBe(85);
   });
 
-  it('should route slop publish through runSlopCli router', () => {
-    const res = runSlopCli(['publish', 'certified-mailer', '--name=Certified Mailer']);
+  it('should route slop publish through runSlopCli router', async () => {
+    const res = await runSlopCli(['publish', 'certified-mailer', '--name=Certified Mailer']);
     expect(res.success).toBe(true);
     expect(res.command).toBe('drop');
     expect(res.data.appId).toBe('certified-mailer');

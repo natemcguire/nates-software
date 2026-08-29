@@ -54,8 +54,9 @@ export const DynoView: React.FC = () => {
   const [submitFeedback, setSubmitFeedback] = useState<{ success: boolean; message: string; runId?: string } | null>(null);
 
   // Setup tab state
-  const [selectedModel, setSelectedModel] = useState('Claude 3.7 Sonnet (Thinking 16k)');
-  const [selectedHarness, setSelectedHarness] = useState('Antigravity CLI (agy v2.4)');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.7-flash-high');
+  const [selectedHarness, setSelectedHarness] = useState('Antigravity CLI');
+  const [agentCommand, setAgentCommand] = useState('agy --model gemini-3.7-flash-high -p "$DYNO_TASK_PROMPT"');
   const [selectedRepetitions, setSelectedRepetitions] = useState<number>(2);
   const [selectedNetworkPolicy, setSelectedNetworkPolicy] = useState<'none' | 'local_only' | 'isolated'>('none');
   const [activeFixtureIndex, setActiveFixtureIndex] = useState<number>(0);
@@ -470,9 +471,15 @@ export const DynoView: React.FC = () => {
 *Evaluated deterministically via isolated local sandbox runner with SHA-256 attestation.*`;
   };
 
+  const getCliCommand = () => {
+    const shellQuote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
+    const reps = selectedRepetitions > 1 ? ` --repetitions=${selectedRepetitions}` : '';
+    const pol = selectedNetworkPolicy !== 'none' ? ` --policy=${selectedNetworkPolicy}` : '';
+    return `./bin/slop dyno --command=${shellQuote(agentCommand)} --model=${shellQuote(selectedModel)} --harness=${shellQuote(selectedHarness)}${reps}${pol}`;
+  };
+
   const copyCommand = () => {
-    const cmd = `npx vitest run tests/dyno-runner.test.ts --reporter=verbose`;
-    navigator.clipboard.writeText(cmd);
+    navigator.clipboard.writeText(getCliCommand());
     setCopiedCommand(true);
     setTimeout(() => setCopiedCommand(false), 2000);
   };
@@ -569,32 +576,22 @@ export const DynoView: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-gray-700 mb-1">Benchmark Model</label>
-                  <select
+                  <input
                     value={selectedModel}
                     onChange={e => setSelectedModel(e.target.value)}
                     className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
-                  >
-                    <option>Claude 3.7 Sonnet (Thinking 16k)</option>
-                    <option>Claude 3.5 Sonnet</option>
-                    <option>GPT-5 Codex Preview</option>
-                    <option>Local Llama-3-70B (Ollama)</option>
-                    <option>Custom Model Endpoint</option>
-                  </select>
+                    aria-label="Benchmark model identifier"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-gray-700 mb-1">Agent Harness</label>
-                  <select
+                  <input
                     value={selectedHarness}
                     onChange={e => setSelectedHarness(e.target.value)}
                     className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
-                  >
-                    <option>Antigravity CLI (agy v2.4)</option>
-                    <option>Claude Code CLI (v1.0.12)</option>
-                    <option>Cursor Agent (v0.45)</option>
-                    <option>Aider CLI (v0.50)</option>
-                    <option>Custom Harness Script</option>
-                  </select>
+                    aria-label="Agent harness name"
+                  />
                 </div>
 
                 <div>
@@ -624,11 +621,24 @@ export const DynoView: React.FC = () => {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">Agent Command</label>
+                <input
+                  value={agentCommand}
+                  onChange={e => setAgentCommand(e.target.value)}
+                  className="w-full border border-gray-400 p-1.5 rounded font-mono text-xs bg-gray-50"
+                  aria-label="Agent command executed for each benchmark task"
+                />
+                <p className="mt-1 text-[10px] text-gray-600">
+                  DYNO supplies <code>$DYNO_TASK_PROMPT</code> and runs this command from a temporary fixture directory with secrets removed from its environment. This is workspace confinement, not an OS security boundary; use your agent's sandbox or a disposable machine for untrusted models.
+                </p>
+              </div>
+
               {/* CLI Command Generator */}
               <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs border border-gray-700 relative">
                 <div className="text-[10px] text-gray-400 mb-1"># Execute local benchmark via CLI runner:</div>
                 <div className="select-all">
-                  npx vitest run tests/dyno-runner.test.ts --reporter=verbose
+                  {getCliCommand()}
                 </div>
                 <button
                   onClick={copyCommand}

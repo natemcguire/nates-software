@@ -47,7 +47,7 @@ export const TerminalView: React.FC = () => {
     }
   };
 
-  const executeCommand = (cmd: string) => {
+  const executeCommand = async (cmd: string) => {
     if (!cmd) return;
 
     playClickSound();
@@ -61,7 +61,8 @@ export const TerminalView: React.FC = () => {
     // 1. SLOP CLI Direct Command Bridge
     if (root === 'slop') {
       const slopArgs = parts.slice(1);
-      const res = runSlopCli(slopArgs);
+      const resOrPromise = runSlopCli(slopArgs);
+      const res = resOrPromise instanceof Promise ? await resOrPromise : resOrPromise;
       
       if (res.success) {
         playSuccessChime();

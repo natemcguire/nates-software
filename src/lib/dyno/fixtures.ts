@@ -820,3 +820,337 @@ export function computePromptDigest(prompt: string): string {
 export function computeGraderManifestDigest(graders: readonly unknown[]): string {
   return sha256Json(graders);
 }
+
+/**
+ * Reference solutions for calibration and deterministic verification of all task fixtures.
+ */
+export const REFERENCE_SOLUTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  neutral_cli_arg_parser: {
+    'src/parser.js': `function parseArgs(args, booleanFlags = []) {
+  const flags = {};
+  const positional = [];
+  const boolSet = new Set(booleanFlags);
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      if (boolSet.has(key)) {
+        flags[key] = true;
+      } else if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+        flags[key] = args[++i];
+      } else {
+        flags[key] = true;
+      }
+    } else {
+      positional.push(arg);
+    }
+  }
+  return { flags, positional };
+}
+
+module.exports = { parseArgs };
+`
+  },
+  neutral_lru_cache_ttl: {
+    'src/lru.js': `class LRUCache {
+  constructor(capacity) {
+    this.capacity = capacity;
+    this.cache = new Map();
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return undefined;
+    const entry = this.cache.get(key);
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key, value, ttlMs = 0) {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.capacity) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) this.cache.delete(oldestKey);
+    }
+    const expiresAt = ttlMs > 0 ? Date.now() + ttlMs : null;
+    this.cache.set(key, { value, expiresAt });
+  }
+
+  size() {
+    return this.cache.size;
+  }
+}
+
+module.exports = { LRUCache };
+`
+  },
+  neutral_sql_query_builder: {
+    'src/queryBuilder.js': `function buildSelect(table, conditions = {}) {
+  const keys = Object.keys(conditions);
+  if (keys.length === 0) {
+    return { sql: \`SELECT * FROM \${table}\`, params: [] };
+  }
+
+  const clauses = [];
+  const params = [];
+
+  for (const key of keys) {
+    const val = conditions[key];
+    if (Array.isArray(val)) {
+      if (val.length === 0) {
+        clauses.push('1=0');
+      } else {
+        const placeholders = val.map(() => '?').join(', ');
+        clauses.push(\`\${key} IN (\${placeholders})\`);
+        params.push(...val);
+      }
+    } else {
+      clauses.push(\`\${key} = ?\`);
+      params.push(val);
+    }
+  }
+
+  return {
+    sql: \`SELECT * FROM \${table} WHERE \${clauses.join(' AND ')}\`,
+    params
+  };
+}
+
+module.exports = { buildSelect };
+`
+  },
+  neutral_async_event_emitter: {
+    'src/emitter.js': `class SafeEventEmitter {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  on(event, fn) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event).add(fn);
+    return () => this.off(event, fn);
+  }
+
+  off(event, fn) {
+    const set = this.listeners.get(event);
+    if (set) {
+      set.delete(fn);
+      if (set.size === 0) this.listeners.delete(event);
+    }
+  }
+
+  emit(event, ...args) {
+    const set = this.listeners.get(event);
+    if (!set) return;
+    for (const fn of Array.from(set)) {
+      fn(...args);
+    }
+  }
+
+  listenerCount(event) {
+    return this.listeners.get(event)?.size || 0;
+  }
+
+  once(event, signal) {
+    return new Promise((resolve, reject) => {
+      const handler = (...args) => {
+        cleanup();
+        resolve(args[0]);
+      };
+
+      const onAbort = () => {
+        cleanup();
+        reject(new Error('Operation aborted'));
+      };
+
+      const cleanup = () => {
+        this.off(event, handler);
+        if (signal) {
+          signal.removeEventListener('abort', onAbort);
+        }
+      };
+
+      if (signal?.aborted) {
+        return reject(new Error('Operation aborted'));
+      }
+
+      if (signal) {
+        signal.addEventListener('abort', onAbort);
+      }
+
+      this.on(event, handler);
+    });
+  }
+}
+
+module.exports = { SafeEventEmitter };
+`
+  },
+  neutral_semver_resolver: {
+    'src/semver.js': `function parseVersion(v) {
+  const match = v.trim().match(/^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$/);
+  if (!match) throw new Error(\`Invalid semver: \${v}\`);
+  return {
+    major: parseInt(match[1], 10),
+    minor: parseInt(match[2], 10),
+    patch: parseInt(match[3], 10),
+    prerelease: match[4] || null
+  };
+}
+
+function compare(v1, v2) {
+  const p1 = parseVersion(v1);
+  const p2 = parseVersion(v2);
+
+  if (p1.major !== p2.major) return p1.major - p2.major;
+  if (p1.minor !== p2.minor) return p1.minor - p2.minor;
+  if (p1.patch !== p2.patch) return p1.patch - p2.patch;
+
+  if (p1.prerelease && !p2.prerelease) return -1;
+  if (!p1.prerelease && p2.prerelease) return 1;
+  if (p1.prerelease && p2.prerelease) {
+    return p1.prerelease.localeCompare(p2.prerelease);
+  }
+  return 0;
+}
+
+function satisfies(version, range) {
+  const v = parseVersion(version);
+  const trimmed = range.trim();
+
+  if (trimmed.startsWith('^')) {
+    const base = parseVersion(trimmed.slice(1));
+    if (v.major !== base.major) return false;
+    return compare(version, trimmed.slice(1)) >= 0;
+  }
+
+  if (trimmed.startsWith('~')) {
+    const base = parseVersion(trimmed.slice(1));
+    if (v.major !== base.major || v.minor !== base.minor) return false;
+    return compare(version, trimmed.slice(1)) >= 0;
+  }
+
+  return compare(version, trimmed) === 0;
+}
+
+module.exports = { parseVersion, compare, satisfies };
+`
+  },
+  neutral_retry_backoff: {
+    'src/retry.js': `async function retryAsync(fn, options = {}) {
+  const maxRetries = options.maxRetries ?? 3;
+  const initialDelayMs = options.initialDelayMs ?? 10;
+  const maxDelayMs = options.maxDelayMs ?? 1000;
+  const backoffFactor = options.backoffFactor ?? 2;
+  const signal = options.signal;
+
+  let attempt = 0;
+  let delay = initialDelayMs;
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new Error('Operation aborted');
+    }
+
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      attempt++;
+      if (attempt > maxRetries) {
+        throw err;
+      }
+
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, delay);
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new Error('Operation aborted'));
+          }, { once: true });
+        }
+      });
+
+      delay = Math.min(maxDelayMs, delay * backoffFactor);
+    }
+  }
+}
+
+module.exports = { retryAsync };
+`
+  },
+  neutral_strict_lint_rules: {
+    'src/deepClone.js': `/**
+ * Performs a deep clone of complex JavaScript data structures.
+ * Rules:
+ * - Must preserve Dates, RegExps, Maps, Sets
+ * - Must handle circular references safely
+ * - Must not use eval or Function constructor
+ */
+function deepClone(value, visited = new WeakMap()) {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (visited.has(value)) {
+    return visited.get(value);
+  }
+
+  if (value instanceof Date) {
+    return new Date(value.getTime());
+  }
+
+  if (value instanceof RegExp) {
+    return new RegExp(value.source, value.flags);
+  }
+
+  if (value instanceof Map) {
+    const copy = new Map();
+    visited.set(value, copy);
+    for (const [k, v] of value.entries()) {
+      copy.set(deepClone(k, visited), deepClone(v, visited));
+    }
+    return copy;
+  }
+
+  if (value instanceof Set) {
+    const copy = new Set();
+    visited.set(value, copy);
+    for (const item of value) {
+      copy.add(deepClone(item, visited));
+    }
+    return copy;
+  }
+
+  if (Array.isArray(value)) {
+    const copy = [];
+    visited.set(value, copy);
+    for (let i = 0; i < value.length; i++) {
+      copy[i] = deepClone(value[i], visited);
+    }
+    return copy;
+  }
+
+  const copy = Object.create(Object.getPrototypeOf(value));
+  visited.set(value, copy);
+  for (const key of Object.keys(value)) {
+    copy[key] = deepClone(value[key], visited);
+  }
+  return copy;
+}
+
+module.exports = { deepClone };
+`
+  }
+};
+
+export function getReferenceSolution(taskKey: string): Readonly<Record<string, string>> | undefined {
+  return REFERENCE_SOLUTIONS[taskKey];
+}

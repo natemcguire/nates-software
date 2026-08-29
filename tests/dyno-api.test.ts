@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as dynoApi from '../functions/api/dyno';
+import { onRequestGet as badgeGet } from '../functions/badge/[user]';
 import {
   NEUTRAL_DEV_FIXTURES,
   calculateDynoScore,
@@ -333,6 +334,48 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(detailData.run.id).toBe(payload.run.id);
       expect(detailData.run.attempts.length).toBe(3);
       expect(detailData.run.attempts[0].grader_results.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('GET /badge/:user Dynamic SVG Badge Contracts', () => {
+    it('should return UNSCORED badge when user has no completed DYNO runs', async () => {
+      const res = await badgeGet({ params: { user: 'nate' }, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toContain('image/svg+xml');
+
+      const svgText = await res.text();
+      expect(svgText).toContain('DYNO DEV SCORE');
+      expect(svgText).toContain('UNSCORED');
+    });
+
+    it('should return rendered SVG badge with true score after valid completed run ingestion', async () => {
+      const payload = generateValidRunPayload();
+
+      // Submit run to populate D1
+      const postReq = new Request('http://localhost/api/dyno', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer test_token_nate'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const postRes = await dynoApi.onRequestPost({ request: postReq, env: { DB: ctx.d1 } });
+      expect(postRes.status).toBe(200);
+
+      // Query badge with .svg suffix and @ prefix
+      const res1 = await badgeGet({ params: { user: 'nate.svg' }, env: { DB: ctx.d1 } });
+      expect(res1.status).toBe(200);
+      const svgText1 = await res1.text();
+
+      expect(svgText1).toContain('DYNO DEV SCORE');
+      expect(svgText1).toContain(`${payload.expectedScore} / 1000`);
+
+      const res2 = await badgeGet({ params: { user: '@nate' }, env: { DB: ctx.d1 } });
+      expect(res2.status).toBe(200);
+      const svgText2 = await res2.text();
+      expect(svgText2).toContain(`${payload.expectedScore} / 1000`);
     });
   });
 });

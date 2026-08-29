@@ -48,12 +48,22 @@ export function classifyCommandSafety(
     }
   }
 
-  // If network policy is 'none' or 'isolated', block network commands
-  if (networkPolicy === 'none' || networkPolicy === 'isolated') {
-    for (const pattern of NETWORK_COMMAND_PATTERNS) {
-      if (pattern.test(trimmed)) {
-        return 'blocked';
+  const isNetworkCommand = NETWORK_COMMAND_PATTERNS.some((pattern) => pattern.test(trimmed));
+  if (isNetworkCommand && (networkPolicy === 'none' || networkPolicy === 'isolated')) {
+    return 'blocked';
+  }
+  if (isNetworkCommand && networkPolicy === 'local_only') {
+    const urls = trimmed.match(/https?:\/\/[^\s'"`]+/gi) || [];
+    const allLocal = urls.length > 0 && urls.every((value) => {
+      try {
+        const host = new URL(value).hostname;
+        return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      } catch {
+        return false;
       }
+    });
+    if (!allLocal) {
+      return 'blocked';
     }
   }
 

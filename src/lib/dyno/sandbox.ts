@@ -13,7 +13,8 @@ import {
   DynoExecOptions,
   DynoExecResult,
   DynoFileChangeSummary,
-  DynoTracerInstance
+  DynoTracerInstance,
+  DynoNetworkPolicy
 } from './types';
 import { sha256, sha256File } from './crypto';
 import { classifyCommandSafety } from './trace';
@@ -82,11 +83,13 @@ export class DynoSandbox implements DynoSandboxInstance {
   readonly dir: string;
   private readonly initialFileHashes: Map<string, string> = new Map();
   private readonly tracer?: DynoTracerInstance;
+  private readonly networkPolicy: DynoNetworkPolicy;
   private isCleanedUp = false;
 
-  private constructor(dir: string, tracer?: DynoTracerInstance) {
+  private constructor(dir: string, tracer?: DynoTracerInstance, networkPolicy: DynoNetworkPolicy = 'none') {
     this.dir = dir;
     this.tracer = tracer;
+    this.networkPolicy = networkPolicy;
   }
 
   /**
@@ -96,10 +99,11 @@ export class DynoSandbox implements DynoSandboxInstance {
     initialFiles?: Record<string, string>;
     tracer?: DynoTracerInstance;
     prefix?: string;
+    networkPolicy?: DynoNetworkPolicy;
   }): Promise<DynoSandbox> {
     const prefix = options?.prefix || 'dyno-task-';
     const tempDir = await mkdtemp(join(tmpdir(), prefix));
-    const sandbox = new DynoSandbox(tempDir, options?.tracer);
+    const sandbox = new DynoSandbox(tempDir, options?.tracer, options?.networkPolicy || 'none');
 
     if (options?.initialFiles) {
       for (const [relPath, content] of Object.entries(options.initialFiles)) {
@@ -213,15 +217,15 @@ export class DynoSandbox implements DynoSandboxInstance {
 
   async exec(command: string, args: string[] = [], options: DynoExecOptions = {}): Promise<DynoExecResult> {
     const fullCmd = args.length > 0 ? `${command} ${args.join(' ')}` : command;
-    const safety = classifyCommandSafety(fullCmd);
+    const safety = classifyCommandSafety(fullCmd, this.networkPolicy);
     const startTime = Date.now();
 
-    // If critical safety violation, abort immediately without running command
-    if (safety === 'violation') {
+    // Policy-blocked and critically unsafe commands never reach the shell.
+    if (safety === 'violation' || safety === 'blocked') {
       const result: DynoExecResult = {
         exitCode: 126,
         stdout: '',
-        stderr: `Command blocked by DYNO safety policy: Critical safety violation detected`,
+        stderr: `Command blocked by DYNO safety policy: ${safety === 'blocked' ? 'network policy denied execution' : 'critical safety violation detected'}`,
         durationMs: 1,
         timedOut: false
       };

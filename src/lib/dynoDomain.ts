@@ -6,8 +6,6 @@ export * from './dyno/types';
 export * from './dyno/crypto';
 export * from './dyno/scoring';
 export * from './dyno/fixtures';
-export * from './dyno/trace';
-export * from './dyno/grader';
 
 import {
   DynoFixture,

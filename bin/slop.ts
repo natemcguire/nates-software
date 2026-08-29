@@ -5,7 +5,11 @@
  * Developer Loop: FORK -> AI CODES IN WORKTREE -> PUSH
  */
 
-import { calculateDynoGrade } from "../src/lib/dynoDomain.ts";
+import {
+  NEUTRAL_DEV_FIXTURES,
+  getFixtureByKey
+} from "../src/lib/dyno/fixtures.ts";
+import type { DynoAgentHarness, DynoNetworkPolicy } from "../src/lib/dyno/types.ts";
 import { isCasRefUpdateValid } from "../src/lib/forgeDomain.ts";
 import { RigRuntimeBackend, MEMORY_CAP_MB, MicroDynoPortAllocator } from "../src/lib/rigBackend.ts";
 import { INITIAL_APPS as APPS_DATA } from "../src/data/mockData.ts";
@@ -31,6 +35,14 @@ function getNodeModule(moduleName: string): any {
 
 function getFs(): any {
   return getNodeModule('node:fs') || getNodeModule('fs');
+}
+
+function getPath(): any {
+  return getNodeModule('node:path') || getNodeModule('path');
+}
+
+function getOs(): any {
+  return getNodeModule('node:os') || getNodeModule('os');
 }
 
 function getChildProcess(): any {
@@ -505,43 +517,253 @@ export function handleDrop(args: string[] = []): SlopCommandResult {
   };
 }
 
-export function handleDyno(benchFlag: boolean = false): SlopCommandResult {
-  const chip = "Apple M4 Max (16-Core CPU, 40-Core GPU)";
-  const unifiedMemoryGb = 64;
-  const tokensPerSec = benchFlag ? 168.2 : 167.4;
-  const cacheHitRate = 0.948;
-  const ttftLatencyMs = 42;
-  const needleRecallRate = 0.992;
-  const grade = calculateDynoGrade(tokensPerSec, cacheHitRate);
+export interface DynoCliOptions {
+  bench: boolean;
+  json: boolean;
+  output?: string;
+  command?: string;
+  model?: string;
+  harness?: string;
+  task?: string;
+  repetitions: number;
+  policy: DynoNetworkPolicy;
+  solve: boolean;
+  quiet: boolean;
+}
 
-  const lines = [
-    `[DYNO] Running local Metal Performance Shaders benchmark${benchFlag ? " (Extended Matrix)" : ""}...`,
-    `  Chip: ${chip}`,
-    `  Memory: ${unifiedMemoryGb} GB Unified (Bandwidth: 410 GB/s)`,
-    `  Throughput: ${tokensPerSec.toFixed(1)} tok/s`,
-    `  Cache Hit Rate: ${(cacheHitRate * 100).toFixed(1)}% (TTFT: ${ttftLatencyMs}ms)`,
-    `  Needle Recall: ${(needleRecallRate * 100).toFixed(1)}%`,
-    `  Grade: ${grade}`,
-    benchFlag ? `  Bench Passes: 5/5 passes verified with <0.02% variance` : ``,
-    `✔ Report saved to ~/.dyno/report.json`
-  ].filter(Boolean);
+export function parseDynoArgs(args: string[] | boolean = []): DynoCliOptions {
+  if (typeof args === 'boolean') {
+    return {
+      bench: args,
+      json: false,
+      repetitions: args ? 2 : 1,
+      policy: 'none',
+      solve: false,
+      quiet: false
+    };
+  }
 
-  console.log(lines.join("\n"));
+  const opts: DynoCliOptions = {
+    bench: false,
+    json: false,
+    repetitions: 1,
+    policy: 'none',
+    solve: false,
+    quiet: false
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--bench' || arg === '-b') {
+      opts.bench = true;
+      opts.repetitions = 2;
+    } else if (arg === '--json') {
+      opts.json = true;
+    } else if (arg === '--solve' || arg === '--reference') {
+      opts.solve = true;
+    } else if (arg === '--quiet' || arg === '-q') {
+      opts.quiet = true;
+    } else if (arg.startsWith('--output=')) {
+      opts.output = arg.slice(9);
+    } else if ((arg === '--output' || arg === '-o') && i + 1 < args.length) {
+      opts.output = args[++i];
+    } else if (arg.startsWith('-o=')) {
+      opts.output = arg.slice(3);
+    } else if (arg.startsWith('--command=')) {
+      opts.command = arg.slice(10);
+    } else if ((arg === '--command' || arg === '-c') && i + 1 < args.length) {
+      opts.command = args[++i];
+    } else if (arg.startsWith('-c=')) {
+      opts.command = arg.slice(3);
+    } else if (arg.startsWith('--model=')) {
+      opts.model = arg.slice(8);
+    } else if ((arg === '--model' || arg === '-m') && i + 1 < args.length) {
+      opts.model = args[++i];
+    } else if (arg.startsWith('-m=')) {
+      opts.model = arg.slice(3);
+    } else if (arg.startsWith('--harness=')) {
+      opts.harness = arg.slice(10);
+    } else if (arg === '--harness' && i + 1 < args.length) {
+      opts.harness = args[++i];
+    } else if (arg.startsWith('--task=')) {
+      opts.task = arg.slice(7);
+    } else if ((arg === '--task' || arg === '-t') && i + 1 < args.length) {
+      opts.task = args[++i];
+    } else if (arg.startsWith('-t=')) {
+      opts.task = arg.slice(3);
+    } else if (arg.startsWith('--repetitions=')) {
+      opts.repetitions = parseInt(arg.slice(14), 10) || 1;
+    } else if ((arg === '--repetitions' || arg === '-r') && i + 1 < args.length) {
+      opts.repetitions = parseInt(args[++i], 10) || 1;
+    } else if (arg.startsWith('-r=')) {
+      opts.repetitions = parseInt(arg.slice(3), 10) || 1;
+    } else if (arg.startsWith('--policy=')) {
+      opts.policy = arg.slice(9) as DynoNetworkPolicy;
+    } else if (arg === '--policy' && i + 1 < args.length) {
+      opts.policy = args[++i] as DynoNetworkPolicy;
+    }
+  }
+
+  return opts;
+}
+
+export async function handleDyno(argsArg: string[] | boolean = []): Promise<SlopCommandResult> {
+  const opts = parseDynoArgs(argsArg);
+
+  // If running in browser environment without Node fs/cp
+  if (!isNode) {
+    const fallbackMsg = `[DYNO] Browser Execution Boundary: DYNO real-world benchmark requires local workstation sandbox execution via './bin/slop dyno'`;
+    return {
+      success: true,
+      command: 'dyno',
+      message: fallbackMsg,
+      data: {
+        isBrowser: true,
+        suite: 'dyno-standard-dev',
+        totalTasks: NEUTRAL_DEV_FIXTURES.length
+      }
+    };
+  }
+
+  // Keep Node filesystem/process modules out of the browser bundle used by
+  // TERMINAL.EXE. This path is reached only by the local CLI executable.
+  const runnerModulePath = '../src/lib/dyno/runner.ts';
+  const environmentModulePath = '../src/lib/dyno/environment.ts';
+  const [runnerModule, environmentModule] = await Promise.all([
+    import(/* @vite-ignore */ runnerModulePath),
+    import(/* @vite-ignore */ environmentModulePath)
+  ]);
+  const {
+    DynoRunner,
+    createBaselineHarness,
+    createReferenceHarness,
+    createCommandHarness
+  } = runnerModule;
+  const { detectLocalEnvironment } = environmentModule;
+
+  // Select fixtures
+  let fixturesToRun = NEUTRAL_DEV_FIXTURES;
+  if (opts.task) {
+    const found = getFixtureByKey(opts.task);
+    if (!found) {
+      const msg = `Task fixture "${opts.task}" not found. Available tasks: ${NEUTRAL_DEV_FIXTURES.map(f => f.key).join(', ')}`;
+      if (!opts.json) console.error(msg);
+      return { success: false, command: 'dyno', message: msg };
+    }
+    fixturesToRun = [found];
+  }
+
+  const modelId = opts.model || 'local-developer-agent';
+  let harnessName = opts.harness;
+  let harness: DynoAgentHarness;
+
+  if (opts.command) {
+    harnessName = harnessName || 'CLI Command Agent';
+    harness = createCommandHarness(opts.command, modelId, harnessName);
+  } else if (opts.solve) {
+    harnessName = harnessName || 'Reference Calibration Suite';
+    harness = createReferenceHarness(modelId, harnessName);
+  } else {
+    harnessName = harnessName || 'Baseline Unassisted';
+    harness = createBaselineHarness(modelId, harnessName);
+  }
+
+  const environment = detectLocalEnvironment(opts.policy);
+  const subject = {
+    id: `subj_${modelId.replace(/[^a-z0-9_]/gi, '_')}_${Date.now().toString(36)}`,
+    model_provider: opts.command ? 'custom' : (opts.solve ? 'reference' : 'local'),
+    model_id: modelId,
+    model_version: '1.0.0',
+    model_config: JSON.stringify({ mode: opts.solve ? 'reference_solve' : (opts.command ? 'command_exec' : 'baseline_read') }),
+    agent_harness: harnessName,
+    harness_version: '2.4.0',
+    tool_manifest: JSON.stringify(harness.toolManifest)
+  };
+
+  const runner = new DynoRunner({
+    fixtures: fixturesToRun,
+    repetitions: opts.repetitions,
+    networkPolicy: opts.policy,
+    environment,
+    subject
+  });
+
+  if (!opts.json && !opts.quiet) {
+    console.log(`
+┌────────────────────────────────────────────────────────────┐
+│ ⚡ DYNO — REAL-WORLD AI DEVELOPER BENCHMARK (v2026.1)       │
+│ Standalone suite evaluating Model + Harness + Tools       │
+└────────────────────────────────────────────────────────────┘
+`);
+    console.log(`[DYNO] Initializing benchmark run:`);
+    console.log(`  Subject:     ${subject.model_id} via ${subject.agent_harness}`);
+    console.log(`  Environment: ${environment.os_name} (${environment.architecture}, ${environment.cpu_model || 'Local CPU'})`);
+    console.log(`  Network:     ${opts.policy} | Repetitions: ${opts.repetitions}`);
+    console.log(`  Tasks:       ${fixturesToRun.length} neutral developer tasks under test\n`);
+  }
+
+  const result = await runner.runSuite(harness);
+
+  // Save report to disk
+  let savedPath: string | null = null;
+  try {
+    const fsMod = getFs();
+    const pathMod = getPath();
+    const osMod = getOs();
+    if (fsMod && pathMod) {
+      const homeDir = (osMod && osMod.homedir ? osMod.homedir() : (process.env.HOME || process.env.USERPROFILE || '/tmp'));
+      const defaultPath = pathMod.join(homeDir, '.dyno', 'report.json');
+      const targetPath = opts.output || defaultPath;
+      const targetDir = pathMod.dirname(targetPath);
+
+      if (!fsMod.existsSync(targetDir)) {
+        fsMod.mkdirSync(targetDir, { recursive: true });
+      }
+      fsMod.writeFileSync(targetPath, JSON.stringify(result, null, 2), 'utf8');
+      savedPath = targetPath;
+    }
+  } catch (err: any) {
+    if (!opts.json && !opts.quiet) {
+      console.warn(`  [Warning] Unable to write report to disk: ${err.message}`);
+    }
+  }
+
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else if (!opts.quiet) {
+    console.log(`────────────────────────────────────────────────────────────`);
+    console.log(`  TASK ATTEMPTS EXECUTION BREAKDOWN`);
+    console.log(`────────────────────────────────────────────────────────────`);
+
+    for (const attemptResult of result.attempts) {
+      const att = attemptResult.attempt;
+      const passIcon = att.status === 'passed' ? '✔ PASS' : (att.status === 'timed_out' ? '⏱ TIMEOUT' : (att.status === 'unsafe' ? '⛔ UNSAFE' : '✖ FAIL'));
+      const durationSec = ((att.duration_ms || 0) / 1000).toFixed(1);
+      console.log(`  ${passIcon.padEnd(10)} ${att.task_id.padEnd(30)} ${durationSec}s | Hidden: ${att.hidden_tests_passed}/${att.hidden_tests_total} | Tools: ${att.tool_calls} | Unnecessary: ${att.unnecessary_files_changed}`);
+    }
+
+    console.log(`────────────────────────────────────────────────────────────`);
+    console.log(`[DYNO] Benchmark Suite Complete:`);
+    console.log(`  Overall Score:           ${result.summary.dynoScore} / 1000 (${result.summary.grade})`);
+    console.log(`  Tasks Completed:         ${result.summary.tasksPassed} / ${result.summary.totalTasks} (${result.summary.completionRate}%)`);
+    console.log(`  First-Attempt Accuracy:  ${result.summary.firstAttemptSuccessRate}%`);
+    console.log(`  Hidden Tests Passed:     ${result.summary.hiddenTestsPassedRate}%`);
+    console.log(`  Median Duration:         ${Math.round((result.summary.medianDurationMs || 0) / 1000)}s`);
+    console.log(`  Safety Violations:       ${result.summary.totalSafetyViolations}`);
+    console.log(`  Verification Level:      ${result.run.verification_status.toUpperCase()}`);
+    console.log(`  Attestation SHA-256:     ${result.run.runner_attestation_digest}`);
+    console.log(`  Raw Trace SHA-256:       ${result.run.raw_trace_sha256}`);
+    if (savedPath) {
+      console.log(`  ✔ Report Saved:          ${savedPath}`);
+    }
+    console.log(`🚀 Import into Web UI: DYNO Window -> "Import & Ingest Run" -> Paste ${savedPath || 'report.json'}\n`);
+  }
 
   return {
     success: true,
-    command: "dyno",
-    message: `DYNO benchmark complete: ${grade}`,
-    data: {
-      chip,
-      unifiedMemoryGb,
-      tokensPerSec,
-      cacheHitRate,
-      ttftLatencyMs,
-      needleRecallRate,
-      grade,
-      isBench: benchFlag
-    }
+    command: 'dyno',
+    message: `DYNO benchmark complete: ${result.summary.dynoScore} / 1000 (${result.summary.grade})`,
+    data: result
   };
 }
 
@@ -745,7 +967,11 @@ Commands:
   slop test            Run shareware verification checks
   slop drop [slug]     Package and queue app for 12:01 AM UTC Daily Drop
   slop publish [slug]  Alias for slop drop
-  slop dyno [--bench]  Measure local hardware AI token velocity
+  slop dyno [options]  Run standalone real-world developer benchmark
+                       Options: --bench, --json, --output=<path>, --command=<cmd>,
+                                --model=<name>, --harness=<name>, --task=<key>,
+                                --repetitions=<N>, --policy=<none|local_only|isolated>,
+                                --solve
   slop status          Inspect micro-containers & active ports (3001..3010)
   slop list            Query 12:01 AM daily drops on Cloudflare D1
   slop shelf           Display owned software titles & license keys
@@ -761,7 +987,7 @@ Commands:
   };
 }
 
-export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopCommandResult {
+export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopCommandResult | Promise<SlopCommandResult> {
   const command = rawArgs[0] || "help";
 
   switch (command.toLowerCase()) {
@@ -782,8 +1008,7 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
       return handlePush(rawArgs.slice(1));
 
     case "dyno":
-      const isBench = rawArgs.includes("--bench") || rawArgs.includes("-b");
-      return handleDyno(isBench);
+      return handleDyno(rawArgs.slice(1));
 
     case "test":
       return handleTest();
@@ -818,7 +1043,16 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
 
 if (typeof process !== "undefined" && process.argv && (process.argv[1]?.endsWith("slop") || process.argv[1]?.endsWith("slop.ts"))) {
   const result = runSlopCli();
-  if (!result.success) {
+  if (result instanceof Promise) {
+    result.then((res) => {
+      if (!res.success) {
+        process.exit(1);
+      }
+    }).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else if (!result.success) {
     process.exit(1);
   }
 }
