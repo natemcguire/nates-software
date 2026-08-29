@@ -403,9 +403,9 @@ export function handleFork(slugArg?: string): SlopCommandResult {
       // A copied bundled starter still needs a real Git repository before the
       // install may be reported as complete.
       if (!fsMod.existsSync(`${worktreePath}/.git`)) {
-        runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 5000, throwError: true });
-        runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 3000, throwError: true });
-        runCommandSync(`git -C "${worktreePath}" -c user.name="SLOP Installer" -c user.email="installer@nates-software.com" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 5000, throwError: true });
+        runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+        runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 15000, throwError: true });
+        runCommandSync(`git -C "${worktreePath}" -c user.name="SLOP Installer" -c user.email="installer@nates-software.com" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 15000, throwError: true });
         runCommandSync(`git -C "${worktreePath}" remote add slop ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`, { stdio: "pipe", timeout: 3000 });
       }
 

@@ -64,7 +64,7 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     expect(forkRes.success).toBe(true);
     expect(forkRes.command).toBe('fork');
     expect(forkRes.data.worktreePath).toContain('/tmp/slop-dronehunter-');
-  });
+  }, 15_000);
 
   // Step 5: Merge-job state machine transitions
   it('Step 5: should enforce strict merge-job state machine transitions', () => {

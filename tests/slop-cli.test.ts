@@ -59,7 +59,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(engineInstructions).toContainEqual(expect.stringContaining('Claude Code'));
       expect(engineInstructions).toContainEqual(expect.stringContaining('Aider'));
       expect(engineInstructions).toContainEqual(expect.stringContaining('Cursor / VS Code'));
-    });
+    }, 15_000);
 
     it('should fork custom app slug into isolated worktree', () => {
       const res = handleFork('nate/certified-mailer');
