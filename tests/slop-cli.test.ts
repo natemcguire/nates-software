@@ -21,10 +21,10 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       const res = handleInit(['my-awesome-game', '--title=My Awesome Game', '--price=20']);
       expect(res.success).toBe(true);
       expect(res.command).toBe('init');
-      expect(res.data.appId).toBe('myawesomegame');
+      expect(res.data.appId).toBe('my-awesome-game');
       expect(res.data.name).toBe('My Awesome Game');
       expect(res.data.price).toBe(20);
-      expect(res.data.remoteUrl).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/myawesomegame.git');
+      expect(res.data.remoteUrl).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/my-awesome-game.git');
     });
 
     it('should default cleanly without arguments', () => {

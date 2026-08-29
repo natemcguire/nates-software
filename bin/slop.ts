@@ -84,21 +84,40 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   const formattedTagline = tagline || `${formattedTitle} — Built to share and multiply.`;
   const remoteUrl = `ssh://git@gitsmith.nates-software.com:2222/${handle}/${appId}.git`;
 
-  try {
-    const { execSync } = require("child_process");
+  if (typeof process !== "undefined" && !process.env.VITEST) {
     try {
-      execSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore" });
-    } catch {
-      execSync(`git remote set-url slop ${remoteUrl}`, { stdio: "ignore" });
+      const { execSync } = require("child_process");
+      try {
+        execSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
+      } catch {
+        execSync(`git remote set-url slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
+      }
+    } catch {}
+  }
+
+  // Create or update local slop.json if not present
+  const configFile = "slop.json";
+  try {
+    const fs = require("fs");
+    const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
+    const configPath = `${cwd}/${configFile}`;
+    if (!fs.existsSync(configPath)) {
+      const configData = {
+        name: formattedTitle,
+        tagline: formattedTagline,
+        price: parseInt(price, 10) || 15,
+        handle
+      };
+      fs.writeFileSync(configPath, JSON.stringify(configData, null, 2) + "\n");
     }
   } catch {}
 
+  const projectUrl = `https://${appId}.nates-software.com`;
   const output = [
     `[SLOP INIT] Initialized Shareware Project: ${formattedTitle}`,
-    `  ✔ Slogan: "Go Fork, and Multiply"`,
     `  ✔ Remote configured: slop -> ${remoteUrl}`,
-    `  ✔ Auto-creates repo on push if new`,
-    `  ✔ Shareware price: $${price}.00 (70% maker / 20% ancestor / 10% pool)`,
+    `  ✔ Configure your project at ${projectUrl}. Set shareware prices, screenshots, and more!`,
+    `  ✔ Project settings are configured in ${configFile}`,
     `🚀 Ready! Run "slop push" or "git push slop main" to launch onto Hotwire.`
   ].join("\n");
 
@@ -165,15 +184,17 @@ export function handlePush(args: string[] = []): SlopCommandResult {
 
   try {
     const { execSync } = require("child_process");
-    const cwd = process.cwd();
+    const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
     appId = cwd.split("/").pop() || appId;
     try {
-      sha = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+      sha = execSync("git rev-parse --short HEAD", { encoding: "utf-8", timeout: 1000 }).trim();
     } catch {}
-    try {
-      execSync("git push slop HEAD:main", { stdio: "ignore" });
-      pushedGit = true;
-    } catch {}
+    if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+      try {
+        execSync("git push slop HEAD:main", { stdio: "ignore", timeout: 3000 });
+        pushedGit = true;
+      } catch {}
+    }
   } catch {}
 
   const output = [

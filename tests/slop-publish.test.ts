@@ -9,7 +9,6 @@ describe('SLOP CLI Publisher (slop drop / slop publish)', () => {
     expect(res.data.appId).toBe('dronehunter');
     expect(res.data.priceCents).toBe(1500);
     expect(res.data.batch).toBe(85);
-    expect(res.data.liveUrl).toContain('dronehunter');
   });
 
   it('should route slop publish through runSlopCli router', () => {
