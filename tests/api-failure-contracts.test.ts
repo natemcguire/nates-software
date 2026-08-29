@@ -606,7 +606,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect((updatedUser as any).bio).toContain('High token velocity');
     });
 
-    it('should record inbox merge action and mark thread read in D1', async () => {
+    it('should refuse to impersonate a Git merge by flipping an inbox row', async () => {
       // Seed an inbox message for usr_nate
       const msgId = 'inbox_msg_test_1';
       await ctx.d1.prepare(`
@@ -622,11 +622,13 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
 
       const res = await inboxApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
-      expect(data.success).toBe(true);
+      expect(res.status).toBe(409);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('does not land Git refs');
 
       const msgInDb = await ctx.d1.prepare('SELECT is_merged, unread FROM inbox_messages WHERE id = ?').bind(msgId).first();
-      expect((msgInDb as any).is_merged).toBe(1);
-      expect((msgInDb as any).unread).toBe(0);
+      expect((msgInDb as any).is_merged).toBe(0);
+      expect((msgInDb as any).unread).toBe(1);
     });
   });
 
