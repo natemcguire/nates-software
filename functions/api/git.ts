@@ -1,13 +1,11 @@
-// POST /api/git - Durable Git Forge Ref CAS Engine & 70/20/10 Lineage Royalty Settlement in Cloudflare D1
-// GET /api/git - Query Git forge ref status, Git Smart HTTP info-refs, and lineage settlements
+// POST /api/git - Pure Durable Git Forge Ref CAS Engine & Provenance Tracker
+// GET /api/git - Query Git forge refs and Git Smart HTTP info-refs
 
 import {
   executeCasMerge,
-  createSettlementRecord,
   verifyCommitSignature,
   validateGitRef,
-  validateSha,
-  AncestorNode
+  validateSha
 } from '../../src/lib/gitsmithBackend';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
@@ -47,70 +45,43 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       });
     }
 
-    if (env && env.DB) {
-      if (appId) {
-        const refs = await env.DB.prepare(`
-          SELECT repo_id AS repoId, ref, sha, committer, updated_at AS updatedAt
-          FROM git_refs
-          WHERE repo_id = ?
-        `).bind(appId).all();
+    if (env && env.DB && appId) {
+      const refs = await env.DB.prepare(`
+        SELECT repo_id AS repoId, ref, sha, committer, updated_at AS updatedAt
+        FROM git_refs
+        WHERE repo_id = ?
+      `).bind(appId).all();
 
-        const settlements = await env.DB.prepare(`
-          SELECT 
-            id, app_id AS appId, buyer_user_id AS buyerUserId,
-            gross_cents AS grossCents, maker_cents AS makerCents,
-            lineage_cents AS lineageCents, pool_cents AS poolCents,
-            stripe_transfer_id AS stripeTransferId, settled_at AS settledAt
-          FROM royalty_settlements
-          WHERE app_id = ?
-          ORDER BY settled_at DESC
-          LIMIT 20
-        `).bind(appId).all();
+      const commits = await env.DB.prepare(`
+        SELECT sha, repo_id AS repoId, parent_sha AS parentSha, author, message, is_verified AS isVerified, created_at AS createdAt
+        FROM git_commits
+        WHERE repo_id = ?
+        ORDER BY created_at DESC
+        LIMIT 20
+      `).bind(appId).all();
 
-        return Response.json({
-          success: true,
-          appId,
-          refs: refs.results || [],
-          settlements: settlements.results || []
-        });
-      }
-
-      if (action === 'settlements' || !appId) {
-        const { results } = await env.DB.prepare(`
-          SELECT 
-            id, app_id AS appId, buyer_user_id AS buyerUserId,
-            gross_cents AS grossCents, maker_cents AS makerCents,
-            lineage_cents AS lineageCents, pool_cents AS poolCents,
-            stripe_transfer_id AS stripeTransferId, settled_at AS settledAt
-          FROM royalty_settlements
-          ORDER BY settled_at DESC
-          LIMIT 50
-        `).all();
-
-        return Response.json({ success: true, settlements: results });
-      }
+      return Response.json({
+        success: true,
+        appId,
+        refs: refs.results || [],
+        commits: commits.results || []
+      });
     }
 
     return Response.json({
       success: true,
-      service: 'GITSMITH Durable Git Forge & Lineage Ledger API',
+      service: 'GITSMITH Pure Git Forge & Provenance Engine',
       status: 'active',
       slogan: 'Go Fork, and Multiply',
       invariants: [
         'Authoritative D1 durable ref store (git_refs table)',
         'Atomic CAS compare-and-swap push validation',
         'Git Smart HTTP transport (/info/refs, /git-receive-pack)',
-        '70/20/10 lineage royalty split auto-settlement'
-      ],
-      features: [
-        'Authoritative D1 durable ref store (git_refs table)',
-        'Atomic CAS compare-and-swap push validation',
-        'Git Smart HTTP transport (/info/refs, /git-receive-pack)',
-        '70/20/10 lineage royalty split auto-settlement'
+        'Provenance and commit lineage graph tracking'
       ]
     });
   } catch (err: any) {
-    return Response.json({ success: false, error: 'Failed to retrieve git lineage settlements' }, { status: 500 });
+    return Response.json({ success: false, error: 'Failed to retrieve git refs' }, { status: 500 });
   }
 };
 
@@ -126,10 +97,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       signature,
       publicKey,
       commitPayload,
-      grossCents,
-      ancestors,
-      distributionMethod,
-      buyerUserId,
       requireSignedCommit
     } = body;
 
@@ -198,7 +165,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     // 4. Atomic CAS Compare-and-Swap Validation
-    // When pushing to a brand-new repo with no existing remote ref, treat as initial creation
     const effectiveExpectedSha = (currentRemoteHeadSha === null)
       ? null
       : (expectedOldSha ?? null);
@@ -224,23 +190,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // 5. Multi-Generational Lineage Ledger Settlement Engine
-    const amount = Number.isFinite(grossCents) && grossCents > 0 ? Math.floor(grossCents) : 2500;
-    const ancestorList: AncestorNode[] = Array.isArray(ancestors) ? ancestors : [];
-
-    const settlementRecord = createSettlementRecord({
-      appId,
-      buyerUserId: buyerUserId || 'usr_sam',
-      makerId: committer ? `usr_${committer}` : 'usr_nate',
-      grossCents: amount,
-      ancestors: ancestorList.length > 0 ? ancestorList : 1,
-      casTransactionId: casResult.transactionId,
-      options: {
-        distributionMethod: distributionMethod === 'decay' ? 'decay' : 'equal'
-      }
-    });
-
-    // 6. Durable Atomic D1 Persistence
+    // 5. Durable Atomic D1 Persistence (Ref & Provenance Update ONLY - No Settlements!)
     if (env && env.DB) {
       try {
         await env.DB.prepare(`
@@ -288,21 +238,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }
       } catch {}
 
-      await env.DB.prepare(`
-        INSERT INTO royalty_settlements (
-          id, app_id, buyer_user_id, gross_cents, maker_cents, lineage_cents, pool_cents, stripe_transfer_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        settlementRecord.id,
-        appId,
-        settlementRecord.buyerUserId,
-        settlementRecord.grossCents,
-        settlementRecord.split.makerCents,
-        settlementRecord.split.lineageTotalCents,
-        settlementRecord.split.poolCents,
-        settlementRecord.stripeTransferId
-      ).run();
-
       try {
         await env.DB.prepare(`
           UPDATE inbox_messages
@@ -314,25 +249,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     return Response.json({
       success: true,
-      settlementId: settlementRecord.id,
       transactionId: casResult.transactionId,
       casResult,
       currentSha: newSha,
       previousSha: currentRemoteHeadSha,
       signatureVerification: sigVerification,
-      split: {
-        grossCents: settlementRecord.split.grossCents,
-        makerCents: settlementRecord.split.makerCents,
-        lineageCents: settlementRecord.split.lineageTotalCents,
-        poolCents: settlementRecord.split.poolCents,
-        ancestorSplits: settlementRecord.split.ancestorSplits,
-        conservationVerified: settlementRecord.split.conservationVerified
-      },
-      message: 'Authoritative CAS ref and lineage royalties settled successfully in D1'
+      message: 'Authoritative CAS ref and commit provenance updated successfully in D1'
     });
   } catch (err: any) {
     return Response.json(
-      { success: false, error: 'Failed to process git merge settlement: ' + (err.message || 'Unknown error') },
+      { success: false, error: 'Failed to process git ref update: ' + (err.message || 'Unknown error') },
       { status: 500 }
     );
   }

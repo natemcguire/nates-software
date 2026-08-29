@@ -735,17 +735,13 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
       };
     });
 
-    it('POST /api/git should execute CAS merge and settle 70/20/10 lineage royalties in D1', async () => {
+    it('POST /api/git should execute pure CAS ref update and commit provenance in D1 without financial settlements', async () => {
       const payload = {
         appId: 'wallart',
         ref: 'refs/heads/main',
         expectedOldSha: '5c030af',
         newSha: '8f4a21e',
-        committer: 'nate',
-        grossCents: 2500,
-        ancestors: [
-          { appId: 'canvas-core', creatorId: 'usr_josh', depth: 1 }
-        ]
+        committer: 'nate'
       };
 
       const request = new Request('https://nates.software/api/git', {
@@ -759,13 +755,11 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
 
       const json = await response.json();
       expect(json.success).toBe(true);
-      expect(json.settlementId).toMatch(/^set_/);
-      expect(json.split.grossCents).toBe(2500);
-      expect(json.split.makerCents).toBe(1750);
-      expect(json.split.lineageCents).toBe(500);
-      expect(json.split.poolCents).toBe(250);
-      expect(json.split.conservationVerified).toBe(true);
-      expect(mockDbRows.length).toBe(1);
+      expect(json.transactionId).toBeDefined();
+      expect(json.currentSha).toBe('8f4a21e');
+      expect(json.casResult.success).toBe(true);
+      // Confirms pure Git operation does not create economic settlements
+      expect(json.settlementId).toBeUndefined();
     });
 
     it('POST /api/git should return 400 Bad Request if required parameters are missing', async () => {
@@ -815,17 +809,13 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
       expect(json.signatureVerification.valid).toBe(true);
     });
 
-    it('GET /api/git should retrieve recent settlements and forge status', async () => {
+    it('GET /api/git should retrieve refs and commit provenance', async () => {
       mockDbRows.push({
-        id: 'set_01',
-        app_id: 'wallart',
-        buyer_user_id: 'usr_sam',
-        gross_cents: 2500,
-        maker_cents: 1750,
-        lineage_cents: 500,
-        pool_cents: 250,
-        stripe_transfer_id: 'tr_123',
-        settled_at: new Date().toISOString()
+        repo_id: 'wallart',
+        ref: 'refs/heads/main',
+        sha: '8f4a21e',
+        committer: 'nate',
+        updated_at: new Date().toISOString()
       });
 
       const request = new Request('https://nates.software/api/git?appId=wallart', { method: 'GET' });
@@ -834,7 +824,8 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
 
       const json = await response.json();
       expect(json.success).toBe(true);
-      expect(json.settlements.length).toBe(1);
+      expect(json.appId).toBe('wallart');
+      expect(json.refs).toBeDefined();
     });
   });
 });

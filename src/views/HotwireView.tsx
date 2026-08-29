@@ -1,3 +1,4 @@
+import { useCatalog } from '../context/CatalogContext';
 import React, { useState, useEffect } from 'react';
 import { INITIAL_APPS, MAKER_PROFILES, AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
@@ -22,9 +23,16 @@ interface HotwireViewProps {
 }
 
 export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor }) => {
-  
-  const [apps, setApps] = useState<AppListing[]>(INITIAL_APPS);
-  const [selectedApp, setSelectedApp] = useState<AppListing>(INITIAL_APPS[0]);
+  const { apps: catalogApps, upvoteApp: catalogUpvote } = useCatalog();
+  const [apps, setApps] = useState<AppListing[]>(catalogApps);
+  const [selectedApp, setSelectedApp] = useState<AppListing>(catalogApps[0] || INITIAL_APPS[0]);
+
+  useEffect(() => {
+    if (catalogApps.length > 0) {
+      setApps(catalogApps);
+      setSelectedApp(prev => catalogApps.find(a => a.id === prev.id) || catalogApps[0]);
+    }
+  }, [catalogApps]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks'>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(new Set());
@@ -63,6 +71,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const handleUpvote = (e: React.MouseEvent, appId: string) => {
     e.stopPropagation();
     playSuccessChime();
+    catalogUpvote(appId);
 
     setApps(prev => prev.map(app => {
       if (app.id === appId) {

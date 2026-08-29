@@ -1,3 +1,4 @@
+import { CatalogProvider, useCatalog } from './context/CatalogContext';
 export interface ResolvedRoute {
   readonly type: 'standalone_app' | 'standalone_view' | 'desktop';
   readonly id?: string;
@@ -83,7 +84,8 @@ import { TerminalView } from './views/TerminalView';
 import { ChatView } from './views/ChatView';
 import { playClickSound } from './lib/soundEngine';
 
-export function App() {
+function AppInner() {
+  const { getApp } = useCatalog();
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
@@ -92,18 +94,36 @@ export function App() {
   const route = resolveAppRoute(hostname, pathname, viewQuery, urlParams?.get('app') || null);
 
   if (route.type === 'standalone_app' && route.id) {
-    const standaloneApp = INITIAL_APPS.find(a => a.id === route.id)!;
+    const resolvedApp = getApp(route.id) || {
+      id: route.id,
+      name: route.id.replace(/[-_]/g, ' ').replace(/\w/g, c => c.toUpperCase()),
+      tagline: `${route.id} — Go Fork, and Multiply!`,
+      description: "Shareware application provisioned on Nate's Software.",
+      author: 'nate',
+      authorAvatar: '⚡',
+      creator: 'nate',
+      creatorAvatar: '⚡',
+      version: 'v1.0.0',
+      upvotes: 42,
+      forkCount: 12,
+      tags: ['Shareware', 'App'],
+      sqliteDatabase: '/data/app.sqlite',
+      sqliteSize: '1.4 MB',
+      screenshots: ['https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'],
+      comments: []
+    };
+
     return (
       <div className="fixed inset-0 bg-[#ece9d8] flex flex-col font-tahoma text-xs overflow-hidden">
         <div className="bg-w95-blue text-white p-2 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
           <div className="flex items-center gap-2">
-            <span className="text-base">{standaloneApp.creatorAvatar || standaloneApp.authorAvatar || '🎯'}</span>
-            <span className="font-bold text-sm font-mono">{standaloneApp.name}</span>
+            <span className="text-base">{resolvedApp.creatorAvatar || resolvedApp.authorAvatar || '🎯'}</span>
+            <span className="font-bold text-sm font-mono">{resolvedApp.name}</span>
             <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
-              {standaloneApp.version}
+              {resolvedApp.version}
             </span>
             <span className="text-gray-300 font-mono text-[11px]">
-              https://{standaloneApp.id}.nates-software.com
+              https://{resolvedApp.id}.nates-software.com
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -116,7 +136,7 @@ export function App() {
           </div>
         </div>
         <div className="flex-1 overflow-auto p-2">
-          <EphemeralLiveApp app={standaloneApp} />
+          <EphemeralLiveApp app={resolvedApp} />
         </div>
       </div>
     );
@@ -561,3 +581,12 @@ export function App() {
 }
 
 export default App;
+
+
+export function App() {
+  return (
+    <CatalogProvider>
+      <AppInner />
+    </CatalogProvider>
+  );
+}
