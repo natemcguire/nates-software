@@ -144,7 +144,32 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
           (id, user_id, sender_id, title, preview, content, feature_ref, is_merged, unread, message_kind, in_reply_to_id)
         VALUES (?, ?, ?, ?, ?, ?, NULL, 0, 1, 'feedback', ?)
       `).bind(replyId, recipient.id, userId, subject, text.slice(0, 160), text, messageId).run();
-      return Response.json({ success: true, messageId: replyId });
+      const storedReply = await env.DB.prepare(`
+        SELECT m.id, m.title, m.content, m.created_at AS createdAt,
+          COALESCE(recipient.display_name || ' (@' || recipient.username || ')', 'Unknown recipient') AS counterpartName,
+          COALESCE(recipient.avatar_url, '📤') AS counterpartAvatar
+        FROM inbox_messages m
+        LEFT JOIN users recipient ON recipient.id = m.user_id
+        WHERE m.id = ? AND m.sender_id = ?
+      `).bind(replyId, userId).first();
+      if (!storedReply) return jsonError('Reply was stored but could not be confirmed', 500);
+      return Response.json({
+        success: true,
+        messageId: replyId,
+        thread: {
+          id: storedReply.id,
+          category: 'feedback',
+          from: storedReply.counterpartName,
+          fromAvatar: storedReply.counterpartAvatar,
+          direction: 'sent',
+          subject: storedReply.title,
+          body: storedReply.content,
+          unread: false,
+          featureRef: 'n/a',
+          inReplyToId: messageId,
+          time: storedReply.createdAt
+        }
+      });
     }
 
     if (body.action === 'merge') return jsonError('INBOX does not land Git refs. Approve the immutable merge attempt instead.', 409);

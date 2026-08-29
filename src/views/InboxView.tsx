@@ -160,22 +160,25 @@ export const InboxView: React.FC = () => {
         body: JSON.stringify({
           action: 'reply',
           messageId: selectedThread.id,
-          toUser: selectedThread.from,
-          subject: `Re: ${selectedThread.subject}`,
           text
         })
       });
       const data = await res.json();
 
       if (res.ok && data.success) {
+        if (data.thread) {
+          setThreads(previous => previous.some(thread => thread.id === data.thread.id)
+            ? previous
+            : [data.thread as InboxThread, ...previous]);
+        }
         setReplyText('');
-        setActionSuccess('✔ Reply dispatched successfully via INBOX bridge');
+        setActionSuccess('✔ Reply stored and delivered in INBOX');
         setTimeout(() => setActionSuccess(null), 3000);
       } else {
-        setActionError(data.error || 'Failed to dispatch reply');
+        setActionError(data.error || 'Failed to send reply');
       }
     } catch (err: any) {
-      setActionError(err.message || 'Network error dispatching reply');
+      setActionError(err.message || 'Network error sending reply');
     } finally {
       setActionPending(null);
     }
@@ -509,14 +512,14 @@ export const InboxView: React.FC = () => {
                 </span>
                 {actionPending === 'reply' && (
                   <span className="text-blue-700 font-bold text-[11px] flex items-center gap-1">
-                    <RefreshCw size={10} className="animate-spin" /> Dispatching...
+                    <RefreshCw size={10} className="animate-spin" /> Sending...
                   </span>
                 )}
               </div>
               <div className="flex gap-1.5">
                 <input
                   type="text"
-                  placeholder="Type message or instruction for agent..."
+                  placeholder="Write a reply..."
                   value={replyText}
                   onChange={e => setReplyText(e.target.value)}
                   disabled={actionPending === 'reply'}

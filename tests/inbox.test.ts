@@ -110,6 +110,10 @@ describe('INBOX.EXE live-mode integrity', () => {
     const data: any = await (await get()).json();
     const sent = data.threads.find((thread: any) => thread.id === first.messageId);
     expect(sent).toMatchObject({ direction: 'sent', from: 'Sam Altman (@sam)', inReplyToId: 'parent', unread: false });
+    expect(first.thread).toMatchObject({
+      id: first.messageId, direction: 'sent', from: 'Sam Altman (@sam)', body: 'Please revise this.',
+      inReplyToId: 'parent', unread: false
+    });
 
     const response = await post({ action: 'reply', messageId: first.messageId, text: 'One more detail.' });
     expect(response.status).toBe(200);
