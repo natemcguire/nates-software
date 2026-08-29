@@ -51,6 +51,53 @@ export interface GitsmithRepo {
   liveUrl?: string;
   liveAppUrl?: string;
   files: { name: string; type: 'file' | 'dir'; size?: string; content?: string }[];
+  source: 'canonical' | 'showcase';
+  visibility: 'public' | 'unlisted' | 'private';
+  status: string;
+}
+
+export interface CanonicalRepositoryProjection {
+  id: string;
+  slug: string;
+  ownerUserId: string;
+  ownerUsername?: string | null;
+  visibility: 'public' | 'unlisted' | 'private';
+  status: string;
+  defaultRef: string;
+  defaultCommitOid?: string | null;
+  forkCount?: number | string | null;
+  objectFormat?: string;
+  updatedAt?: string;
+}
+
+export function mapCanonicalRepository(repo: CanonicalRepositoryProjection): GitsmithRepo {
+  const owner = repo.ownerUsername || repo.ownerUserId;
+  const commitOid = repo.defaultCommitOid || '';
+  return {
+    id: repo.id,
+    name: repo.slug,
+    owner,
+    avatar: '🔩',
+    description: `Canonical ${repo.visibility} repository. Gateway state: ${repo.status}.`,
+    stars: null,
+    forks: Number(repo.forkCount || 0),
+    language: 'Not reported',
+    license: 'Not reported',
+    sqlitePath: 'Application-defined',
+    branch: repo.defaultRef.replace(/^refs\/heads\//, ''),
+    lastCommit: {
+      sha: commitOid ? commitOid.slice(0, 12) : 'No projected ref',
+      message: commitOid ? 'Authoritative default-ref projection' : `Repository ${repo.status}`,
+      author: owner,
+      time: repo.updatedAt || 'Not reported',
+      verified: false
+    },
+    tags: ['Canonical', repo.visibility, repo.status, repo.objectFormat || 'git'],
+    files: [],
+    source: 'canonical',
+    visibility: repo.visibility,
+    status: repo.status
+  };
 }
 
 export const GITSMITH_REPOS: GitsmithRepo[] = [
@@ -74,6 +121,9 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: false
     },
     tags: ['Arcade', 'Retro', 'Duck Hunt', 'Canvas', 'Web Audio'],
+    source: 'showcase',
+    visibility: 'public',
+    status: 'bundled',
     files: [
       { name: 'assets', type: 'dir' },
       { name: 'src', type: 'dir' },
@@ -106,6 +156,9 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: false
     },
     tags: ['Correspondence', 'Postal', 'Evidence Journal', 'Local-First'],
+    source: 'showcase',
+    visibility: 'public',
+    status: 'bundled',
     liveUrl: '',
     liveAppUrl: '',
     files: [
@@ -135,6 +188,9 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       verified: false
     },
     tags: ['Images', 'Crop', 'Resize', 'Compression', 'Browser'],
+    source: 'showcase',
+    visibility: 'public',
+    status: 'bundled',
     liveUrl: 'https://picfitai.nates-software.com',
     liveAppUrl: 'https://picfitai.nates-software.com',
     files: [
@@ -159,6 +215,8 @@ export const GitsmithView: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'commits' | 'lineage'>('code');
   const [canonicalRepoCount, setCanonicalRepoCount] = useState<number | null>(null);
+  const [canonicalRepositories, setCanonicalRepositories] = useState<GitsmithRepo[]>([]);
+  const [canonicalLoadState, setCanonicalLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [showCreateRepo, setShowCreateRepo] = useState(false);
   const [newRepoSlug, setNewRepoSlug] = useState('');
   const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
@@ -169,10 +227,23 @@ export const GitsmithView: React.FC = () => {
       const response = await fetch('/api/git?list=1', { credentials: 'same-origin' });
       const payload = await response.json();
       if (response.ok && payload.success && Array.isArray(payload.repositories)) {
-        setCanonicalRepoCount(payload.repositories.length);
+        const mapped: GitsmithRepo[] = payload.repositories.map((repo: CanonicalRepositoryProjection) => mapCanonicalRepository(repo));
+        setCanonicalRepositories(mapped);
+        setCanonicalRepoCount(mapped.length);
+        setCanonicalLoadState('loaded');
+        if (mapped.length > 0) {
+          setSelectedRepo(current => mapped.find(repo => repo.id === current.id) || mapped[0]);
+          setActiveFile(undefined);
+        } else {
+          setSelectedRepo(GITSMITH_REPOS[0]);
+          setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
+        }
+        return;
       }
+      setCanonicalLoadState('error');
     } catch {
       setCanonicalRepoCount(null);
+      setCanonicalLoadState('error');
     }
   };
 
@@ -262,7 +333,9 @@ export const GitsmithView: React.FC = () => {
     document.body.style.userSelect = 'none';
   };
 
-  const filteredRepos = GITSMITH_REPOS.filter(repo => {
+  const repositoryCatalog = canonicalRepositories.length > 0 ? canonicalRepositories : GITSMITH_REPOS;
+  const showingShowcases = canonicalRepositories.length === 0;
+  const filteredRepos = repositoryCatalog.filter(repo => {
     const q = searchQuery.toLowerCase();
     const matchName = repo.name.toLowerCase().includes(q) || repo.owner.toLowerCase().includes(q);
     const matchDesc = repo.description.toLowerCase().includes(q);
@@ -288,7 +361,9 @@ export const GitsmithView: React.FC = () => {
 
 
 
-  const codeLines = (activeFile?.content || `# ${selectedRepo.name}\n\nGit repository running on GITSMITH.`).split('\n');
+  const codeLines = (activeFile?.content || (selectedRepo.source === 'canonical'
+    ? `# ${selectedRepo.owner}/${selectedRepo.name}\n\nCanonical repository metadata is loaded from the control plane.\nFile browsing requires a commissioned GITSMITH object gateway.`
+    : `# ${selectedRepo.name}\n\nBundled showcase snapshot; this is not a live forge checkout.`)).split('\n');
 
   return (
     <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
@@ -367,9 +442,16 @@ export const GitsmithView: React.FC = () => {
       )}
 
       {/* Main Forge Body Grid with Resizable Split Panes */}
-      <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono">
-        SHOWCASE SNAPSHOTS — The catalog below previews bundled source examples. Stars, live fork totals, gateway refs, and signature verification are shown only when backed by canonical forge records.
-      </div>
+      {showingShowcases ? (
+        <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono">
+          {canonicalLoadState === 'loading' ? 'LOADING CANONICAL FORGE… ' : canonicalLoadState === 'error' ? 'CANONICAL FORGE UNAVAILABLE — ' : 'NO VISIBLE CANONICAL REPOSITORIES — '}
+          Showing bundled source examples only. Their files and commit labels are snapshots, not live gateway evidence.
+        </div>
+      ) : (
+        <div className="bg-emerald-950/80 border-b border-emerald-700 px-4 py-2 text-[11px] text-emerald-200 font-mono">
+          CANONICAL CONTROL-PLANE RECORDS — Repository status, default refs, and fork totals are loaded from D1. Git objects remain authoritative at the gateway.
+        </div>
+      )}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Repository Sidebar (Drag-Resizable Width) */}
         <div 
@@ -389,8 +471,8 @@ export const GitsmithView: React.FC = () => {
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1 font-mono">
-              <span className="font-bold text-slate-300">{filteredRepos.length} Catalog Previews</span>
-              <span className="text-sky-400 font-bold">Sample data</span>
+              <span className="font-bold text-slate-300">{filteredRepos.length} {showingShowcases ? 'Showcase Previews' : 'Repositories'}</span>
+              <span className={showingShowcases ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>{showingShowcases ? 'Bundled snapshots' : 'Canonical D1'}</span>
             </div>
           </div>
 
@@ -460,10 +542,10 @@ export const GitsmithView: React.FC = () => {
                     <span className="text-sky-400 font-black">{selectedRepo.name}</span>
                   </h1>
                   <span className="bg-slate-900 text-slate-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
-                    Public
+                    {selectedRepo.visibility}
                   </span>
-                  <span className="bg-amber-950 text-amber-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-amber-700">
-                    Bundled Showcase
+                  <span className={`${selectedRepo.source === 'canonical' ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-amber-950 text-amber-300 border-amber-700'} text-[11px] font-bold px-2 py-0.5 rounded-full border`}>
+                    {selectedRepo.source === 'canonical' ? selectedRepo.status : 'Bundled Showcase'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
@@ -664,8 +746,10 @@ export const GitsmithView: React.FC = () => {
           {activeTab === 'commits' && (
             <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-3 shadow-md">
               <div className="font-mono text-sm font-bold text-white mb-2 flex items-center justify-between">
-                <span>Bundled Commit Snapshot</span>
-                <span className="text-xs text-amber-400 font-normal">Not a canonical gateway reflog</span>
+                <span>{selectedRepo.source === 'canonical' ? 'Canonical Default-Ref Projection' : 'Bundled Commit Snapshot'}</span>
+                <span className={`text-xs font-normal ${selectedRepo.source === 'canonical' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {selectedRepo.source === 'canonical' ? selectedRepo.branch : 'Not a canonical gateway reflog'}
+                </span>
               </div>
 
               <div className="space-y-2 font-mono text-xs">
@@ -681,7 +765,7 @@ export const GitsmithView: React.FC = () => {
                       {selectedRepo.lastCommit.sha}
                     </span>
                     <span className="bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-600 font-bold text-[10px]">
-                      UNVERIFIED SNAPSHOT
+                      {selectedRepo.source === 'canonical' ? 'D1 PROJECTION' : 'UNVERIFIED SNAPSHOT'}
                     </span>
                   </div>
                 </div>

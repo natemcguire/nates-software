@@ -964,6 +964,10 @@ describe('GITSMITH Repository Provisioning & Two-Phase Fork Lifecycle', () => {
       expect(listedIds).toContain(publicRepoId);
       expect(listedIds).not.toContain(unlistedRepoId); // OMITTED!
       expect(listedIds).not.toContain(privateRepoId);  // OMITTED!
+      const publicProjection = unauthCollData.repositories.find((r: any) => r.id === publicRepoId);
+      expect(publicProjection.ownerUsername).toBe('nate');
+      expect(Number(publicProjection.forkCount)).toBe(0);
+      expect(publicProjection.defaultCommitOid).toMatch(/^[0-9a-f]{40}$/);
 
       // Non-member authenticated collection query also omits unlisted repository
       const samCollReq = new Request('http://localhost/api/git?list=1', {

@@ -204,6 +204,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                r.slug, r.visibility, r.object_format AS objectFormat,
                r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
                r.created_at AS createdAt, r.updated_at AS updatedAt,
+               (SELECT username FROM users WHERE id = r.owner_user_id) AS ownerUsername,
+               (SELECT COUNT(*) FROM repository_forks rf WHERE rf.parent_repository_id = r.id) AS forkCount,
+               (SELECT commit_oid FROM repository_refs rr
+                WHERE rr.repository_id = r.id AND rr.ref_name = r.default_ref LIMIT 1) AS defaultCommitOid,
                CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
         FROM repositories r
         LEFT JOIN repository_members m
@@ -223,6 +227,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                r.slug, r.visibility, r.object_format AS objectFormat,
                r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
                r.created_at AS createdAt, r.updated_at AS updatedAt,
+               (SELECT username FROM users WHERE id = r.owner_user_id) AS ownerUsername,
+               (SELECT COUNT(*) FROM repository_forks rf WHERE rf.parent_repository_id = r.id) AS forkCount,
+               (SELECT commit_oid FROM repository_refs rr
+                WHERE rr.repository_id = r.id AND rr.ref_name = r.default_ref LIMIT 1) AS defaultCommitOid,
                NULL AS memberRole
         FROM repositories r
         WHERE r.visibility = 'public' AND r.status = 'active'
