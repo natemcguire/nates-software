@@ -11,9 +11,8 @@ interface EphemeralLiveAppProps {
 }
 
 export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
-  const liveUrl = app.id === 'dronehunter'
-    ? undefined
-    : `https://${app.id}.nates-software.com`;
+  const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
+  const liveUrl = /^https?:\/\//i.test(configuredLiveUrl) ? configuredLiveUrl : undefined;
 
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden">
