@@ -143,7 +143,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     it('should upgrade the legacy runtime-created vote table without losing valid votes', async () => {
       const legacy = await createTestD1Database({
         foreignKeys: true,
-        migrations: CANONICAL_MIGRATIONS.slice(0, -1)
+        migrations: CANONICAL_MIGRATIONS.slice(
+          0,
+          CANONICAL_MIGRATIONS.indexOf('0014_hotwire_votes.sql')
+        )
       });
       await legacy.d1.exec(`
         CREATE TABLE drop_upvotes (
