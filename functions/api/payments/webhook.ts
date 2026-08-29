@@ -51,12 +51,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const sigHeader = request.headers.get('stripe-signature');
     const webhookSecret = env?.STRIPE_WEBHOOK_SECRET;
 
-    // Enforce strict Stripe signature verification when secret is configured
-    if (webhookSecret && !webhookSecret.includes('mock') && !webhookSecret.includes('test_mock')) {
+    const isTestEnv = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST);
+
+    // Mandatory signature verification in production
+    if (!isTestEnv) {
+      if (!webhookSecret) {
+        return Response.json({ success: false, error: 'STRIPE_WEBHOOK_SECRET must be configured' }, { status: 500 });
+      }
       if (!sigHeader) {
         return Response.json({ success: false, error: 'Missing stripe-signature header' }, { status: 401 });
       }
 
+      const isValid = await verifyStripeSignature(rawBody, sigHeader, webhookSecret);
+      if (!isValid) {
+        return Response.json({ success: false, error: 'Invalid Stripe signature' }, { status: 401 });
+      }
+    } else if (webhookSecret && sigHeader) {
       const isValid = await verifyStripeSignature(rawBody, sigHeader, webhookSecret);
       if (!isValid) {
         return Response.json({ success: false, error: 'Invalid Stripe signature' }, { status: 401 });
@@ -270,6 +280,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       settled: true,
       paymentIntentId,
       orderId,
+      shelfId,
       licenseKey,
       settlement: {
         appId,

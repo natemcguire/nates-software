@@ -1,17 +1,20 @@
-// GET /api/shelf?username=nate
-// POST /api/shelf - Claim or purchase software license in D1
+// GET /api/shelf
+// POST /api/shelf - Claim or purchase software license in D1 (Strictly Session Authorized)
+
+import { getSessionUser, requireAuth } from './_auth';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
+    const authUser = await getSessionUser(request, env);
     const url = new URL(request.url);
-    const username = url.searchParams.get('username') || 'nate';
-    const userId = url.searchParams.get('userId');
+    const requestedUsername = url.searchParams.get('username');
+
+    let targetUserId = authUser?.id || 'usr_nate';
 
     if (env && env.DB) {
-      let targetUserId = userId;
-      if (!targetUserId) {
-        const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
-        targetUserId = user ? user.id : 'usr_nate';
+      if (requestedUsername && requestedUsername !== authUser?.username) {
+        const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(requestedUsername).first();
+        if (user) targetUserId = user.id as string;
       }
 
       const { results } = await env.DB.prepare(`
@@ -33,39 +36,35 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    const { appId, username } = await request.json() as any;
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse) return auth.errorResponse;
+    const sessionUser = auth.user!;
+
+    const { appId } = await request.json() as any;
     if (!appId) {
       return Response.json({ success: false, error: 'appId is required' }, { status: 400 });
     }
 
     if (env && env.DB) {
-      const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username || 'nate').first();
-      const userId = user ? user.id : 'usr_nate';
-
-      const shelfId = `shelf_${Date.now()}`;
+      const shelfId = `shelf_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
       const licenseKey = `NSW-${appId.substring(0, 2).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString(36).substring(4).toUpperCase()}`;
 
       await env.DB.prepare(`
         INSERT INTO shelf_items (id, user_id, app_id, license_key)
         VALUES (?, ?, ?, ?)
-        ON CONFLICT(id) DO NOTHING
-      `).bind(shelfId, userId, appId, licenseKey).run();
+        ON CONFLICT(user_id, app_id) DO NOTHING
+      `).bind(shelfId, sessionUser.id, appId, licenseKey).run();
 
       return Response.json({
         success: true,
         shelfId,
         licenseKey,
-        message: 'App successfully added to your shelf'
+        message: 'App successfully added to your authenticated shelf'
       });
     }
 
-    return Response.json({
-      success: true,
-      shelfId: `shelf_${Date.now()}`,
-      licenseKey: `NSW-${appId.substring(0, 2).toUpperCase()}-9812-77F2`,
-      message: 'App successfully added to your shelf'
-    });
+    return Response.json({ success: true, message: 'Shelf updated in memory' });
   } catch (err: any) {
-    return Response.json({ success: false, error: 'Failed to add item to shelf' }, { status: 500 });
+    return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 };

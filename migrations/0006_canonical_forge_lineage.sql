@@ -24,6 +24,28 @@ CREATE TABLE IF NOT EXISTS repositories (
 CREATE INDEX IF NOT EXISTS idx_repositories_app ON repositories(app_id);
 CREATE INDEX IF NOT EXISTS idx_repositories_owner ON repositories(owner_user_id, status);
 
+CREATE TABLE IF NOT EXISTS repository_members (
+    repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('reader', 'triager', 'writer', 'maintainer', 'owner')),
+    granted_by_user_id TEXT NOT NULL REFERENCES users(id),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (repository_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS repository_ref_policies (
+    repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+    ref_pattern TEXT NOT NULL,
+    require_signed_commits INTEGER NOT NULL DEFAULT 0 CHECK (require_signed_commits IN (0, 1)),
+    require_passing_build INTEGER NOT NULL DEFAULT 1 CHECK (require_passing_build IN (0, 1)),
+    minimum_approvals INTEGER NOT NULL DEFAULT 0 CHECK (minimum_approvals >= 0),
+    allow_force_push INTEGER NOT NULL DEFAULT 0 CHECK (allow_force_push IN (0, 1)),
+    allow_delete INTEGER NOT NULL DEFAULT 0 CHECK (allow_delete IN (0, 1)),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (repository_id, ref_pattern)
+);
+
 -- Current ref projection. A Git gateway must update this with a transactionally
 -- recorded repository_ref_events row after a successful compare-and-swap.
 CREATE TABLE IF NOT EXISTS repository_refs (
@@ -159,12 +181,24 @@ CREATE TABLE IF NOT EXISTS merge_attempts (
     UNIQUE (merge_job_id, attempt_number)
 );
 
+-- Approval is bound to one exact attempt and result OID, never to a mutable job.
+CREATE TABLE IF NOT EXISTS merge_approvals (
+    id TEXT PRIMARY KEY,
+    merge_attempt_id TEXT NOT NULL REFERENCES merge_attempts(id) ON DELETE CASCADE,
+    approver_user_id TEXT NOT NULL REFERENCES users(id),
+    result_commit_oid TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    comment TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (merge_attempt_id, approver_user_id)
+);
+
 CREATE TABLE IF NOT EXISTS build_runs (
     id TEXT PRIMARY KEY,
     repository_id TEXT NOT NULL REFERENCES repositories(id),
     commit_oid TEXT NOT NULL,
     merge_attempt_id TEXT REFERENCES merge_attempts(id),
-    purpose TEXT NOT NULL CHECK (purpose IN ('verification', 'preview', 'release', 'benchmark')),
+    purpose TEXT NOT NULL CHECK (purpose IN ('verification', 'preview', 'release')),
     status TEXT NOT NULL DEFAULT 'queued'
         CHECK (status IN ('queued', 'running', 'passed', 'failed', 'cancelled', 'timed_out')),
     runner_image_digest TEXT NOT NULL,
@@ -213,53 +247,6 @@ CREATE TABLE IF NOT EXISTS deployment_revisions (
 );
 CREATE INDEX IF NOT EXISTS idx_deployments_current ON deployment_revisions(app_id, environment, status);
 
-CREATE TABLE IF NOT EXISTS benchmark_suites (
-    id TEXT PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    version TEXT NOT NULL,
-    methodology_markdown TEXT NOT NULL,
-    workload_manifest_digest TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active', 'retired')),
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (slug, version)
-);
-
-CREATE TABLE IF NOT EXISTS benchmark_runs (
-    id TEXT PRIMARY KEY,
-    suite_id TEXT NOT NULL REFERENCES benchmark_suites(id),
-    repository_id TEXT REFERENCES repositories(id),
-    app_id TEXT REFERENCES app_listings(id),
-    commit_oid TEXT,
-    build_run_id TEXT REFERENCES build_runs(id),
-    submitted_by_user_id TEXT REFERENCES users(id),
-    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('application', 'hardware', 'model', 'runtime')),
-    subject_manifest TEXT NOT NULL,
-    environment_manifest TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'queued'
-        CHECK (status IN ('queued', 'running', 'completed', 'invalid', 'failed')),
-    verification_status TEXT NOT NULL DEFAULT 'unverified'
-        CHECK (verification_status IN ('unverified', 'reproducible', 'verified', 'rejected')),
-    raw_artifact_id TEXT REFERENCES build_artifacts(id),
-    started_at DATETIME,
-    completed_at DATETIME,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_benchmark_runs_subject ON benchmark_runs(app_id, suite_id, status, created_at);
-
-CREATE TABLE IF NOT EXISTS benchmark_samples (
-    id TEXT PRIMARY KEY,
-    benchmark_run_id TEXT NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
-    metric_key TEXT NOT NULL,
-    sample_index INTEGER NOT NULL CHECK (sample_index >= 0),
-    numeric_value REAL NOT NULL,
-    unit TEXT NOT NULL,
-    is_warmup INTEGER NOT NULL DEFAULT 0 CHECK (is_warmup IN (0, 1)),
-    measured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (benchmark_run_id, metric_key, sample_index)
-);
-CREATE INDEX IF NOT EXISTS idx_benchmark_samples_metric ON benchmark_samples(benchmark_run_id, metric_key, is_warmup);
-
 CREATE TABLE IF NOT EXISTS editorial_reviews (
     id TEXT PRIMARY KEY,
     app_id TEXT NOT NULL REFERENCES app_listings(id),
@@ -282,7 +269,7 @@ CREATE INDEX IF NOT EXISTS idx_editorial_reviews_app ON editorial_reviews(app_id
 CREATE TABLE IF NOT EXISTS editorial_measurements (
     id TEXT PRIMARY KEY,
     review_id TEXT NOT NULL REFERENCES editorial_reviews(id) ON DELETE CASCADE,
-    benchmark_run_id TEXT REFERENCES benchmark_runs(id),
+    evidence_artifact_id TEXT REFERENCES build_artifacts(id),
     metric_key TEXT NOT NULL,
     numeric_value REAL,
     text_value TEXT,
@@ -290,6 +277,37 @@ CREATE TABLE IF NOT EXISTS editorial_measurements (
     display_order INTEGER NOT NULL DEFAULT 0,
     CHECK (numeric_value IS NOT NULL OR text_value IS NOT NULL)
 );
+
+-- Durable cross-boundary work. Dispatchers claim rows and deliver them at least
+-- once; consumers deduplicate by id. This keeps D1 workflow commits from being
+-- silently separated from Git/object-store side effects.
+CREATE TABLE IF NOT EXISTS forge_outbox_events (
+    id TEXT PRIMARY KEY,
+    aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('repository', 'ref', 'fork', 'merge', 'build', 'deployment')),
+    aggregate_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    available_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at DATETIME,
+    last_error TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_forge_outbox_delivery ON forge_outbox_events(delivered_at, available_at);
+
+CREATE TABLE IF NOT EXISTS forge_reconciliation_issues (
+    id TEXT PRIMARY KEY,
+    repository_id TEXT NOT NULL REFERENCES repositories(id),
+    ref_name TEXT,
+    issue_type TEXT NOT NULL CHECK (issue_type IN ('git_missing_in_d1', 'd1_missing_in_git', 'oid_mismatch', 'artifact_missing')),
+    git_oid TEXT,
+    d1_oid TEXT,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'repairing', 'resolved', 'ignored')),
+    detail TEXT NOT NULL DEFAULT '',
+    detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_forge_reconciliation_open ON forge_reconciliation_issues(status, detected_at);
 
 -- Compatibility projections for older UI/API consumers.
 CREATE VIEW IF NOT EXISTS repository_lineage AS

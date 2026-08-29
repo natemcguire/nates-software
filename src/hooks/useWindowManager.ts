@@ -80,7 +80,20 @@ export function useWindowManager() {
       height: mktgConfig.height,
       zIndex: 10
     },
-    hotwire: {
+    editorial: {
+      id: 'editorial',
+      title: "Tom's Hardware & Editorial Lab — [BENCHMARKS & REVIEWS]",
+      icon: '🏆',
+      isOpen: false,
+      isMinimized: false,
+      isMaximized: false,
+      x: 90,
+      y: 50,
+      width: 900,
+      height: 600,
+      zIndex: 10
+    },
+  hotwire: {
       id: 'hotwire',
       title: "HOTWIRE — [Daily Drops & Claude Artifact Sandbox]",
       icon: '🔥',

@@ -1,5 +1,6 @@
 // Shared Session Authentication & Authorization Layer
-// Ensures all mutations derive identity strictly from authenticated sessions
+// Strictly validates active sessions against Cloudflare D1 user_sessions.
+// Zero backdoor tokens or hardcoded bypasses in production.
 
 export interface AuthenticatedUser {
   id: string;
@@ -22,9 +23,11 @@ export async function getSessionUser(request: Request, env: any): Promise<Authen
     if (match) token = match[1];
   }
 
+  // Strictly enforce test-only scope for mock runner
+  const isTestEnvironment = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST);
+
   if (!token) {
-    // In unit test runner without DB, provide fallback user for tests
-    if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) {
+    if (isTestEnvironment) {
       return {
         id: 'usr_nate',
         username: 'nate',
@@ -60,8 +63,8 @@ export async function getSessionUser(request: Request, env: any): Promise<Authen
     } catch {}
   }
 
-  // Fallback for tests if token is a test bearer token
-  if (token.startsWith('test_token_') || token === 'valid_test_token') {
+  // Only permit simulated test tokens inside the isolated Vitest test runner
+  if (isTestEnvironment && (token.startsWith('test_token_') || token === 'valid_test_token')) {
     return {
       id: 'usr_nate',
       username: 'nate',
@@ -81,7 +84,7 @@ export async function requireAuth(request: Request, env: any): Promise<{ user: A
     return {
       user: null,
       errorResponse: Response.json(
-        { success: false, error: 'Unauthorized: Valid session authentication required' },
+        { success: false, error: 'Unauthorized: Valid authenticated session required' },
         { status: 401 }
       )
     };

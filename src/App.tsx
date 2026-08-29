@@ -64,7 +64,7 @@ export function resolveAppRoute(
 import React, { useState } from 'react';
 import { GitsmithView } from './views/GitsmithView';
 import { EphemeralLiveApp } from './components/EphemeralLiveApp';
-import { INITIAL_APPS } from './data/mockData';
+import { INITIAL_APPS, AppListing } from './data/mockData';
 import { useWindowManager } from './hooks/useWindowManager';
 import { DesktopIcon } from './components/DesktopIcon';
 import { RetroWindow } from './components/RetroWindow';
@@ -73,6 +73,8 @@ import { StartMenu } from './components/StartMenu';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
+import { EditorialView } from './views/EditorialView';
+import { PostEditorView } from './views/PostEditorView';
 import { HotwireView } from './views/HotwireView';
 import { SlopshopView } from './views/SlopshopView';
 import { InboxView } from './views/InboxView';
@@ -82,7 +84,7 @@ import { DynoView } from './views/DynoView';
 import { ProfileView } from './views/ProfileView';
 import { TerminalView } from './views/TerminalView';
 import { ChatView } from './views/ChatView';
-import { playClickSound } from './lib/soundEngine';
+import { playClickSound, playSuccessChime } from './lib/soundEngine';
 
 function AppInner() {
   const { getApp } = useCatalog();
@@ -167,9 +169,20 @@ function AppInner() {
 
   if (route.type === 'standalone_view') {
     switch (route.id) {
+      case 'editorial': return renderStandaloneWrapper(route.title || "EDITORIAL LAB", <EditorialView />);
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
       case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
-      case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView />);
+      case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView
+          onOpenApp={(appId) => {
+            playClickSound();
+            const targetApp = getApp(appId);
+            if (targetApp) openWindow(targetApp.id as any);
+          }}
+          onOpenPostEditor={(app) => {
+            playClickSound();
+            setEditingApp(app || null);
+          }}
+        />);
       case 'slopshop': return renderStandaloneWrapper(route.title || "SLOPSHOP", <SlopshopView />);
       case 'rig': return renderStandaloneWrapper(route.title || "RIG.EXE", <RigRuntimeView />);
       case 'inbox': return renderStandaloneWrapper(route.title || "INBOX", <InboxView />);
@@ -194,6 +207,7 @@ function AppInner() {
   } = useWindowManager();
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
   const getInitialScale = () => {
@@ -332,6 +346,11 @@ function AppInner() {
           onClick={() => { playClickSound(); openWindow('hotwire'); }}
         />
         <DesktopIcon
+          label="EDITORIAL (Tom's Lab)"
+          icon="🏆"
+          onClick={() => { playClickSound(); openWindow('editorial'); }}
+        />
+        <DesktopIcon
           label="SLOPSHOP (AI Mod)"
           icon="🔧"
           onClick={() => { playClickSound(); openWindow('slopshop'); }}
@@ -450,6 +469,25 @@ function AppInner() {
         <TerminalView />
       </RetroWindow>
 
+      {/* 2.5 Editorial Lab — Tom's Hardware & Benchmark Reviews */}
+      <RetroWindow
+        windowState={windows.editorial}
+        isActive={activeWindowId === 'editorial'}
+        onFocus={() => focusWindow('editorial')}
+        onClose={() => closeWindow('editorial')}
+        onMinimize={() => minimizeWindow('editorial')}
+        onToggleMaximize={() => toggleMaximizeWindow('editorial')}
+        onMove={(x, y) => updateWindowPosition('editorial', x, y)}
+        onResize={(w, h, x, y) => updateWindowSize('editorial', w, h, x, y)}
+      >
+        <EditorialView
+          onOpenApp={(appId) => {
+            const targetApp = getApp(appId);
+            if (targetApp) openWindow(targetApp.id as any);
+          }}
+        />
+      </RetroWindow>
+
       {/* 2. Hotwire Drops */}
       <RetroWindow
         windowState={windows.hotwire}
@@ -461,7 +499,17 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('hotwire', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('hotwire', w, h, x, y)}
       >
-        <HotwireView />
+        <HotwireView
+          onOpenApp={(appId) => {
+            playClickSound();
+            const targetApp = getApp(appId);
+            if (targetApp) openWindow(targetApp.id as any);
+          }}
+          onOpenPostEditor={(app) => {
+            playClickSound();
+            setEditingApp(app || null);
+          }}
+        />
       </RetroWindow>
 
       {/* 3. Slopshop AI Speed Shop */}
@@ -568,6 +616,25 @@ function AppInner() {
         onClose={() => setStartMenuOpen(false)}
         onOpenWindow={openWindow}
       />
+
+      {/* PostEditor Modal Overlay */}
+      {editingApp && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
+            <PostEditorView
+              app={editingApp}
+              onSave={(_updatedApp) => {
+                playSuccessChime();
+                setEditingApp(null);
+              }}
+              onCancel={() => {
+                playClickSound();
+                setEditingApp(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Authentic Win95 Desktop Taskbar */}
       <DesktopTaskbar

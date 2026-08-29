@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Award, Zap, Cpu, Flame, Trophy, ExternalLink, ThumbsUp } from 'lucide-react';
+import { Award, Flame, ThumbsUp } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
 interface EditorialArticle {
@@ -198,7 +198,7 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
 
               {selectedArticle.appId && onOpenApp && (
                 <button
-                  onClick={() => { playClickSound(); onOpenApp(selectedArticle.appId); }}
+                  onClick={() => { playClickSound(); if (selectedArticle.appId) onOpenApp(selectedArticle.appId); }}
                   className="btn-w95 text-xs py-1.5 px-4 font-bold bg-blue-700 text-white hover:bg-blue-800 flex items-center space-x-1.5 shadow"
                 >
                   <Flame className="w-3.5 h-3.5 text-yellow-300" />
