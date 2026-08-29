@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   handleInit,
   handleFork,
@@ -47,6 +48,10 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.port).toBeGreaterThanOrEqual(3001);
       expect(res.data.memoryCapMb).toBe(256);
       expect(res.data.worktreePath).toContain('/tmp/slop-dronehunter-');
+      expect(existsSync(`${res.data.worktreePath}/index.html`)).toBe(true);
+      expect(existsSync(`${res.data.worktreePath}/assets/drone.png`)).toBe(true);
+      expect(existsSync(`${res.data.worktreePath}/server.mjs`)).toBe(true);
+      expect(readFileSync(`${res.data.worktreePath}/index.html`, 'utf8')).toContain('Drone Hunter');
       expect(res.message).not.toContain('agy');
       const engineInstructions = getEngineStartInstructions(res.data.worktreePath);
       expect(engineInstructions).toContainEqual(expect.stringContaining('Antigravity (AGY)'));

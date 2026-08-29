@@ -346,6 +346,28 @@ export function handleFork(slugArg?: string): SlopCommandResult {
         }
       }
 
+      // Drone Hunter ships with SLOP as a complete, dependency-free starter.
+      // Copy the actual game source when the forge is not being addressed by an
+      // explicit local path; never substitute the unrelated React placeholder.
+      if (appId === "dronehunter" && !fsMod.existsSync(`${worktreePath}/package.json`)) {
+        const pathMod = getPath();
+        const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
+        const bundledSource = pathMod?.resolve(pathMod.dirname(modulePath), "../public/dronehunter-game");
+        if (!bundledSource || !fsMod.existsSync(bundledSource) || !fsMod.cpSync) {
+          throw new Error("The bundled Drone Hunter source is unavailable; no placeholder fork was created.");
+        }
+        fsMod.cpSync(bundledSource, worktreePath, { recursive: true });
+        fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
+          name: "dronehunter",
+          version: "1.0.0",
+          private: true,
+          type: "module",
+          scripts: { dev: "node server.mjs", start: "node server.mjs" }
+        }, null, 2) + "\n");
+        fsMod.writeFileSync(`${worktreePath}/server.mjs`, `import { createServer } from "node:http";\nimport { createReadStream, statSync } from "node:fs";\nimport { extname, join, normalize } from "node:path";\nconst port = Number(process.env.PORT || ${port});\nconst root = process.cwd();\nconst types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml" };\ncreateServer((req, res) => {\n  const requested = decodeURIComponent(new URL(req.url || "/", "http://localhost").pathname);\n  const relative = normalize(requested).replace(/^(\\.\\.(\\/|\\\\|$))+/, "").replace(/^[/\\\\]+/, "");\n  let file = join(root, relative || "index.html");\n  try { if (statSync(file).isDirectory()) file = join(file, "index.html"); } catch { res.writeHead(404); res.end("Not found"); return; }\n  res.setHeader("content-type", types[extname(file)] || "application/octet-stream");\n  createReadStream(file).on("error", () => { if (!res.headersSent) res.writeHead(500); res.end("Unable to read file"); }).pipe(res);\n}).listen(port, "127.0.0.1", () => console.log(\`Drone Hunter ready at http://127.0.0.1:\${port}\`));\n`);
+        fsMod.writeFileSync(`${worktreePath}/README.md`, `# Drone Hunter 95\n\nA dependency-free, local browser arcade game.\n\nRun \`npm run dev\`, then open the printed local URL. Scores and preferences remain in this browser's local storage.\n`);
+      }
+
       // If not cloned from local, create a real runnable project template in worktree
       if (!fsMod.existsSync(`${worktreePath}/package.json`)) {
         const starterPkg = {
@@ -378,6 +400,15 @@ export function handleFork(slugArg?: string): SlopCommandResult {
         }
       }
 
+      // A copied bundled starter still needs a real Git repository before the
+      // install may be reported as complete.
+      if (!fsMod.existsSync(`${worktreePath}/.git`)) {
+        runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 5000, throwError: true });
+        runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 3000, throwError: true });
+        runCommandSync(`git -C "${worktreePath}" -c user.name="SLOP Installer" -c user.email="installer@nates-software.com" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 5000, throwError: true });
+        runCommandSync(`git -C "${worktreePath}" remote add slop ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`, { stdio: "pipe", timeout: 3000 });
+      }
+
       if (!fsMod.existsSync(worktreePath)) {
         throw new Error(`Worktree directory ${worktreePath} does not exist on disk.`);
       }
@@ -391,8 +422,8 @@ export function handleFork(slugArg?: string): SlopCommandResult {
     `[SLOP] ${success ? 'Forked' : 'Failed to fork'} ${slug} into isolated worktree ${worktreePath}...`,
     success ? `  ✔ Created directory on disk: ${worktreePath}` : `  ✖ Error: ${forkError}`,
     success ? `  ✔ Git remote "slop" configured` : ``,
-    success ? `  ✔ Bound micro-dyno on port ${port}` : ``,
-    success ? `  ✔ Memory cap: ${MEMORY_CAP_MB}MB` : ``,
+    success ? `  ✔ Suggested local dev port: ${port}` : ``,
+    success ? `  ✔ RIG resource profile available: ${MEMORY_CAP_MB}MB cap (not started)` : ``,
     success ? `  ✔ Installation complete. No LLM or IDE was launched.` : ``,
     success ? `\nSTART YOUR ENGINES (optional — you choose after install):` : ``,
     ...(success ? getEngineStartInstructions(worktreePath) : []),

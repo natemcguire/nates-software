@@ -48,7 +48,7 @@ export interface GitsmithRepo {
     verified: boolean;
   };
   tags: string[];
-  liveUrl: string;
+  liveUrl?: string;
   liveAppUrl?: string;
   files: { name: string; type: 'file' | 'dir'; size?: string; content?: string }[];
 }
@@ -59,35 +59,31 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     name: 'dronehunter',
     owner: 'nate',
     avatar: '🎯',
-    description: 'Fast-paced retro browser shooter inspired by Duck Hunt. Double-barrel shotgun, laughing dog animations, drone explosions, and local SQLite high score telemetry in WAL mode.',
+    description: 'Fast-paced retro browser shooter inspired by Duck Hunt. Double-barrel shotgun, laughing dog animations, drone explosions, and local high score tracking.',
     stars: 420,
     forks: 88,
     language: 'TypeScript / Canvas Game',
     license: 'MIT Open Source Shareware',
-    sqlitePath: '/data/dronehunter.sqlite (WAL mode)',
+    sqlitePath: 'Local Storage (Storage Freedom)',
     branch: 'main',
     lastCommit: {
       sha: '5cdee6f',
-      message: 'feat(arcade): Duck Hunt style shotgun shooter with SQLite WAL high scores',
+      message: 'feat(arcade): Duck Hunt style shotgun shooter with local high scores',
       author: 'nate',
       time: '12 mins ago',
       verified: true
     },
-    tags: ['Arcade', 'Retro', 'Duck Hunt', 'SQLite WAL', 'Web Audio'],
-    liveUrl: 'https://dronehunter.pages.dev',
-    liveAppUrl: 'https://dronehunter.pages.dev',
+    tags: ['Arcade', 'Retro', 'Duck Hunt', 'Canvas', 'Web Audio'],
     files: [
       { name: 'assets', type: 'dir' },
       { name: 'src', type: 'dir' },
-      { name: 'migrations', type: 'dir' },
-      { name: 'migrations/001_initial_scores.sql', type: 'file', size: '580 B', content: `-- SQLite WAL Scoreboard Table\nCREATE TABLE IF NOT EXISTS high_scores (\n  id TEXT PRIMARY KEY,\n  player_name TEXT NOT NULL,\n  score INTEGER NOT NULL,\n  drones_shot INTEGER NOT NULL,\n  accuracy_pct REAL NOT NULL,\n  recorded_at INTEGER NOT NULL\n);\n\nCREATE INDEX IF NOT EXISTS idx_scores ON high_scores(score DESC);` },
       { name: 'src/game.js', type: 'file', size: '18.4 KB', content: `// DroneHunter 95 - Authentic Duck Hunt Arcade Mechanics\nclass DroneHunterGame {\n  constructor() {\n    this.canvas = document.getElementById('gameCanvas');\n    this.ctx = this.canvas.getContext('2d');\n    this.score = 0;\n    this.shotsLeft = 3;\n    this.drones = [];\n    this.dog = { state: 'hunting', x: 100, y: 400 };\n    this.initAudio();\n    this.bindEvents();\n    this.loop();\n  }\n\n  shoot(e) {\n    if (this.shotsLeft <= 0) return;\n    this.shotsLeft--;\n    this.playShotgun();\n    this.checkCollisions(e.clientX, e.clientY);\n  }\n}` },
       { name: 'src/game.ts', type: 'file', size: '14.8 KB', content: `// DroneHunter 95 - Duck Hunt Style Canvas Arcade\nexport class DroneHunterGame {\n  private canvas: HTMLCanvasElement;\n  private ctx: CanvasRenderingContext2D;\n  private score: number = 0;\n  private shells: number = 2;\n\n  constructor(canvasId: string) {\n    this.canvas = document.getElementById(canvasId) as HTMLCanvasElement;\n    this.ctx = this.canvas.getContext('2d')!;\n    this.initAudioAndSprites();\n  }\n\n  public shoot(x: number, y: number): boolean {\n    if (this.shells <= 0) return false;\n    this.shells--;\n    this.playShotgunSound();\n    return this.checkHit(x, y);\n  }\n}` },
       { name: 'style.css', type: 'file', size: '2.1 KB', content: `body { background: #000; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: monospace; }\n#gameCanvas { border: 4px solid #fff; cursor: crosshair; background: #63b5f6; }` },
       { name: 'index.html', type: 'file', size: '4.2 KB', content: `<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>DroneHunter 95</title>\n  <link rel="stylesheet" href="/style.css">\n</head>\n<body>\n  <canvas id="gameCanvas" width="800" height="600"></canvas>\n  <script src="/src/game.js"></script>\n</body>\n</html>` },
       { name: 'package.json', type: 'file', size: '740 B', content: `{\n  "name": "dronehunter",\n  "version": "1.0.0",\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "tsc && vite build",\n    "test": "vitest run"\n  }\n}` },
-      { name: 'slop.config.json', type: 'file', size: '410 B', content: `{\n  "appId": "dronehunter",\n  "sqlite": "/data/dronehunter.sqlite",\n  "memoryCapMb": 256\n}` },
-      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# 🎯 DroneHunter 95\n\nRetro Duck Hunt arcade shooter with local SQLite WAL high score telemetry.` }
+      { name: 'slop.config.json', type: 'file', size: '320 B', content: `{\n  "appId": "dronehunter",\n  "memoryCapMb": 256\n}` },
+      { name: 'README.md', type: 'file', size: '2.8 KB', content: `# 🎯 DroneHunter 95\n\nRetro Duck Hunt arcade shooter with local high score tracking.` }
     ]
   },
   {
@@ -475,7 +471,7 @@ export const GitsmithView: React.FC = () => {
 
               {/* Action Buttons: Live App, Fork, Clone */}
               <div className="flex items-center gap-2 flex-wrap">
-                <a
+                {selectedRepo.liveUrl && <a
                   href={selectedRepo.liveUrl}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -485,7 +481,7 @@ export const GitsmithView: React.FC = () => {
                   <Play size={13} fill="currentColor" />
                   <span>▷ View Live App</span>
                   <ExternalLink size={12} />
-                </a>
+                </a>}
 
                 <button
                   onClick={() => {

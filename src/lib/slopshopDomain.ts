@@ -130,10 +130,9 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     repoUrl: 'https://github.com/natemcguire/dronehunter.git',
     sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/dronehunter.git',
     defaultPort: 3004,
-    sqliteDatabase: '/data/dronehunter.sqlite',
     localPathHint: '~/Projects/dronehunter',
-    techStack: ['TypeScript', 'Vite', 'SQLite (WASM/WAL)', 'Web Audio API', 'HTML5 Canvas'],
-    tagline: 'Retro Duck Hunt Arcade Shooter with WebAssembly SQLite High Scores & Audio Synthesis.',
+    techStack: ['TypeScript', 'Vite', 'HTML5 Canvas', 'Web Audio API', 'Local Storage'],
+    tagline: 'Retro Duck Hunt Arcade Shooter with Local High Scores & Audio Synthesis.',
     version: 'v1.0.0',
     price: '$15.00',
     icon: '🎯'
@@ -185,10 +184,9 @@ export const FEATURE_MOD_PRESETS: Record<string, FeaturePreset[]> = {
       description: 'Add a 360-degree rotating phosphor radar sweep in the corner with tactical target intercepts.',
       prompt: 'Implement an AN/MPQ-64 Sentinel 360-degree rotating phosphor radar sweep HUD in the top-right corner of the canvas. Detect incoming drone vectors and render blinking target blips with azimuth and range telemetry.',
       targetFiles: ['src/hud/SentinelRadar.ts', 'src/game/GameEngine.ts', 'src/types/radar.ts'],
-      migrationSql: 'CREATE TABLE IF NOT EXISTS radar_targets (id TEXT PRIMARY KEY, azimuth REAL NOT NULL, elevation REAL NOT NULL, range_meters REAL NOT NULL, detected_at DATETIME DEFAULT CURRENT_TIMESTAMP);',
       verificationCriteria: [
         'Canvas radar overlay renders at 60 FPS without DOM frame drops',
-        'radar_targets SQLite table is provisioned with non-blocking schema',
+        'Radar target state remains ephemeral unless the fork explicitly selects persistence',
         'TypeScript build (tsc -b) passes with 0 errors'
       ],
       blueprintDiffPreview: `diff --git a/src/hud/SentinelRadar.ts b/src/hud/SentinelRadar.ts
@@ -216,16 +214,15 @@ new file mode 100644
     },
     {
       id: 'dh-multiplayer',
-      name: '🏆 Multi-Player SQLite High Scores (WAL)',
-      category: 'Database & Backend',
-      description: 'Add persistent high scores with player initials, streak multipliers, and leaderboard queries in WAL mode.',
-      prompt: 'Weld a high score leaderboard into the game. Add player name input on game over, persist top 10 scores with accuracy percentages, and prevent lock contention in SQLite WAL mode.',
-      targetFiles: ['src/db/leaderboard.ts', 'src/components/ScoreModal.tsx'],
-      migrationSql: 'CREATE TABLE IF NOT EXISTS player_leaderboard (id TEXT PRIMARY KEY, initials TEXT NOT NULL, score INTEGER NOT NULL, accuracy REAL NOT NULL, streak_multiplier INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);',
+      name: '🏆 Local Multi-Player High Scores',
+      category: 'Game Feature',
+      description: 'Add device-local high scores with player initials, accuracy, and streak multipliers.',
+      prompt: 'Weld a device-local high score board into the game. Add player name input on game over, persist the top 10 scores in browser storage, and provide an explicit reset control.',
+      targetFiles: ['src/components/ScoreModal.tsx', 'src/lib/localLeaderboard.ts'],
       verificationCriteria: [
-        'player_leaderboard table supports concurrent WAL reads/writes',
+        'Leaderboard remains on the player device and survives a browser restart',
         'Accuracy percentage is bounded between 0.0 and 100.0',
-        'Zero schema migration conflicts with existing game tables'
+        'Reset control clears only Drone Hunter leaderboard data'
       ],
       blueprintDiffPreview: `diff --git a/src/db/leaderboard.ts b/src/db/leaderboard.ts
 new file mode 100644

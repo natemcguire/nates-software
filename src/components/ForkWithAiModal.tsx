@@ -23,9 +23,9 @@ export interface ForkWithAiModalProps {
 
 const PROMPT_PRESETS: Record<string, string[]> = {
   dronehunter: [
-    'Add dual-wield laser shotguns and a new boss wave telemetry table in SQLite.',
+    'Add dual-wield laser shotguns and a new boss wave telemetry table.',
     'Add laughing retro dog animations on missed shots with 8-bit Web Audio synthesis.',
-    'Add multiplayer high-score tournaments with player initials stored in /data/dronehunter.sqlite.'
+    'Add local multiplayer high-score tournaments with custom player initials.'
   ],
   'certified-mailer': [
     'Add California Tenant Security Deposit statutory demand templates and CSV batch export.',
@@ -105,7 +105,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
             <div className="text-right font-mono text-[11px]">
               <div className="text-emerald-800 font-bold">70% Maker Royalty</div>
-              <div className="text-gray-500">/data/{app.id}.sqlite (WAL)</div>
+              <div className="text-gray-500">{app.id === 'dronehunter' ? 'Local-First (Storage Freedom)' : `/data/${app.id}.sqlite (WAL)`}</div>
             </div>
           </div>
 

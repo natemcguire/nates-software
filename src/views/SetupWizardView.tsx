@@ -19,7 +19,7 @@ const STARTERS: StarterApp[] = [
     id: 'dronehunter',
     name: 'DroneHunter 95',
     avatar: '🎯',
-    tagline: 'Retro Duck Hunt Arcade Shooter with WebAssembly SQLite High Scores & Audio Synthesis.',
+    tagline: 'Retro Duck Hunt arcade shooter with private, browser-local high scores and synthesized audio.',
     price: '$15.00',
     category: 'Arcade WASM Game',
     suggestedPrompt: 'Add dual-wield laser shotguns and a new boss wave telemetry table in SQLite.'

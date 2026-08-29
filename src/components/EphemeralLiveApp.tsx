@@ -11,7 +11,9 @@ interface EphemeralLiveAppProps {
 }
 
 export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
-  const liveUrl = `https://${app.id}.nates-software.com`;
+  const liveUrl = app.id === 'dronehunter'
+    ? undefined
+    : `https://${app.id}.nates-software.com`;
 
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden">
@@ -30,19 +32,19 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
             </span>
           ) : (
             <span className="bg-yellow-100 text-yellow-900 px-2 py-0.5 rounded border border-yellow-300 flex items-center gap-1 font-bold">
-              <Shield size={11} /> 2 / 10 Max Sessions
+              <Shield size={11} /> {app.id === 'dronehunter' ? 'Local browser session' : '2 / 10 Max Sessions'}
             </span>
           )}
-          <a
+          {liveUrl && <a
             href={liveUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => playClickSound()}
             className="bg-blue-900 hover:bg-blue-800 text-cyan-300 hover:text-white px-2.5 py-1 rounded text-[11px] font-mono transition-colors flex items-center gap-1 border border-blue-600 shadow-sm font-bold"
           >
-            <span>{app.id}.nates-software.com</span>
+            <span>Open published app</span>
             <ExternalLink size={11} />
-          </a>
+          </a>}
         </div>
       </div>
 

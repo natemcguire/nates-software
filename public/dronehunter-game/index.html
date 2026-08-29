@@ -3,15 +3,14 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 
-    <!-- Primary Meta Tags -->
-    <title>Drone Hunter — Arcade Shooter Game</title>
-    <meta name="title" content="Drone Hunter — Arcade Shooter Game" />
+    <!-- Primary Meta Tags (No fabricated external domains or social tracking) -->
+    <title>Drone Hunter — Retro Arcade Shooter</title>
+    <meta name="title" content="Drone Hunter — Retro Arcade Shooter" />
     <meta name="description"
-        content="Fast-paced browser arcade game. Shoot down incoming drones with your shotgun before they reach you." />
-    <meta name="keywords" content="drone hunter, arcade game, browser game, shooter game, retro game" />
+        content="Fast-paced retro browser arcade game. Shoot down incoming drones with your shotgun before they reach you." />
     <meta name="author" content="Nate McGuire" />
     <meta name="theme-color" content="#87CEEB" />
 
@@ -21,1004 +20,1527 @@
     <link rel="apple-touch-icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' x='8' font-size='48'%3E%F0%9F%9A%81%3C/text%3E%3C/svg%3E" />
 
-    <!-- Open Graph / Facebook / WhatsApp / iMessage / LinkedIn -->
+    <!-- Local / Relative Open Graph Tags -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Drone Hunter" />
-    <meta property="og:url" content="https://dronehuntergame.com/" />
-    <meta property="og:title" content="Drone Hunter — Arcade Shooter Game" />
+    <meta property="og:title" content="Drone Hunter — Retro Arcade Shooter" />
     <meta property="og:description"
-        content="Fast-paced browser arcade game. Shoot down incoming drones with your shotgun before they reach you." />
-    <meta property="og:image" content="https://dronehuntergame.com/assets/og-image-1200x630.png" />
-    <meta property="og:image:secure_url" content="https://dronehuntergame.com/assets/og-image-1200x630.png" />
-    <meta property="og:image:type" content="image/png" />
+        content="Fast-paced retro browser arcade game. Shoot down incoming drones with your shotgun before they reach you." />
+    <meta property="og:image" content="./assets/og-image-1200x630.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Drone Hunter — Arcade Shooter Game" />
-    <meta property="og:locale" content="en_US" />
 
-    <!-- Twitter / X -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@natemcguire" />
-    <meta name="twitter:creator" content="@natemcguire" />
-    <meta name="twitter:url" content="https://dronehuntergame.com/" />
-    <meta name="twitter:title" content="Drone Hunter — Arcade Shooter Game" />
-    <meta name="twitter:description"
-        content="Fast-paced browser arcade game. Shoot down incoming drones with your shotgun before they reach you." />
-    <meta name="twitter:image" content="https://dronehuntergame.com/assets/og-image-1200x630.png" />
-    <meta name="twitter:image:alt" content="Drone Hunter — Arcade Shooter Game" />
-
-    <!-- Apple iOS -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Drone Hunter" />
-
-    <!-- Microsoft -->
-    <meta name="msapplication-TileColor" content="#87CEEB" />
-    <meta name="msapplication-TileImage" content="https://dronehuntergame.com/assets/og-image-1200x630.png" />
-
-    <!-- Canonical URL -->
-    <link rel="canonical" href="https://dronehuntergame.com/" />
+    <!-- Google Retro Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
     <style>
+        :root {
+            --bg-sky: #87CEEB;
+            --arcade-red: #FF4757;
+            --arcade-gold: #FFD700;
+            --arcade-dark: #1E272E;
+            --arcade-green: #2ED573;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
+        html,
         body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #111;
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            background: #87CEEB;
-            font-family: 'Press Start 2P', monospace;
+            font-family: 'Press Start 2P', monospace, sans-serif;
             touch-action: none;
-            gap: 20px;
+        }
+
+        .game-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #0a0a0a;
         }
 
         #gameCanvas {
-            border: 3px solid #333;
-            background: #87CEEB;
-            cursor: none;
-            max-width: 100%;
-            max-height: 100vh;
+            display: block;
+            background: var(--bg-sky);
+            border: 3px solid #222;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
             image-rendering: pixelated;
             image-rendering: crisp-edges;
+            cursor: crosshair;
+            max-width: 100%;
+            max-height: 100%;
         }
 
-        #instructions {
-            color: #fff;
-            font-size: 14px;
-            text-align: center;
-            text-shadow: 2px 2px 0px #000;
+        /* Screen reader status announcer */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        /* Top Accessible Control Bar */
+        .accessible-toolbar {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            display: flex;
+            gap: 8px;
+            z-index: 20;
+        }
+
+        .arc-btn {
+            background: rgba(0, 0, 0, 0.75);
+            color: #FFF;
+            border: 2px solid #FFF;
+            padding: 6px 10px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: transform 0.1s, background 0.1s;
+        }
+
+        .arc-btn:hover,
+        .arc-btn:focus-visible {
+            background: var(--arcade-red);
+            outline: 2px solid var(--arcade-gold);
+            transform: scale(1.05);
+        }
+
+        .arc-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Mobile Touch Reload Button */
+        .touch-reload-bar {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            z-index: 20;
+        }
+
+        .touch-reload-btn {
+            background: rgba(255, 71, 87, 0.85);
+            color: #FFF;
+            border: 3px solid #FFF;
+            border-radius: 8px;
+            padding: 12px 18px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 11px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            touch-action: manipulation;
+        }
+
+        .touch-reload-btn:active {
+            background: #FF6B81;
+            transform: scale(0.95);
+        }
+
+        /* Onboarding & Instructions Modal */
+        .modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            padding: 16px;
+        }
+
+        .modal-backdrop.hidden {
             display: none;
         }
 
-        @media (min-width: 800px) and (orientation: landscape) {
-            #instructions {
-                display: block;
+        .modal-box {
+            background: #1a252f;
+            border: 4px solid #FFF;
+            border-radius: 8px;
+            max-width: 580px;
+            width: 100%;
+            color: #FFF;
+            padding: 24px;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+            text-align: center;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-box h1 {
+            color: var(--arcade-gold);
+            font-size: 18px;
+            margin-bottom: 16px;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        .modal-box h2 {
+            font-size: 12px;
+            color: #70a1ff;
+            margin: 14px 0 8px 0;
+        }
+
+        .modal-box p {
+            font-size: 10px;
+            line-height: 1.6;
+            margin-bottom: 12px;
+            color: #dcdde1;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            text-align: left;
+            margin: 14px 0;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 9px;
+            line-height: 1.5;
+        }
+
+        .controls-grid strong {
+            color: var(--arcade-gold);
+        }
+
+        .storage-note {
+            font-size: 8px;
+            color: #a4b0be;
+            margin-top: 10px;
+            border-top: 1px dashed #57606f;
+            padding-top: 8px;
+        }
+
+        .btn-primary {
+            background: var(--arcade-green);
+            color: #000;
+            font-weight: bold;
+            border: 3px solid #FFF;
+            padding: 12px 24px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 14px;
+            border-radius: 6px;
+            box-shadow: 0 4px 0 #1b9cfc;
+            transition: transform 0.1s;
+        }
+
+        .btn-primary:hover,
+        .btn-primary:focus-visible {
+            background: #7bed9f;
+            transform: scale(1.05);
+            outline: none;
+        }
+
+        .btn-primary:active {
+            transform: translateY(3px);
+            box-shadow: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+                animation: none !important;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .modal-box {
+                padding: 16px;
+            }
+
+            .modal-box h1 {
+                font-size: 14px;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+                font-size: 8px;
             }
         }
     </style>
 </head>
 
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <div id="instructions">Press R to reload</div>
+    <div class="game-wrapper">
+        <canvas id="gameCanvas" width="800" height="600" aria-label="Drone Hunter Arcade Game Canvas" role="img"></canvas>
+
+        <!-- Live ARIA status region for accessibility -->
+        <div id="statusAnnouncer" class="sr-only" role="status" aria-live="polite"></div>
+
+        <!-- Accessible HTML Toolbar (Syncs with keyboard & canvas UI) -->
+        <div class="accessible-toolbar" role="toolbar" aria-label="Game controls">
+            <button id="btnSoundToggle" class="arc-btn" title="Toggle Sound (M)" aria-label="Toggle Sound (M)">
+                <span id="soundIcon">🔊</span> SOUND
+            </button>
+            <button id="btnPauseToggle" class="arc-btn" title="Pause Game (P / Esc)" aria-label="Pause Game (P or Escape)">
+                <span id="pauseIcon">⏸</span> PAUSE
+            </button>
+            <button id="btnHelpToggle" class="arc-btn" title="Help & Instructions (H)" aria-label="Help and Instructions (H)">
+                ❓ HELP
+            </button>
+        </div>
+
+        <!-- Mobile Touch Reload Button -->
+        <div class="touch-reload-bar">
+            <button id="btnReload" class="touch-reload-btn" aria-label="Reload Shotgun (R or Tap)">
+                ⚡ RELOAD [R]
+            </button>
+        </div>
+
+        <!-- Accessible First-Run & Instructions Modal -->
+        <div id="onboardingModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-box">
+                <h1 id="modalTitle">🎯 DRONE HUNTER 95</h1>
+                <p>An authentic browser arcade shooter inspired by retro Duck Hunt. Defend the meadow from incoming drone waves!</p>
+
+                <h2>🎮 HOW TO PLAY</h2>
+                <div class="controls-grid">
+                    <div><strong>Aim &amp; Shoot:</strong> Mouse click or tap screen</div>
+                    <div><strong>Reload:</strong> Press [R], click reload icon or button</div>
+                    <div><strong>Pause / Resume:</strong> Press [P] or [Escape]</div>
+                    <div><strong>Mute Sound:</strong> Press [M] or sound button</div>
+                    <div><strong>Start / Next:</strong> Press [Space] or [Enter]</div>
+                    <div><strong>Miss Limit:</strong> 3 drones escaped = Game Over</div>
+                </div>
+
+                <h2>⭐ SCORING</h2>
+                <p>+100 pts per drone shot down. -50 pts per escaped drone. +500 pts PERFECT DEFENSE BONUS when every drone in the round is stopped.</p>
+
+                <div class="storage-note">
+                    🔒 Local-First Privacy: High scores and preferences are saved locally on your device. Zero external tracking or accounts.
+                </div>
+
+                <button id="btnStartGame" class="btn-primary" autofocus>
+                    START HUNTING ▶
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        let cachedGameConstants = {};
+        /**
+         * Drone Hunter — Complete Client Arcade Game Engine
+         * Responsive HiDPI Canvas, Lazy WebAudio, Local Storage Freedom, Deterministic Mechanics.
+         */
 
-        // Disable image smoothing for pixelated look
-        ctx.imageSmoothingEnabled = false;
+        (function () {
+            'use strict';
 
-        // Resize canvas based on window size and orientation
-        function resizeCanvas() {
-            const portrait = window.innerHeight > window.innerWidth;
+            // Constants
+            const LOGICAL_WIDTH = 800;
+            const LOGICAL_HEIGHT = 600;
+            const MAX_DRONES_PASSED = 3;
+            const DEFAULT_AMMO = 5;
+            const DRONE_BASE_WIDTH = 260;
+            const DRONE_BASE_HEIGHT = 208;
+            const POINTS_PER_HIT = 100;
+            const POINTS_LOST_PER_MISS = 50;
+            const PERFECT_ROUND_BONUS = 500;
 
-            if (portrait) {
-                // Portrait mode (mobile) - fit to screen width
-                canvas.width = Math.min(window.innerWidth, 600);
-                canvas.height = Math.min(window.innerHeight, 800);
-            } else {
-                // Landscape mode (desktop)
-                canvas.width = 800;
-                canvas.height = 600;
-            }
-
-            ctx.imageSmoothingEnabled = false;
-            cachedGameConstants = calculateGameConstants();
-        }
-
-        // Initial resize and listen for orientation changes
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-        window.addEventListener('orientationchange', resizeCanvas);
-
-        // Game state
-        let gameState = 'titleScreen'; // 'titleScreen', 'playing', 'gameOver'
-        let score = 0;
-        let round = 1;
-        let ammo = 5;
-        let dronesPassedThisGame = 0;
-        let dronesDestroyedThisGame = 0;
-        let drones = [];
-        let dronesSpawnedThisRound = 0;
-        let explosions = [];
-        let mouseX = canvas.width / 2;
-        let mouseY = canvas.height / 2;
-        let dogAnimation = { active: false, y: 0, targetY: 0, type: null, x: 0 };
-
-        // New features
-        let highScore = parseInt(localStorage.getItem('droneHunter_highScore')) || 0;
-        let isMuted = localStorage.getItem('droneHunter_isMuted') === 'true';
-        let isPaused = false;
-
-        // Game settings
-        function getDronesPerRound(round) {
-            // Increase drones per round: 10, 12, 14, 16...
-            return 10 + (round - 1) * 2;
-        }
-        const DRONES_PER_ROUND = 10;
-        const MAX_DRONES_PASSED = 3;
-        const DRONE_BASE_WIDTH = 260; // 2x + 30% bigger
-        const DRONE_BASE_HEIGHT = 208; // 2x + 30% bigger
-        const SHOTGUN_CONE_ANGLE = 30; // degrees
-        const SHOTGUN_RANGE = 400;
-        // Responsive sizing - recalculate on resize
-        function calculateGameConstants() {
-            const BACKGROUND_SCALE = canvas.width / 1024;
-            const BACKGROUND_BOTTOM_ORIGINAL_HEIGHT = 253 * BACKGROUND_SCALE;
-            const DOG_SIZE = Math.min(156, canvas.width * 0.26); // 30% larger
-
-            // UI needs space at bottom - make grass layer higher
-            const UI_BOTTOM_SPACE = Math.max(200, canvas.height * 0.25); // Space for reload + shells
-            const BACKGROUND_BOTTOM_Y = canvas.height - UI_BOTTOM_SPACE;
-            const BACKGROUND_BOTTOM_HEIGHT = UI_BOTTOM_SPACE;
-
-            // Dog appears 25px higher than grass line
-            const DOG_APPEAR_Y = BACKGROUND_BOTTOM_Y - (DOG_SIZE * 0.7) - 25;
-
-            const RELOAD_BUTTON_SIZE = Math.min(150, canvas.width * 0.25); // Smaller button
-            const SHELL_WIDTH = Math.min(80, canvas.width * 0.12); // Smaller shells
-            const SHELL_HEIGHT = Math.min(120, canvas.width * 0.18);
-
-            return {
-                BACKGROUND_SCALE,
-                BACKGROUND_BOTTOM_HEIGHT,
-                BACKGROUND_BOTTOM_Y,
-                DOG_SIZE,
-                DOG_APPEAR_Y,
-                RELOAD_BUTTON_SIZE,
-                SHELL_WIDTH,
-                SHELL_HEIGHT
+            const STORAGE_KEYS = {
+                HIGH_SCORE: 'dronehunter_high_score',
+                LEGACY_HIGH_SCORE: 'droneHunter_highScore',
+                MUTED: 'dronehunter_is_muted',
+                LEGACY_MUTED: 'droneHunter_isMuted',
+                ONBOARDING_SEEN: 'dronehunter_onboarding_seen'
             };
-        }
 
-        // NES-style 8-bit sound synthesis (Duck Hunt aesthetic)
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // DOM Elements
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const statusAnnouncer = document.getElementById('statusAnnouncer');
+            const onboardingModal = document.getElementById('onboardingModal');
+            const btnStartGame = document.getElementById('btnStartGame');
+            const btnSoundToggle = document.getElementById('btnSoundToggle');
+            const btnPauseToggle = document.getElementById('btnPauseToggle');
+            const btnHelpToggle = document.getElementById('btnHelpToggle');
+            const btnReload = document.getElementById('btnReload');
+            const soundIcon = document.getElementById('soundIcon');
+            const pauseIcon = document.getElementById('pauseIcon');
 
-        function playSound(type) {
-            if (isMuted) return;
-            const now = audioContext.currentTime;
-
-            switch (type) {
-                case 'shotgun':
-                    // Short white noise burst (like Duck Hunt)
-                    const shotgunBuffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.15, audioContext.sampleRate);
-                    const shotgunData = shotgunBuffer.getChannelData(0);
-                    for (let i = 0; i < shotgunData.length; i++) {
-                        shotgunData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioContext.sampleRate * 0.05));
-                    }
-                    const shotgunSource = audioContext.createBufferSource();
-                    shotgunSource.buffer = shotgunBuffer;
-                    const shotgunGain = audioContext.createGain();
-                    shotgunGain.gain.value = 0.3;
-                    shotgunSource.connect(shotgunGain).connect(audioContext.destination);
-                    shotgunSource.start(now);
-                    break;
-
-                case 'reload':
-                    // Mechanical "chhk" pump sound
-                    const reloadOsc = audioContext.createOscillator();
-                    const reloadGain = audioContext.createGain();
-                    reloadOsc.type = 'square';
-                    reloadOsc.frequency.setValueAtTime(150, now);
-                    reloadOsc.frequency.exponentialRampToValueAtTime(80, now + 0.08);
-                    reloadGain.gain.setValueAtTime(0.2, now);
-                    reloadGain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
-                    reloadOsc.connect(reloadGain).connect(audioContext.destination);
-                    reloadOsc.start(now);
-                    reloadOsc.stop(now + 0.08);
-                    break;
-
-                case 'drone_hit':
-                    // Brief high-pitched electrical zap
-                    const hitOsc = audioContext.createOscillator();
-                    const hitGain = audioContext.createGain();
-                    hitOsc.type = 'square';
-                    hitOsc.frequency.setValueAtTime(1200, now);
-                    hitOsc.frequency.exponentialRampToValueAtTime(400, now + 0.1);
-                    hitGain.gain.setValueAtTime(0.15, now);
-                    hitGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-                    hitOsc.connect(hitGain).connect(audioContext.destination);
-                    hitOsc.start(now);
-                    hitOsc.stop(now + 0.1);
-                    break;
-
-                case 'drone_explosion':
-                    // Large bassy explosion
-                    const expOsc = audioContext.createOscillator();
-                    const expGain = audioContext.createGain();
-                    expOsc.type = 'sawtooth';
-                    expOsc.frequency.setValueAtTime(120, now);
-                    expOsc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
-                    expGain.gain.setValueAtTime(0.3, now);
-                    expGain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                    expOsc.connect(expGain).connect(audioContext.destination);
-                    expOsc.start(now);
-                    expOsc.stop(now + 0.3);
-                    break;
-
-                case 'drone_flyaway':
-                    // Rising pitch whoosh (drone escapes)
-                    const flyOsc = audioContext.createOscillator();
-                    const flyGain = audioContext.createGain();
-                    flyOsc.type = 'square';
-                    flyOsc.frequency.setValueAtTime(200, now);
-                    flyOsc.frequency.exponentialRampToValueAtTime(800, now + 0.25);
-                    flyGain.gain.setValueAtTime(0.15, now);
-                    flyGain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-                    flyOsc.connect(flyGain).connect(audioContext.destination);
-                    flyOsc.start(now);
-                    flyOsc.stop(now + 0.25);
-                    break;
-
-                case 'dog_laugh':
-                    // Two "ha ha" pulses (Duck Hunt style)
-                    const laughOsc1 = audioContext.createOscillator();
-                    const laughOsc2 = audioContext.createOscillator();
-                    const laughGain = audioContext.createGain();
-                    laughOsc1.type = 'square';
-                    laughOsc2.type = 'square';
-                    laughOsc1.frequency.value = 400;
-                    laughOsc2.frequency.value = 350;
-                    laughGain.gain.setValueAtTime(0, now);
-                    laughGain.gain.setValueAtTime(0.15, now + 0.05);
-                    laughGain.gain.setValueAtTime(0, now + 0.15);
-                    laughGain.gain.setValueAtTime(0.15, now + 0.25);
-                    laughGain.gain.setValueAtTime(0, now + 0.35);
-                    laughOsc1.connect(laughGain).connect(audioContext.destination);
-                    laughOsc2.connect(laughGain);
-                    laughOsc1.start(now);
-                    laughOsc2.start(now);
-                    laughOsc1.stop(now + 0.4);
-                    laughOsc2.stop(now + 0.4);
-                    break;
-
-                case 'round_start':
-                    // Ascending 3-note fanfare
-                    const startOsc = audioContext.createOscillator();
-                    const startGain = audioContext.createGain();
-                    startOsc.type = 'square';
-                    startOsc.frequency.setValueAtTime(523, now); // C
-                    startOsc.frequency.setValueAtTime(659, now + 0.1); // E
-                    startOsc.frequency.setValueAtTime(784, now + 0.2); // G
-                    startGain.gain.setValueAtTime(0.2, now);
-                    startGain.gain.setValueAtTime(0.2, now + 0.2);
-                    startGain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-                    startOsc.connect(startGain).connect(audioContext.destination);
-                    startOsc.start(now);
-                    startOsc.stop(now + 0.4);
-                    break;
-
-                case 'round_clear':
-                    // Quick success melody
-                    const clearOsc = audioContext.createOscillator();
-                    const clearGain = audioContext.createGain();
-                    clearOsc.type = 'square';
-                    clearOsc.frequency.setValueAtTime(659, now); // E
-                    clearOsc.frequency.setValueAtTime(784, now + 0.08); // G
-                    clearOsc.frequency.setValueAtTime(1047, now + 0.16); // C
-                    clearGain.gain.setValueAtTime(0.2, now);
-                    clearGain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                    clearOsc.connect(clearGain).connect(audioContext.destination);
-                    clearOsc.start(now);
-                    clearOsc.stop(now + 0.3);
-                    break;
-
-                case 'game_over':
-                    // Descending 3-note falloff
-                    const overOsc = audioContext.createOscillator();
-                    const overGain = audioContext.createGain();
-                    overOsc.type = 'square';
-                    overOsc.frequency.setValueAtTime(523, now); // C
-                    overOsc.frequency.setValueAtTime(392, now + 0.15); // G
-                    overOsc.frequency.setValueAtTime(262, now + 0.3); // C low
-                    overGain.gain.setValueAtTime(0.2, now);
-                    overGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-                    overOsc.connect(overGain).connect(audioContext.destination);
-                    overOsc.start(now);
-                    overOsc.stop(now + 0.5);
-                    break;
-
-                case 'empty_click':
-                    // Dry firing click (short, dull)
-                    const clickOsc = audioContext.createOscillator();
-                    const clickGain = audioContext.createGain();
-                    clickOsc.type = 'square';
-                    clickOsc.frequency.value = 100;
-                    clickGain.gain.setValueAtTime(0.1, now);
-                    clickGain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
-                    clickOsc.connect(clickGain).connect(audioContext.destination);
-                    clickOsc.start(now);
-                    clickOsc.stop(now + 0.05);
-                    break;
-            }
-        }
-
-        // Image assets
-        const images = {};
-        const imagesToLoad = [
-            'background',
-            'background-bottom',
-            'og-image',
-            'drone',
-            'drone-explode-1',
-            'drone-explode-2',
-            'crosshair',
-            'shotgun-shell-1',
-            'reload',
-            'smoke1',
-            'smoke2',
-            'dog-laugh',
-            'dog-one-drone',
-            'dog-two-drones'
-        ];
-
-        let imagesLoaded = 0;
-        imagesToLoad.forEach(name => {
-            const img = new Image();
-            img.onload = () => {
-                imagesLoaded++;
-                if (imagesLoaded === imagesToLoad.length) {
-                    startTitleScreen();
+            // Safe Storage Helper
+            function safeStorageGet(key, fallback = '') {
+                try {
+                    const val = localStorage.getItem(key);
+                    return val !== null ? val : fallback;
+                } catch (e) {
+                    return fallback;
                 }
+            }
+
+            function safeStorageSet(key, value) {
+                try {
+                    localStorage.setItem(key, value);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            function announceStatus(text) {
+                if (statusAnnouncer) {
+                    statusAnnouncer.textContent = text;
+                }
+            }
+
+            // High Score & Preferences
+            let highScore = 0;
+            const rawScore = safeStorageGet(STORAGE_KEYS.HIGH_SCORE) || safeStorageGet(STORAGE_KEYS.LEGACY_HIGH_SCORE);
+            if (rawScore) {
+                const parsed = parseInt(rawScore, 10);
+                if (!Number.isNaN(parsed) && parsed >= 0) highScore = parsed;
+            }
+
+            let isMuted = safeStorageGet(STORAGE_KEYS.MUTED) === 'true' || safeStorageGet(STORAGE_KEYS.LEGACY_MUTED) === 'true';
+            let hasSeenOnboarding = safeStorageGet(STORAGE_KEYS.ONBOARDING_SEEN) === 'true';
+
+            function saveHighScore(score) {
+                if (score > highScore) {
+                    highScore = score;
+                    safeStorageSet(STORAGE_KEYS.HIGH_SCORE, highScore.toString());
+                    safeStorageSet(STORAGE_KEYS.LEGACY_HIGH_SCORE, highScore.toString());
+                }
+            }
+
+            function saveMuteState(muted) {
+                isMuted = muted;
+                safeStorageSet(STORAGE_KEYS.MUTED, isMuted ? 'true' : 'false');
+                safeStorageSet(STORAGE_KEYS.LEGACY_MUTED, isMuted ? 'true' : 'false');
+                if (soundIcon) soundIcon.textContent = isMuted ? '🔇' : '🔊';
+            }
+
+            saveMuteState(isMuted);
+
+            // Web Audio Synthesizer (Lazy initialized on first user gesture)
+            let audioCtx = null;
+
+            function initAudioContext() {
+                if (!audioCtx) {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContextClass) {
+                        try {
+                            audioCtx = new AudioContextClass();
+                        } catch (e) {
+                            audioCtx = null;
+                        }
+                    }
+                }
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => {});
+                }
+            }
+
+            function playSound(type) {
+                if (isMuted) return;
+                initAudioContext();
+                if (!audioCtx) return;
+
+                try {
+                    const now = audioCtx.currentTime;
+
+                    switch (type) {
+                        case 'shotgun': {
+                            const bufferSize = Math.floor(audioCtx.sampleRate * 0.16);
+                            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                            const data = buffer.getChannelData(0);
+                            for (let i = 0; i < bufferSize; i++) {
+                                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.04));
+                            }
+                            const source = audioCtx.createBufferSource();
+                            source.buffer = buffer;
+                            const filter = audioCtx.createBiquadFilter();
+                            filter.type = 'lowpass';
+                            filter.frequency.setValueAtTime(3000, now);
+                            filter.frequency.exponentialRampToValueAtTime(300, now + 0.16);
+                            const gain = audioCtx.createGain();
+                            gain.gain.setValueAtTime(0.35, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+                            source.connect(filter).connect(gain).connect(audioCtx.destination);
+                            source.start(now);
+                            break;
+                        }
+
+                        case 'reload': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(220, now);
+                            osc.frequency.exponentialRampToValueAtTime(90, now + 0.08);
+                            gain.gain.setValueAtTime(0.2, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.08);
+                            break;
+                        }
+
+                        case 'drone_hit': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(1300, now);
+                            osc.frequency.exponentialRampToValueAtTime(350, now + 0.09);
+                            gain.gain.setValueAtTime(0.2, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.09);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.09);
+                            break;
+                        }
+
+                        case 'drone_explosion': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'sawtooth';
+                            osc.frequency.setValueAtTime(140, now);
+                            osc.frequency.exponentialRampToValueAtTime(30, now + 0.28);
+                            gain.gain.setValueAtTime(0.35, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.28);
+                            break;
+                        }
+
+                        case 'drone_flyaway': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(220, now);
+                            osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+                            gain.gain.setValueAtTime(0.18, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.25);
+                            break;
+                        }
+
+                        case 'dog_laugh': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(420, now);
+                            osc.frequency.setValueAtTime(360, now + 0.08);
+                            osc.frequency.setValueAtTime(420, now + 0.16);
+                            osc.frequency.setValueAtTime(360, now + 0.24);
+                            gain.gain.setValueAtTime(0.18, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.35);
+                            break;
+                        }
+
+                        case 'round_start': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(523.25, now); // C5
+                            osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                            osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+                            gain.gain.setValueAtTime(0.22, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.4);
+                            break;
+                        }
+
+                        case 'round_clear': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(659.25, now); // E5
+                            osc.frequency.setValueAtTime(783.99, now + 0.09); // G5
+                            osc.frequency.setValueAtTime(1046.50, now + 0.18); // C6
+                            gain.gain.setValueAtTime(0.22, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.35);
+                            break;
+                        }
+
+                        case 'game_over': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(523.25, now); // C5
+                            osc.frequency.setValueAtTime(392.00, now + 0.15); // G4
+                            osc.frequency.setValueAtTime(261.63, now + 0.3); // C4
+                            gain.gain.setValueAtTime(0.22, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.55);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.55);
+                            break;
+                        }
+
+                        case 'empty_click': {
+                            const osc = audioCtx.createOscillator();
+                            const gain = audioCtx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.setValueAtTime(90, now);
+                            gain.gain.setValueAtTime(0.12, now);
+                            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.04);
+                            osc.connect(gain).connect(audioCtx.destination);
+                            osc.start(now);
+                            osc.stop(now + 0.04);
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    // Audio context failure gracefully ignored
+                }
+            }
+
+            // Image Asset Loader
+            const images = {};
+            const assetNames = [
+                'background',
+                'background-bottom',
+                'crosshair',
+                'dog-laugh',
+                'dog-one-drone',
+                'dog-two-drones',
+                'drone',
+                'drone-explode-1',
+                'drone-explode-2',
+                'smoke1',
+                'smoke2',
+                'reload',
+                'shotgun-shell-1',
+                'og-image'
+            ];
+
+            let loadedAssetsCount = 0;
+            let failedAssetsCount = 0;
+            const canDraw = image => Boolean(image && image.complete && image.naturalWidth > 0);
+            assetNames.forEach(name => {
+                const img = new Image();
+                img.onload = () => {
+                    loadedAssetsCount++;
+                };
+                img.onerror = () => {
+                    failedAssetsCount++;
+                    announceStatus('A visual asset could not be loaded. The game will continue with simplified graphics.');
+                };
+                img.src = `assets/${name}.png`;
+                images[name] = img;
+            });
+
+            // HiDPI Canvas Sizing & Scale Management
+            let dpr = 1;
+            function resizeCanvas() {
+                const container = canvas.parentElement;
+                const availableW = container ? container.clientWidth : window.innerWidth;
+                const availableH = container ? container.clientHeight : window.innerHeight;
+
+                const aspect = LOGICAL_WIDTH / LOGICAL_HEIGHT;
+                let cssW = availableW;
+                let cssH = availableW / aspect;
+
+                if (cssH > availableH) {
+                    cssH = availableH;
+                    cssW = availableH * aspect;
+                }
+
+                canvas.style.width = `${Math.floor(cssW)}px`;
+                canvas.style.height = `${Math.floor(cssH)}px`;
+
+                dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+                canvas.width = Math.floor(LOGICAL_WIDTH * dpr);
+                canvas.height = Math.floor(LOGICAL_HEIGHT * dpr);
+
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.imageSmoothingEnabled = false;
+            }
+
+            window.addEventListener('resize', resizeCanvas);
+            window.addEventListener('orientationchange', resizeCanvas);
+            resizeCanvas();
+
+            // Game State
+            let gameState = hasSeenOnboarding ? 'title' : 'onboarding';
+            let score = 0;
+            let round = 1;
+            let ammo = DEFAULT_AMMO;
+            let dronesPassedTotal = 0;
+            let dronesDestroyedTotal = 0;
+            let dronesDestroyedThisRound = 0;
+            let dronesSpawnedThisRound = 0;
+            let dronesPassedThisRound = 0;
+            let isPaused = false;
+            let isNewHighScore = false;
+
+            let pointerX = LOGICAL_WIDTH / 2;
+            let pointerY = LOGICAL_HEIGHT / 2;
+            let isPointerInside = false;
+
+            let drones = [];
+            let explosions = [];
+            let spawnTimer = 0;
+            let roundIntroTimer = 0;
+            let roundClearTimer = 0;
+            let reloadAlertTimer = 0;
+
+            const dogAnimation = {
+                active: false,
+                type: 'dog-one-drone',
+                y: LOGICAL_HEIGHT,
+                targetY: 340,
+                holdTimer: 0,
+                x: LOGICAL_WIDTH / 2
             };
-            img.src = `assets/${name}.png`;
-            images[name] = img;
-        });
 
-        function startTitleScreen() {
-            gameState = 'titleScreen';
-            gameLoop(); // Start the game loop!
-        }
-
-        // Drone class
-        class Drone {
-            constructor(x, speed) {
-                this.x = x;
-                this.depth = 0; // 0 = far away, 1 = at screen
-                this.speed = speed;
-                this.destroyed = false;
+            function triggerDog(type) {
+                dogAnimation.active = true;
+                dogAnimation.type = type;
+                dogAnimation.y = LOGICAL_HEIGHT;
+                dogAnimation.targetY = 340;
+                dogAnimation.holdTimer = 0;
+                const minX = 140;
+                const maxX = LOGICAL_WIDTH - 140;
+                dogAnimation.x = minX + Math.random() * (maxX - minX);
             }
 
-            update() {
-                // Move closer (increase depth)
-                this.depth += this.speed / 600; // Normalize speed
+            function updateDog(dt) {
+                if (!dogAnimation.active) return;
+                const speed = 400 * dt;
+                if (dogAnimation.y > dogAnimation.targetY && dogAnimation.holdTimer === 0) {
+                    dogAnimation.y = Math.max(dogAnimation.targetY, dogAnimation.y - speed);
+                } else {
+                    dogAnimation.holdTimer += dt;
+                    if (dogAnimation.holdTimer > 1.2) {
+                        dogAnimation.y += speed;
+                        if (dogAnimation.y >= LOGICAL_HEIGHT) {
+                            dogAnimation.active = false;
+                            dogAnimation.holdTimer = 0;
+                        }
+                    }
+                }
             }
 
-            draw() {
-                if (!this.destroyed) {
-                    // Scale based on depth (perspective)
-                    const scale = 0.2 + (this.depth * 0.8); // Start at 20% size, grow to 100%
+            // Drone Class
+            class Drone {
+                constructor(x, speed) {
+                    this.id = Math.random().toString(36).slice(2);
+                    this.x = x;
+                    this.depth = 0;
+                    this.speed = speed;
+                    this.destroyed = false;
+                }
+
+                update(dt) {
+                    if (this.destroyed) return;
+                    this.depth += this.speed * dt;
+                }
+
+                getBounds() {
+                    const clampedDepth = Math.max(0, Math.min(1.2, this.depth));
+                    const scale = 0.2 + clampedDepth * 0.8;
                     const width = DRONE_BASE_WIDTH * scale;
                     const height = DRONE_BASE_HEIGHT * scale;
+                    const screenX = this.x - width / 2;
+                    const screenY = LOGICAL_HEIGHT * clampedDepth - height;
+                    return { screenX, screenY, width, height, scale };
+                }
 
-                    // Position on screen (perspective)
-                    const screenX = this.x - (width / 2);
-                    const screenY = canvas.height * this.depth - height;
+                draw() {
+                    if (this.destroyed || !canDraw(images.drone)) return;
+                    const b = this.getBounds();
+                    ctx.drawImage(images.drone, b.screenX, b.screenY, b.width, b.height);
+                }
 
-                    ctx.drawImage(images.drone, screenX, screenY, width, height);
+                isOffScreen() {
+                    return this.depth >= 1.0;
                 }
             }
 
-            getScreenY() {
-                return canvas.height * this.depth;
-            }
-
-            getScreenX() {
-                const scale = 0.2 + (this.depth * 0.8);
-                const width = DRONE_BASE_WIDTH * scale;
-                return this.x - (width / 2);
-            }
-
-            getWidth() {
-                const scale = 0.2 + (this.depth * 0.8);
-                return DRONE_BASE_WIDTH * scale;
-            }
-
-            getHeight() {
-                const scale = 0.2 + (this.depth * 0.8);
-                return DRONE_BASE_HEIGHT * scale;
-            }
-
-            isOffScreen() {
-                return this.depth >= 1.0;
-            }
-        }
-
-        // Explosion class
-        class Explosion {
-            constructor(x, y, scale = 1) {
-                this.x = x;
-                this.y = y;
-                this.scale = scale;
-                this.frame = 0;
-                this.maxFrames = 20;
-            }
-
-            update() {
-                this.frame++;
-            }
-
-            draw() {
-                const progress = this.frame / this.maxFrames;
-                // Match drone size (260x208 base size scaled by depth)
-                const width = DRONE_BASE_WIDTH * this.scale;
-                const height = DRONE_BASE_HEIGHT * this.scale;
-
-                // Alternate between explosion frames
-                if (this.frame < this.maxFrames / 2) {
-                    ctx.drawImage(images['drone-explode-1'],
-                        this.x - width / 2,
-                        this.y - height / 2,
-                        width,
-                        height);
-                } else {
-                    ctx.drawImage(images['drone-explode-2'],
-                        this.x - width / 2,
-                        this.y - height / 2,
-                        width,
-                        height);
+            // Explosion Class
+            class Explosion {
+                constructor(x, y, scale = 1) {
+                    this.x = x;
+                    this.y = y;
+                    this.scale = scale;
+                    this.time = 0;
+                    this.maxDuration = 0.35;
                 }
 
-                // Add smoke particles
-                if (this.frame > 5) {
-                    const smokeImg = Math.random() > 0.5 ? images.smoke1 : images.smoke2;
-                    const smokeSize = 60 * this.scale;
-                    const offset = (this.frame - 5) * 3;
-                    ctx.globalAlpha = 1 - progress;
-                    ctx.drawImage(smokeImg,
-                        this.x - smokeSize / 2 + (Math.random() - 0.5) * offset,
-                        this.y - smokeSize / 2 - offset,
-                        smokeSize,
-                        smokeSize);
-                    ctx.globalAlpha = 1;
+                update(dt) {
+                    this.time += dt;
+                }
+
+                draw() {
+                    const progress = this.time / this.maxDuration;
+                    const width = DRONE_BASE_WIDTH * this.scale;
+                    const height = DRONE_BASE_HEIGHT * this.scale;
+
+                    const frameImg = progress < 0.5 ? images['drone-explode-1'] : images['drone-explode-2'];
+                    if (canDraw(frameImg)) {
+                        ctx.drawImage(
+                            frameImg,
+                            this.x - width / 2,
+                            this.y - height / 2,
+                            width,
+                            height
+                        );
+                    }
+
+                    // Smoke particle
+                    if (progress > 0.25) {
+                        const smokeImg = progress < 0.6 ? images.smoke1 : images.smoke2;
+                        if (canDraw(smokeImg)) {
+                            const smokeSize = 70 * this.scale;
+                            ctx.save();
+                            ctx.globalAlpha = Math.max(0, 1 - progress);
+                            ctx.drawImage(
+                                smokeImg,
+                                this.x - smokeSize / 2,
+                                this.y - smokeSize / 2 - progress * 30,
+                                smokeSize,
+                                smokeSize
+                            );
+                            ctx.restore();
+                        }
+                    }
+                }
+
+                isExpired() {
+                    return this.time >= this.maxDuration;
                 }
             }
 
-            isExpired() {
-                return this.frame >= this.maxFrames;
+            // Round progression formulas
+            function getDronesForRound(r) {
+                return 10 + (r - 1) * 2;
             }
-        }
 
-        // Spawn drone
-        function spawnDrone() {
-            const dronesThisRound = getDronesPerRound(round);
-            if (dronesSpawnedThisRound < dronesThisRound) {
-                const x = 100 + Math.random() * (canvas.width - 200);
-                const baseSpeed = 2;
-                // Increase speed more aggressively each round
-                const speed = baseSpeed + (round - 1) * 0.8;
+            function getDroneSpeed(r) {
+                return 0.22 + (r - 1) * 0.045;
+            }
+
+            function getSpawnInterval(r) {
+                return Math.max(0.65, 1.6 - (r - 1) * 0.12);
+            }
+
+            function getMultiSpawnProbability(r) {
+                return Math.min(0.45, (r - 1) * 0.08);
+            }
+
+            function startNewGame() {
+                score = 0;
+                round = 1;
+                ammo = DEFAULT_AMMO;
+                dronesPassedTotal = 0;
+                dronesDestroyedTotal = 0;
+                dronesDestroyedThisRound = 0;
+                dronesSpawnedThisRound = 0;
+                dronesPassedThisRound = 0;
+                drones = [];
+                explosions = [];
+                isPaused = false;
+                isNewHighScore = false;
+                roundIntroTimer = 2.0;
+                gameState = 'roundIntro';
+                playSound('round_start');
+                announceStatus(`Round ${round} starting. Target: ${getDronesForRound(round)} drones.`);
+            }
+
+            function spawnDrone() {
+                const maxInRound = getDronesForRound(round);
+                if (dronesSpawnedThisRound >= maxInRound) return;
+
+                const minX = 120;
+                const maxX = LOGICAL_WIDTH - 120;
+                const x = minX + Math.random() * (maxX - minX);
+                const speed = getDroneSpeed(round);
+
                 drones.push(new Drone(x, speed));
                 dronesSpawnedThisRound++;
             }
-        }
 
-        // Check if shot hits a drone (tap/click detection with generous hit area)
-        function checkHit(clickX, clickY, drone) {
-            const width = drone.getWidth();
-            const height = drone.getHeight();
-            const screenX = drone.getScreenX();
-            const screenY = drone.getScreenY();
+            function reloadGun() {
+                if (gameState !== 'playing' || isPaused) return;
+                if (ammo === DEFAULT_AMMO) return;
+                ammo = DEFAULT_AMMO;
+                reloadAlertTimer = 0;
+                playSound('reload');
+                announceStatus('Shotgun reloaded. 5 shells available.');
+            }
 
-            // Generous hit box - add 20px padding around drone for easier mobile tapping
-            const padding = 20;
-            return (clickX >= screenX - padding && clickX <= screenX + width + padding &&
-                clickY >= screenY - height - padding && clickY <= screenY + padding);
-        }
+            function shootGun(targetX, targetY) {
+                if (gameState !== 'playing' || isPaused) return;
 
-        // Trigger dog animation
-        function triggerDogAnimation(type) {
-            const constants = cachedGameConstants;
-            dogAnimation.active = true;
-            dogAnimation.type = type;
-            dogAnimation.y = canvas.height; // Start below screen
-            dogAnimation.targetY = constants.DOG_APPEAR_Y; // Pop up to horizon line
-            dogAnimation.holdFrames = 0;
-            // Random X position (keep dog fully on screen)
-            const minX = constants.DOG_SIZE / 2;
-            const maxX = canvas.width - constants.DOG_SIZE / 2;
-            dogAnimation.x = minX + Math.random() * (maxX - minX);
-        }
+                if (ammo <= 0) {
+                    reloadAlertTimer = 1.5;
+                    playSound('empty_click');
+                    announceStatus('Ammo empty. Press R to reload.');
+                    return;
+                }
 
-        // Update dog animation
-        function updateDogAnimation() {
-            if (dogAnimation.active) {
-                const speed = 8;
-                if (dogAnimation.y > dogAnimation.targetY) {
-                    dogAnimation.y -= speed;
-                } else {
-                    dogAnimation.y = dogAnimation.targetY;
-                    // Count frames at target position
-                    if (!dogAnimation.holdFrames) {
-                        dogAnimation.holdFrames = 0;
-                    }
-                    dogAnimation.holdFrames++;
+                ammo--;
+                playSound('shotgun');
 
-                    // Hide after holding for ~1.5 seconds (90 frames at 60fps)
-                    if (dogAnimation.holdFrames > 90) {
-                        dogAnimation.active = false;
-                        dogAnimation.holdFrames = 0;
+                let hit = false;
+                // Sort by depth descending so closest drone gets hit
+                const activeDrones = drones.filter(d => !d.destroyed).sort((a, b) => b.depth - a.depth);
+
+                for (const drone of activeDrones) {
+                    const b = drone.getBounds();
+                    const padding = 22; // Generous hit area
+                    if (
+                        targetX >= b.screenX - padding &&
+                        targetX <= b.screenX + b.width + padding &&
+                        targetY >= b.screenY - padding &&
+                        targetY <= b.screenY + b.height + padding
+                    ) {
+                        drone.destroyed = true;
+                        hit = true;
+                        score += POINTS_PER_HIT;
+                        dronesDestroyedTotal++;
+                        dronesDestroyedThisRound++;
+
+                        if (score > highScore) {
+                            isNewHighScore = true;
+                            saveHighScore(score);
+                        }
+
+                        explosions.push(new Explosion(drone.x, b.screenY + b.height / 2, b.scale));
+                        playSound('drone_hit');
+                        setTimeout(() => playSound('drone_explosion'), 45);
+
+                        // Dog popup celebration
+                        if (Math.random() < 0.6) {
+                            if (dronesDestroyedThisRound % 2 === 0) {
+                                triggerDog('dog-two-drones');
+                            } else {
+                                triggerDog('dog-one-drone');
+                            }
+                        }
+
+                        announceStatus(`Drone destroyed! Score: ${score}`);
+                        break;
                     }
                 }
             }
-        }
 
-        // Shoot shotgun
-        function shoot() {
-            if (gameState !== 'playing') return;
-
-            if (ammo <= 0) {
-                playSound('empty_click');
-                return;
+            function togglePauseGame() {
+                if (gameState !== 'playing' && gameState !== 'paused') return;
+                isPaused = !isPaused;
+                gameState = isPaused ? 'paused' : 'playing';
+                if (pauseIcon) pauseIcon.textContent = isPaused ? '▶' : '⏸';
+                announceStatus(isPaused ? 'Game paused' : 'Game resumed');
             }
 
-            ammo--;
-            playSound('shotgun');
-            let hitAny = false;
+            function toggleHelp() {
+                const opening = onboardingModal.classList.contains('hidden');
+                if (opening) {
+                    if (gameState === 'playing') togglePauseGame();
+                    btnStartGame.textContent = gameState === 'paused' ? 'BACK TO GAME ▶' : 'START HUNTING ▶';
+                    onboardingModal.classList.remove('hidden');
+                    btnStartGame.focus();
+                } else {
+                    onboardingModal.classList.add('hidden');
+                    if (gameState === 'paused') togglePauseGame();
+                }
+            }
 
-            // Check for hits - no blast visual, just check hits
-            drones.forEach(drone => {
-                if (!drone.destroyed && checkHit(mouseX, mouseY, drone)) {
-                    drone.destroyed = true;
-                    score += 100;
-                    dronesDestroyedThisGame++;
-                    hitAny = true;
+            // Input Mapping Helper
+            function getCanvasPointer(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+                const x = ((clientX - rect.left) / rect.width) * LOGICAL_WIDTH;
+                const y = ((clientY - rect.top) / rect.height) * LOGICAL_HEIGHT;
+                return {
+                    x: Math.max(0, Math.min(LOGICAL_WIDTH, x)),
+                    y: Math.max(0, Math.min(LOGICAL_HEIGHT, y))
+                };
+            }
 
-                    // Create explosion at drone position
-                    const scale = 0.2 + (drone.depth * 0.8);
-                    const screenY = drone.getScreenY();
-                    explosions.push(new Explosion(drone.x, screenY - (drone.getHeight() / 2), scale));
+            // Event Listeners
+            canvas.addEventListener('mousemove', e => {
+                const p = getCanvasPointer(e);
+                pointerX = p.x;
+                pointerY = p.y;
+                isPointerInside = true;
+            });
 
-                    playSound('drone_hit');
-                    setTimeout(() => playSound('drone_explosion'), 50);
+            canvas.addEventListener('mouseleave', () => {
+                isPointerInside = false;
+            });
 
-                    // Show success dog (50% of the time)
-                    if (Math.random() < 0.5) {
-                        if (dronesDestroyedThisGame === 1) {
-                            triggerDogAnimation('dog-one-drone');
-                        } else if (dronesDestroyedThisGame >= 2) {
-                            triggerDogAnimation('dog-two-drones');
-                        }
+            canvas.addEventListener('mousedown', e => {
+                initAudioContext();
+                const p = getCanvasPointer(e);
+                pointerX = p.x;
+                pointerY = p.y;
+
+                if (gameState === 'title') {
+                    startNewGame();
+                } else if (gameState === 'playing') {
+                    // Check bottom-left reload icon on canvas
+                    if (p.x <= 130 && p.y >= LOGICAL_HEIGHT - 130) {
+                        reloadGun();
+                    } else {
+                        shootGun(p.x, p.y);
+                    }
+                } else if (gameState === 'gameOver' || gameState === 'roundClear') {
+                    if (gameState === 'gameOver') startNewGame();
+                    if (gameState === 'roundClear') {
+                        roundClearTimer = 0;
                     }
                 }
             });
-        }
 
-        // Reload
-        function reload() {
-            if (gameState === 'playing') {
-                ammo = 5;
-                playSound('reload');
-            }
-        }
+            canvas.addEventListener('touchstart', e => {
+                e.preventDefault();
+                initAudioContext();
+                const p = getCanvasPointer(e);
+                pointerX = p.x;
+                pointerY = p.y;
 
-        // Next round
-        function nextRound() {
-            round++;
-            dronesSpawnedThisRound = 0;
-            drones = [];
-            playSound('round_clear');
-        }
-
-        // Draw title screen with START button
-        function drawTitleScreen() {
-            ctx.drawImage(images['og-image'], 0, 0, canvas.width, canvas.height);
-
-            // Draw START button
-            const buttonWidth = 200;
-            const buttonHeight = 60;
-            const buttonX = canvas.width / 2 - buttonWidth / 2;
-            const buttonY = canvas.height - 150;
-
-            // Button background
-            ctx.fillStyle = '#FF6B6B';
-            ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-
-            // Button border
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
-
-            // Button text
-            ctx.fillStyle = '#FFF';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 3;
-            ctx.font = '24px "Press Start 2P"';
-            ctx.textAlign = 'center';
-            ctx.strokeText('START', canvas.width / 2, buttonY + 40);
-            ctx.fillText('START', canvas.width / 2, buttonY + 40);
-
-            // Draw High Score
-            ctx.fillStyle = '#FFD700'; // Gold
-            ctx.font = '20px "Press Start 2P"';
-            ctx.fillText(`High Score: ${highScore}`, canvas.width / 2, canvas.height - 50);
-        }
-
-        // Draw UI
-        function drawUI() {
-            const constants = cachedGameConstants;
-
-            // Score
-            ctx.fillStyle = '#FFF';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 3;
-            const fontSize = Math.min(20, canvas.width * 0.05);
-            ctx.font = `${fontSize}px "Press Start 2P"`;
-            ctx.textAlign = 'left';
-            const scoreText = `Score: ${score}`;
-            ctx.strokeText(scoreText, 10, 30);
-            ctx.fillText(scoreText, 10, 30);
-
-            // High Score (below score)
-            if (highScore > 0) {
-                const highScoreText = `High: ${highScore}`;
-                ctx.strokeText(highScoreText, 10, 55);
-                ctx.fillText(highScoreText, 10, 55);
-            }
-
-            // Round
-            ctx.textAlign = 'right';
-            const roundText = `Round: ${round}`;
-            ctx.strokeText(roundText, canvas.width - 10, 30);
-            ctx.fillText(roundText, canvas.width - 10, 30);
-
-            // Ammo - draw shotgun shells (responsive sizing and positioning) - more space from bottom
-            const shellSpacing = constants.SHELL_WIDTH * 0.5; // 50% overlap
-            const shellStartX = canvas.width - 20 - constants.SHELL_WIDTH;
-            for (let i = ammo - 1; i >= 0; i--) {
-                const x = shellStartX - (i * shellSpacing);
-                const y = canvas.height - constants.SHELL_HEIGHT - 35;
-                ctx.drawImage(images['shotgun-shell-1'], x, y, constants.SHELL_WIDTH, constants.SHELL_HEIGHT);
-            }
-
-            // Reload button (responsive) - more space from bottom
-            const buttonX = 10;
-            const buttonY = canvas.height - constants.RELOAD_BUTTON_SIZE - 10;
-
-            ctx.drawImage(images.reload, buttonX, buttonY, constants.RELOAD_BUTTON_SIZE, constants.RELOAD_BUTTON_SIZE);
-
-            // Crosshair (responsive)
-            const crosshairSize = Math.min(60, canvas.width * 0.1);
-            ctx.drawImage(images.crosshair, mouseX - crosshairSize / 2, mouseY - crosshairSize / 2, crosshairSize, crosshairSize);
-
-            // Mute Button (Top Right)
-            ctx.textAlign = 'right';
-            ctx.font = '16px "Press Start 2P"';
-            ctx.fillStyle = '#FFF';
-            ctx.fillText(isMuted ? "SOUND: OFF" : "SOUND: ON", canvas.width - 10, 60);
-
-            // Pause Button (Bottom Right)
-            const pauseSize = 40;
-            const pauseX = canvas.width - pauseSize - 10;
-            const pauseY = canvas.height - pauseSize - 10;
-
-            ctx.strokeStyle = '#FFF';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(pauseX, pauseY, pauseSize, pauseSize);
-            ctx.fillStyle = '#FFF';
-            ctx.textAlign = 'center';
-            ctx.font = '20px "Press Start 2P"';
-            ctx.fillText("P", pauseX + pauseSize / 2, pauseY + pauseSize / 2 + 8);
-        }
-
-        // Draw paused screen
-        function drawPaused() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            ctx.fillStyle = '#FFF';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 4;
-            ctx.font = '48px "Press Start 2P"';
-            ctx.textAlign = 'center';
-            ctx.strokeText('PAUSED', canvas.width / 2, canvas.height / 2);
-            ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
-        }
-
-        // Draw game over screen
-        function drawGameOver() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            ctx.fillStyle = '#FFF';
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 4;
-            ctx.font = '48px "Press Start 2P"';
-            ctx.textAlign = 'center';
-
-            // Center everything vertically better
-            const centerY = canvas.height / 2 - 40;
-
-            ctx.strokeText('GAME OVER', canvas.width / 2, centerY - 60);
-            ctx.fillText('GAME OVER', canvas.width / 2, centerY - 60);
-
-            ctx.font = '24px "Press Start 2P"';
-            const scoreText = `Score: ${score}`;
-            ctx.strokeText(scoreText, canvas.width / 2, centerY + 10);
-            ctx.fillText(scoreText, canvas.width / 2, centerY + 10);
-
-            const roundText = `Round: ${round}`;
-            ctx.strokeText(roundText, canvas.width / 2, centerY + 60);
-            ctx.fillText(roundText, canvas.width / 2, centerY + 60);
-
-            // High Score
-            ctx.fillStyle = '#FFD700';
-            ctx.font = '20px "Press Start 2P"';
-            ctx.fillText(`High Score: ${highScore}`, canvas.width / 2, centerY + 130);
-
-            // Draw laughing dog (you FAILED)
-            const dogSize = 150;
-            ctx.drawImage(images['dog-laugh'], canvas.width / 2 - dogSize / 2, centerY + 90, dogSize, dogSize);
-
-            ctx.font = '20px "Press Start 2P"';
-            ctx.strokeText('Click to Restart', canvas.width / 2, centerY + 260);
-            ctx.fillText('Click to Restart', canvas.width / 2, centerY + 260);
-        }
-
-        // Reset game
-        function resetGame() {
-            gameState = 'playing';
-            score = 0;
-            round = 1;
-            ammo = 5;
-            dronesPassedThisGame = 0;
-            dronesDestroyedThisGame = 0;
-            drones = [];
-            dronesSpawnedThisRound = 0;
-            explosions = [];
-            dogAnimation = { active: false, y: 0, targetY: 0, type: null, x: 0 };
-            playSound('round_start');
-        }
-
-        // Game loop
-        let spawnTimer = 0;
-        const BASE_SPAWN_INTERVAL = 60; // frames between spawns
-
-        function gameLoop() {
-            if (isPaused) {
-                drawPaused();
-                requestAnimationFrame(gameLoop);
-                return;
-            }
-
-            // Clear canvas
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw main background scaled to fit canvas
-            ctx.drawImage(images.background, 0, 0, canvas.width, canvas.height);
-
-            if (gameState === 'titleScreen') {
-                drawTitleScreen();
-            } else if (gameState === 'playing') {
-                // Update dog animation
-                updateDogAnimation();
-                // Spawn drones - spawn faster each round
-                const spawnInterval = Math.max(30, BASE_SPAWN_INTERVAL - (round - 1) * 5);
-                spawnTimer++;
-                if (spawnTimer >= spawnInterval) {
-                    // Chance to spawn multiple drones increases with round
-                    const multiSpawnChance = Math.min(0.5, (round - 1) * 0.1);
-                    const spawnCount = Math.random() < multiSpawnChance ? 2 : 1;
-
-                    for (let i = 0; i < spawnCount; i++) {
-                        spawnDrone();
+                if (gameState === 'title') {
+                    startNewGame();
+                } else if (gameState === 'playing') {
+                    if (p.x <= 140 && p.y >= LOGICAL_HEIGHT - 140) {
+                        reloadGun();
+                    } else {
+                        shootGun(p.x, p.y);
                     }
-                    spawnTimer = 0;
+                } else if (gameState === 'gameOver') {
+                    startNewGame();
+                }
+            }, { passive: false });
+
+            window.addEventListener('keydown', e => {
+                initAudioContext();
+                if (e.key === ' ' || e.key === 'Enter') {
+                    if (gameState === 'title' || gameState === 'gameOver') {
+                        startNewGame();
+                    }
+                } else if (e.key === 'r' || e.key === 'R') {
+                    reloadGun();
+                } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+                    togglePauseGame();
+                } else if (e.key === 'm' || e.key === 'M') {
+                    saveMuteState(!isMuted);
+                } else if (e.key === 'h' || e.key === 'H') {
+                    toggleHelp();
+                }
+            });
+
+            // Button controls
+            btnStartGame.addEventListener('click', () => {
+                hasSeenOnboarding = true;
+                safeStorageSet(STORAGE_KEYS.ONBOARDING_SEEN, 'true');
+                onboardingModal.classList.add('hidden');
+                if (gameState === 'paused') togglePauseGame();
+                else startNewGame();
+            });
+
+            btnSoundToggle.addEventListener('click', () => {
+                initAudioContext();
+                saveMuteState(!isMuted);
+            });
+
+            btnPauseToggle.addEventListener('click', () => {
+                togglePauseGame();
+            });
+
+            btnHelpToggle.addEventListener('click', () => {
+                toggleHelp();
+            });
+
+            btnReload.addEventListener('click', () => {
+                reloadGun();
+            });
+
+            // Show onboarding on first run
+            if (!hasSeenOnboarding) {
+                onboardingModal.classList.remove('hidden');
+            }
+
+            // Main Update Loop
+            function update(dt) {
+                if (isPaused) return;
+
+                updateDog(dt);
+
+                if (reloadAlertTimer > 0) {
+                    reloadAlertTimer -= dt;
                 }
 
-                const constants = cachedGameConstants;
+                if (gameState === 'roundIntro') {
+                    roundIntroTimer -= dt;
+                    if (roundIntroTimer <= 0) {
+                        gameState = 'playing';
+                        spawnTimer = 0;
+                    }
+                } else if (gameState === 'playing') {
+                    // Spawning
+                    const spawnInterval = getSpawnInterval(round);
+                    spawnTimer += dt;
+                    if (spawnTimer >= spawnInterval) {
+                        spawnTimer = 0;
+                        const multiChance = getMultiSpawnProbability(round);
+                        const count = Math.random() < multiChance ? 2 : 1;
+                        for (let i = 0; i < count; i++) {
+                            spawnDrone();
+                        }
+                    }
 
-                // Draw dog BEFORE grass layer (so grass covers bottom of dog)
-                if (dogAnimation.active && dogAnimation.type) {
-                    const dogX = dogAnimation.x - constants.DOG_SIZE / 2;
-                    ctx.drawImage(images[dogAnimation.type], dogX, dogAnimation.y, constants.DOG_SIZE, constants.DOG_SIZE);
-                }
+                    // Update drones
+                    for (let i = drones.length - 1; i >= 0; i--) {
+                        const drone = drones[i];
+                        if (drone.destroyed) {
+                            drones.splice(i, 1);
+                            continue;
+                        }
 
-                // Draw bottom foreground layer (grass/ground) - positioned higher for UI space
-                ctx.drawImage(images['background-bottom'],
-                    0,
-                    constants.BACKGROUND_BOTTOM_Y,
-                    canvas.width,
-                    constants.BACKGROUND_BOTTOM_HEIGHT);
-
-                // Update and draw drones (AFTER grass so they appear on top)
-                for (let i = drones.length - 1; i >= 0; i--) {
-                    const drone = drones[i];
-
-                    if (!drone.destroyed) {
-                        drone.update();
+                        drone.update(dt);
 
                         if (drone.isOffScreen()) {
-                            // Create explosion when drone reaches bottom
-                            explosions.push(new Explosion(drone.x, canvas.height - 60, 1.2));
-
+                            // Drone escaped
+                            explosions.push(new Explosion(drone.x, LOGICAL_HEIGHT - 60, 1.2));
                             playSound('drone_flyaway');
-                            score -= 50;
-                            dronesPassedThisGame++;
+                            score = Math.max(0, score - POINTS_LOST_PER_MISS);
+                            dronesPassedTotal++;
+                            dronesPassedThisRound++;
                             drones.splice(i, 1);
 
-                            if (dronesPassedThisGame >= MAX_DRONES_PASSED) {
+                            if (dronesPassedTotal >= MAX_DRONES_PASSED) {
                                 gameState = 'gameOver';
-                                if (score > highScore) {
-                                    highScore = score;
-                                    localStorage.setItem('droneHunter_highScore', highScore);
-                                }
                                 playSound('game_over');
+                                triggerDog('dog-laugh');
+                                announceStatus(`Game Over! Final Score: ${score}.`);
                             } else {
-                                // Show laughing dog when drone gets through (70% of the time)
-                                if (Math.random() < 0.7) {
-                                    triggerDogAnimation('dog-laugh');
+                                if (Math.random() < 0.75) {
+                                    triggerDog('dog-laugh');
                                     playSound('dog_laugh');
                                 }
                             }
-                        } else {
-                            drone.draw();
                         }
-                    } else {
-                        drones.splice(i, 1);
+                    }
+
+                    // Check for round clear
+                    const maxInRound = getDronesForRound(round);
+                    const allSpawned = dronesSpawnedThisRound >= maxInRound;
+                    const activeCount = drones.filter(d => !d.destroyed).length;
+
+                    if (allSpawned && activeCount === 0 && gameState === 'playing') {
+                        const isPerfect = dronesPassedThisRound === 0 && dronesDestroyedThisRound === maxInRound;
+                        if (isPerfect) {
+                            score += PERFECT_ROUND_BONUS;
+                            saveHighScore(score);
+                        }
+                        roundClearTimer = 2.4;
+                        gameState = 'roundClear';
+                        playSound('round_clear');
+                        announceStatus(`Round ${round} cleared!`);
+                    }
+                } else if (gameState === 'roundClear') {
+                    roundClearTimer -= dt;
+                    if (roundClearTimer <= 0) {
+                        round++;
+                        dronesSpawnedThisRound = 0;
+                        dronesDestroyedThisRound = 0;
+                        dronesPassedThisRound = 0;
+                        drones = [];
+                        ammo = DEFAULT_AMMO;
+                        roundIntroTimer = 2.0;
+                        gameState = 'roundIntro';
+                        playSound('round_start');
                     }
                 }
 
-                // Update and draw explosions (on top of everything)
+                // Update explosions
                 for (let i = explosions.length - 1; i >= 0; i--) {
-                    const explosion = explosions[i];
-                    explosion.update();
-                    explosion.draw();
-
-                    if (explosion.isExpired()) {
+                    const exp = explosions[i];
+                    exp.update(dt);
+                    if (exp.isExpired()) {
                         explosions.splice(i, 1);
                     }
                 }
-
-                // Check for round completion
-                const dronesThisRound = getDronesPerRound(round);
-                if (dronesSpawnedThisRound >= dronesThisRound && drones.length === 0) {
-                    nextRound();
-                }
-
-                drawUI();
-            } else if (gameState === 'gameOver') {
-                drawGameOver();
             }
 
-            requestAnimationFrame(gameLoop);
-        }
+            // Main Draw Loop
+            function draw() {
+                ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
 
-        // Event listeners
-        canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            mouseX = e.clientX - rect.left;
-            mouseY = e.clientY - rect.top;
-        });
-
-        canvas.addEventListener('click', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            mouseX = e.clientX - rect.left;
-            mouseY = e.clientY - rect.top;
-
-            if (gameState === 'titleScreen') {
-                // Click anywhere to start
-                gameState = 'playing';
-            } else if (gameState === 'playing') {
-                // Check if reload button was clicked
-                const constants = cachedGameConstants;
-                const buttonX = 10;
-                const buttonY = canvas.height - constants.RELOAD_BUTTON_SIZE - 10;
-                const buttonSize = constants.RELOAD_BUTTON_SIZE;
-
-                // Pause Button (Bottom Right)
-                const pauseSize = 40;
-                const pauseX = canvas.width - pauseSize - 10;
-                const pauseY = canvas.height - pauseSize - 10;
-
-                if (mouseX >= buttonX && mouseX <= buttonX + buttonSize &&
-                    mouseY >= buttonY && mouseY <= buttonY + buttonSize) {
-                    if (!isPaused) reload();
-                } else if (mouseX >= pauseX && mouseX <= pauseX + pauseSize &&
-                    mouseY >= pauseY && mouseY <= pauseY + pauseSize) {
-                    isPaused = !isPaused;
-                } else if (mouseX >= canvas.width - 160 && mouseX <= canvas.width &&
-                    mouseY >= 30 && mouseY <= 70) {
-                    isMuted = !isMuted;
-                    localStorage.setItem('droneHunter_isMuted', isMuted);
+                // Sky & trees background
+                if (canDraw(images.background)) {
+                    ctx.drawImage(images.background, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
                 } else {
-                    if (!isPaused) shoot();
+                    ctx.fillStyle = '#87CEEB';
+                    ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
                 }
-            } else if (gameState === 'gameOver') {
-                resetGame();
-            }
-        });
 
-        canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const touch = e.touches[0];
-            mouseX = touch.clientX - rect.left;
-            mouseY = touch.clientY - rect.top;
-        });
-
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const touch = e.touches[0];
-            mouseX = touch.clientX - rect.left;
-            mouseY = touch.clientY - rect.top;
-
-            if (gameState === 'titleScreen') {
-                // Tap anywhere to start
-                gameState = 'playing';
-            } else if (gameState === 'playing') {
-                // Check if reload button was clicked
-                const constants = cachedGameConstants;
-                const buttonX = 10;
-                const buttonY = canvas.height - constants.RELOAD_BUTTON_SIZE - 10;
-                const buttonSize = constants.RELOAD_BUTTON_SIZE;
-
-                // Pause Button (Bottom Right)
-                const pauseSize = 40;
-                const pauseX = canvas.width - pauseSize - 10;
-                const pauseY = canvas.height - pauseSize - 10;
-
-                if (mouseX >= buttonX && mouseX <= buttonX + buttonSize &&
-                    mouseY >= buttonY && mouseY <= buttonY + buttonSize) {
-                    if (!isPaused) reload();
-                } else if (mouseX >= pauseX && mouseX <= pauseX + pauseSize &&
-                    mouseY >= pauseY && mouseY <= pauseY + pauseSize) {
-                    isPaused = !isPaused;
-                } else if (mouseX >= canvas.width - 160 && mouseX <= canvas.width &&
-                    mouseY >= 30 && mouseY <= 70) {
-                    isMuted = !isMuted;
-                    localStorage.setItem('droneHunter_isMuted', isMuted);
+                if (gameState === 'title') {
+                    drawTitleScreen();
                 } else {
-                    if (!isPaused) shoot();
-                }
-            } else if (gameState === 'gameOver') {
-                resetGame();
-            }
-        });
+                    // Dog behind grass
+                    if (dogAnimation.active && canDraw(images[dogAnimation.type])) {
+                        const dogSize = 150;
+                        ctx.drawImage(
+                            images[dogAnimation.type],
+                            dogAnimation.x - dogSize / 2,
+                            dogAnimation.y,
+                            dogSize,
+                            dogSize
+                        );
+                    }
 
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'r' || e.key === 'R') {
-                if (!isPaused) reload();
-            }
-            if (e.key === 'p' || e.key === 'P') {
-                if (gameState === 'playing') {
-                    isPaused = !isPaused;
+                    // Foreground grass layer
+                    if (canDraw(images['background-bottom'])) {
+                        const grassH = 175;
+                        ctx.drawImage(
+                            images['background-bottom'],
+                            0,
+                            LOGICAL_HEIGHT - grassH,
+                            LOGICAL_WIDTH,
+                            grassH
+                        );
+                    }
+
+                    // Draw Drones
+                    drones.forEach(d => d.draw());
+
+                    // Draw Explosions
+                    explosions.forEach(exp => exp.draw());
+
+                    // Draw HUD
+                    drawHUD();
+
+                    if (gameState === 'roundIntro') {
+                        drawRoundIntro();
+                    } else if (gameState === 'roundClear') {
+                        drawRoundClear();
+                    } else if (gameState === 'paused') {
+                        drawPaused();
+                    } else if (gameState === 'gameOver') {
+                        drawGameOver();
+                    }
+                }
+
+                // Crosshair
+                if (gameState === 'playing' && !isPaused && canDraw(images.crosshair)) {
+                    const cSize = 48;
+                    ctx.drawImage(
+                        images.crosshair,
+                        pointerX - cSize / 2,
+                        pointerY - cSize / 2,
+                        cSize,
+                        cSize
+                    );
                 }
             }
-            if (e.key === ' ' && gameState === 'titleScreen') {
-                gameState = 'playing';
+
+            function drawHUD() {
+                ctx.save();
+
+                // Top Left: Score & Best
+                ctx.fillStyle = '#FFF';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.font = '16px "Press Start 2P"';
+                ctx.textAlign = 'left';
+
+                const scoreTxt = `SCORE: ${score}`;
+                ctx.strokeText(scoreTxt, 16, 32);
+                ctx.fillText(scoreTxt, 16, 32);
+
+                if (highScore > 0) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = '12px "Press Start 2P"';
+                    const highTxt = `BEST: ${highScore}`;
+                    ctx.strokeText(highTxt, 16, 56);
+                    ctx.fillText(highTxt, 16, 56);
+                }
+
+                // Top Right: Round & Lives (Remaining Escapes)
+                ctx.fillStyle = '#FFF';
+                ctx.font = '16px "Press Start 2P"';
+                ctx.textAlign = 'right';
+                const roundTxt = `ROUND ${round}`;
+                ctx.strokeText(roundTxt, LOGICAL_WIDTH - 16, 32);
+                ctx.fillText(roundTxt, LOGICAL_WIDTH - 16, 32);
+
+                const escapesLeft = Math.max(0, MAX_DRONES_PASSED - dronesPassedTotal);
+                ctx.fillStyle = escapesLeft === 1 ? '#FF4757' : '#2ED573';
+                ctx.font = '11px "Press Start 2P"';
+                const livesTxt = `LIVES: ${'♥ '.repeat(escapesLeft)}`;
+                ctx.strokeText(livesTxt, LOGICAL_WIDTH - 16, 56);
+                ctx.fillText(livesTxt, LOGICAL_WIDTH - 16, 56);
+
+                // Bottom Left: Reload Button Icon
+                if (canDraw(images.reload)) {
+                    const rSize = 64;
+                    ctx.drawImage(images.reload, 16, LOGICAL_HEIGHT - rSize - 16, rSize, rSize);
+                }
+
+                // Bottom Right: Shotgun Shells
+                if (canDraw(images['shotgun-shell-1'])) {
+                    const shellW = 28;
+                    const shellH = 56;
+                    const startX = LOGICAL_WIDTH - 32 - shellW;
+                    for (let i = ammo - 1; i >= 0; i--) {
+                        ctx.drawImage(
+                            images['shotgun-shell-1'],
+                            startX - i * 22,
+                            LOGICAL_HEIGHT - shellH - 16,
+                            shellW,
+                            shellH
+                        );
+                    }
+                }
+
+                // Empty ammo warning banner
+                if (reloadAlertTimer > 0) {
+                    ctx.fillStyle = '#FF4757';
+                    ctx.font = '14px "Press Start 2P"';
+                    ctx.textAlign = 'center';
+                    ctx.strokeText('EMPTY! PRESS [R] TO RELOAD', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT - 35);
+                    ctx.fillText('EMPTY! PRESS [R] TO RELOAD', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT - 35);
+                }
+
+                ctx.restore();
             }
-        });
+
+            function drawTitleScreen() {
+                if (canDraw(images['og-image'])) {
+                    ctx.drawImage(images['og-image'], 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+                }
+
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+                // Title
+                ctx.fillStyle = '#FFD700';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.font = '36px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.strokeText('DRONE HUNTER', LOGICAL_WIDTH / 2, 180);
+                ctx.fillText('DRONE HUNTER', LOGICAL_WIDTH / 2, 180);
+
+                ctx.font = '14px "Press Start 2P"';
+                ctx.fillStyle = '#FFF';
+                ctx.lineWidth = 3;
+                ctx.strokeText('1995 DUCK HUNT EDITION', LOGICAL_WIDTH / 2, 220);
+                ctx.fillText('1995 DUCK HUNT EDITION', LOGICAL_WIDTH / 2, 220);
+
+                // Start Button
+                const btnW = 260;
+                const btnH = 60;
+                const btnX = LOGICAL_WIDTH / 2 - btnW / 2;
+                const btnY = 320;
+
+                ctx.fillStyle = '#2ED573';
+                ctx.fillRect(btnX, btnY, btnW, btnH);
+                ctx.strokeStyle = '#FFF';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(btnX, btnY, btnW, btnH);
+
+                ctx.fillStyle = '#000';
+                ctx.font = '18px "Press Start 2P"';
+                ctx.fillText('START GAME', LOGICAL_WIDTH / 2, btnY + 38);
+
+                // Controls note
+                ctx.fillStyle = '#FFF';
+                ctx.font = '11px "Press Start 2P"';
+                ctx.strokeText('PRESS SPACE OR CLICK TO PLAY', LOGICAL_WIDTH / 2, 430);
+                ctx.fillText('PRESS SPACE OR CLICK TO PLAY', LOGICAL_WIDTH / 2, 430);
+
+                if (highScore > 0) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.strokeText(`LOCAL RECORD: ${highScore}`, LOGICAL_WIDTH / 2, 480);
+                    ctx.fillText(`LOCAL RECORD: ${highScore}`, LOGICAL_WIDTH / 2, 480);
+                }
+
+                ctx.restore();
+            }
+
+            function drawRoundIntro() {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+                ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+                ctx.fillStyle = '#FFD700';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.font = '32px "Press Start 2P"';
+                ctx.textAlign = 'center';
+
+                ctx.strokeText(`ROUND ${round}`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 30);
+                ctx.fillText(`ROUND ${round}`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 30);
+
+                ctx.fillStyle = '#FFF';
+                ctx.font = '16px "Press Start 2P"';
+                ctx.lineWidth = 3;
+                ctx.strokeText(`TARGET: ${getDronesForRound(round)} DRONES`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 20);
+                ctx.fillText(`TARGET: ${getDronesForRound(round)} DRONES`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 20);
+
+                ctx.fillStyle = '#2ED573';
+                ctx.font = '14px "Press Start 2P"';
+                ctx.strokeText('GET READY!', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 70);
+                ctx.fillText('GET READY!', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 70);
+
+                ctx.restore();
+            }
+
+            function drawRoundClear() {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+                ctx.fillStyle = '#2ED573';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.font = '28px "Press Start 2P"';
+                ctx.textAlign = 'center';
+
+                ctx.strokeText(`ROUND ${round} CLEARED!`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 40);
+                ctx.fillText(`ROUND ${round} CLEARED!`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 40);
+
+                const isPerfect = dronesPassedThisRound === 0;
+                if (isPerfect) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = '16px "Press Start 2P"';
+                    ctx.strokeText('⭐ PERFECT DEFENSE +500 PTS ⭐', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 10);
+                    ctx.fillText('⭐ PERFECT DEFENSE +500 PTS ⭐', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 10);
+                }
+
+                ctx.fillStyle = '#FFF';
+                ctx.font = '14px "Press Start 2P"';
+                ctx.strokeText(`CURRENT SCORE: ${score}`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 60);
+                ctx.fillText(`CURRENT SCORE: ${score}`, LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 60);
+
+                ctx.restore();
+            }
+
+            function drawPaused() {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+                ctx.fillStyle = '#FFF';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.font = '36px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.strokeText('PAUSED', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 20);
+                ctx.fillText('PAUSED', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 - 20);
+
+                ctx.font = '14px "Press Start 2P"';
+                ctx.strokeText('PRESS [P] OR [ESC] TO RESUME', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 40);
+                ctx.fillText('PRESS [P] OR [ESC] TO RESUME', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2 + 40);
+
+                ctx.restore();
+            }
+
+            function drawGameOver() {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+                ctx.fillStyle = '#FF4757';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.font = '36px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.strokeText('GAME OVER', LOGICAL_WIDTH / 2, 140);
+                ctx.fillText('GAME OVER', LOGICAL_WIDTH / 2, 140);
+
+                ctx.fillStyle = '#FFF';
+                ctx.font = '18px "Press Start 2P"';
+                ctx.strokeText(`FINAL SCORE: ${score}`, LOGICAL_WIDTH / 2, 200);
+                ctx.fillText(`FINAL SCORE: ${score}`, LOGICAL_WIDTH / 2, 200);
+
+                ctx.font = '14px "Press Start 2P"';
+                ctx.strokeText(`ROUNDS SURVIVED: ${round}`, LOGICAL_WIDTH / 2, 240);
+                ctx.fillText(`ROUNDS SURVIVED: ${round}`, LOGICAL_WIDTH / 2, 240);
+
+                if (isNewHighScore) {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.strokeText('🏆 NEW RECORD HIGH SCORE! 🏆', LOGICAL_WIDTH / 2, 280);
+                    ctx.fillText('🏆 NEW RECORD HIGH SCORE! 🏆', LOGICAL_WIDTH / 2, 280);
+                } else {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.strokeText(`BEST RECORD: ${highScore}`, LOGICAL_WIDTH / 2, 280);
+                    ctx.fillText(`BEST RECORD: ${highScore}`, LOGICAL_WIDTH / 2, 280);
+                }
+
+                // Laughing Dog
+                if (canDraw(images['dog-laugh'])) {
+                    const dogSize = 130;
+                    ctx.drawImage(
+                        images['dog-laugh'],
+                        LOGICAL_WIDTH / 2 - dogSize / 2,
+                        320,
+                        dogSize,
+                        dogSize
+                    );
+                }
+
+                ctx.fillStyle = '#2ED573';
+                ctx.font = '14px "Press Start 2P"';
+                ctx.strokeText('CLICK OR PRESS SPACE TO RETRY', LOGICAL_WIDTH / 2, 490);
+                ctx.fillText('CLICK OR PRESS SPACE TO RETRY', LOGICAL_WIDTH / 2, 490);
+
+                ctx.restore();
+            }
+
+            // Delta-Time Animation Loop
+            let lastTimestamp = performance.now();
+
+            function mainLoop(timestamp) {
+                const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.05);
+                lastTimestamp = timestamp;
+
+                update(dt);
+                draw();
+
+                requestAnimationFrame(mainLoop);
+            }
+
+            requestAnimationFrame(mainLoop);
+        })();
     </script>
 </body>
 

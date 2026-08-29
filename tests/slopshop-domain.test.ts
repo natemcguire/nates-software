@@ -33,7 +33,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(drone.repoUrl).toContain('github.com/natemcguire/dronehunter.git');
       expect(drone.sshRemote).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/dronehunter.git');
       expect(drone.defaultPort).toBe(3004);
-      expect(drone.sqliteDatabase).toBe('/data/dronehunter.sqlite');
+      expect(drone.sqliteDatabase).toBeUndefined();
+      expect(drone.techStack).toContain('Local Storage');
 
       const mailer = getAppCoordinate('certified-mailer');
       expect(mailer.appId).toBe('certified-mailer');
@@ -67,7 +68,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(radar).toBeDefined();
       expect(radar?.prompt).toContain('AN/MPQ-64 Sentinel');
       expect(radar?.targetFiles.length).toBeGreaterThan(0);
-      expect(radar?.migrationSql).toContain('CREATE TABLE IF NOT EXISTS radar_targets');
+      expect(radar?.migrationSql).toBeUndefined();
       expect(radar?.verificationCriteria.length).toBeGreaterThan(0);
       expect(radar?.blueprintDiffPreview).toContain('diff --git');
 

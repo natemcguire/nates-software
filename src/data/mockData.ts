@@ -27,10 +27,10 @@ export interface AppListing {
   tags: string[];
   liveUrl?: string;
   liveAppUrl?: string;
-  sqliteDatabase: string;
+  sqliteDatabase?: string;
   sqlitePath?: string;
   storage?: string;
-  sqliteSize: string;
+  sqliteSize?: string;
   screenshots: string[];
   comments: Comment[];
   badge?: string;
@@ -58,8 +58,8 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'dronehunter',
     name: 'DroneHunter 95',
-    tagline: 'Retro Duck Hunt-Style Arcade Drone Shooter with Local-First High Scores',
-    description: 'Fast-paced arcade browser game inspired by classic Duck Hunt. Double-barrel shotgun reloads, laughing dog animations, drone explosions, and local high score telemetry with modular storage.',
+    tagline: 'Retro Duck Hunt-Style Arcade Drone Shooter with Local High Scores',
+    description: 'Fast-paced arcade browser game inspired by classic Duck Hunt. Double-barrel shotgun reloads, laughing dog animations, drone explosions, and local high score tracking with storage freedom.',
     author: 'nate',
     authorAvatar: '🎯',
     creator: 'nate',
@@ -69,15 +69,10 @@ export const INITIAL_APPS: AppListing[] = [
     forkCount: 88,
     forks: 88,
     tags: ['Arcade', 'Retro', 'Duck Hunt', 'Canvas', 'Web Audio'],
-    liveUrl: 'https://dronehunter.nates-software.com',
-    liveAppUrl: 'https://dronehunter.nates-software.com',
-    sqliteDatabase: '/data/dronehunter.sqlite',
-    sqlitePath: '/data/dronehunter.sqlite',
-    storage: '/data/dronehunter.sqlite (Local-First)',
-    sqliteSize: '14.8 MB',
+    storage: 'Local-First (Storage Freedom)',
     moddabilityScore: 98,
     mergeCleanliness: '100% Clean',
-    price: 49.00,
+    price: 15.00,
     badge: '#1 Product of the Day',
     makerPitch: 'I wanted an authentic 1995 Duck Hunt experience in pure HTML5 Canvas with local high-scores and zero telemetry bloat. Grab your mouse, shoot the drones, and don\'t let the dog laugh at you!',
     voters: [
@@ -86,8 +81,8 @@ export const INITIAL_APPS: AppListing[] = [
       { name: 'Sam (AI)', handle: '@sam', avatar: '🤖' }
     ],
     screenshots: [
-      'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80'
+      '/dronehunter-ephemeral-screenshot.png',
+      '/dronehunter-game/assets/og-image-1200x630.png'
     ],
     isDemo: true,
     comments: [
@@ -95,7 +90,7 @@ export const INITIAL_APPS: AppListing[] = [
         id: 'c-pitch',
         author: 'Nate McGuire (@nate)',
         avatar: '🎯',
-        text: 'Maker Note: Built with pure HTML5 Canvas + Web Audio API shotgun audio. All scores persist directly to your local database without third-party servers.',
+        text: 'Maker Note: Built with pure HTML5 Canvas + Web Audio API shotgun audio. All scores persist directly to your local browser storage without third-party servers.',
         timestamp: '12:01 AM UTC',
         isMaker: true
       },
