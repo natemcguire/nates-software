@@ -2,21 +2,50 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestD1Database, type TestD1Context } from './fixtures/d1Harness';
 import * as terminalApi from '../functions/api/terminal-session';
 
+const requiredTools = [
+  'bash', 'git', 'git-lfs', 'ssh', 'curl', 'wget', 'jq', 'rg',
+  'node', 'npm', 'npx', 'python3', 'pip3', 'gcc', 'g++', 'make',
+  'pkg-config', 'sqlite3', 'tar', 'gzip', 'zip', 'unzip', 'rsync',
+  'file', 'tree', 'nano', 'vim', 'claude', 'slop'
+];
+const ticketSecret = 't'.repeat(32);
+const gatewaySecret = 'g'.repeat(32);
+
 const envFor = (ctx: TestD1Context) => ({
   DB: ctx.d1,
-  TERMINAL_TICKET_SECRET: 'ticket-secret-for-tests',
+  TERMINAL_TICKET_SECRET: ticketSecret,
   TERMINAL_GATEWAY_URL: 'https://terminal.example.test',
-  TERMINAL_GATEWAY_SERVICE_SECRET: 'gateway-secret-for-tests',
+  TERMINAL_GATEWAY_SERVICE_SECRET: gatewaySecret,
   __TERMINAL_GATEWAY_FETCH: async () => Response.json({
     isProductionVps: true,
     isolationType: 'vps',
-    features: { ephemeralWorkspaces: true, autoCleanup: true }
+    authRequired: true,
+    authMethods: ['websocket_protocol'],
+    availableTools: requiredTools,
+    limits: { maxConcurrentSessions: 10, sessionTtlSeconds: 900 },
+    features: { ptyResize: true, ephemeralWorkspaces: true, autoCleanup: true, zeroSecretBaking: true }
   })
 });
 
 describe('ephemeral terminal ticket lifecycle', () => {
   let ctx: TestD1Context;
   beforeEach(async () => { ctx = await createTestD1Database({ foreignKeys: true }); });
+
+  it('reports readiness only when configuration and the full production contract are proved', async () => {
+    const ready = await terminalApi.onRequestGet({
+      request: new Request('https://nates-software.com/api/terminal-session'),
+      env: envFor(ctx)
+    });
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toMatchObject({ success: true, ready: true, configured: true });
+
+    const unconfigured = await terminalApi.onRequestGet({
+      request: new Request('https://nates-software.com/api/terminal-session'),
+      env: { DB: ctx.d1 }
+    });
+    expect(unconfigured.status).toBe(503);
+    expect(await unconfigured.json()).toMatchObject({ success: false, ready: false, configured: false });
+  });
 
   it('requires an authenticated user to mint a ticket', async () => {
     const response = await terminalApi.onRequestPost({
@@ -56,7 +85,7 @@ describe('ephemeral terminal ticket lifecycle', () => {
     const redeem = () => terminalApi.onRequestPost({
       request: new Request('https://nates-software.com/api/terminal-session?action=redeem', {
         method: 'POST',
-        headers: { Authorization: 'Bearer gateway-secret-for-tests', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${gatewaySecret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ jti: claims.jti, userId: claims.sub, gatewaySessionId: 'gateway-session-1' })
       }),
       env: envFor(ctx)
@@ -67,7 +96,7 @@ describe('ephemeral terminal ticket lifecycle', () => {
     const close = await terminalApi.onRequestPost({
       request: new Request('https://nates-software.com/api/terminal-session?action=close', {
         method: 'POST',
-        headers: { Authorization: 'Bearer gateway-secret-for-tests', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${gatewaySecret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ gatewaySessionId: 'gateway-session-1' })
       }),
       env: envFor(ctx)
@@ -105,7 +134,11 @@ describe('ephemeral terminal ticket lifecycle', () => {
       __TERMINAL_GATEWAY_FETCH: async () => Response.json({
         isProductionVps: false,
         isolationType: 'process',
-        features: { ephemeralWorkspaces: true, autoCleanup: true }
+        authRequired: true,
+        authMethods: ['websocket_protocol'],
+        availableTools: requiredTools,
+        limits: { maxConcurrentSessions: 10, sessionTtlSeconds: 900 },
+        features: { ptyResize: true, ephemeralWorkspaces: true, autoCleanup: true, zeroSecretBaking: true }
       })
     };
     const response = await terminalApi.onRequestPost({
@@ -177,7 +210,7 @@ describe('ephemeral terminal ticket lifecycle', () => {
     const redeem = (jti: string, gatewaySessionId: string) => terminalApi.onRequestPost({
       request: new Request('https://nates-software.com/api/terminal-session?action=redeem', {
         method: 'POST',
-        headers: { Authorization: 'Bearer gateway-secret-for-tests', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${gatewaySecret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ jti, userId: 'usr_nate', gatewaySessionId })
       }),
       env
@@ -198,7 +231,7 @@ describe('ephemeral terminal ticket lifecycle', () => {
     const res1 = await terminalApi.onRequestPost({
       request: new Request('https://nates-software.com/api/terminal-session?action=redeem', {
         method: 'POST',
-        headers: { Authorization: 'Bearer gateway-secret-for-tests', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${gatewaySecret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ jti: 'jti-only' })
       }),
       env
@@ -209,7 +242,7 @@ describe('ephemeral terminal ticket lifecycle', () => {
     const res2 = await terminalApi.onRequestPost({
       request: new Request('https://nates-software.com/api/terminal-session?action=close', {
         method: 'POST',
-        headers: { Authorization: 'Bearer gateway-secret-for-tests', 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${gatewaySecret}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({})
       }),
       env

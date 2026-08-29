@@ -39,6 +39,14 @@ export interface TerminalSessionInfo {
   motd?: string;
 }
 
+export interface TerminalReadiness {
+  success: boolean;
+  ready: boolean;
+  configured: boolean;
+  capabilities?: TerminalCapabilities;
+  error?: string;
+}
+
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error' | 'unreachable';
 
 export interface TerminalClientCallbacks {
@@ -132,6 +140,11 @@ export class TerminalClient {
     this.setState('connecting');
 
     try {
+      const readinessResponse = await fetch('/api/terminal-session', { credentials: 'same-origin', cache: 'no-store' });
+      const readiness = await readinessResponse.json() as TerminalReadiness;
+      if (!readinessResponse.ok || !readiness.ready) {
+        throw new Error(readiness.error || 'Ephemeral terminal service is unavailable');
+      }
       const ticketResponse = await fetch('/api/terminal-session', { method: 'POST', credentials: 'same-origin' });
       const ticketData = await ticketResponse.json();
       if (!ticketResponse.ok || !ticketData.success || !ticketData.ticket || !ticketData.gatewayUrl) {

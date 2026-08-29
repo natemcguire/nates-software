@@ -25,14 +25,40 @@ async function signTicket(payload: Record<string, unknown>, secret: string): Pro
   return `${encoded}.${base64Url(signature)}`;
 }
 
-async function productionGatewayReady(env: any): Promise<boolean> {
+const REQUIRED_TERMINAL_TOOLS = [
+  'bash', 'git', 'git-lfs', 'ssh', 'curl', 'wget', 'jq', 'rg',
+  'node', 'npm', 'npx', 'python3', 'pip3', 'gcc', 'g++', 'make',
+  'pkg-config', 'sqlite3', 'tar', 'gzip', 'zip', 'unzip', 'rsync',
+  'file', 'tree', 'nano', 'vim', 'claude', 'slop'
+] as const;
+
+function provesProductionTerminal(capabilities: any): boolean {
+  const tools = new Set(Array.isArray(capabilities?.availableTools) ? capabilities.availableTools : []);
+  return capabilities?.isProductionVps === true
+    && capabilities?.isolationType === 'vps'
+    && capabilities?.authRequired === true
+    && capabilities?.authMethods?.includes('websocket_protocol')
+    && capabilities?.features?.ptyResize === true
+    && capabilities?.features?.ephemeralWorkspaces === true
+    && capabilities?.features?.autoCleanup === true
+    && capabilities?.features?.zeroSecretBaking === true
+    && Number.isInteger(capabilities?.limits?.maxConcurrentSessions)
+    && capabilities.limits.maxConcurrentSessions > 0
+    && capabilities.limits.maxConcurrentSessions <= 10
+    && Number.isInteger(capabilities?.limits?.sessionTtlSeconds)
+    && capabilities.limits.sessionTtlSeconds > 0
+    && capabilities.limits.sessionTtlSeconds <= 900
+    && REQUIRED_TERMINAL_TOOLS.every(tool => tools.has(tool));
+}
+
+async function productionGatewayReadiness(env: any): Promise<{ ready: boolean; capabilities?: any; error?: string }> {
   let gatewayUrl: URL;
   try {
     gatewayUrl = new URL(env.TERMINAL_GATEWAY_URL);
   } catch {
-    return false;
+    return { ready: false, error: 'Terminal gateway URL is missing or invalid.' };
   }
-  if (gatewayUrl.protocol !== 'https:') return false;
+  if (gatewayUrl.protocol !== 'https:') return { ready: false, error: 'Terminal gateway must use HTTPS.' };
   const request = env.__TERMINAL_GATEWAY_FETCH || fetch;
   try {
     const capabilitiesUrl = new URL('/capabilities', gatewayUrl);
@@ -40,16 +66,42 @@ async function productionGatewayReady(env: any): Promise<boolean> {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(4_000)
     });
-    if (!response.ok) return false;
+    if (!response.ok) return { ready: false, error: `Terminal gateway capability probe returned HTTP ${response.status}.` };
     const capabilities = await response.json();
-    return capabilities?.isProductionVps === true
-      && capabilities?.isolationType === 'vps'
-      && capabilities?.features?.ephemeralWorkspaces === true
-      && capabilities?.features?.autoCleanup === true;
-  } catch {
-    return false;
+    if (!provesProductionTerminal(capabilities)) {
+      return { ready: false, error: 'Terminal gateway did not prove the required VPS, cleanup, auth, limits, and toolchain contract.' };
+    }
+    return { ready: true, capabilities };
+  } catch (error: any) {
+    return { ready: false, error: `Terminal gateway readiness failed: ${error?.message || 'unreachable'}` };
   }
 }
+
+export const onRequestGet = async ({ env }: { request: Request; env: any }) => {
+  const configured = Boolean(
+    env?.TERMINAL_GATEWAY_URL
+    && typeof env?.TERMINAL_TICKET_SECRET === 'string'
+    && env.TERMINAL_TICKET_SECRET.length >= 32
+    && typeof env?.TERMINAL_GATEWAY_SERVICE_SECRET === 'string'
+    && env.TERMINAL_GATEWAY_SERVICE_SECRET.length >= 32
+  );
+  if (!configured) {
+    return Response.json({
+      success: false,
+      ready: false,
+      configured: false,
+      error: 'Ephemeral terminal service is not configured.'
+    }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+  }
+  const readiness = await productionGatewayReadiness(env);
+  return Response.json({
+    success: readiness.ready,
+    ready: readiness.ready,
+    configured: true,
+    capabilities: readiness.ready ? readiness.capabilities : undefined,
+    error: readiness.error
+  }, { status: readiness.ready ? 200 : 503, headers: { 'Cache-Control': 'no-store' } });
+};
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   const action = new URL(request.url).searchParams.get('action') || 'mint';
@@ -105,7 +157,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   if (!env.TERMINAL_TICKET_SECRET || !env.TERMINAL_GATEWAY_URL) {
     return Response.json({ success: false, error: 'Ephemeral terminal service is not configured' }, { status: 503 });
   }
-  if (!(await productionGatewayReady(env))) {
+  if (!(await productionGatewayReadiness(env)).ready) {
     return Response.json({
       success: false,
       error: 'Ephemeral VPS gateway is unavailable or has not verified its isolation and cleanup guarantees'
@@ -144,3 +196,5 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     expiresAt: (now + 60) * 1000
   }, { headers: { 'Cache-Control': 'no-store' } });
 };
+
+export { provesProductionTerminal };
