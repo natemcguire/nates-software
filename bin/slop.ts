@@ -144,9 +144,9 @@ export const SHELF_TITLES = [
   {
     id: "shelf-pf-03",
     appId: "picfitai",
-    name: "PicFit.ai",
+    name: "PicFit",
     version: "v1.0.0",
-    tagline: "AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision.",
+    tagline: "Private in-browser crop, resize, compression, and image export studio.",
     licenseKey: "NSW-PICFIT-1109-34K9",
     purchasedDate: "Aug 20, 2026",
     creatorAvatar: "✨"
@@ -962,7 +962,7 @@ export function handleList(): SlopCommandResult {
   const drops = [
     { rank: 1, name: "DroneHunter 95", version: "v1.0.0", creator: "@nate", upvotes: 420, forks: 88 },
     { rank: 2, name: "Certified Mailer", version: "v1.0.0", creator: "@nate", upvotes: 312, forks: 46 },
-    { rank: 3, name: "PicFit.ai", version: "v1.0.0", creator: "@nate", upvotes: 284, forks: 62 }
+    { rank: 3, name: "PicFit", version: "v1.0.0", creator: "@nate", upvotes: 284, forks: 62 }
   ];
 
   const lines = [

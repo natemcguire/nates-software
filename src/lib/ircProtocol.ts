@@ -229,7 +229,7 @@ export const INITIAL_CHAT_MESSAGES: IrcMessage[] = [
     channel: '#lounge',
     sender: 'nate',
     type: 'PRIVMSG',
-    text: 'Welcome everyone! DroneHunter 95, Certified Mailer, and PicFit are all running live on their own subdomains with local SQLite WAL.',
+    text: 'Welcome everyone! DroneHunter 95, Certified Mailer, and PicFit each choose the runtime and storage model that fits the app.',
     timestamp: new Date(Date.now() - 1800000).toISOString(),
     timeFormatted: '07:10:22',
     isOp: true

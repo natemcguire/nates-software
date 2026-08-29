@@ -228,7 +228,7 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' });
       expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
       expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
-      expect(resolveAppRoute('picfitai.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'picfitai', title: 'PicFit.ai' });
+      expect(resolveAppRoute('picfitai.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'picfitai', title: 'PicFit' });
     });
 
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {

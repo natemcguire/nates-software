@@ -120,29 +120,29 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     name: 'picfitai',
     owner: 'nate',
     avatar: '✨',
-    description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with single-file SQLite user credits ledger.',
+    description: 'Private in-browser image crop, resize, compression, format conversion, and download utility.',
     stars: 284,
     forks: 62,
-    language: 'PHP 8.2 / SQLite',
-    license: 'MIT AI Studio Tool',
-    sqlitePath: '/data/picfitai.sqlite (WAL mode)',
+    language: 'TypeScript / Canvas API',
+    license: 'MIT Image Utility',
+    sqlitePath: 'No database required',
     branch: 'main',
     lastCommit: {
       sha: '4d88e01',
-      message: 'feat(gemini): 4K virtual try-on neural diffusion rendering pipeline',
+      message: 'feat(studio): add validated crop, resize, and local export pipeline',
       author: 'nate',
       time: '1h ago',
       verified: true
     },
-    tags: ['AI', 'Fashion', 'Gemini', 'Try-On', 'SQLite WAL'],
-    liveUrl: 'https://picfit.ai',
-    liveAppUrl: 'https://picfitai.pages.dev',
+    tags: ['Images', 'Crop', 'Resize', 'Compression', 'Browser'],
+    liveUrl: 'https://picfitai.nates-software.com',
+    liveAppUrl: 'https://picfitai.nates-software.com',
     files: [
-      { name: 'includes', type: 'dir' },
-      { name: 'includes/nav.php', type: 'file', size: '5.1 KB', content: `<?php\n$user = Session::getCurrentUser();\n?>\n<div class="header-nav"><a href="/" class="logo">PicFit.ai</a></div>` },
-      { name: 'index.php', type: 'file', size: '12.4 KB', content: `<?php\nrequire_once 'includes/bootstrap.php';\n?>\n<!DOCTYPE html>\n<html><head><title>PicFit.ai</title></head><body><h1>PicFit.ai</h1></body></html>` },
-      { name: 'generate.php', type: 'file', size: '18.2 KB', content: `<?php\n// 36 Emmy Red Carpet Dresses & Curated Try-On Wardrobe\n?>` },
-      { name: 'README.md', type: 'file', size: '5.5 KB', content: `# ✨ PicFit.ai\n\nAI Virtual Try-On Studio powered by Google Gemini Vision.` }
+      { name: 'src', type: 'dir' },
+      { name: 'src/PicFitStudio.tsx', type: 'file', size: '28.4 KB', content: `export function PicFitStudio() {\n  return <main aria-label="PicFit image studio" />;\n}` },
+      { name: 'src/picfitDomain.ts', type: 'file', size: '14.2 KB', content: `export const MAX_CANVAS_PIXELS = 32_000_000;\nexport type OutputFormat = 'image/jpeg' | 'image/png' | 'image/webp';` },
+      { name: 'package.json', type: 'file', size: '1.2 KB', content: `{ "name": "picfit", "private": true, "type": "module" }` },
+      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# PicFit\n\nCrop, resize, compress, convert, and download images locally in your browser.` }
     ]
   }
 ];

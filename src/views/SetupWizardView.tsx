@@ -35,12 +35,12 @@ const STARTERS: StarterApp[] = [
   },
   {
     id: 'picfitai',
-    name: 'PicFit.ai',
+    name: 'PicFit',
     avatar: '✨',
-    tagline: 'AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision 2.5.',
+    tagline: 'Private browser-based crop, resize, compression, and format export studio.',
     price: '$20.00',
-    category: 'AI Vision Studio',
-    suggestedPrompt: 'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.'
+    category: 'Image Utility',
+    suggestedPrompt: 'Add reusable export presets while keeping image processing local to the browser.'
   }
 ];
 

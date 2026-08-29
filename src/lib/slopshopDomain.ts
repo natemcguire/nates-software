@@ -155,16 +155,16 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
   },
   picfitai: {
     appId: 'picfitai',
-    name: 'PicFit.ai',
+    name: 'PicFit',
     author: 'nate',
     slug: 'nate/picfitai',
     repoUrl: 'https://github.com/natemcguire/picfitai.git',
     sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/picfitai.git',
     defaultPort: 3006,
-    sqliteDatabase: '/data/picfitai.sqlite',
+    sqliteDatabase: '',
     localPathHint: '~/Projects/picfitai',
-    techStack: ['TypeScript', 'Gemini Vision 2.5', 'SQLite Ledger', 'Stripe Webhooks', 'React 19'],
-    tagline: 'AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision 2.5.',
+    techStack: ['TypeScript', 'Canvas API', 'Blob API', 'React 19'],
+    tagline: 'Private in-browser crop, resize, compression, and image export studio.',
     version: 'v2.0.0',
     price: '$20.00',
     icon: '✨'
@@ -361,73 +361,68 @@ new file mode 100644
   ],
   picfitai: [
     {
-      id: 'pf-gemini',
-      name: '✨ Google Gemini Vision 2.5 Outfit Drape',
-      category: 'AI Pipeline',
-      description: 'Generate high-fidelity virtual try-on renders with boundary mask warping and fabric texture realism.',
-      prompt: 'Refactor the outfit synthesis pipeline to call Google Gemini Vision API with realistic fabric drape, lighting matching, and boundary mask warping.',
-      targetFiles: ['src/services/GeminiVisionPipeline.ts', 'src/image/MaskWarping.ts'],
+      id: 'pf-batch-export',
+      name: '🗂️ Batch Image Export',
+      category: 'Image Workflow',
+      description: 'Apply one verified crop, resize, and format recipe to a local selection of images.',
+      prompt: 'Add a local-only batch queue that applies a chosen PicFit export recipe, reports each actual encoded size, and downloads results without uploading source images.',
+      targetFiles: ['src/components/BatchExportQueue.tsx', 'src/lib/batchExport.ts'],
       verificationCriteria: [
-        'Boundary mask warping conforms to silhouette contours',
-        'Gemini Vision client handles rate limits with exponential backoff',
-        'Unit tests mock network payload and assert JSON safety'
+        'Every item is decoded and dimension-validated before canvas allocation',
+        'Failed items can be retried without restarting successful items',
+        'Object URLs and decoded image resources are released after export'
       ],
-      blueprintDiffPreview: `diff --git a/src/services/GeminiVisionPipeline.ts b/src/services/GeminiVisionPipeline.ts
+      blueprintDiffPreview: `diff --git a/src/lib/batchExport.ts b/src/lib/batchExport.ts
 new file mode 100644
 --- /dev/null
-+++ b/src/services/GeminiVisionPipeline.ts
-@@ -0,0 +1,20 @@
-+export interface OutfitDrapeRequest {
-+  readonly userImageBase64: string;
-+  readonly garmentImageBase64: string;
-+  readonly promptEnhancement?: string;
++++ b/src/lib/batchExport.ts
+@@ -0,0 +1,5 @@
++export interface BatchExportItem {
++  readonly file: File;
++  readonly state: 'queued' | 'encoding' | 'ready' | 'error';
 +}`
     },
     {
-      id: 'pf-credits',
-      name: '💳 Local SQLite User Credit Ledger',
-      category: 'Monetization',
-      description: 'Deduct generation credits in local database with webhook signature verification.',
-      prompt: 'Weld a single-file user credit ledger with Stripe webhook signature validation and transactional credit deduction on generation in SQLite.',
-      targetFiles: ['src/db/creditLedger.ts', 'src/services/StripeWebhookHandler.ts'],
-      migrationSql: 'CREATE TABLE IF NOT EXISTS user_credit_ledger (user_id TEXT PRIMARY KEY, credits_remaining INTEGER NOT NULL DEFAULT 10, last_refill DATETIME DEFAULT CURRENT_TIMESTAMP);',
+      id: 'pf-metadata-control',
+      name: '🛡️ Metadata Control',
+      category: 'Privacy',
+      description: 'Inspect which metadata will be removed by the browser canvas export path.',
+      prompt: 'Add an honest metadata inspector that distinguishes detectable source metadata from unknown metadata, without claiming guaranteed forensic erasure.',
+      targetFiles: ['src/components/MetadataInspector.tsx', 'src/lib/imageMetadata.ts'],
       verificationCriteria: [
-        'Transactional credit decrement prevents negative balances',
-        'Stripe webhook signature validation rejects invalid HMAC tokens',
-        'SQLite ledger persists across session restarts'
+        'Unsupported metadata is reported as unknown rather than absent',
+        'No source image or metadata is transmitted over the network',
+        'Tests cover malformed and truncated metadata blocks'
       ],
-      blueprintDiffPreview: `diff --git a/src/db/creditLedger.ts b/src/db/creditLedger.ts
+      blueprintDiffPreview: `diff --git a/src/lib/imageMetadata.ts b/src/lib/imageMetadata.ts
 new file mode 100644
 --- /dev/null
-+++ b/src/db/creditLedger.ts
-@@ -0,0 +1,18 @@
-+export async function deductCredit(db: any, userId: string, amount: number = 1): Promise<boolean> {
-+  // Atomic balance check and deduction
-+  return true;
-+}`
++++ b/src/lib/imageMetadata.ts
+@@ -0,0 +1,2 @@
++export type MetadataFinding = 'present' | 'not-detected' | 'unknown';`
     },
     {
-      id: 'pf-wardrobe',
-      name: '👗 Streetwear Wardrobe Rack & Lookbook',
-      category: 'Wardrobe UI',
-      description: 'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.',
-      prompt: 'Add custom streetwear wardrobe racks, tag-based categorization, and high-resolution lookbook PDF exports.',
-      targetFiles: ['src/components/WardrobeRack.tsx', 'src/export/LookbookPdf.ts'],
+      id: 'pf-custom-presets',
+      name: '📏 Reusable Export Presets',
+      category: 'Image Workflow',
+      description: 'Save named dimension, format, and quality recipes in browser-local storage or portable files.',
+      prompt: 'Add importable and exportable PicFit preset files plus optional browser-local storage, with no account or cloud-sync claim.',
+      targetFiles: ['src/components/ExportPresetManager.tsx', 'src/lib/exportPresets.ts'],
       verificationCriteria: [
-        'Wardrobe grid renders responsive thumbnail previews',
-        'PDF export generates multi-page lookbook layout',
-        'Zero DOM layout jitter during image drag-and-drop'
+        'Preset schema rejects invalid dimensions, formats, and quality values',
+        'Users can export and import portable preset JSON',
+        'Clearing local presets does not affect source images or downloads'
       ],
-      blueprintDiffPreview: `diff --git a/src/components/WardrobeRack.tsx b/src/components/WardrobeRack.tsx
+      blueprintDiffPreview: `diff --git a/src/lib/exportPresets.ts b/src/lib/exportPresets.ts
 new file mode 100644
 --- /dev/null
-+++ b/src/components/WardrobeRack.tsx
-@@ -0,0 +1,16 @@
-+export interface GarmentItem {
-+  readonly id: string;
++++ b/src/lib/exportPresets.ts
+@@ -0,0 +1,6 @@
++export interface ExportPreset {
 +  readonly name: string;
-+  readonly category: 'streetwear' | 'formal' | 'casual';
-+  readonly imageUrl: string;
++  readonly width: number;
++  readonly height: number;
++  readonly format: 'image/jpeg' | 'image/png' | 'image/webp';
 +}`
     }
   ]

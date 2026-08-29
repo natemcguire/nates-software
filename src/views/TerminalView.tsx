@@ -152,7 +152,7 @@ export const TerminalView: React.FC = () => {
             { text: "total 3", type: 'output' },
             { text: "-rw-r--r--  1 nate  staff  15518920 Aug 26 08:00 dronehunter.sqlite", type: 'output' },
             { text: "-rw-r--r--  1 nate  staff   1468006 Aug 26 08:00 certified-mailer.sqlite", type: 'output' },
-            { text: "-rw-r--r--  1 nate  staff   4404019 Aug 26 08:00 picfitai.sqlite", type: 'output' }
+            { text: "PicFit keeps working images only in the active browser session (no /data file).", type: 'system' }
           );
         } else {
           newLines.push(

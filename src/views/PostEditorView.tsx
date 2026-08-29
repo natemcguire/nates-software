@@ -264,7 +264,7 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 value={tagline}
                 onChange={(e) => setTagline(e.target.value)}
                 className="w-full p-2 border border-gray-400 text-xs bg-gray-50 focus:bg-white"
-                placeholder="e.g. AI Virtual Try-On Studio with Gemini Vision"
+                placeholder="e.g. Private in-browser image preparation utility"
               />
             </div>
 
@@ -278,7 +278,7 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 value={liveUrl}
                 onChange={(e) => setLiveUrl(e.target.value)}
                 className="w-full p-2 border-2 border-blue-600 font-mono text-xs bg-blue-50/40 focus:bg-white rounded"
-                placeholder="https://picfit.ai or https://myapp.com"
+                placeholder="https://myapp.example"
               />
               <p className="text-[11px] text-gray-500 mt-1">
                 If your app is already hosted externally on a VPS, DreamHost, or custom server, enter the live URL so the "▷ Live App" button links directly to it.

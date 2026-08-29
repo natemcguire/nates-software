@@ -32,7 +32,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0012_commerce_refunds_disputes.sql',
         '0013_commerce_refund_finalization.sql',
         '0014_hotwire_votes.sql',
-        '0016_inbox_live_integrity.sql'
+        '0016_inbox_live_integrity.sql',
+        '0017_picfit_truthful_listing.sql'
       ]);
     });
 
@@ -197,6 +198,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       expect(apps.results?.length).toBe(3);
       expect(apps.results?.map((a: any) => a.id)).toEqual(['certified-mailer', 'dronehunter', 'picfitai']);
+      expect((apps.results as any[])?.find((a: any) => a.id === 'picfitai')?.name).toBe('PicFit');
       apps.results?.forEach((a: any) => {
         expect(a.creator_id).toBe('usr_nate');
         expect(a.username).toBe('nate');
