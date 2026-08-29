@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync, rmSync } from 'node:fs';
 import {
   validateForkOrigin,
   createMergeJob,
@@ -60,6 +61,9 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
 
   // Step 3: slop clone, fork, and push with truthful failure handling
   it('Step 3: should execute slop clone, fork, and push with structured responses', () => {
+    if (existsSync('/tmp/test-drone-clone')) {
+      rmSync('/tmp/test-drone-clone', { recursive: true, force: true });
+    }
     const cloneRes = handleClone('nate/dronehunter', '/tmp/test-drone-clone');
     expect(cloneRes.success).toBe(true);
     expect(cloneRes.command).toBe('clone');
@@ -70,8 +74,9 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     expect(forkRes.data.worktreePath).toContain('/tmp/slop-dronehunter-');
 
     const pushRes = handlePush();
-    expect(pushRes.success).toBe(true);
     expect(pushRes.command).toBe('push');
+    expect(pushRes.success).toBe(false);
+    expect(pushRes.data.casVerified).toBe(false);
   });
 
   // Step 5: Merge-job state machine transitions

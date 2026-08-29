@@ -67,12 +67,13 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop push', () => {
-    it('should run pre-push checks, update CAS ref, and deploy to Hotwire', () => {
+    it('should truthfully fail when remote is unreachable without claiming false CAS success', () => {
       const res = handlePush();
-      expect(res.success).toBe(true);
       expect(res.command).toBe('push');
-      expect(res.data.casVerified).toBe(true);
-      expect(res.data.deployTimeSec).toBeLessThan(5);
+      expect(res.success).toBe(false);
+      expect(res.data.casVerified).toBe(false);
+      expect(res.data.pushedGit).toBe(false);
+      expect(res.message).toContain('Push failed');
     });
   });
 
@@ -159,7 +160,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(runSlopCli(['init', 'test-app']).success).toBe(true);
       expect(runSlopCli(['fork', 'nate/dronehunter']).success).toBe(true);
       expect(runSlopCli(['test']).success).toBe(true);
-      expect(runSlopCli(['push']).success).toBe(true);
+      expect(runSlopCli(['push']).command).toBe('push');
       expect(runSlopCli(['drop', 'dronehunter']).success).toBe(true);
       expect(runSlopCli(['publish', 'dronehunter']).success).toBe(true);
       expect(runSlopCli(['dyno', '--bench']).success).toBe(true);
