@@ -1256,6 +1256,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   if (auth.errorResponse) return auth.errorResponse;
   const actor = auth.user!;
 
+  if (action === 'create-repository' || action === 'fork') {
+    const readiness = await gatewayReadiness(env);
+    if (!readiness.success || !readiness.ready) {
+      return failure('GITSMITH gateway is not ready. No provisioning request was created.', 503);
+    }
+  }
+
   // --- Action: create-repository ---
   if (action === 'create-repository') {
     const slug = String(body.slug || '').trim();
