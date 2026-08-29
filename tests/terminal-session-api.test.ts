@@ -21,6 +21,20 @@ describe('ephemeral terminal ticket lifecycle', () => {
     expect(response.status).toBe(401);
   });
 
+  it('fails closed without the session ledger and rejects unknown actions', async () => {
+    const missingLedger = await terminalApi.onRequestPost({
+      request: new Request('https://nates-software.com/api/terminal-session', { method: 'POST' }),
+      env: {}
+    });
+    expect(missingLedger.status).toBe(503);
+
+    const unsupported = await terminalApi.onRequestPost({
+      request: new Request('https://nates-software.com/api/terminal-session?action=destroy-all', { method: 'POST' }),
+      env: envFor(ctx)
+    });
+    expect(unsupported.status).toBe(400);
+  });
+
   it('mints a 60-second ticket and atomically rejects redemption replay', async () => {
     const minted = await terminalApi.onRequestPost({
       request: new Request('https://nates-software.com/api/terminal-session', {

@@ -4,8 +4,9 @@ ARG CLAUDE_CODE_VERSION=2.1.251
 WORKDIR /opt/nates-software
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash build-essential ca-certificates curl git jq openssh-client procps \
-    python3 python3-venv ripgrep sqlite3 \
+    bash build-essential ca-certificates curl file git git-lfs gzip jq less nano \
+    openssh-client pkg-config procps python3 python3-pip python3-venv ripgrep \
+    rsync sqlite3 tar tree unzip vim-tiny wget zip \
     && rm -rf /var/lib/apt/lists/*
 
 # The immutable snapshot contains the suite CLI and its runtime dependencies.

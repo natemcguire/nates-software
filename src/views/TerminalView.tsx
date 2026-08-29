@@ -339,13 +339,18 @@ export const TerminalView: React.FC = () => {
 
       {/* Ephemeral Workspace Session Header if Connected */}
       {activeMode === 'gateway' && gateway.isConnected && gateway.sessionInfo && (
-        <div className="bg-green-950/40 border border-green-900/80 text-green-300 p-1.5 mb-2 rounded text-[10px] flex items-center justify-between">
+        <div className="bg-green-950/40 border border-green-900/80 text-green-300 p-1.5 mb-2 rounded text-[10px] flex flex-wrap items-center justify-between">
           <div>
             <span className="text-green-500 font-bold">WORKSPACE:</span> {gateway.sessionInfo.workspacePath}
           </div>
           <div className="text-green-600">
             TTL: {gateway.sessionInfo.ttlSeconds}s · Auto-clean on disconnect
           </div>
+          {gateway.capabilities?.availableTools?.length ? (
+            <div className="basis-full mt-1 text-green-500 break-words">
+              <span className="font-bold">INSTALLED:</span> {gateway.capabilities.availableTools.join(' · ')}
+            </div>
+          ) : null}
         </div>
       )}
 

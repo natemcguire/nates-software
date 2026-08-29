@@ -14,6 +14,7 @@ import { isOriginAllowed, extractAuthToken, validateToken } from './auth.js';
 import { SessionManager } from './sessionManager.js';
 import { LocalProcessProvider } from './providers/LocalProcessProvider.js';
 import { DaytonaSandboxProvider } from './providers/DaytonaSandboxProvider.js';
+import { CORE_TERMINAL_TOOLS, LOCAL_TERMINAL_TOOLS } from './toolchain.js';
 
 export const DEFAULT_LIMITS: LimitsConfig = {
   maxConcurrentSessions: 10,
@@ -113,7 +114,7 @@ export function createTerminalGateway(
     authRequired: true,
     authMethods: ['bearer_token', 'websocket_protocol'],
     allowedOrigins: config.allowedOrigins,
-    availableTools: ['git', 'node', 'npm', 'npx', 'slop'],
+    availableTools: [...(provider.isProductionVps ? CORE_TERMINAL_TOOLS : LOCAL_TERMINAL_TOOLS)],
     limits: config.limits,
     features: {
       ptyResize: true,

@@ -37,6 +37,12 @@ describe('Daytona ephemeral VM provider', () => {
       snapshot: 'vm-snapshot', ephemeral: true, ttlMinutes: 15, autoDeleteInterval: 0, volumes: [], public: false
     }), { timeout: 90 });
     expect(f.sandbox.process.createPty).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/workspace', cols: 100, rows: 30 }));
+    expect(f.sandbox.process.executeCommand).toHaveBeenCalledWith(
+      expect.stringContaining('command -v claude'), undefined, undefined, 30
+    );
+    expect(f.sandbox.process.executeCommand).toHaveBeenCalledWith(
+      expect.stringContaining('command -v python3'), undefined, undefined, 30
+    );
     const output = vi.fn();
     session.onOutput(output);
     f.emit('ready');

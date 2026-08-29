@@ -27,6 +27,12 @@ async function signTicket(payload: Record<string, unknown>, secret: string): Pro
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   const action = new URL(request.url).searchParams.get('action') || 'mint';
+  if (!['mint', 'redeem', 'close'].includes(action)) {
+    return Response.json({ success: false, error: 'Unsupported terminal session action' }, { status: 400 });
+  }
+  if (!env?.DB) {
+    return Response.json({ success: false, error: 'Terminal session ledger is unavailable' }, { status: 503 });
+  }
   if (action === 'redeem' || action === 'close') {
     const bearer = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || '';
     if (!env.TERMINAL_GATEWAY_SERVICE_SECRET || !bearer || !(await secureEqual(bearer, env.TERMINAL_GATEWAY_SERVICE_SECRET))) {

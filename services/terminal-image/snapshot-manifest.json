@@ -2,7 +2,12 @@
   "schemaVersion": 1,
   "name": "nates-software-terminal-v1",
   "base": "node:22-bookworm",
-  "requiredTools": ["git", "node", "npm", "npx", "rg", "sqlite3", "claude", "slop"],
+  "requiredTools": [
+    "bash", "git", "git-lfs", "ssh", "curl", "wget", "jq", "rg",
+    "node", "npm", "npx", "python3", "pip3", "gcc", "g++", "make",
+    "pkg-config", "sqlite3", "tar", "gzip", "zip", "unzip", "rsync",
+    "file", "tree", "nano", "vim", "claude", "slop"
+  ],
   "optionalTools": {
     "agy": "Not redistributed: install/authenticate interactively when an official remote installer is available.",
     "aider": "Not preinstalled until a current trusted package source is selected.",

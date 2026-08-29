@@ -1,6 +1,7 @@
 import { Daytona, type Sandbox, type PtyHandle } from '@daytona/sdk';
 import { BaseTerminalProvider } from './TerminalProvider.js';
 import type { IsolationType, SessionOptions, TerminalSession } from '../types.js';
+import { terminalToolchainProbe } from '../toolchain.js';
 
 type OutputListener = (data: string) => void;
 type ExitListener = (code: number | null, signal: string | null) => void;
@@ -130,7 +131,7 @@ export class DaytonaSandboxProvider extends BaseTerminalProvider {
 
     try {
       const proof = await sandbox.process.executeCommand(
-        "mkdir -p /workspace && cd /workspace && command -v git && command -v node && command -v npm && command -v npx && command -v slop",
+        `mkdir -p /workspace && cd /workspace && ${terminalToolchainProbe()}`,
         undefined,
         undefined,
         30
