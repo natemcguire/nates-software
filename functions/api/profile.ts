@@ -4,6 +4,11 @@
 import { getSessionUser, requireAuth } from './_auth';
 import { validateMakerProfile, calculateMakerEconomics } from '../../src/lib/profileDomain';
 
+const unavailable = (message = 'Profile service is temporarily unavailable') => Response.json(
+  { success: false, error: message },
+  { status: 503, headers: { 'Cache-Control': 'no-store' } }
+);
+
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const url = new URL(request.url);
@@ -11,7 +16,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const sessionUser = await getSessionUser(request, env);
 
     if (!env || !env.DB) {
-      return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
+      return unavailable('Database service is unavailable');
     }
 
     // Determine target username or session user
@@ -45,9 +50,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     }
 
     // Fetch published apps by this maker
-    let formattedApps: any[] = [];
-    try {
-      const { results: publishedApps } = await env.DB.prepare(`
+    const { results: publishedApps } = await env.DB.prepare(`
         SELECT id, name, tagline, version, upvotes, forks, price, storage,
                screenshots, binaries, tags, created_at AS createdAt
         FROM app_listings
@@ -55,15 +58,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         ORDER BY created_at DESC
       `).bind(user.id).all();
 
-      formattedApps = (publishedApps || []).map((app: any) => ({
-        ...app,
-        screenshots: typeof app.screenshots === 'string' ? JSON.parse(app.screenshots || '[]') : (app.screenshots || []),
-        binaries: typeof app.binaries === 'string' ? JSON.parse(app.binaries || '{}') : (app.binaries || {}),
-        tags: typeof app.tags === 'string' ? JSON.parse(app.tags || '[]') : (app.tags || [])
-      }));
-    } catch {
-      // app_listings query fallback
-    }
+    const formattedApps = (publishedApps || []).map((app: any) => ({
+      ...app,
+      screenshots: parseJsonColumn(app.screenshots, []),
+      binaries: parseJsonColumn(app.binaries, {}),
+      tags: parseJsonColumn(app.tags, [])
+    }));
 
     // Authenticated Owner: Return private fields, SSH keys, Stripe status & real royalties
     if (isSelf) {
@@ -74,8 +74,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         lineageBreakdown: []
       };
 
-      try {
-        const { results: allocations } = await env.DB.prepare(`
+      const { results: allocations } = await env.DB.prepare(`
           SELECT a.role, a.amount_cents, a.source_repository_id, o.app_id, al.name
           FROM commerce_order_allocations a
           JOIN commerce_orders o ON a.order_id = o.id
@@ -83,27 +82,22 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           WHERE a.recipient_user_id = ? AND o.status = 'fulfilled'
         `).bind(user.id).all();
 
-        if (allocations && allocations.length > 0) {
-          royalties = calculateMakerEconomics(allocations as any[]) as any;
-        }
-      } catch {
-        // Table or columns may be empty in first run
+      if (allocations && allocations.length > 0) {
+        royalties = calculateMakerEconomics(allocations as any[]) as any;
       }
 
       // Check Stripe Account Status
       let stripeStatus: 'not_connected' | 'pending' | 'active' | 'connected' = 'not_connected';
       let payoutsEnabled = false;
-      try {
-        const stripeRow = await env.DB.prepare(`
+      const stripeRow = await env.DB.prepare(`
           SELECT stripe_account_id, payouts_enabled, onboarding_status
           FROM stripe_accounts
           WHERE user_id = ?
         `).bind(user.id).first();
-        if (stripeRow) {
-          stripeStatus = ((stripeRow as any).onboarding_status || 'connected') as any;
-          payoutsEnabled = Boolean((stripeRow as any).payouts_enabled);
-        }
-      } catch {}
+      if (stripeRow) {
+        stripeStatus = ((stripeRow as any).onboarding_status || 'connected') as any;
+        payoutsEnabled = Boolean((stripeRow as any).payouts_enabled);
+      }
 
       return Response.json({
         success: true,
@@ -143,7 +137,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     });
   } catch (error) {
     console.error('profile lookup failed', error);
-    return Response.json({ success: false, error: 'Profile service is temporarily unavailable' }, { status: 503 });
+    return unavailable();
   }
 };
 
@@ -154,10 +148,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const sessionUser = auth.user!;
 
     if (!env || !env.DB) {
-      return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
+      return unavailable('Database service is unavailable');
     }
 
-    const body = await request.json() as any;
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ success: false, error: 'Request body must be valid JSON' }, { status: 400 });
+    }
     const { displayName, avatar, bio, sshKey } = body;
 
     // Validate using domain rules
@@ -178,7 +177,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const hasBio = Object.prototype.hasOwnProperty.call(body, 'bio');
     const hasSshKey = Object.prototype.hasOwnProperty.call(body, 'sshKey');
 
-    await env.DB.prepare(`
+    const result = await env.DB.prepare(`
       UPDATE users SET
         display_name = CASE WHEN ? = 1 THEN ? ELSE display_name END,
         avatar_url = CASE WHEN ? = 1 THEN ? ELSE avatar_url END,
@@ -193,12 +192,27 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       sessionUser.id
     ).run();
 
+    if (result?.success === false) throw new Error('Profile update was rejected by storage');
+    const updated = await env.DB.prepare(`
+      SELECT username, display_name AS displayName, avatar_url AS avatar, bio,
+             ssh_public_key AS sshKey
+      FROM users WHERE id = ?
+    `).bind(sessionUser.id).first();
+    if (!updated) throw new Error('Updated profile could not be confirmed');
+
     return Response.json({
       success: true,
-      message: 'Profile updated securely from authenticated session'
+      message: 'Profile updated securely from authenticated session',
+      user: updated
     });
   } catch (error) {
     console.error('profile update failed', error);
     return Response.json({ success: false, error: 'Profile update could not be completed' }, { status: 500 });
   }
 };
+
+function parseJsonColumn(value: unknown, fallback: unknown) {
+  if (value === null || value === undefined || value === '') return fallback;
+  if (typeof value !== 'string') return value;
+  return JSON.parse(value);
+}

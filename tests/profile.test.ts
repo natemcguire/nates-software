@@ -174,6 +174,16 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
       expect(data.error).toBe('User not found');
     });
 
+    it('fails closed when profile storage is unavailable or a canonical query fails', async () => {
+      const request = new Request('http://localhost/api/profile?username=nate');
+      expect((await profileApi.onRequestGet({ request, env: {} })).status).toBe(503);
+
+      const brokenDb = { prepare: () => { throw new Error('D1 unavailable'); } };
+      const failed = await profileApi.onRequestGet({ request, env: { DB: brokenDb } });
+      expect(failed.status).toBe(503);
+      expect((await failed.json()).success).toBe(false);
+    });
+
     it('should return private profile with SSH keys, Stripe status, and royalties for authenticated owner', async () => {
       // Create session for usr_nate
       const sessionToken = 'tok_nate_owner';
@@ -260,11 +270,32 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
 
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
+      expect(data.user).toMatchObject({
+        username: 'nate',
+        displayName: 'Nate M. (Founder)',
+        avatar: '🚀'
+      });
 
       const userRow = await ctx.d1.prepare('SELECT display_name, avatar_url, bio FROM users WHERE id = ?').bind('usr_nate').first();
       expect((userRow as any).display_name).toBe('Nate M. (Founder)');
       expect((userRow as any).avatar_url).toBe('🚀');
       expect((userRow as any).bio).toContain('Building indie');
+    });
+
+    it('returns 400 for malformed profile JSON without changing storage', async () => {
+      const sessionToken = 'tok_nate_bad_json';
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(await hashSessionToken(sessionToken), Date.now() + 100000).run();
+      const req = new Request('http://localhost/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+        body: '{broken'
+      });
+      const res = await profileApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain('valid JSON');
     });
   });
 

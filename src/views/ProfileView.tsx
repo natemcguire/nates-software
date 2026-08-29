@@ -177,6 +177,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
         throw new Error(data.error || `Profile save failed (${res.status})`);
       }
 
+      if (data.user) {
+        setProfileData((current) => ({
+          ...current,
+          displayName: data.user.displayName ?? current.displayName,
+          avatar: data.user.avatar ?? current.avatar,
+          bio: data.user.bio ?? current.bio,
+          sshKey: data.user.sshKey ?? current.sshKey
+        }));
+      }
+
       playSuccessChime();
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3500);
