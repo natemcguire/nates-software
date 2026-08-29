@@ -60,11 +60,8 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedStarter, setSelectedStarter] = useState<StarterApp>(STARTERS[0]);
-  const [makerHandle, setMakerHandle] = useState<string>(user?.username || 'josh');
   const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
   const [copiedCmd, setCopiedCmd] = useState(false);
-
-  const worktreeId = `slop-${selectedStarter.id}-${makerHandle}`;
 
   const getCommandForTool = () => {
     return `slop fork nate/${selectedStarter.id}`;
@@ -103,7 +100,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           </span>
           <span className="text-gray-500">&rarr;</span>
           <span className={`px-2 py-0.5 rounded border ${step === 3 ? 'bg-amber-400 text-black font-bold border-amber-500' : 'bg-blue-950 text-gray-400 border-blue-800'}`}>
-            3. Earn &amp; Deploy
+            3. Verify
           </span>
         </div>
       </div>
@@ -149,27 +146,20 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
 
                   <div className="text-right font-mono shrink-0 pl-2">
                     <div className="text-xs font-bold text-green-800">{s.price}</div>
-                    <div className="text-[10px] text-gray-500">70% to you on sale</div>
+                    <div className="text-[10px] text-gray-500">Fork policy: 70% if sold</div>
                   </div>
                 </button>
               ))}
             </div>
 
-            {/* Maker Handle Input */}
+            {/* Identity boundary */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between gap-3 font-mono">
               <div>
-                <label className="block text-gray-800 font-bold text-xs">Your Maker Handle:</label>
-                <div className="text-gray-500 text-[11px]">Identifies your fork in the Lineage DAG and directs your 70% payouts.</div>
+                <div className="block text-gray-800 font-bold text-xs">Publishing Identity</div>
+                <div className="text-gray-500 text-[11px]">The local CLI confirms your authenticated maker with <code>slop login</code> before anything can be published or sold.</div>
               </div>
-              <div className="flex items-center bg-gray-100 border border-gray-400 px-2 py-1 rounded">
-                <span className="text-gray-500 font-bold">@</span>
-                <input
-                  type="text"
-                  value={makerHandle}
-                  onChange={(e) => setMakerHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                  className="bg-transparent font-bold text-blue-900 text-xs outline-none w-28"
-                  placeholder="yourname"
-                />
+              <div className="bg-gray-100 border border-gray-400 px-2 py-1 rounded text-blue-900 font-bold">
+                {user ? `Web session: @${user.username}` : 'CLI login required'}
               </div>
             </div>
           </div>
@@ -213,7 +203,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             {/* Command Box */}
             <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
               <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
-                  <span>Native Terminal Install ({worktreeId})</span>
+                  <span>Native Terminal Install</span>
                 <span className="text-emerald-400">Runtime &amp; Storage Independent</span>
               </div>
 
@@ -239,8 +229,8 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             {onOpenTerminal && (
               <div className="bg-amber-50 border border-amber-300 p-3 rounded flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-amber-950 text-xs">Why not TERMINAL.EXE?</div>
-                  <div className="text-gray-600 text-[11px]">The browser console has no host filesystem, Git, Node package manager, or local LLM credentials. Use the native install command above for a real working fork.</div>
+                  <div className="font-bold text-amber-950 text-xs">Persistent or Disposable?</div>
+                  <div className="text-gray-600 text-[11px]">Use your native terminal to keep the fork. TERMINAL.EXE can run the same command in a real ephemeral VM when commissioned, but its entire workspace is deleted when the session ends.</div>
                 </div>
                 <button
                   onClick={() => {
@@ -250,7 +240,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                   className="btn-w95 px-4 py-1.5 font-bold text-xs flex items-center gap-1.5"
                 >
                   <Terminal size={13} />
-                  <span>View Command Console</span>
+                  <span>Try Ephemeral Terminal</span>
                 </button>
               </div>
             )}
@@ -260,31 +250,38 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         {step === 3 && (
           <div className="space-y-4 max-w-2xl mx-auto w-full">
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1 text-center">
-              <div className="text-3xl">🎉</div>
-              <div className="font-bold text-base text-gray-900">Your Local-First Fork is Ready!</div>
+              <div className="text-3xl">✅</div>
+              <div className="font-bold text-base text-gray-900">Verify the Native Install</div>
               <p className="text-gray-600 text-xs">
-                You now have an isolated development worktree for <strong>{selectedStarter.name}</strong> under <strong>@{makerHandle}</strong>.
+                This website cannot inspect your native filesystem. Your fork exists only after SLOP prints a successful worktree path and its install checks pass.
               </p>
             </div>
 
-            {/* Economic Split Card */}
+            <div className="bg-black text-green-300 border-2 border-gray-700 rounded p-3 font-mono text-xs space-y-1 select-text">
+              <div>$ {getCommandForTool()}</div>
+              <div className="text-gray-400">Expected proof: created directory, Git repository, dependency install, and test result.</div>
+              <div className="text-cyan-300">Only after that proof does SLOP ask: Start your engines?</div>
+            </div>
+
+            {/* Conditional economic policy */}
             <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 text-white p-4 rounded border border-blue-700 shadow font-mono text-xs space-y-2">
               <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
                 <ShieldCheck size={14} />
-                <span>Your Guaranteed Lineage Royalty Contract:</span>
+                <span>If You Later Publish and Complete a Sale:</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>⚡ Fork Maker (@{makerHandle}):</span>
-                <span className="font-bold text-emerald-400">70% ($10.50 / $15 sale)</span>
+                <span>⚡ Immediate fork maker:</span>
+                <span className="font-bold text-emerald-400">70% of distributable revenue</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>💎 Root Ancestor (@nate):</span>
-                <span className="font-bold text-blue-300">20% ($3.00 / $15 sale)</span>
+                <span>💎 Eligible upstream lineage:</span>
+                <span className="font-bold text-blue-300">20% under frozen sale policy</span>
               </div>
               <div className="flex justify-between text-gray-300">
                 <span>🛡️ Protocol Liquidity Pool:</span>
-                <span className="font-bold text-purple-300">10% ($1.50 / $15 sale)</span>
+                <span className="font-bold text-purple-300">10% under frozen sale policy</span>
               </div>
+              <div className="text-[10px] text-blue-300 pt-1">No entitlement or payout is created by this wizard.</div>
             </div>
 
             {/* Next Steps Quick Action Buttons */}
@@ -298,7 +295,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                   className="btn-w95 btn-w95-primary p-3 font-bold text-xs flex items-center justify-center gap-2 shadow"
                 >
                   <Play size={14} />
-                  <span>Play / Test in Live Sandbox</span>
+                  <span>Open Upstream App Preview</span>
                 </button>
               )}
 
@@ -311,7 +308,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                   className="btn-w95 p-3 font-bold text-xs flex items-center justify-center gap-2"
                 >
                   <ExternalLink size={13} />
-                  <span>Inspect Code on GITSMITH Forge</span>
+                  <span>Inspect Upstream on GITSMITH</span>
                 </button>
               )}
             </div>
@@ -350,7 +347,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               }}
               className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs"
             >
-              Finish &amp; Start Building
+              Open Upstream Preview
             </button>
           )}
         </div>
