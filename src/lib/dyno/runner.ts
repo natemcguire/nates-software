@@ -66,7 +66,7 @@ export class DynoRunner {
       category: f.category,
       fixtureDigest: computeFixtureDigest(f),
       promptDigest: computePromptDigest(f.prompt),
-      graderDigest: computeGraderManifestDigest(f.graders)
+      graderDigest: computeGraderManifestDigest(f.graders, f.hiddenFiles)
     })));
 
     this.suite = {
@@ -122,10 +122,11 @@ export class DynoRunner {
       });
 
       // 2. Execute agent harness inside sandbox
+      const { hiddenFiles: _hiddenFiles, hiddenTests: _hiddenTests, graders: _graders, ...publicTask } = task;
       agentResult = await harness.execute({
         runId,
         taskAttemptId,
-        task,
+        task: publicTask,
         sandbox,
         tracer,
         abortSignal: abortController.signal,

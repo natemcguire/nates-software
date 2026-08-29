@@ -753,7 +753,7 @@ export async function handleDyno(argsArg: string[] | boolean = []): Promise<Slop
   if (!opts.json && !opts.quiet) {
     console.log(`
 ┌────────────────────────────────────────────────────────────┐
-│ ⚡ DYNO — REAL-WORLD AI DEVELOPER BENCHMARK (v2026.1)       │
+│ ⚡ DYNO — REAL-WORLD AI DEVELOPER BENCHMARK (v2026.2)       │
 │ Standalone suite evaluating Model + Harness + Tools       │
 └────────────────────────────────────────────────────────────┘
 `);

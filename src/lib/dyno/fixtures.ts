@@ -166,27 +166,66 @@ setTimeout(() => {
 }, 50);
 `
     },
+    hiddenFiles: {
+      '.dyno-hidden/lru-edge-cases.js': `const { LRUCache } = require('../src/lru.js');
+const assert = require('assert');
+
+const realNow = Date.now;
+let now = 10_000;
+Date.now = () => now;
+try {
+  const cache = new LRUCache(2);
+  cache.set('short', 1, 5);
+  cache.set('stable', 2);
+  now = 10_005;
+  assert.strictEqual(cache.get('short'), undefined, 'TTL expires at the exact deadline');
+  assert.strictEqual(cache.size(), 1, 'size excludes expired entries');
+
+  cache.set('new', 3);
+  assert.strictEqual(cache.get('stable'), 2, 'expired entries do not force live-entry eviction');
+  cache.set('newest', 4);
+  assert.strictEqual(cache.get('new'), undefined, 'get refreshes recency before overflow eviction');
+  assert.strictEqual(cache.get('stable'), 2);
+  assert.strictEqual(cache.get('newest'), 4);
+
+  cache.set('stable', 20, 10);
+  now = 10_014;
+  assert.strictEqual(cache.get('stable'), 20, 'overwriting refreshes value and TTL');
+  now = 10_015;
+  assert.strictEqual(cache.get('stable'), undefined, 'refreshed TTL still expires at its deadline');
+  console.log('HIDDEN_LRU_EDGE_CASES_PASSED');
+} finally {
+  Date.now = realNow;
+}
+`
+    },
     hiddenTests: [
       {
-        name: 'verify_lru_cache',
-        command: 'node test/verify.js',
+        name: 'verify_lru_hidden_edge_cases',
+        command: 'node .dyno-hidden/lru-edge-cases.js',
         expectedExitCode: 0,
-        expectedOutputContains: 'ALL_TESTS_PASSED'
+        expectedOutputContains: 'HIDDEN_LRU_EDGE_CASES_PASSED'
       }
     ],
     graders: [
       {
         key: 'lru_cache_tests',
-        version: '1.0.0',
+        version: '2.0.0',
         type: 'test_runner',
         description: 'Verify LRU access tracking and TTL expiration work deterministically.',
         config: {
           testCommands: [
             {
-              name: 'verify_lru_cache',
+              name: 'verify_lru_public_contract',
               command: 'node test/verify.js',
               expectedExitCode: 0,
               expectedOutputContains: 'ALL_TESTS_PASSED'
+            },
+            {
+              name: 'verify_lru_hidden_edge_cases',
+              command: 'node .dyno-hidden/lru-edge-cases.js',
+              expectedExitCode: 0,
+              expectedOutputContains: 'HIDDEN_LRU_EDGE_CASES_PASSED'
             }
           ]
         }
@@ -816,8 +855,11 @@ export function computePromptDigest(prompt: string): string {
   return sha256(prompt.trim());
 }
 
-export function computeGraderManifestDigest(graders: readonly unknown[]): string {
-  return sha256Json(graders);
+export function computeGraderManifestDigest(
+  graders: readonly unknown[],
+  hiddenFiles: Readonly<Record<string, string>> = {}
+): string {
+  return sha256Json({ graders, hiddenFiles });
 }
 
 /**
@@ -859,18 +901,16 @@ module.exports = { parseArgs };
   }
 
   get(key) {
+    this.purgeExpired();
     if (!this.cache.has(key)) return undefined;
     const entry = this.cache.get(key);
-    if (entry.expiresAt && Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
-      return undefined;
-    }
     this.cache.delete(key);
     this.cache.set(key, entry);
     return entry.value;
   }
 
   set(key, value, ttlMs = 0) {
+    this.purgeExpired();
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.capacity) {
@@ -882,7 +922,15 @@ module.exports = { parseArgs };
   }
 
   size() {
+    this.purgeExpired();
     return this.cache.size;
+  }
+
+  purgeExpired() {
+    const now = Date.now();
+    for (const [key, entry] of this.cache) {
+      if (entry.expiresAt !== null && now >= entry.expiresAt) this.cache.delete(key);
+    }
   }
 }
 
@@ -1158,12 +1206,12 @@ export function getReferenceSolution(taskKey: string): Readonly<Record<string, s
 // CANONICAL SUITE & MANIFEST METADATA
 // ============================================================================
 
-export const CANONICAL_DYNO_SUITE_ID = 'suite_dyno_neutral_2026';
+export const CANONICAL_DYNO_SUITE_ID = 'suite_dyno_neutral_2026_2';
 export const CANONICAL_DYNO_SUITE_SLUG = 'dyno-standard-dev';
-export const CANONICAL_DYNO_SUITE_VERSION = '2026.1';
+export const CANONICAL_DYNO_SUITE_VERSION = '2026.2';
 export const CANONICAL_DYNO_SUITE_NAME = 'DYNO Real-World Developer Tasks Benchmark';
 export const CANONICAL_DYNO_SUITE_METHODOLOGY = '# DYNO Standard Suite\nDeterministic task completion across model + harness.';
-export const CANONICAL_DYNO_GRADER_VERSION = '1.0.0';
+export const CANONICAL_DYNO_GRADER_VERSION = '2.0.0';
 
 export function computeTaskManifestDigest(fixtures: readonly DynoFixture[] = NEUTRAL_DEV_FIXTURES): string {
   return sha256Json(fixtures.map(f => ({
@@ -1171,7 +1219,7 @@ export function computeTaskManifestDigest(fixtures: readonly DynoFixture[] = NEU
     category: f.category,
     fixtureDigest: computeFixtureDigest(f),
     promptDigest: computePromptDigest(f.prompt),
-    graderDigest: computeGraderManifestDigest(f.graders)
+    graderDigest: computeGraderManifestDigest(f.graders, f.hiddenFiles)
   })));
 }
 

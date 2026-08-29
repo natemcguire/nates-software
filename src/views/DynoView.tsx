@@ -410,7 +410,7 @@ export const DynoView: React.FC = () => {
                   <Terminal size={14} className="text-blue-700" />
                   Local Workstation Benchmark Configuration
                 </span>
-                <span className="text-gray-500 text-[10px] font-mono">DYNO Dev Suite v2026.1</span>
+                <span className="text-gray-500 text-[10px] font-mono">DYNO Dev Suite v2026.2</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">

@@ -183,6 +183,9 @@ export async function gradeTaskAttempt(
   task: DynoFixture,
   sandbox: DynoSandboxInstance
 ): Promise<GradingOutcome> {
+  for (const [relativePath, content] of Object.entries(task.hiddenFiles || {})) {
+    await sandbox.writeFile(relativePath, content);
+  }
   const graderResults: DynoGraderResultRecord[] = [];
   let totalScore = 0;
   let totalMaxScore = 0;

@@ -730,7 +730,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             fixture.title,
             computePromptDigest(fixture.prompt),
             computeFixtureDigest(fixture),
-            computeGraderManifestDigest(fixture.graders),
+            computeGraderManifestDigest(fixture.graders, fixture.hiddenFiles),
             fixture.timeLimitSeconds,
             fixture.weight,
             idx

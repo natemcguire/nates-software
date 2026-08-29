@@ -220,11 +220,16 @@ export interface DynoFixture {
   readonly timeLimitSeconds: number;
   readonly weight: number;
   readonly files: Readonly<Record<string, string>>;
+  /** Grader-only files materialized after the agent relinquishes control. */
+  readonly hiddenFiles?: Readonly<Record<string, string>>;
   readonly expectedModifiedFiles: readonly string[];
   readonly readOnlyFiles?: readonly string[];
   readonly hiddenTests: readonly DynoHiddenTestSpec[];
   readonly graders: readonly DynoGraderSpec[];
 }
+
+/** The only task surface an agent harness may observe. */
+export type DynoPublicTask = Omit<DynoFixture, 'hiddenFiles' | 'hiddenTests' | 'graders'>;
 
 // ============================================================================
 // SANDBOX & RUNTIME INTERFACES
@@ -273,7 +278,7 @@ export interface DynoSandboxInstance {
 export interface DynoExecutionContext {
   readonly runId: string;
   readonly taskAttemptId: string;
-  readonly task: DynoFixture;
+  readonly task: DynoPublicTask;
   readonly sandbox: DynoSandboxInstance;
   readonly tracer: DynoTracerInstance;
   readonly abortSignal: AbortSignal;

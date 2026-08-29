@@ -312,6 +312,30 @@ module.exports = { parseArgs };
       expect(attemptResult.toolEvents.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('does not expose hidden tests, graders, or grader-only files to the agent harness', async () => {
+      const fixture = getFixtureByKey('neutral_lru_cache_ttl')!;
+      let observedTaskKeys: string[] = [];
+      let observedFiles: string[] = [];
+      const inspectingHarness: DynoAgentHarness = {
+        name: 'BoundaryInspector',
+        version: '1.0.0',
+        modelProvider: 'test',
+        modelId: 'boundary-inspector',
+        toolManifest: ['list_files'],
+        async execute(ctx) {
+          observedTaskKeys = Object.keys(ctx.task).sort();
+          observedFiles = await ctx.sandbox.listFiles();
+        }
+      };
+      const runner = new DynoRunner({ subject: mockSubject, fixtures: [fixture], repetitions: 1 });
+      await runner.runTaskAttempt(fixture, inspectingHarness, 1, 1);
+
+      expect(observedTaskKeys).not.toContain('hiddenFiles');
+      expect(observedTaskKeys).not.toContain('hiddenTests');
+      expect(observedTaskKeys).not.toContain('graders');
+      expect(observedFiles.some(path => path.includes('.dyno-hidden'))).toBe(false);
+    });
+
     it('should record honest failure when agent crashes with exception', async () => {
       const fixture = getFixtureByKey('neutral_cli_arg_parser')!;
 

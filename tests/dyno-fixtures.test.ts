@@ -5,6 +5,7 @@ import {
   computeFixtureDigest,
   computePromptDigest,
   computeGraderManifestDigest,
+  REFERENCE_SOLUTIONS,
   DynoSandbox,
   gradeTaskAttempt
 } from '../src/lib/dyno';
@@ -26,7 +27,7 @@ describe('DYNO Neutral Developer Task Fixtures', () => {
       // Verify deterministic digests
       const fDigest = computeFixtureDigest(fixture);
       const pDigest = computePromptDigest(fixture.prompt);
-      const gDigest = computeGraderManifestDigest(fixture.graders);
+      const gDigest = computeGraderManifestDigest(fixture.graders, fixture.hiddenFiles);
 
       expect(fDigest).toHaveLength(64);
       expect(pDigest).toHaveLength(64);
@@ -48,7 +49,7 @@ describe('DYNO Neutral Developer Task Fixtures', () => {
       const initialOutcome = await gradeTaskAttempt('att_lru_init', fixture, sandbox);
       expect(initialOutcome.passed).toBe(false);
 
-      // 2. Working implementation passes
+      // 2. A superficial implementation that passes the visible test still fails hidden edge cases.
       const solution = `class LRUCache {
   constructor(capacity) {
     this.capacity = capacity;
@@ -88,6 +89,12 @@ module.exports = { LRUCache };
 `;
       await sandbox.writeFile('src/lru.js', solution);
 
+      const superficialOutcome = await gradeTaskAttempt('att_lru_superficial', fixture, sandbox);
+      expect(superficialOutcome.passed).toBe(false);
+      expect(superficialOutcome.hiddenTestsPassed).toBe(0);
+
+      // 3. The committed reference implementation satisfies public and hidden contracts.
+      await sandbox.writeFile('src/lru.js', REFERENCE_SOLUTIONS.neutral_lru_cache_ttl['src/lru.js']);
       const fixedOutcome = await gradeTaskAttempt('att_lru_fixed', fixture, sandbox);
       expect(fixedOutcome.passed).toBe(true);
       expect(fixedOutcome.hiddenTestsPassed).toBe(1);

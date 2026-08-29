@@ -4,6 +4,9 @@ import * as dynoApi from '../functions/api/dyno';
 import { onRequestGet as badgeGet } from '../functions/badge/[user]';
 import {
   NEUTRAL_DEV_FIXTURES,
+  CANONICAL_DYNO_SUITE_ID,
+  CANONICAL_DYNO_SUITE_SLUG,
+  CANONICAL_DYNO_SUITE_VERSION,
   CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
   CANONICAL_DYNO_GRADER_VERSION,
   calculateDynoScore,
@@ -103,7 +106,7 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
     return {
       run: {
         id: runId,
-        suite_id: 'suite_dyno_neutral_2026',
+        suite_id: CANONICAL_DYNO_SUITE_ID,
         subject_id: 'subj_claude37_test',
         environment_id: 'env_macos_test',
         submitted_by_user_id: 'usr_nate',
@@ -141,9 +144,9 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
         network_policy: 'none'
       },
       suite: {
-        id: 'suite_dyno_neutral_2026',
-        slug: 'dyno-standard-dev',
-        version: '2026.1',
+        id: CANONICAL_DYNO_SUITE_ID,
+        slug: CANONICAL_DYNO_SUITE_SLUG,
+        version: CANONICAL_DYNO_SUITE_VERSION,
         name: 'DYNO Real-World Developer Tasks Benchmark',
         task_manifest_digest: CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
         grader_version: CANONICAL_DYNO_GRADER_VERSION
