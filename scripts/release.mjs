@@ -21,13 +21,31 @@ async function smoke(baseUrl, label) {
   const checks = [
     { path: '/', status: 200, contains: '<div id="root">' },
     { path: '/api/git', status: 200, json: body => body.status === 'gateway_required' },
-    { path: '/api/git?service=git-upload-pack', status: 501, json: body => body.success === false }
+    { path: '/api/git?service=git-upload-pack', status: 501, json: body => body.success === false },
+    {
+      path: '/api/payments/create-intent',
+      status: 503,
+      init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"appId":"dronehunter"}' },
+      json: body => body.success === false
+    },
+    {
+      path: '/api/payments/onboard',
+      status: 503,
+      init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"userId":"release-smoke"}' },
+      json: body => body.success === false
+    },
+    {
+      path: '/api/payments/webhook',
+      status: 503,
+      init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"type":"payment_intent.succeeded"}' },
+      json: body => body.success === false
+    }
   ];
 
   for (const check of checks) {
     let response;
     for (let attempt = 1; attempt <= 12; attempt += 1) {
-      response = await fetch(`${baseUrl}${check.path}`, { redirect: 'follow' }).catch(() => null);
+      response = await fetch(`${baseUrl}${check.path}`, { redirect: 'follow', ...check.init }).catch(() => null);
       if (response?.status === check.status) break;
       await new Promise(resolve => setTimeout(resolve, attempt * 500));
     }
