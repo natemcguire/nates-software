@@ -42,22 +42,31 @@ Added the canonical forge model for repositories, Git refs, immutable fork ances
 
 ```text
 Forge and DYNO schema parse with foreign_keys=ON: PASS
-tests/forge-domain.test.ts: PASS
+Immutable fork trigger: PASS
+tests/forge-domain.test.ts + tests/hotwire-backend.test.ts: 32/32 PASS
 npm run build: PASS
-npm test: 194 passed, 1 unrelated GITSMITH API test failed
+npm test: 217/217 PASS
 ```
 
-The full-suite failure is in `tests/gitsmith-backend.test.ts`, where a GITSMITH GET response expectation does not match the current `functions/api/git.ts` response. There were already unrelated working-tree modifications in those files. Do not overwrite or revert them without reviewing the active work.
+## Forge control-plane update
+
+`functions/api/git.ts` now reads the canonical `repositories`, `repository_refs`, and `repository_forks` model. It explicitly returns `501` for Git smart HTTP and ref mutation until a real Git gateway exists. This removes the previous false pkt-line advertisement and the unsafe D1 read-then-upsert CAS path.
+
+Fork registration now:
+
+1. Requires an authenticated session.
+2. Requires the actor to own the child repository and be able to read the parent.
+3. Resolves parent and child OIDs, root, and depth on the server.
+4. Rejects registration after the child ref has diverged.
+5. Atomically inserts the immutable edge and its outbox event with `DB.batch`.
 
 ## Do next
 
-Integrate `functions/api/git.ts` with `repositories`, `repository_refs`, and `repository_ref_events`. The current CAS endpoint must stop passing the caller's expected SHA as the current remote SHA.
-
-Required flow:
+Select and integrate a mature Git repository service/gateway. Its required flow is:
 
 1. Authenticate the session and authorize the repo/ref operation.
 2. Resolve `repository_id` from owner/slug or an opaque ID.
-3. Read the authoritative persisted current OID.
+3. Read the authoritative Git ref OID (D1 is only its query projection).
 4. Compare it with `expectedOldOid`; return HTTP 409 if stale.
 5. Verify the proposed object exists in the Git quarantine/object store.
 6. Publish the actual Git ref using compare-and-swap.
@@ -66,6 +75,6 @@ Required flow:
 
 Then implement a fork service that creates the child repository and inserts `repository_forks` only after the child initial ref is successfully published. Never derive ancestry from `app_listings.forks`.
 
-## Important migration note
+## Migration-chain note
 
-This migration itself parses successfully in SQLite. The older `0004_auth_and_security.sql` migration still uses `CREATE TABLE IF NOT EXISTS` as if it added columns to the pre-existing `users` table. It does not. Fix that older migration path before applying the complete migration chain to a fresh production-like D1 database.
+The active cold-start chain (`0001`, `0002`, `0006`, `0007`) parses successfully with foreign keys enabled. `0002` was corrected to index `transfers_ledger.role`; its previous `transfer_type` column did not exist.

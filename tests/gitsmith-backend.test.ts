@@ -735,14 +735,8 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
       };
     });
 
-    it('POST /api/git should execute pure CAS ref update and commit provenance in D1 without financial settlements', async () => {
-      const payload = {
-        appId: 'wallart',
-        ref: 'refs/heads/main',
-        expectedOldSha: '5c030af',
-        newSha: '8f4a21e',
-        committer: 'nate'
-      };
+    it('POST /api/git should refuse to impersonate the authoritative Git CAS gateway', async () => {
+      const payload = { action: 'cas', repositoryId: 'wallart' };
 
       const request = new Request('https://nates.software/api/git', {
         method: 'POST',
@@ -751,15 +745,10 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
       });
 
       const response = await onRequestPost({ request, env: mockEnv });
-      expect(response.status).toBe(200);
-
+      expect(response.status).toBe(501);
       const json = await response.json();
-      expect(json.success).toBe(true);
-      expect(json.transactionId).toBeDefined();
-      expect(json.currentSha).toBe('8f4a21e');
-      expect(json.casResult.success).toBe(true);
-      // Confirms pure Git operation does not create economic settlements
-      expect(json.settlementId).toBeUndefined();
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('GITSMITH gateway');
     });
 
     it('POST /api/git should return 400 Bad Request if required parameters are missing', async () => {
@@ -773,10 +762,10 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
       expect(response.status).toBe(400);
       const json = await response.json();
       expect(json.success).toBe(false);
-      expect(json.error).toContain('required');
+      expect(json.error).toContain('Supported control-plane action');
     });
 
-    it('POST /api/git should verify Ed25519 signature if provided and enforce signature verification', async () => {
+    it('POST /api/git should not accept caller-selected signature policy as ref authorization', async () => {
       const keyPair = generateEd25519KeyPair('sam@openai');
       const newSha = '4e10bc9812f0a3341b8c09182374618239019283';
       const ref = 'refs/features/receipt-ocr/v1.2.0';
@@ -789,7 +778,8 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          appId: 'retro-calc',
+          action: 'ref-update',
+          repositoryId: 'retro-calc',
           ref,
           expectedOldSha: '5c030af',
           newSha,
@@ -802,30 +792,22 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
       });
 
       const response = await onRequestPost({ request, env: mockEnv });
-      expect(response.status).toBe(200);
-
+      expect(response.status).toBe(501);
       const json = await response.json();
-      expect(json.success).toBe(true);
-      expect(json.signatureVerification.valid).toBe(true);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('GITSMITH gateway');
     });
 
-    it('GET /api/git should retrieve refs and commit provenance', async () => {
-      mockDbRows.push({
-        repo_id: 'wallart',
-        ref: 'refs/heads/main',
-        sha: '8f4a21e',
-        committer: 'nate',
-        updated_at: new Date().toISOString()
-      });
-
-      const request = new Request('https://nates.software/api/git?appId=wallart', { method: 'GET' });
+    it('GET /api/git should declare the control-plane authority boundary', async () => {
+      const request = new Request('https://nates.software/api/git', { method: 'GET' });
       const response = await onRequestGet({ request, env: mockEnv });
       expect(response.status).toBe(200);
 
       const json = await response.json();
       expect(json.success).toBe(true);
-      expect(json.appId).toBe('wallart');
-      expect(json.refs).toBeDefined();
+      expect(json.status).toBe('gateway_required');
+      expect(json.authority.gitGateway).toContain('authoritative ref');
+      expect(json.authority.d1).toContain('immutable lineage');
     });
   });
 });

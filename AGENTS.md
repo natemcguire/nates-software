@@ -9,10 +9,10 @@
 **Nate's Software Suite** is an autonomous Local-First developer operating system, distribution forge, and shareware marketplace designed to dismantle SaaS rental traps and restore software ownership.
 
 ### Core Architectural Axioms
-1. **Local-First Single-File SQLite Databases:**
-   - Every application stores 100% of its state inside an isolated single-file SQLite database located at `/data/<app_id>.sqlite`.
-   - All databases operate in strict **Write-Ahead Logging (`PRAGMA journal_mode = WAL;`)** with auto-checkpointing to allow concurrent in-browser and micro-dyno operations with zero lock collisions.
-   - Users can download, backup, inspect, or move their raw `.sqlite` files at any time with zero vendor lock-in.
+1. **Runtime and Storage Freedom:**
+   - Applications choose their own runtime, database, persistence layout, hosting model, or no persistence at all.
+   - SQLite, WAL, Postgres, browser storage, object storage, and external services are application choices—not platform requirements.
+   - Ownership is provided through portable source, artifacts, licenses, documented data export, and fork rights rather than a forced shared database convention.
 
 2. **Perpetual Ownership & License Titles:**
    - Software is bought once and owned forever. Every purchase issues an authentic cryptographic license key (e.g. `NSW-WA-9821-4A8F`) registered on the maker's Local-First shelf.
@@ -54,7 +54,7 @@
 * **Key Mechanisms:**
   * Dynamic port allocation across `3001..3010` with zero port collision.
   * Strict **256MB memory cap** per container with auto-governor throttling.
-  * Real-time SQLite WAL checkpoint triggers.
+  * Runtime-agnostic build, health, artifact, and optional volume adapters.
   * Container state machine (`RUNNING`, `REBUILDING`, `STOPPED`, `ERROR`).
 * **Backend:** `src/lib/rigBackend.ts`, `src/lib/rigDomain.ts`.
 
@@ -74,20 +74,21 @@
   * Threaded discussion bridge to dispatch instructions to AI agents.
 * **Backend:** `functions/api/inbox.ts`, `functions/api/comments.ts`, D1 table `inbox_messages`.
 
-### 6. `DYNO` — Workstation AI Speedometer & Benchmarker
-* **Purpose:** Local workstation hardware benchmarker measuring real token generation velocity.
+### 6. `DYNO` — Real-World AI Agent Benchmark
+* **Purpose:** Standalone benchmark product measuring how models and agent harnesses complete common real-world tasks—not how marketplace apps perform.
 * **Key Mechanisms:**
-  * Real-time speedometer gauge displaying tokens/sec (`tok/s`).
-  * TTFT (Time-To-First-Token) and prompt cache hit rate monitor.
+  * Versioned common-command task suites with controlled fixtures and hidden graders.
+  * Model + configuration + agent harness + tools + execution environment identity.
+  * Completion, correctness, time, tool calls, tokens, cost, intervention, recovery, and safety measurements.
+  * Reproducible and verified run levels backed by trace and grader evidence.
   * Dynamic SVG badge generation endpoint (`/badge/:username`) for GitHub READMEs.
-  * 1-Line automated shell installer.
-* **Backend:** `functions/api/dyno.ts`, `functions/badge/[user].ts`, D1 table `dyno_reports`.
+* **Backend:** `src/lib/dynoDomain.ts`, `functions/api/dyno.ts`, `functions/badge/[user].ts`, migration `0007_dyno_real_world_benchmarks.sql`.
 
 ### 7. `PROFILE.CFG` & `MY SHELF` — Maker Identity & Title Registry
 * **Purpose:** Public maker profiles, SSH key registry, and owned software library.
 * **Key Mechanisms:**
   * Maker handle validation (`@nate`) and SSH public key management.
-  * "My Shelf" license viewer with 1-click `.sqlite` volume backup downloads.
+  * "My Shelf" license viewer with downloads and application-defined data export links.
   * Offline binary installer download links (`.dmg`, `.exe`, `.tar.gz`).
 * **Backend:** `functions/api/profile.ts`, `functions/api/shelf.ts`, D1 tables `users`, `shelf_items`.
 
@@ -123,7 +124,7 @@ $ slop fork nate/wallart
 # 2. Weld an AST feature package into the local project
 $ slop mod refs/features/receipt-ocr/v1.2.0
 
-# 3. Run full test proofs, verify SQLite WAL integrity, and push CAS ref
+# 3. Run verification proofs and push a CAS ref
 $ slop push
 
 # 4. Measure local workstation AI token velocity and cache hit rate

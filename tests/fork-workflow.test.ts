@@ -36,8 +36,8 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     expect(selfForkErrors).toContain('A repository cannot fork itself.');
   });
 
-  // Step 2: Git Smart HTTP transport
-  it('Step 2: should generate compliant Git Smart HTTP pkt-line advertisement', async () => {
+  // Step 2: Git transport must be provided by a real gateway, not simulated by D1.
+  it('Step 2: should reject partial Git Smart HTTP at the control-plane boundary', async () => {
     const mockEnv = {
       DB: {
         prepare: () => ({
@@ -52,10 +52,10 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     const req = new Request('https://nates.software/api/git?service=git-receive-pack&appId=dronehunter', { method: 'GET' });
     const res = await gitApi.onRequestGet({ request: req, env: mockEnv });
 
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toContain('# service=git-receive-pack');
-    expect(body).toContain('refs/heads/main');
+    expect(res.status).toBe(501);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toContain('GITSMITH gateway');
   });
 
   // Step 3: slop clone, fork, and push with truthful failure handling
