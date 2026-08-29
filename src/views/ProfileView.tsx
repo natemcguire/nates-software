@@ -15,6 +15,8 @@ export const ProfileView: React.FC = () => {
   const [sshKey, setSshKey] = useState('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY8... nate@macmini');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+  const [stripeAccountId, setStripeAccountId] = useState<string | null>('acct_express_nate_9812');
+  const [isOnboardingStripe, setIsOnboardingStripe] = useState(false);
 
   // User Shelf (Owned / Saved Apps)
   const [shelfApps, setShelfApps] = useState<any[]>([
@@ -57,6 +59,38 @@ export const ProfileView: React.FC = () => {
       })
       .catch(() => {});
   }, []);
+
+  const handleConnectStripe = async () => {
+    try {
+      setIsOnboardingStripe(true);
+      playClickSound();
+      const res = await fetch('/api/payments/onboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: `usr_${username}`,
+          email: `${username}@nates-software.com`,
+          returnUrl: window.location.href,
+          refreshUrl: window.location.href
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.onboardingUrl) {
+          playSuccessChime();
+          window.open(data.onboardingUrl, '_blank');
+        }
+        if (data.accountId) {
+          setStripeAccountId(data.accountId);
+        }
+      }
+    } catch {
+      // Offline fallback
+    } finally {
+      setIsOnboardingStripe(false);
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,10 +396,21 @@ export const ProfileView: React.FC = () => {
               </div>
 
               <div>
-                <label className="font-bold text-gray-800 block mb-1 text-xs">Stripe Payout Status:</label>
+                <label className="font-bold text-gray-800 block mb-1 text-xs">Stripe Payouts (70% Maker / 20% Lineage):</label>
                 <div className="bg-green-50 border border-green-300 p-1.5 rounded flex items-center justify-between text-xs text-green-900">
-                  <span className="font-bold">Connected (acct_1NZ...)</span>
-                  <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.5 rounded">Active</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold font-mono text-[11px]">{stripeAccountId ? `Connected (${stripeAccountId.slice(0, 14)}...)` : 'Not Connected'}</span>
+                    <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.2 rounded font-mono">Active</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleConnectStripe}
+                    disabled={isOnboardingStripe}
+                    className="btn-w95 text-[10px] py-0.5 px-2 bg-emerald-700 text-white font-bold hover:bg-emerald-800 flex items-center gap-1 shadow"
+                  >
+                    <DollarSign size={10} />
+                    <span>{isOnboardingStripe ? 'Connecting...' : 'Connect Stripe Express'}</span>
+                  </button>
                 </div>
               </div>
             </div>

@@ -4,13 +4,12 @@ Date: 2026-08-29
 
 ## Objective completed
 
-Added the missing canonical data model for repositories, Git refs, immutable fork ancestry, feature versions, merge workflows, build evidence, deployments, benchmarks, and editorial reviews.
+Added the canonical forge model for repositories, Git refs, immutable fork ancestry, feature versions, merge workflows, build evidence, deployments, and editorial reviews. DYNO is now modeled separately as a standalone real-world AI agent benchmark.
 
 ## Files added
 
 - `migrations/0006_canonical_forge_lineage.sql`
-  - Adds 16 canonical tables.
-  - Adds indexes, constraints, an audit event table, and immutable-fork triggers.
+  - Adds canonical forge tables, repository membership/ref policies, exact-attempt approvals, outbox events, reconciliation records, constraints, and immutable-fork triggers.
   - Preserves existing tables and does not invent repository rows from mock counters.
 - `src/lib/forgeDomain.ts`
   - Defines merge-job state transitions.
@@ -20,25 +19,30 @@ Added the missing canonical data model for repositories, Git refs, immutable for
   - Covers fork validation, CAS validation, retry transitions, and terminal states.
 - `docs/architecture/canonical-forge-lineage-schema.md`
   - Documents authority boundaries, relationships, invariants, rollout, and the next integration task.
+- `migrations/0007_dyno_real_world_benchmarks.sql`
+  - Defines versioned real-world tasks, models, harnesses, tools, environments, attempts, traces, and graders without forge/app foreign keys.
+- `docs/architecture/dyno-real-world-benchmark-schema.md`
+  - Documents DYNO's standalone benchmark identity and evidence model.
 
 ## Canonical decisions
 
 1. Git is authoritative for commit/tree objects.
-2. D1 is authoritative for repository ownership, workflow state, immutable lineage, evidence metadata, benchmarks, and reviews.
+2. D1 is authoritative for repository ownership, workflow state, immutable lineage, forge evidence metadata, and reviews.
 3. `repository_forks` is the canonical direct-parent graph. One child has one immutable origin.
 4. Fork records pin full parent/child OIDs at creation time. Moving a branch cannot rewrite ancestry.
 5. `app_listings.forks` remains temporarily as a compatibility cache; it is not authoritative.
 6. Current refs live in `repository_refs`; every accepted mutation is recorded in `repository_ref_events` with an idempotency key.
 7. Feature versions pin Git ref, commit OID, tree OID, manifest digest, compatibility manifest, license, and price.
 8. A merge job may have multiple immutable attempts. Attempts pin input/result OIDs and tool/test-policy versions.
-9. R2 holds large artifacts; `build_artifacts` holds hashes, size, media type, provenance, and R2 keys.
-10. Benchmarks store raw samples and explicitly identify warmup samples. Editorial measurements can cite benchmark runs.
+9. R2 holds large forge artifacts; `build_artifacts` holds hashes, size, media type, provenance, and R2 keys.
+10. DYNO's subject is a model configuration plus agent harness and tools, executed in a pinned environment against a versioned real-world task suite.
+11. SQLite/WAL is not a publishing or runtime requirement. Each app chooses its own persistence or no persistence.
 
 ## Validation performed
 
 ```text
-SQLite schema parse with foreign_keys=ON: PASS (16/16 canonical tables)
-tests/forge-domain.test.ts: PASS (4/4)
+Forge and DYNO schema parse with foreign_keys=ON: PASS
+tests/forge-domain.test.ts: PASS
 npm run build: PASS
 npm test: 194 passed, 1 unrelated GITSMITH API test failed
 ```
@@ -65,4 +69,3 @@ Then implement a fork service that creates the child repository and inserts `rep
 ## Important migration note
 
 This migration itself parses successfully in SQLite. The older `0004_auth_and_security.sql` migration still uses `CREATE TABLE IF NOT EXISTS` as if it added columns to the pre-existing `users` table. It does not. Fix that older migration path before applying the complete migration chain to a fresh production-like D1 database.
-

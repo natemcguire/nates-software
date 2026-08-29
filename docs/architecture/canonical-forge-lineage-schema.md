@@ -1,4 +1,4 @@
-# Canonical Forge, Lineage, Evidence, and Editorial Schema
+# Canonical Forge, Lineage, Build, and Editorial Schema
 
 Migration: `migrations/0006_canonical_forge_lineage.sql`
 
@@ -13,8 +13,7 @@ Migration: `migrations/0006_canonical_forge_lineage.sql`
 | Feature identity, immutable version coordinates, and prices | D1 |
 | Merge workflow and attempts | D1 |
 | Build/deployment metadata | D1 |
-| Logs, binaries, patches, SBOMs, and raw benchmark results | R2, addressed by D1 metadata |
-| Benchmark methodology, samples, and verification | D1 |
+| Logs, binaries, patches, SBOMs, and attestations | R2, addressed by D1 metadata |
 | Editorial reviews and lab-card measurements | D1 |
 
 ## Central relationships
@@ -22,16 +21,16 @@ Migration: `migrations/0006_canonical_forge_lineage.sql`
 ```text
 app_listings ── repositories ── repository_refs
                       │
+                      ├── repository_members + repository_ref_policies
                       ├── repository_forks ── parent repository
                       ├── feature_packages ── feature_package_versions
-                      ├── merge_jobs ── merge_attempts
+                      ├── merge_jobs ── merge_attempts ── merge_approvals
                       ├── build_runs ── build_artifacts (R2 keys)
                       └── deployment_revisions
 
-benchmark_suites ── benchmark_runs ── benchmark_samples
-                                └── build/raw evidence
-
 app_listings ── editorial_reviews ── editorial_measurements
+
+forge_outbox_events + forge_reconciliation_issues
 ```
 
 ## Invariants
@@ -44,14 +43,16 @@ app_listings ── editorial_reviews ── editorial_measurements
 6. Merge attempts pin their input OIDs and tool/test-policy versions. Approval applies to a specific attempt result.
 7. A Git gateway must compare `repository_refs.commit_oid` with the caller's expected OID before updating Git, then record a unique `repository_ref_events` event. The existing `/api/git` endpoint still needs this integration.
 8. Artifacts live in R2; D1 stores immutable keys, hashes, sizes, and provenance.
-9. Benchmark headline numbers are derived from non-warmup `benchmark_samples`, never accepted as an unexplained aggregate.
-10. Editorial claims may reference a verified benchmark run, separating measured facts from written judgment.
+9. Approval is pinned to an exact merge attempt and result commit OID.
+10. Repository roles and per-ref policies are explicit; owning an app listing does not implicitly authorize a Git mutation.
+11. Cross-boundary Git/object-store work is delivered through an outbox and audited by reconciliation issues.
+12. DYNO has a separate schema and product boundary in `0007_dyno_real_world_benchmarks.sql`.
 
 ## Operational transaction boundaries
 
 Git object upload may occur before the D1 transaction. Publication is complete only when the ref CAS succeeds and its ref event is durable. A reconciliation worker should compare Git refs against `repository_refs` after crashes.
 
-Builds, merges, benchmarks, and deployments are long-running state machines. API callers should receive an operation ID and poll or subscribe to durable events; they should never receive a success response merely because work was queued.
+Builds, merges, and deployments are long-running state machines. API callers should receive an operation ID and poll or subscribe to durable events; they should never receive a success response merely because work was queued.
 
 ## Compatibility and rollout
 
@@ -71,4 +72,3 @@ Replace the stateless CAS call in `functions/api/git.ts` with a repository servi
 5. Atomically publishes the Git ref.
 6. Updates `repository_refs` and inserts `repository_ref_events` idempotently.
 7. Reconciles either side if the process stops between Git and D1 commits.
-
