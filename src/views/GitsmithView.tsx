@@ -34,8 +34,8 @@ export interface GitsmithRepo {
   owner: string;
   avatar: string;
   description: string;
-  stars: number;
-  forks: number;
+  stars: number | null;
+  forks: number | null;
   language: string;
   license: string;
   sqlitePath: string;
@@ -60,8 +60,8 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     owner: 'nate',
     avatar: '🎯',
     description: 'Fast-paced retro browser shooter inspired by Duck Hunt. Double-barrel shotgun, laughing dog animations, drone explosions, and local high score tracking.',
-    stars: 420,
-    forks: 88,
+    stars: null,
+    forks: null,
     language: 'TypeScript / Canvas Game',
     license: 'MIT Open Source Shareware',
     sqlitePath: 'Local Storage (Storage Freedom)',
@@ -71,7 +71,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       message: 'feat(arcade): Duck Hunt style shotgun shooter with local high scores',
       author: 'nate',
       time: '12 mins ago',
-      verified: true
+      verified: false
     },
     tags: ['Arcade', 'Retro', 'Duck Hunt', 'Canvas', 'Web Audio'],
     files: [
@@ -92,8 +92,8 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     owner: 'nate',
     avatar: '📫',
     description: 'Browser-local correspondence preparation and unverified mailing-evidence journal. It does not submit mail or verify postal tracking.',
-    stars: 312,
-    forks: 46,
+    stars: null,
+    forks: null,
     language: 'TypeScript / React',
     license: 'MIT Local-First Utility',
     sqlitePath: 'Browser localStorage (unencrypted)',
@@ -103,7 +103,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       message: 'feat(mail): local preparation and evidence journal',
       author: 'nate',
       time: '35 mins ago',
-      verified: true
+      verified: false
     },
     tags: ['Correspondence', 'Postal', 'Evidence Journal', 'Local-First'],
     liveUrl: '',
@@ -121,8 +121,8 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     owner: 'nate',
     avatar: '✨',
     description: 'Private in-browser image crop, resize, compression, format conversion, and download utility.',
-    stars: 284,
-    forks: 62,
+    stars: null,
+    forks: null,
     language: 'TypeScript / Canvas API',
     license: 'MIT Image Utility',
     sqlitePath: 'No database required',
@@ -132,7 +132,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
       message: 'feat(studio): add validated crop, resize, and local export pipeline',
       author: 'nate',
       time: '1h ago',
-      verified: true
+      verified: false
     },
     tags: ['Images', 'Crop', 'Resize', 'Compression', 'Browser'],
     liveUrl: 'https://picfitai.nates-software.com',
@@ -367,6 +367,9 @@ export const GitsmithView: React.FC = () => {
       )}
 
       {/* Main Forge Body Grid with Resizable Split Panes */}
+      <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono">
+        SHOWCASE SNAPSHOTS — The catalog below previews bundled source examples. Stars, live fork totals, gateway refs, and signature verification are shown only when backed by canonical forge records.
+      </div>
       <div className="flex-1 flex overflow-hidden">
         {/* Left Column: Repository Sidebar (Drag-Resizable Width) */}
         <div 
@@ -425,8 +428,8 @@ export const GitsmithView: React.FC = () => {
 
                   <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
                     <span className="flex items-center gap-1"><CircleDot size={11} className="text-amber-400" /> {repo.language.split('/')[0]}</span>
-                    <span className="flex items-center gap-1"><Star size={11} className="text-yellow-400" /> {repo.stars}</span>
-                    <span className="flex items-center gap-1"><GitFork size={11} className="text-sky-400" /> {repo.forks}</span>
+                    <span className="flex items-center gap-1"><Star size={11} className="text-yellow-400" /> {repo.stars ?? 'not tracked'}</span>
+                    <span className="flex items-center gap-1"><GitFork size={11} className="text-sky-400" /> {repo.forks ?? 'not synced'}</span>
                   </div>
                 </div>
               );
@@ -459,8 +462,8 @@ export const GitsmithView: React.FC = () => {
                   <span className="bg-slate-900 text-slate-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
                     Public
                   </span>
-                  <span className="bg-emerald-950 text-emerald-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-700">
-                    Shareware Title
+                  <span className="bg-amber-950 text-amber-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-amber-700">
+                    Bundled Showcase
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
@@ -492,7 +495,7 @@ export const GitsmithView: React.FC = () => {
                 >
                   <Bot size={14} className="text-yellow-200" />
                   <span>⚡ Fork with AI</span>
-                  <span className="bg-amber-900/60 px-1.5 py-0.5 rounded text-[10px] text-amber-200 font-mono">{selectedRepo.forks}</span>
+                  <span className="bg-amber-900/60 px-1.5 py-0.5 rounded text-[10px] text-amber-200 font-mono">{selectedRepo.forks ?? 'local'}</span>
                 </button>
 
                 <button
@@ -519,11 +522,11 @@ export const GitsmithView: React.FC = () => {
               {/* Verified Commit Badge */}
               <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded border border-slate-700">
                 <Clock size={13} className="text-slate-400" />
-                <span className="text-slate-400">Latest Commit:</span>
+                <span className="text-slate-400">Bundled snapshot:</span>
                 <span className="text-sky-400 font-bold">{selectedRepo.lastCommit.sha}</span>
                 <span className="text-white">"{selectedRepo.lastCommit.message}"</span>
-                <span className="bg-emerald-950 text-emerald-300 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-emerald-700">
-                  Ed25519 Verified
+                <span className="bg-slate-800 text-slate-300 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-slate-600">
+                  Signature not checked
                 </span>
               </div>
             </div>
@@ -661,8 +664,8 @@ export const GitsmithView: React.FC = () => {
           {activeTab === 'commits' && (
             <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-3 shadow-md">
               <div className="font-mono text-sm font-bold text-white mb-2 flex items-center justify-between">
-                <span>Immutable CAS Commit Ledger</span>
-                <span className="text-xs text-emerald-400 font-normal">● refs/heads/main (Atomic Reflog)</span>
+                <span>Bundled Commit Snapshot</span>
+                <span className="text-xs text-amber-400 font-normal">Not a canonical gateway reflog</span>
               </div>
 
               <div className="space-y-2 font-mono text-xs">
@@ -677,25 +680,8 @@ export const GitsmithView: React.FC = () => {
                     <span className="bg-slate-800 text-sky-400 px-2.5 py-1 rounded border border-slate-700 font-bold">
                       {selectedRepo.lastCommit.sha}
                     </span>
-                    <span className="bg-emerald-950 text-emerald-300 px-2 py-1 rounded border border-emerald-700 font-bold text-[10px]">
-                      VERIFIED ED25519
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-[#0f172a] p-3.5 rounded-lg border border-slate-700 flex items-center justify-between opacity-80">
-                  <div>
-                    <div className="text-white font-semibold">chore(genesis): initial commit &amp; application scaffolding</div>
-                    <div className="text-slate-400 text-xs mt-1">
-                      Authored by <strong className="text-sky-300">@{selectedRepo.owner}</strong> (Aug 24, 2026)
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="bg-slate-800 text-slate-400 px-2.5 py-1 rounded border border-slate-700 font-bold">
-                      1a04b8e
-                    </span>
-                    <span className="bg-emerald-950 text-emerald-300 px-2 py-1 rounded border border-emerald-700 font-bold text-[10px]">
-                      VERIFIED
+                    <span className="bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-600 font-bold text-[10px]">
+                      UNVERIFIED SNAPSHOT
                     </span>
                   </div>
                 </div>
