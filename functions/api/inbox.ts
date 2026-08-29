@@ -113,6 +113,74 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
   const userId = auth.user!.id;
   const messageId = typeof body.messageId === 'string' ? body.messageId : '';
   try {
+    if (body.action === 'submit_proposal') {
+      const mergeAttemptId = typeof body.mergeAttemptId === 'string' ? body.mergeAttemptId.trim() : '';
+      if (!mergeAttemptId) return jsonError('mergeAttemptId is required', 400);
+      const rawTitle = typeof body.title === 'string' ? body.title.trim() : '';
+      const rawContent = typeof body.content === 'string' ? body.content.trim() : '';
+      if (rawTitle.length > 160) return jsonError('Proposal title must be 160 characters or fewer', 400);
+      if (rawContent.length > 10_000) return jsonError('Proposal content must be 10,000 characters or fewer', 400);
+
+      const attempt = await env.DB.prepare(`
+        SELECT ma.id AS mergeAttemptId, ma.input_target_oid AS inputTargetOid,
+          ma.result_commit_oid AS resultCommitOid, ma.status AS attemptStatus,
+          mj.id AS mergeJobId, mj.status AS jobStatus, mj.target_ref AS targetRef,
+          mj.requested_by_user_id AS requestedByUserId,
+          r.id AS repositoryId, r.owner_user_id AS repositoryOwnerId,
+          r.slug AS repositorySlug, r.status AS repositoryStatus,
+          fpv.git_ref AS featureRef
+        FROM merge_attempts ma
+        JOIN merge_jobs mj ON mj.id = ma.merge_job_id
+        JOIN repositories r ON r.id = mj.target_repository_id
+        LEFT JOIN feature_package_versions fpv ON fpv.id = mj.feature_version_id
+        WHERE ma.id = ?
+      `).bind(mergeAttemptId).first();
+      if (!attempt) return jsonError('Merge attempt not found', 404);
+      if (attempt.requestedByUserId !== userId) return jsonError('Only the merge job requester may submit its proposal', 403);
+      if (attempt.repositoryStatus !== 'active') return jsonError('Target repository is not active', 409);
+      if (attempt.jobStatus !== 'preview_ready' || attempt.attemptStatus !== 'preview_ready' || !attempt.resultCommitOid) {
+        return jsonError('Only a preview-ready immutable merge attempt may be proposed', 409);
+      }
+
+      const proposalId = `proposal:${mergeAttemptId}`;
+      const title = rawTitle || `Merge proposal for ${attempt.repositorySlug}`;
+      const content = rawContent || [
+        `Preview-ready merge attempt ${mergeAttemptId}`,
+        `Target: ${attempt.repositorySlug} ${attempt.targetRef}`,
+        `CAS: ${attempt.inputTargetOid} → ${attempt.resultCommitOid}`
+      ].join('\n');
+      const insertResult = await env.DB.prepare(`
+        INSERT OR IGNORE INTO inbox_messages
+          (id, user_id, sender_id, title, preview, content, feature_ref, cas_new_sha,
+           is_merged, unread, message_kind, merge_attempt_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'proposal', ?)
+      `).bind(
+        proposalId, attempt.repositoryOwnerId, userId, title, content.slice(0, 160), content,
+        attempt.featureRef || attempt.targetRef, attempt.resultCommitOid, mergeAttemptId
+      ).run();
+      const stored = await env.DB.prepare(`
+        SELECT id, user_id AS recipientId, sender_id AS senderId,
+          merge_attempt_id AS mergeAttemptId, title, content, feature_ref AS featureRef,
+          created_at AS createdAt
+        FROM inbox_messages WHERE id = ?
+      `).bind(proposalId).first();
+      if (!stored || stored.recipientId !== attempt.repositoryOwnerId || stored.senderId !== userId ||
+          stored.mergeAttemptId !== mergeAttemptId) {
+        return jsonError('Proposal identity conflicts with an existing message', 409);
+      }
+      return Response.json({
+        success: true,
+        proposal: {
+          id: stored.id, mergeAttemptId, mergeJobId: attempt.mergeJobId,
+          repositoryId: attempt.repositoryId, recipientUserId: stored.recipientId,
+          title: stored.title, content: stored.content, featureRef: stored.featureRef,
+          expectedTargetOid: attempt.inputTargetOid, resultCommitOid: attempt.resultCommitOid,
+          status: 'preview_ready', createdAt: stored.createdAt
+        },
+        idempotent: Number(insertResult?.meta?.changes || 0) === 0
+      }, { status: 200 });
+    }
+
     if (body.action === 'mark_read' || body.action === 'mark_unread') {
       if (!messageId) return jsonError('messageId is required', 400);
       const owned = await env.DB.prepare('SELECT id FROM inbox_messages WHERE id = ? AND user_id = ?').bind(messageId, userId).first();

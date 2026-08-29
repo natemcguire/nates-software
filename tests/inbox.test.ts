@@ -144,6 +144,44 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect((await post({ action: 'reply', messageId: 'system', text: 'x' })).status).toBe(409);
   });
 
+  it('submits one immutable preview-ready proposal to the target owner idempotently', async () => {
+    const oldOid = '1'.repeat(40);
+    const resultOid = '2'.repeat(40);
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES ('repo-submit','dronehunter','usr_sam','sam/submit-test','private','refs/heads/main','repos/submit','active')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-submit','repo-submit','refs/heads/main','usr_nate','preview_ready','submit-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-submit','job-submit',1,?,?,'tool','policy','preview_ready')`).bind(oldOid, resultOid).run();
+
+    const first = await post({ action: 'submit_proposal', mergeAttemptId: 'attempt-submit', content: 'Please review this exact build.' });
+    const second = await post({ action: 'submit_proposal', mergeAttemptId: 'attempt-submit', content: 'A replay cannot rewrite it.' });
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(await first.clone().json()).toMatchObject({ success: true, idempotent: false });
+    expect(await second.clone().json()).toMatchObject({ success: true, idempotent: true });
+    expect(await ctx.d1.prepare("SELECT count(*) AS count FROM inbox_messages WHERE merge_attempt_id=? AND message_kind='proposal'").bind('attempt-submit').first('count')).toBe(1);
+    const proposal: any = await ctx.d1.prepare('SELECT * FROM inbox_messages WHERE id=?').bind('proposal:attempt-submit').first();
+    expect(proposal).toMatchObject({ user_id: 'usr_sam', sender_id: 'usr_nate', merge_attempt_id: 'attempt-submit', content: 'Please review this exact build.' });
+  });
+
+  it('rejects proposal intake for an unready attempt or a non-requester', async () => {
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES ('repo-no-submit','dronehunter','usr_sam','sam/no-submit','private','refs/heads/main','repos/no-submit','active')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-no-submit','repo-no-submit','refs/heads/main','usr_sam','running','no-submit')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-no-submit','job-no-submit',1,?,?,'tool','policy','running')`).bind('3'.repeat(40), '4'.repeat(40)).run();
+    expect((await post({ action: 'submit_proposal', mergeAttemptId: 'attempt-no-submit' })).status).toBe(403);
+    expect(await ctx.d1.prepare('SELECT count(*) AS count FROM inbox_messages WHERE merge_attempt_id=?').bind('attempt-no-submit').first('count')).toBe(0);
+  });
+
   it('fails closed when asked to merge or approve an unbound notification', async () => {
     await insertMessage(ownMessage('proposal', { message_kind: 'proposal', feature_ref: 'refs/features/x/v1' }));
     expect((await post({ action: 'merge', messageId: 'proposal' })).status).toBe(409);
