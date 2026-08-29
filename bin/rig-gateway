@@ -39,7 +39,7 @@ const verificationConfig = loadRigVerificationWorkerConfig();
 const verificationWorker = verificationConfig ? new RigVerificationWorker(verificationConfig) : null;
 const verifier = verificationWorker ? setInterval(() => {
   verificationWorker.pollOnce().catch(error => console.error('[RIG] verification worker failed:', error));
-}, verificationConfig!.pollIntervalMs) : null;
+}, verificationConfig.pollIntervalMs) : null;
 verifier?.unref();
 verificationWorker?.pollOnce().catch(error => console.error('[RIG] initial verification poll failed:', error));
 
