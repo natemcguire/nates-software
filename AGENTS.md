@@ -26,6 +26,8 @@
      - **70%** directly to the immediate Maker.
      - **20%** distributed evenly across the upstream Ancestor chain.
      - **10%** deposited into the Protocol Liquidity Pool.
+   - A root app has no ancestor claim. Its unused 20% lineage allocation returns to its maker, producing an explicit **90% maker / 10% protocol** root split.
+   - Purchase-time allocation rows are immutable. Stripe webhooks never transfer money directly; they create durable, retryable outbox work.
 
 ---
 
@@ -127,7 +129,7 @@ $ slop mod refs/features/receipt-ocr/v1.2.0
 # 3. Run verification proofs and push a CAS ref
 $ slop push
 
-# 4. Measure local workstation AI token velocity and cache hit rate
+# 4. Run the standalone real-world model/agent command benchmark
 $ slop dyno --bench
 
 # 5. Execute all automated test assertions
@@ -152,11 +154,16 @@ $ slop login
 
 * **Primary Domain:** `https://nates-software.pages.dev`
 * **Wireframes Domain:** `https://wires.nates-software.pages.dev`
-* **Cloudflare D1 SQLite Database:** `nates-software-db` (ID: `3ae839e3-b677-4668-9b12-48b5c2437b5b`)
-* **Cloudflare R2 Zero-Egress Storage:** `nates-software-storage`
-* **Database Migrations:**
-  * `migrations/0001_initial_schema.sql` (users, app_listings, shelf_items, comments, comment_upvotes, dyno_reports)
-  * `migrations/0002_complete_backend.sql` (inbox_messages, royalty_settlements)
+* **Production D1:** `nates-software-prod-v2` (ID: `32dc20dc-b97b-4ea8-a108-45694cdd6e6c`)
+* **Preview D1:** `nates-software-preview-db` (ID: `a265f092-cee4-42da-ac84-e87dbbd53315`)
+* **Production R2:** `nates-software-storage`
+* **Preview R2:** `nates-software-preview-storage`
+* **Canonical migrations:** `0001`, `0002`, `0006`, `0007`, `0008`, `0009` under `migrations/`.
+* The retired legacy D1 `nates-software-db` is not an application binding and must not be selected for new work.
+
+### Release invariant
+
+`npm run release` is the only production deployment path. It requires a clean commit, runs all tests and the production build, migrates isolated preview D1, deploys a unique preview candidate, smokes the candidate, applies production migrations, promotes the unchanged `dist/` artifact, smokes the immutable production deployment and alias, and destroys the candidate. Never deploy an untested build directly to `main`.
 
 ---
 
