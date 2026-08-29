@@ -64,21 +64,21 @@ const ARTICLES: EditorialArticle[] = [
     id: 'art_certified_mailer',
     badge: 'MAKER SPOTLIGHT',
     badgeColor: 'bg-emerald-600 text-white',
-    title: "Certified Mailer: Replacing $100/mo SaaS with a $15 Single-Payment Shareware App",
+    title: "Certified Mailer: A Private, Local Correspondence Journal",
     author: "Josh McGuire",
     date: "Aug 27, 2026",
-    summary: "USPS certified barcode formatting, Electronic Return Receipt validation, and landlord dispute packet generation in pure local client code.",
+    summary: "Draft, review, print, and organize user-recorded mailing evidence locally without pretending the browser is a postal provider.",
     appId: 'certified-mailer',
     ratingScore: 9.5,
     specs: [
-      { label: "USPS ERR Barcode", value: "20-digit Code 128 Compliant" },
-      { label: "Export Format", value: "Print-Ready Vector PDF" },
-      { label: "Data Privacy", value: "100% Client-Side Local" },
-      { label: "License Price", value: "$15.00 Lifetime" }
+      { label: "Postal Integration", value: "Not Connected" },
+      { label: "Output", value: "Browser Print" },
+      { label: "Journal", value: "Unencrypted Browser-Local" },
+      { label: "License Price", value: "$25.00 Lifetime" }
     ],
     content: [
-      "Why subscribe to bloated monthly document portals when an unbundled, local-first shareware app can generate compliant postal documents directly?",
-      "Certified Mailer demonstrates the power of Shareware: pay once, own forever, fork with AI whenever requirements change."
+      "Certified Mailer keeps drafts and user-entered evidence in the browser while making no claim that a letter was submitted, delivered, or legally compliant.",
+      "The app is useful today as a private preparation journal; verified postage, tracking, and receipts require a future postal-provider adapter."
     ]
   }
 ];

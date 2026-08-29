@@ -145,10 +145,10 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     repoUrl: 'https://github.com/natemcguire/certified-mailer.git',
     sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/certified-mailer.git',
     defaultPort: 3005,
-    sqliteDatabase: '/data/certified-mailer.sqlite',
+    sqliteDatabase: 'Browser localStorage (unencrypted)',
     localPathHint: '~/Projects/certified-mailer',
-    techStack: ['TypeScript', 'PyMuPDF / PDF Engine', 'SQLite (WAL)', 'USPS ERR API', 'Tailwind CSS'],
-    tagline: 'USPS Certified Mail, Electronic Return Receipt (ERR) & 300 DPI Legal Dispute Engine.',
+    techStack: ['TypeScript', 'React', 'Browser Print', 'Local Evidence Journal', 'Tailwind CSS'],
+    tagline: 'Local letter preparation and user-recorded mailing evidence journal.',
     version: 'v1.1.0',
     price: '$25.00',
     icon: '📫'
@@ -311,28 +311,27 @@ new file mode 100644
 +}`
     },
     {
-      id: 'cm-err',
-      name: '📫 USPS Electronic Return Receipt (ERR)',
-      category: 'Postal Integration',
-      description: 'Generate authentic 20-digit USPS Certified Mail barcodes and digital signature capture hooks.',
-      prompt: 'Integrate official 20-digit USPS Certified Mail barcode generation and Electronic Return Receipt (ERR) digital signature tracking hooks.',
-      targetFiles: ['src/usps/BarcodeGenerator.ts', 'src/services/ErrTracker.ts'],
-      migrationSql: 'CREATE TABLE IF NOT EXISTS postal_err_tracking (tracking_num TEXT PRIMARY KEY, signed_by TEXT, signature_date DATETIME, delivery_status TEXT NOT NULL);',
+      id: 'cm-evidence-attachments',
+      name: '📎 Local Evidence Attachments',
+      category: 'Evidence Journal',
+      description: 'Attach user-supplied receipt images to local observations without claiming postal verification.',
+      prompt: 'Add local receipt-image attachments with bounded file validation, accessible previews, and explicit user-entered/unverified labels.',
+      targetFiles: ['src/evidence/AttachmentStore.ts', 'src/components/EvidenceAttachment.tsx'],
       verificationCriteria: [
-        'USPS 20-digit barcode generates valid Code 128 / GS1-128 checksums',
-        'postal_err_tracking table records signature timestamps with timezone isolation',
-        'Unit tests verify malformed tracking numbers are rejected gracefully'
+        'Only JPEG, PNG, and WebP attachments within the configured byte limit are accepted',
+        'Object URLs are revoked on replacement and unmount',
+        'Every attachment is labeled user-entered and unverified'
       ],
-      blueprintDiffPreview: `diff --git a/src/usps/BarcodeGenerator.ts b/src/usps/BarcodeGenerator.ts
+      blueprintDiffPreview: `diff --git a/src/evidence/AttachmentStore.ts b/src/evidence/AttachmentStore.ts
 new file mode 100644
 --- /dev/null
-+++ b/src/usps/BarcodeGenerator.ts
-@@ -0,0 +1,18 @@
-+export function generateUspsCertifiedBarcode(articleNumber: string): { svg: string; checksum: string } {
-+  if (!/^\d{20}$/.test(articleNumber)) {
-+    throw new Error('USPS Certified Mail tracking requires a 20-digit numeric string.');
++++ b/src/evidence/AttachmentStore.ts
+@@ -0,0 +1,16 @@
++export function validateEvidenceAttachment(file: File): void {
++  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
++    throw new Error('Evidence attachments must be JPEG, PNG, or WebP.');
 +  }
-+  return { svg: '<svg>...</svg>', checksum: '9' };
++  if (file.size > 10 * 1024 * 1024) throw new Error('Attachment exceeds 10 MiB.');
 +}`
     },
     {

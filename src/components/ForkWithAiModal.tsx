@@ -28,9 +28,9 @@ const PROMPT_PRESETS: Record<string, string[]> = {
     'Add local multiplayer high-score tournaments with custom player initials.'
   ],
   'certified-mailer': [
-    'Add California Tenant Security Deposit statutory demand templates and CSV batch export.',
-    'Integrate official 20-digit USPS Certified Mail barcode generation and Electronic Return Receipt (ERR).',
-    'Add automated postal dispatch failover with idempotency tokens and PDF receipt archiving.'
+    'Add user-attached receipt photos with local file-size and type validation.',
+    'Add a printable evidence timeline that labels every observation as user-entered and unverified.',
+    'Add encrypted local export and import for correspondence journals.'
   ],
   picfitai: [
     'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.',
@@ -50,7 +50,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
   const makerHandle = user?.username || 'josh';
   const suggestedPrompts = PROMPT_PRESETS[app.id] || [
-    `Implement new Local-First features and persist data in /data/${app.id}.sqlite (WAL mode).`
+    `Implement a new local-first feature for ${app.name}; keep the storage adapter configurable and document its persistence boundary.`
   ];
 
   const [customPrompt, setCustomPrompt] = useState(suggestedPrompts[0]);

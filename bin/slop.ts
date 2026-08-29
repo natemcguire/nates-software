@@ -136,7 +136,7 @@ export const SHELF_TITLES = [
     appId: "certified-mailer",
     name: "Certified Mailer",
     version: "v1.0.0",
-    tagline: "USPS Certified Mail, Electronic Return Receipt (ERR) & Dispute Tooling.",
+    tagline: "Private letter preparation and user-recorded mailing evidence journal.",
     licenseKey: "NSW-CERTMAIL-4401-90B1",
     purchasedDate: "Aug 22, 2026",
     creatorAvatar: "📫"

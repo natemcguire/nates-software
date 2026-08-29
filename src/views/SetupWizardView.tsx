@@ -28,7 +28,7 @@ const STARTERS: StarterApp[] = [
     id: 'certified-mailer',
     name: 'Certified Mailer',
     avatar: '📫',
-    tagline: 'USPS Certified Mail, Electronic Return Receipt (ERR) & 300 DPI Legal Dispute Engine.',
+    tagline: 'Local letter preparation and user-recorded mailing evidence journal.',
     price: '$25.00',
     category: 'Legal / SaaS Utility',
     suggestedPrompt: 'Add California Tenant Security Deposit statutory demand templates and CSV batch export.'

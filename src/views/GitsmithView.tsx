@@ -91,29 +91,28 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     name: 'certified-mailer',
     owner: 'nate',
     avatar: '📫',
-    description: 'Private legal dispute and operational correspondence engine. Renders manifests to flattened high-DPI PDFs, tracks Electronic Return Receipts (ERR), and connects to LetterStream / Lob APIs.',
+    description: 'Browser-local correspondence preparation and unverified mailing-evidence journal. It does not submit mail or verify postal tracking.',
     stars: 312,
     forks: 46,
-    language: 'Python 3.12 / CLI',
-    license: 'MIT Local-First Legal Tool',
-    sqlitePath: '/data/certified-mailer.sqlite (WAL mode)',
+    language: 'TypeScript / React',
+    license: 'MIT Local-First Utility',
+    sqlitePath: 'Browser localStorage (unencrypted)',
     branch: 'main',
     lastCommit: {
       sha: '9f0412b',
-      message: 'feat(mail): PDF flattening and Electronic Return Receipt (ERR) pipeline',
+      message: 'feat(mail): local preparation and evidence journal',
       author: 'nate',
       time: '35 mins ago',
       verified: true
     },
-    tags: ['Legal', 'USPS', 'Postal', 'Dispute', 'SQLite WAL'],
-    liveUrl: 'https://certified-mailer.pages.dev',
-    liveAppUrl: 'https://certified-mailer.pages.dev',
+    tags: ['Correspondence', 'Postal', 'Evidence Journal', 'Local-First'],
+    liveUrl: '',
+    liveAppUrl: '',
     files: [
-      { name: 'tools', type: 'dir' },
-      { name: 'tools/flatten_pdf.py', type: 'file', size: '1.8 KB', content: `import fitz  # PyMuPDF\n\ndef rasterize_and_flatten_pdf(input_path: str, output_path: str, dpi: int = 300):\n    doc = fitz.open(input_path)\n    out_doc = fitz.open()\n    for page in doc:\n        pix = page.get_pixmap(dpi=dpi)\n        img_pdf = fitz.open("pdf", pix.pdf_bytes())\n        out_doc.insert_pdf(img_pdf)\n    out_doc.save(output_path)` },
-      { name: 'tools/build_dispute_letter.py', type: 'file', size: '4.2 KB', content: `from docx import Document\nimport datetime\n\ndef generate_dispute_manifest(account_id: str, dispute_reason: str, creditor: str):\n    doc = Document()\n    doc.add_heading('FORMAL NOTICE OF DISPUTE - FCRA § 623', 0)\n    doc.add_paragraph(f'Date: {datetime.date.today()}')\n    return doc` },
-      { name: 'pyproject.toml', type: 'file', size: '590 B', content: `[project]\nname = "certified-mailer"\nversion = "1.0.0"\nrequires-python = ">=3.12"` },
-      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# 📫 Certified Mailer\n\nPrivate dispute correspondence engine with USPS Electronic Return Receipts.` }
+      { name: 'src', type: 'dir' },
+      { name: 'src/certifiedMailerDomain.ts', type: 'file', size: '18.4 KB', content: `export type MailStatus = 'draft' | 'ready' | 'mailed' | 'delivered' | 'returned' | 'closed';\n\n// Postal observations are user-entered evidence, never provider verification.\nexport interface EvidenceObservation {\n  observedAt: string;\n  trackingNumber?: string;\n  note: string;\n  verified: false;\n}` },
+      { name: 'package.json', type: 'file', size: '620 B', content: `{\n  "name": "certified-mailer",\n  "version": "1.0.0",\n  "private": true,\n  "scripts": { "test": "vitest run", "build": "tsc -b && vite build" }\n}` },
+      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# 📫 Certified Mailer\n\nPrepare and print correspondence, then record user-supplied mailing evidence locally. No postal provider is connected.` }
     ]
   },
   {
