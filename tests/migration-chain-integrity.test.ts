@@ -24,7 +24,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0007_dyno_real_world_benchmarks.sql',
         '0008_session_security.sql',
         '0009_durable_commerce.sql',
-        '0010_commerce_processing.sql'
+        '0010_commerce_processing.sql',
+        '0011_commerce_money_movement.sql'
       ]);
     });
 
@@ -92,6 +93,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('commerce_order_events');
       expect(tables).toContain('commerce_license_secrets');
       expect(tables).toContain('commerce_license_secret_events');
+      expect(tables).toContain('commerce_transfer_attempts');
+      expect(tables).toContain('commerce_reversal_outbox');
+      expect(tables).toContain('commerce_reversal_attempts');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -103,6 +107,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('repository_forks_immutable_delete');
       expect(triggers).toContain('commerce_license_requires_fulfilled_order');
       expect(triggers).toContain('commerce_outbox_requires_fulfilled_allocation');
+      expect(triggers).toContain('commerce_transfer_economics_immutable');
+      expect(triggers).toContain('commerce_reversal_requires_succeeded_transfer');
     });
 
     it('should create all unique indices from migration 0002', () => {

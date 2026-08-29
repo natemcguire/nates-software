@@ -420,15 +420,16 @@ export async function processStripeInboxEvent(
           INSERT INTO commerce_transfer_outbox (
             id, order_id, allocation_id, destination_user_id,
             amount_cents, currency, status, attempt_count,
-            available_at, next_attempt_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, datetime('now'), datetime('now'), datetime('now'))
+            available_at, next_attempt_at, stripe_idempotency_key, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, datetime('now'), datetime('now'), ?, datetime('now'))
         `).bind(
           outboxId,
           order.id,
           alloc.id,
           alloc.recipientUserId,
           alloc.amountCents,
-          order.currency
+          order.currency,
+          `transfer:${outboxId}`
         )
       );
       outboxRowCount++;
