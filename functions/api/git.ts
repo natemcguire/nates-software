@@ -7,6 +7,8 @@ import {
   validateGitRef,
   validateSha
 } from '../../src/lib/gitsmithBackend';
+import { getSessionUser } from './_auth';
+import { validateForkOrigin } from '../../src/lib/forgeDomain';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -22,10 +24,17 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
       if (env && env.DB && appId) {
         try {
-          const stmt = env.DB.prepare('SELECT sha FROM git_refs WHERE repo_id = ? AND ref = ?').bind(appId, 'refs/heads/main');
-          const row = typeof stmt.first === 'function' ? await stmt.first() : null;
-          if (row && row.sha) {
-            currentSha = row.sha as string;
+          // Check canonical repository_refs first, then git_refs
+          const stmt1 = env.DB.prepare('SELECT commit_oid FROM repository_refs WHERE repository_id = ? AND ref_name = ?').bind(appId, 'refs/heads/main');
+          const row1 = typeof stmt1.first === 'function' ? await stmt1.first() : null;
+          if (row1 && row1.commit_oid) {
+            currentSha = row1.commit_oid as string;
+          } else {
+            const stmt2 = env.DB.prepare('SELECT sha FROM git_refs WHERE repo_id = ? AND ref = ?').bind(appId, 'refs/heads/main');
+            const row2 = typeof stmt2.first === 'function' ? await stmt2.first() : null;
+            if (row2 && row2.sha) {
+              currentSha = row2.sha as string;
+            }
           }
         } catch {}
       }
@@ -74,10 +83,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       status: 'active',
       slogan: 'Go Fork, and Multiply',
       invariants: [
-        'Authoritative D1 durable ref store (git_refs table)',
+        'Authoritative D1 durable ref store (repository_refs and git_refs)',
         'Atomic CAS compare-and-swap push validation',
         'Git Smart HTTP transport (/info/refs, /git-receive-pack)',
-        'Provenance and commit lineage graph tracking'
+        'Canonical immutable fork ancestry (repository_forks)'
       ]
     });
   } catch (err: any) {
@@ -87,6 +96,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
+    const authUser = await getSessionUser(request, env);
     const body = await request.json();
     const {
       appId,
@@ -97,7 +107,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       signature,
       publicKey,
       commitPayload,
-      requireSignedCommit
+      requireSignedCommit,
+      forkOrigin
     } = body;
 
     // 1. Basic validation
@@ -127,12 +138,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // 2. Cryptographic signature check (if provided or required)
     let sigVerification: any = null;
     if (signature && publicKey) {
-      const payloadToVerify = commitPayload || `${newSha} ${ref} ${committer || 'nate'}`;
+      const payloadToVerify = commitPayload || `${newSha} ${ref} ${committer || authUser?.username || 'nate'}`;
       sigVerification = verifyCommitSignature({
         commitPayload: payloadToVerify,
         signature,
         publicKey,
-        committer
+        committer: committer || authUser?.username
       });
 
       if (!sigVerification.valid && requireSignedCommit) {
@@ -152,14 +163,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // 3. Authoritative Ref Read from Durable D1 Table
+    // 3. Authoritative Ref Read from Durable D1 Table (repository_refs & git_refs)
     let currentRemoteHeadSha: string | null = null;
     if (env && env.DB) {
       try {
-        const stmt = env.DB.prepare('SELECT sha FROM git_refs WHERE repo_id = ? AND ref = ?').bind(appId, ref);
-        const existingRefRow = typeof stmt.first === 'function' ? await stmt.first() : null;
-        if (existingRefRow && existingRefRow.sha) {
-          currentRemoteHeadSha = existingRefRow.sha as string;
+        const stmt1 = env.DB.prepare('SELECT commit_oid FROM repository_refs WHERE repository_id = ? AND ref_name = ?').bind(appId, ref);
+        const row1 = typeof stmt1.first === 'function' ? await stmt1.first() : null;
+        if (row1 && row1.commit_oid) {
+          currentRemoteHeadSha = row1.commit_oid as string;
+        } else {
+          const stmt2 = env.DB.prepare('SELECT sha FROM git_refs WHERE repo_id = ? AND ref = ?').bind(appId, ref);
+          const row2 = typeof stmt2.first === 'function' ? await stmt2.first() : null;
+          if (row2 && row2.sha) {
+            currentRemoteHeadSha = row2.sha as string;
+          }
         }
       } catch {}
     }
@@ -173,7 +190,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ref,
       expectedOldSha: effectiveExpectedSha,
       newSha,
-      committer: committer || 'nate',
+      committer: committer || authUser?.username || 'nate',
       signatureVerified: sigVerification ? sigVerification.valid : false
     });
 
@@ -190,8 +207,93 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // 5. Durable Atomic D1 Persistence (Ref & Provenance Update ONLY - No Settlements!)
+    // 5. Validate Fork Origin (if fork metadata is submitted)
+    if (forkOrigin) {
+      const forkErrors = validateForkOrigin(forkOrigin);
+      if (forkErrors.length > 0) {
+        return Response.json({ success: false, error: `Invalid fork origin: ${forkErrors.join(', ')}` }, { status: 400 });
+      }
+    }
+
+    const effectiveUserId = authUser?.id || (committer ? `usr_${committer}` : 'usr_nate');
+    const effectiveUsername = authUser?.username || committer || 'nate';
+
+    // 6. Durable Atomic D1 Persistence (Canonical + Fallback tables)
     if (env && env.DB) {
+      const idempotencyKey = `cas_${casResult.transactionId}`;
+
+      try {
+        // Upsert repository record if canonical table exists
+        await env.DB.prepare(`
+          INSERT INTO repositories (id, app_id, owner_user_id, slug, default_ref, storage_key, status)
+          VALUES (?, ?, ?, ?, ?, ?, 'active')
+          ON CONFLICT(id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+        `).bind(
+          appId,
+          appId,
+          effectiveUserId,
+          appId,
+          ref,
+          `repos/${appId}`
+        ).run();
+      } catch {}
+
+      try {
+        // Update canonical repository_refs
+        await env.DB.prepare(`
+          INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id, updated_at)
+          VALUES (?, ?, ?, 1, ?, datetime('now'))
+          ON CONFLICT(repository_id, ref_name) DO UPDATE SET
+            commit_oid = excluded.commit_oid,
+            version = repository_refs.version + 1,
+            updated_by_user_id = excluded.updated_by_user_id,
+            updated_at = excluded.updated_at
+        `).bind(appId, ref, newSha, effectiveUserId).run();
+      } catch {}
+
+      try {
+        // Record canonical audit event in repository_ref_events
+        await env.DB.prepare(`
+          INSERT INTO repository_ref_events (
+            id, repository_id, ref_name, old_oid, new_oid, expected_old_oid, operation, actor_user_id, idempotency_key, signature_verified
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(repository_id, idempotency_key) DO NOTHING
+        `).bind(
+          `evt_${idempotencyKey}`,
+          appId,
+          ref,
+          currentRemoteHeadSha,
+          newSha,
+          expectedOldSha || null,
+          currentRemoteHeadSha ? 'update' : 'create',
+          effectiveUserId,
+          idempotencyKey,
+          sigVerification ? (sigVerification.valid ? 1 : 0) : 0
+        ).run();
+      } catch {}
+
+      if (forkOrigin) {
+        try {
+          await env.DB.prepare(`
+            INSERT INTO repository_forks (
+              child_repository_id, parent_repository_id, forked_by_user_id, parent_ref_name,
+              parent_commit_oid, child_initial_commit_oid, lineage_root_repository_id, depth
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(child_repository_id) DO NOTHING
+          `).bind(
+            forkOrigin.childRepositoryId,
+            forkOrigin.parentRepositoryId,
+            effectiveUserId,
+            forkOrigin.parentRefName,
+            forkOrigin.parentCommitOid,
+            forkOrigin.childInitialCommitOid,
+            forkOrigin.lineageRootRepositoryId,
+            forkOrigin.depth
+          ).run();
+        } catch {}
+      }
+
+      // Maintain git_refs fallback compatibility
       try {
         await env.DB.prepare(`
           INSERT INTO git_refs (repo_id, ref, sha, committer, updated_at)
@@ -200,7 +302,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             sha = excluded.sha,
             committer = excluded.committer,
             updated_at = excluded.updated_at
-        `).bind(appId, ref, newSha, committer || 'nate').run();
+        `).bind(appId, ref, newSha, effectiveUsername).run();
       } catch {}
 
       try {
@@ -212,15 +314,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           newSha,
           appId,
           currentRemoteHeadSha || expectedOldSha || null,
-          committer || 'nate',
+          effectiveUsername,
           commitPayload || 'CAS ref update via SLOP CLI',
           sigVerification ? (sigVerification.valid ? 1 : 0) : 0
         ).run();
       } catch {}
 
+      // Auto-create app listing on Hotwire if repo is new
       try {
-        const checkApp = env.DB.prepare('SELECT id FROM app_listings WHERE id = ?').bind(appId);
-        const existingApp = typeof checkApp.first === 'function' ? await checkApp.first() : null;
+        const stmt = env.DB.prepare('SELECT id FROM app_listings WHERE id = ?').bind(appId);
+        const existingApp = typeof stmt.first === 'function' ? await stmt.first() : null;
         if (!existingApp) {
           const appName = appId.replace(/[-_]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
           await env.DB.prepare(`
@@ -230,10 +333,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             appId,
             appName,
             `${appName} — Go Fork, and Multiply!`,
-            `Shareware project created by @${committer || 'nate'}. Fork with AI and multiply.`,
+            `Shareware project created by @${effectiveUsername}. Fork with AI and multiply.`,
             '$15.00',
             'v1.0.0',
-            committer ? `usr_${committer}` : 'usr_nate'
+            effectiveUserId
           ).run();
         }
       } catch {}
@@ -254,11 +357,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       currentSha: newSha,
       previousSha: currentRemoteHeadSha,
       signatureVerification: sigVerification,
-      message: 'Authoritative CAS ref and commit provenance updated successfully in D1'
+      message: 'Authoritative CAS ref published and recorded in canonical lineage forge'
     });
   } catch (err: any) {
     return Response.json(
-      { success: false, error: 'Failed to process git ref update: ' + (err.message || 'Unknown error') },
+      { success: false, error: 'Failed to process git merge ref: ' + (err.message || 'Unknown error') },
       { status: 500 }
     );
   }
