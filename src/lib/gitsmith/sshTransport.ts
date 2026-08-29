@@ -2,10 +2,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { Server, utils, type Connection, type AuthContext, type Session } from 'ssh2';
+import ssh2, { type Connection, type AuthContext, type Session } from 'ssh2';
 import type { GatewayConfig } from './types.ts';
 import { resolveRepoPath } from './gitStorage.ts';
 import { GitsmithGatewayService } from './gatewayService.ts';
+
+const { Server, utils } = ssh2;
 
 interface SshIdentity {
   actorUserId: string;
@@ -29,17 +31,20 @@ export interface SshTransportStatus {
 }
 
 export class GitsmithSshTransport {
-  private server: Server | null = null;
+  private readonly config: GatewayConfig;
+  private readonly gatewayService: GitsmithGatewayService;
+  private readonly fetchImpl: typeof fetch;
+  private server: InstanceType<typeof Server> | null = null;
   private active = false;
   private boundPort: number | undefined;
   private error: string | undefined;
   private readonly identities = new WeakMap<Connection, SshIdentity>();
 
-  constructor(
-    private readonly config: GatewayConfig,
-    private readonly gatewayService: GitsmithGatewayService,
-    private readonly fetchImpl: typeof fetch = globalThis.fetch
-  ) {}
+  constructor(config: GatewayConfig, gatewayService: GitsmithGatewayService, fetchImpl: typeof fetch = globalThis.fetch) {
+    this.config = config;
+    this.gatewayService = gatewayService;
+    this.fetchImpl = fetchImpl;
+  }
 
   public getStatus(): SshTransportStatus {
     const configured = this.config.sshEnabled === true && Boolean(this.config.sshHost?.trim());
