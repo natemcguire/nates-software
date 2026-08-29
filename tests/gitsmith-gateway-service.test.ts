@@ -581,6 +581,93 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
     });
   });
 
+  describe('6b. Approved Merge Landing', () => {
+    it('lands one pinned approved attempt through authoritative Git CAS and finalizes D1', async () => {
+      const repoId = 'repo_merge_land';
+      const storageKey = `repositories/${repoId}`;
+      const init = initBareRepo(tempRoot, { storageKey });
+      const oldOid = createRealGitCommit(init.repoPath, 'Merge base');
+      const resultOid = createRealGitCommit(init.repoPath, 'Approved result', oldOid);
+      updateAuthoritativeRefCas(tempRoot, {
+        storageKey, refName: 'refs/heads/main', expectedOldOid: null,
+        newOid: oldOid, operation: 'create', idempotencyKey: 'seed-merge'
+      });
+      await d1Ctx.d1.prepare(`INSERT INTO repositories
+        (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+        VALUES (?,'usr_nate','merge-land','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
+      await d1Ctx.d1.prepare(`INSERT INTO repository_refs
+        (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, oldOid).run();
+      await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
+        (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+        VALUES ('job-merge-land',?,'refs/heads/main','usr_sam','landing','merge-land')`).bind(repoId).run();
+      await d1Ctx.d1.prepare(`INSERT INTO merge_attempts
+        (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+        VALUES ('attempt-merge-land','job-merge-land',1,?,?,'tool','policy','approved')`).bind(oldOid, resultOid).run();
+      await d1Ctx.d1.prepare(`INSERT INTO merge_approvals
+        (id,merge_attempt_id,approver_user_id,result_commit_oid,decision)
+        VALUES ('approval-merge-land','attempt-merge-land','usr_nate',?,'approved')`).bind(resultOid).run();
+      const payload = { mergeJobId: 'job-merge-land', mergeAttemptId: 'attempt-merge-land', repositoryId: repoId,
+        storageKey, targetRef: 'refs/heads/main', expectedTargetOid: oldOid, resultCommitOid: resultOid,
+        approverUserId: 'usr_nate' };
+      await d1Ctx.d1.prepare(`INSERT INTO forge_outbox_events
+        (id,aggregate_type,aggregate_id,event_type,payload,attempts)
+        VALUES ('evt-merge-land','merge','attempt-merge-land','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
+
+      const apiFetch: typeof fetch = async (url, init) => gitApi.onRequestPost({
+        request: new Request(url, init), env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
+      });
+      const dispatcher = new ForgeOutboxDispatcher({
+        reposRoot: tempRoot, controlPlaneUrl: 'http://control-plane.test', gatewayToken: GATEWAY_SECRET
+      }, { db: d1Ctx.d1, fetchOverride: apiFetch });
+      const [event] = await dispatcher.claimDueEvents(1);
+      expect((await dispatcher.processEvent(event)).success).toBe(true);
+      expect(readAuthoritativeRef(tempRoot, storageKey, 'refs/heads/main')).toBe(resultOid);
+      expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-merge-land').first('status')).toBe('landed');
+      expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-merge-land').first('status')).toBe('landed');
+    });
+
+    it('marks an approved attempt stale without changing a diverged Git ref', async () => {
+      const repoId = 'repo_merge_stale';
+      const storageKey = `repositories/${repoId}`;
+      const init = initBareRepo(tempRoot, { storageKey });
+      const expectedOid = createRealGitCommit(init.repoPath, 'Expected');
+      const actualOid = createRealGitCommit(init.repoPath, 'Diverged', expectedOid);
+      const resultOid = createRealGitCommit(init.repoPath, 'Candidate', expectedOid);
+      updateAuthoritativeRefCas(tempRoot, { storageKey, refName: 'refs/heads/main', expectedOldOid: null,
+        newOid: actualOid, operation: 'create', idempotencyKey: 'seed-stale' });
+      await d1Ctx.d1.prepare(`INSERT INTO repositories
+        (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+        VALUES (?,'usr_nate','merge-stale','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
+      await d1Ctx.d1.prepare(`INSERT INTO repository_refs
+        (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, actualOid).run();
+      await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
+        (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+        VALUES ('job-merge-stale',?,'refs/heads/main','usr_sam','landing','merge-stale')`).bind(repoId).run();
+      await d1Ctx.d1.prepare(`INSERT INTO merge_attempts
+        (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+        VALUES ('attempt-merge-stale','job-merge-stale',1,?,?,'tool','policy','approved')`).bind(expectedOid, resultOid).run();
+      await d1Ctx.d1.prepare(`INSERT INTO merge_approvals
+        (id,merge_attempt_id,approver_user_id,result_commit_oid,decision)
+        VALUES ('approval-merge-stale','attempt-merge-stale','usr_nate',?,'approved')`).bind(resultOid).run();
+      const payload = { mergeJobId: 'job-merge-stale', mergeAttemptId: 'attempt-merge-stale', repositoryId: repoId,
+        storageKey, targetRef: 'refs/heads/main', expectedTargetOid: expectedOid, resultCommitOid: resultOid,
+        approverUserId: 'usr_nate' };
+      await d1Ctx.d1.prepare(`INSERT INTO forge_outbox_events
+        (id,aggregate_type,aggregate_id,event_type,payload,attempts)
+        VALUES ('evt-merge-stale','merge','attempt-merge-stale','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
+      const apiFetch: typeof fetch = async (url, init) => gitApi.onRequestPost({
+        request: new Request(url, init), env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
+      });
+      const dispatcher = new ForgeOutboxDispatcher({ reposRoot: tempRoot,
+        controlPlaneUrl: 'http://control-plane.test', gatewayToken: GATEWAY_SECRET
+      }, { db: d1Ctx.d1, fetchOverride: apiFetch });
+      const [event] = await dispatcher.claimDueEvents(1);
+      expect((await dispatcher.processEvent(event)).success).toBe(true);
+      expect(readAuthoritativeRef(tempRoot, storageKey, 'refs/heads/main')).toBe(actualOid);
+      expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-merge-stale').first('status')).toBe('stale');
+    });
+  });
+
   // =========================================================================
   // 7. RESTART RECONCILIATION & DISCREPANCY AUDITING
   // =========================================================================

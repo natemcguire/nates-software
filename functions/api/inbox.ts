@@ -178,8 +178,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (!messageId) return jsonError('messageId is required', 400);
       const proposal = await env.DB.prepare(`
         SELECT m.message_kind AS messageKind, m.merge_attempt_id AS mergeAttemptId,
+          ma.merge_job_id AS mergeJobId, ma.input_target_oid AS inputTargetOid,
           ma.result_commit_oid AS resultCommitOid, ma.status AS attemptStatus,
-          r.owner_user_id AS repositoryOwnerId
+          mj.target_ref AS targetRef, mj.status AS jobStatus,
+          r.id AS repositoryId, r.owner_user_id AS repositoryOwnerId,
+          r.storage_key AS storageKey
         FROM inbox_messages m
         LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
         LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
@@ -191,9 +194,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (!proposal.mergeAttemptId || !proposal.resultCommitOid) return jsonError('Proposal is not bound to an immutable merge attempt', 409);
       if (proposal.repositoryOwnerId !== userId) return jsonError('Only the target repository owner may approve this attempt', 403);
       const decision = body.action === 'approve' ? 'approved' : 'rejected';
-      const allowedStatuses = decision === 'approved' ? ['preview_ready', 'approved'] : ['preview_ready', 'approved', 'rejected'];
+      const allowedStatuses = decision === 'approved' ? ['preview_ready', 'approved'] : ['preview_ready', 'rejected'];
       if (!allowedStatuses.includes(String(proposal.attemptStatus))) {
         return jsonError(`Merge attempt cannot be ${decision} from status ${proposal.attemptStatus}`, 409);
+      }
+      const allowedJobStatuses = decision === 'approved' ? ['preview_ready', 'landing'] : ['preview_ready', 'cancelled'];
+      if (!allowedJobStatuses.includes(String(proposal.jobStatus))) {
+        return jsonError(`Merge job cannot be ${decision} from status ${proposal.jobStatus}`, 409);
       }
       const approvalId = crypto.randomUUID();
       const rawComment = typeof body.comment === 'string' ? body.comment.trim() : '';
@@ -206,7 +213,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (existing && existing.resultCommitOid !== proposal.resultCommitOid) {
         return jsonError('Existing review is bound to a different result commit OID', 409);
       }
-      await env.DB.batch([
+      const statements = [
         env.DB.prepare(`
           INSERT INTO merge_approvals (id, merge_attempt_id, approver_user_id, result_commit_oid, decision, comment)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -217,11 +224,43 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
         env.DB.prepare(`UPDATE merge_attempts SET status = ? WHERE id = ? AND status IN ('preview_ready', 'approved', 'rejected') AND result_commit_oid = ?`)
           .bind(decision, proposal.mergeAttemptId, proposal.resultCommitOid),
         env.DB.prepare('UPDATE inbox_messages SET unread = 0 WHERE id = ? AND user_id = ?').bind(messageId, userId)
-      ]);
+      ];
+      let outboxEventId: string | null = null;
+      if (decision === 'approved') {
+        outboxEventId = `merge_land_${proposal.mergeAttemptId}`;
+        statements.push(
+          env.DB.prepare(`
+            UPDATE merge_jobs SET status = 'landing', updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND status IN ('preview_ready', 'landing')
+          `).bind(proposal.mergeJobId),
+          env.DB.prepare(`
+            INSERT OR IGNORE INTO forge_outbox_events
+              (id, aggregate_type, aggregate_id, event_type, payload, attempts, created_at)
+            VALUES (?, 'merge', ?, 'merge.approved', ?, 0, CURRENT_TIMESTAMP)
+          `).bind(outboxEventId, proposal.mergeAttemptId, JSON.stringify({
+            mergeJobId: proposal.mergeJobId,
+            mergeAttemptId: proposal.mergeAttemptId,
+            repositoryId: proposal.repositoryId,
+            storageKey: proposal.storageKey,
+            targetRef: proposal.targetRef,
+            expectedTargetOid: proposal.inputTargetOid,
+            resultCommitOid: proposal.resultCommitOid,
+            approverUserId: userId
+          }))
+        );
+      } else {
+        statements.push(env.DB.prepare(`
+          UPDATE merge_jobs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP,
+            completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)
+          WHERE id = ? AND status = 'preview_ready'
+        `).bind(proposal.mergeJobId));
+      }
+      await env.DB.batch(statements);
       return Response.json({
         success: true, approvalStatus: decision, mergeStatus: decision, approvalComment: rawComment,
+        outboxEventId,
         message: decision === 'approved'
-          ? 'Exact merge attempt approved. GITSMITH has not landed the ref yet.'
+          ? 'Exact merge attempt approved and queued for authoritative GITSMITH CAS landing.'
           : 'Exact merge attempt rejected. No Git ref was changed.'
       });
     }

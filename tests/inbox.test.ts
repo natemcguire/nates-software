@@ -165,9 +165,30 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect((await post({ action: 'approve', messageId: 'proposal' })).status).toBe(200);
     expect((await post({ action: 'approve', messageId: 'proposal' })).status).toBe(200);
     expect(await ctx.d1.prepare('SELECT count(*) AS count FROM merge_approvals WHERE merge_attempt_id=?').bind('attempt-inbox').first('count')).toBe(1);
+    expect(await ctx.d1.prepare("SELECT count(*) AS count FROM forge_outbox_events WHERE aggregate_id=? AND event_type='merge.approved'").bind('attempt-inbox').first('count')).toBe(1);
+    expect(await ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-inbox').first('status')).toBe('landing');
     expect(await ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('proposal').first('is_merged')).toBe(0);
     const data: any = await (await get()).json();
     expect(data.threads[0]).toMatchObject({ approvalStatus: 'approved', mergeStatus: 'approved', isMerged: false, casNewSha: resultOid });
+  });
+
+  it('does not allow a queued approval to be reversed while GITSMITH may be landing it', async () => {
+    const resultOid = 'b'.repeat(40);
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES ('repo-locked','dronehunter','usr_nate','nate/locked-test','private','refs/heads/main','repos/locked','active')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-locked','repo-locked','refs/heads/main','usr_sam','preview_ready','locked-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-locked','job-locked',1,?,?,'tool','policy','preview_ready')`)
+      .bind('a'.repeat(40), resultOid).run();
+    await insertMessage(ownMessage('locked-proposal', { message_kind: 'proposal', merge_attempt_id: 'attempt-locked' }));
+
+    expect((await post({ action: 'approve', messageId: 'locked-proposal' })).status).toBe(200);
+    expect((await post({ action: 'reject', messageId: 'locked-proposal', comment: 'Changed my mind.' })).status).toBe(409);
+    expect(await ctx.d1.prepare('SELECT decision FROM merge_approvals WHERE merge_attempt_id=?').bind('attempt-locked').first('decision')).toBe('approved');
   });
 
   it('requires a rejection comment and records an exact idempotent rejection without landing', async () => {

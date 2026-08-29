@@ -16,7 +16,8 @@ import {
   cloneOrFetchForFork,
   initBareRepo,
   listAuthoritativeRefs,
-  resolveRepoPath
+  resolveRepoPath,
+  updateAuthoritativeRefCas
 } from './gitStorage.ts';
 import { validateProductionStartup } from './config.ts';
 import { validateGitOid } from '../forgeDomain.ts';
@@ -93,7 +94,7 @@ export class ForgeOutboxDispatcher {
         AND (available_at IS NULL OR available_at <= CURRENT_TIMESTAMP)
         AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
         AND attempts < ?
-        AND event_type IN ('repository.provisioning_requested', 'repository.fork_requested')
+        AND event_type IN ('repository.provisioning_requested', 'repository.fork_requested', 'merge.approved')
       ORDER BY created_at ASC
       LIMIT ?
     `).bind(maxAttempts, limit).all();
@@ -396,6 +397,59 @@ export class ForgeOutboxDispatcher {
           eventId: event.id,
           eventType: event.event_type,
           details: { childRepoPath: diskForkRes.childRepoPath, idempotent: diskForkRes.idempotent }
+        };
+      }
+
+      // 3. EVENT: merge.approved — Git is authoritative; D1 is finalized by callbacks.
+      if (event.event_type === 'merge.approved') {
+        const {
+          mergeJobId, mergeAttemptId, repositoryId, storageKey, targetRef,
+          expectedTargetOid, resultCommitOid, approverUserId
+        } = payload;
+        if (!mergeJobId || !mergeAttemptId || !repositoryId || !storageKey || !targetRef || !approverUserId) {
+          throw new Error('Approved merge payload is missing its pinned identity.');
+        }
+        for (const [name, oid] of [['expectedTargetOid', expectedTargetOid], ['resultCommitOid', resultCommitOid]]) {
+          const validation = validateGitOid(oid, name);
+          if (!validation.valid) throw new Error(validation.error);
+        }
+
+        const cas = updateAuthoritativeRefCas(this.config.reposRoot, {
+          storageKey,
+          refName: targetRef,
+          expectedOldOid: expectedTargetOid,
+          newOid: resultCommitOid,
+          operation: 'update',
+          actorUserId: approverUserId,
+          idempotencyKey: `merge_cas_${mergeAttemptId}`,
+          signatureVerified: false
+        });
+
+        const completionStatus = cas.success || cas.currentOid === resultCommitOid ? 'landed' : 'stale';
+        if (completionStatus === 'landed') {
+          const projection = await this.postControlPlane({
+            action: 'gateway-record-ref', repositoryId, refName: targetRef,
+            oldOid: expectedTargetOid, newOid: resultCommitOid,
+            expectedOldOid: expectedTargetOid, operation: 'update',
+            idempotencyKey: `merge_cas_${mergeAttemptId}`,
+            actorUserId: approverUserId, signatureVerified: false
+          });
+          if (projection?.success !== true) throw new Error('Merge ref projection was not confirmed.');
+        }
+
+        const completion = await this.postControlPlane({
+          action: 'gateway-complete-merge', mergeJobId, mergeAttemptId,
+          outboxEventId: event.id, status: completionStatus,
+          actualTargetOid: cas.currentOid,
+          idempotencyKey: `merge_complete_${event.id}`
+        });
+        if (completion?.success !== true) throw new Error('Merge completion was not confirmed.');
+
+        await this.markDelivered(event);
+        this.processedCount++;
+        return {
+          success: true, eventId: event.id, eventType: event.event_type,
+          details: { mergeJobId, mergeAttemptId, status: completionStatus, currentOid: cas.currentOid }
         };
       }
 

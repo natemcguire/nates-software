@@ -996,6 +996,108 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
+  if (action === 'gateway-complete-merge') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const mergeJobId = String(body.mergeJobId || '').trim();
+    const mergeAttemptId = String(body.mergeAttemptId || '').trim();
+    const outboxEventId = String(body.outboxEventId || '').trim();
+    const status = String(body.status || '').trim();
+    const actualTargetOid = body.actualTargetOid == null ? null : String(body.actualTargetOid).trim();
+    const idempotencyKey = String(body.idempotencyKey || '').trim();
+    if (!mergeJobId || !mergeAttemptId || !outboxEventId || !idempotencyKey) {
+      return failure('mergeJobId, mergeAttemptId, outboxEventId, and idempotencyKey are required.', 400);
+    }
+    if (!['landed', 'stale'].includes(status)) return failure('status must be landed or stale.', 400);
+    if (actualTargetOid !== null) {
+      const oid = validateGitOid(actualTargetOid, 'actualTargetOid');
+      if (!oid.valid) return failure(oid.error!, 400);
+    }
+
+    try {
+      const row = await db.prepare(`
+        SELECT ma.id AS mergeAttemptId, ma.merge_job_id AS mergeJobId,
+          ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid,
+          ma.status AS attemptStatus, mj.status AS jobStatus,
+          mj.target_repository_id AS repositoryId, mj.target_ref AS targetRef,
+          mj.landed_commit_oid AS landedCommitOid,
+          repository.storage_key AS storageKey,
+          rr.commit_oid AS projectedOid, approval.decision AS approvalDecision,
+          evt.payload AS outboxPayload
+        FROM merge_attempts ma
+        JOIN merge_jobs mj ON mj.id = ma.merge_job_id
+        JOIN repositories repository ON repository.id = mj.target_repository_id
+        LEFT JOIN repository_refs rr
+          ON rr.repository_id = mj.target_repository_id AND rr.ref_name = mj.target_ref
+        LEFT JOIN merge_approvals approval
+          ON approval.merge_attempt_id = ma.id
+          AND approval.result_commit_oid = ma.result_commit_oid
+        LEFT JOIN forge_outbox_events evt
+          ON evt.id = ? AND evt.aggregate_type = 'merge'
+          AND evt.aggregate_id = ma.id AND evt.event_type = 'merge.approved'
+        WHERE ma.id = ? AND mj.id = ?
+      `).bind(outboxEventId, mergeAttemptId, mergeJobId).first();
+      if (!row) return failure('Merge attempt not found.', 404);
+      if (!(row as any).outboxPayload) return failure('Pinned approved-merge outbox event not found.', 409);
+
+      let pinned: any;
+      try { pinned = JSON.parse(String((row as any).outboxPayload)); }
+      catch { return failure('Pinned approved-merge payload is malformed.', 500); }
+      const pinnedMatches = pinned.mergeJobId === mergeJobId && pinned.mergeAttemptId === mergeAttemptId &&
+        pinned.repositoryId === (row as any).repositoryId && pinned.targetRef === (row as any).targetRef &&
+        pinned.storageKey === (row as any).storageKey &&
+        pinned.expectedTargetOid === (row as any).inputTargetOid &&
+        pinned.resultCommitOid === (row as any).resultCommitOid;
+      if (!pinnedMatches) return failure('Merge completion does not match the pinned approved attempt.', 409);
+      if ((row as any).approvalDecision !== 'approved') return failure('Merge attempt is not approved.', 409);
+
+      if ((row as any).attemptStatus === status && (row as any).jobStatus === status) {
+        const exactReplay = status === 'stale' || (row as any).landedCommitOid === (row as any).resultCommitOid;
+        if (exactReplay) return Response.json({ success: true, status, idempotent: true }, { status: 200 });
+      }
+      if ((row as any).attemptStatus !== 'approved' || (row as any).jobStatus !== 'landing') {
+        return failure(`Merge cannot complete from attempt ${(row as any).attemptStatus} and job ${(row as any).jobStatus}.`, 409);
+      }
+
+      if (status === 'landed') {
+        if (actualTargetOid !== (row as any).resultCommitOid || (row as any).projectedOid !== (row as any).resultCommitOid) {
+          return failure('Cannot mark merge landed until Git and the ref projection equal the approved result OID.', 409);
+        }
+      } else if (actualTargetOid === (row as any).resultCommitOid) {
+        return failure('A ref already at the approved result cannot be marked stale.', 409);
+      }
+
+      const failureDetail = status === 'stale'
+        ? `CAS stale: expected ${(row as any).inputTargetOid}, actual ${actualTargetOid ?? 'null'}`
+        : null;
+      await db.batch([
+        db.prepare(`
+          UPDATE merge_attempts SET status = ?, failure_detail = ?, finished_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND status = 'approved' AND result_commit_oid = ?
+        `).bind(status, failureDetail, mergeAttemptId, (row as any).resultCommitOid),
+        db.prepare(`
+          UPDATE merge_jobs SET status = ?, landed_commit_oid = ?, failure_code = ?,
+            updated_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND status = 'landing'
+        `).bind(status, status === 'landed' ? (row as any).resultCommitOid : null,
+          status === 'stale' ? 'target_ref_stale' : null, mergeJobId),
+        db.prepare(`
+          UPDATE inbox_messages SET is_merged = ?
+          WHERE merge_attempt_id = ?
+        `).bind(status === 'landed' ? 1 : 0, mergeAttemptId)
+      ]);
+
+      return Response.json({
+        success: true, status, mergeJobId, mergeAttemptId,
+        landedCommitOid: status === 'landed' ? (row as any).resultCommitOid : null,
+        idempotencyKey
+      }, { status: 200 });
+    } catch (error: any) {
+      return failure(`Merge completion failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
   if (action === 'gateway-status') {
     const gwAuth = await verifyGatewayAuth(request, env, db);
     if (!gwAuth.authorized) return gwAuth.errorResponse!;
@@ -1021,7 +1123,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           AND (available_at IS NULL OR available_at <= CURRENT_TIMESTAMP)
           AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
           AND attempts < ?
-          AND event_type IN ('repository.provisioning_requested', 'repository.fork_requested')
+          AND event_type IN ('repository.provisioning_requested', 'repository.fork_requested', 'merge.approved')
         ORDER BY created_at ASC
         LIMIT ?
       `).bind(maxAttempts, limit).all();
@@ -1615,5 +1717,5 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  return failure('Supported control-plane actions: create-repository, fork, gateway-record-ref, gateway-confirm-fork, gateway-confirm-provisioning, gateway-status, gateway-claim-outbox, gateway-complete-outbox, gateway-fail-outbox, gateway-reconcile.', 400);
+  return failure('Supported control-plane actions: create-repository, fork, gateway-record-ref, gateway-confirm-fork, gateway-confirm-provisioning, gateway-complete-merge, gateway-status, gateway-claim-outbox, gateway-complete-outbox, gateway-fail-outbox, gateway-reconcile.', 400);
 };
