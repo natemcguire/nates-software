@@ -1,10 +1,9 @@
-#!/usr/bin/env sh
-TARGET="$0"
-while [ -h "$TARGET" ]; do
-  DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
-  TARGET="$(readlink "$TARGET")"
-  [ "${TARGET%${TARGET#?}}" = "/" ] || TARGET="$DIR/$TARGET"
-done
-DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
-exec npx tsx "$DIR/slop.ts" "$@"
+#!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const tsFile = join(__dirname, 'slop.ts');
+const res = spawnSync('npx', ['tsx', tsFile, ...process.argv.slice(2)], { stdio: 'inherit' });
+process.exit(res.status ?? 0);

@@ -55,3 +55,55 @@ export function isCasRefUpdateValid(input: CasRefUpdateInput): boolean {
   return input.currentOid === input.expectedOldOid && input.currentOid !== input.newOid;
 }
 
+export interface MergeJobRecord {
+  readonly id: string;
+  readonly targetRepositoryId: string;
+  readonly sourceRepositoryId: string;
+  readonly sourceRefName: string;
+  readonly targetRefName: string;
+  readonly baseCommitOid: string;
+  status: MergeJobStatus;
+  previewUrl?: string;
+  evidenceDigest?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function createMergeJob(params: {
+  targetRepositoryId: string;
+  sourceRepositoryId: string;
+  sourceRefName: string;
+  targetRefName?: string;
+  baseCommitOid: string;
+}): MergeJobRecord {
+  const id = `mj_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+  return {
+    id,
+    targetRepositoryId: params.targetRepositoryId,
+    sourceRepositoryId: params.sourceRepositoryId,
+    sourceRefName: params.sourceRefName,
+    targetRefName: params.targetRefName || 'refs/heads/main',
+    baseCommitOid: params.baseCommitOid,
+    status: 'queued',
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+export function transitionMergeJob(
+  job: MergeJobRecord,
+  newStatus: MergeJobStatus,
+  extra?: { previewUrl?: string; evidenceDigest?: string }
+): MergeJobRecord {
+  if (!canTransitionMergeJob(job.status, newStatus)) {
+    throw new Error(`Invalid merge job transition from '${job.status}' to '${newStatus}'`);
+  }
+  return {
+    ...job,
+    status: newStatus,
+    previewUrl: extra?.previewUrl || job.previewUrl,
+    evidenceDigest: extra?.evidenceDigest || job.evidenceDigest,
+    updatedAt: new Date().toISOString()
+  };
+}

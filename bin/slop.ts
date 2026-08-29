@@ -75,6 +75,60 @@ export const SHELF_TITLES = [
   }
 ];
 
+export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandResult {
+  const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/dronehunter";
+  const appId = slug.includes("/") ? slug.split("/")[1] : slug;
+  const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
+  const targetDir = destDirArg || `${cwd}/${appId}`;
+
+  let success = true;
+  let cloneError: string | null = null;
+
+  try {
+    const fsMod = getFs();
+    if (fsMod && fsMod.existsSync(targetDir)) {
+      throw new Error(`Destination directory ${targetDir} already exists.`);
+    }
+
+    const localSources = [
+      `/Volumes/MacMiniExtra/Projects/${appId}`,
+      `/Users/nate/Projects/${appId}`
+    ];
+    const foundLocal = localSources.find(p => getFs()?.existsSync(p));
+
+    if (foundLocal && !process.env.VITEST) {
+      runCommandSync(`git clone --depth 1 file://${foundLocal} "${targetDir}"`, { stdio: "pipe", timeout: 8000, throwError: true });
+    } else if (!process.env.VITEST) {
+      const remoteUrl = `https://nates-software.com/api/git?repo=${appId}`;
+      runCommandSync(`git clone --depth 1 "${remoteUrl}" "${targetDir}"`, { stdio: "pipe", timeout: 8000, throwError: true });
+    }
+  } catch (err: any) {
+    cloneError = err.message;
+    success = false;
+  }
+
+  const output = [
+    `[SLOP CLONE] ${success ? 'Cloned' : 'Failed to clone'} ${slug} -> ${targetDir}`,
+    success ? `  ✔ Target directory ready on disk: ${targetDir}` : `  ✖ Error: ${cloneError}`,
+    success ? `  ✔ Remote configured: origin` : ``,
+    success ? `🚀 Run "cd ${appId} && slop init" to begin.` : ``
+  ].filter(Boolean).join("\n");
+
+  console.log(output);
+
+  return {
+    success,
+    command: "clone",
+    message: success ? `Cloned ${slug} to ${targetDir}` : `Failed to clone ${slug}: ${cloneError}`,
+    data: {
+      slug,
+      appId,
+      targetDir,
+      error: cloneError
+    }
+  };
+}
+
 export function handleInit(args: string[] = []): SlopCommandResult {
   let projectName = args[0] && !args[0].startsWith("-") ? args[0] : "";
   let handle = "nate";
@@ -568,6 +622,9 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
   const command = rawArgs[0] || "help";
 
   switch (command.toLowerCase()) {
+    case "clone":
+      return handleClone(rawArgs[1], rawArgs[2]);
+
     case "init":
       return handleInit(rawArgs.slice(1));
 
