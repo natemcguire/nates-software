@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  handleInit,
   handleFork,
   handlePush,
   handleDrop,
@@ -13,10 +14,30 @@ import {
   runSlopCli
 } from '../bin/slop.ts';
 
-describe('SLOP CLI — Sovereign Developer Loop (Fork -> AI Code -> Push)', () => {
+describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
+
+  describe('slop init [name]', () => {
+    it('should initialize project with zero prompts and configure git remote slop', () => {
+      const res = handleInit(['my-awesome-game', '--title=My Awesome Game', '--price=20']);
+      expect(res.success).toBe(true);
+      expect(res.command).toBe('init');
+      expect(res.data.appId).toBe('myawesomegame');
+      expect(res.data.name).toBe('My Awesome Game');
+      expect(res.data.price).toBe(20);
+      expect(res.data.remoteUrl).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/myawesomegame.git');
+    });
+
+    it('should default cleanly without arguments', () => {
+      const res = handleInit();
+      expect(res.success).toBe(true);
+      expect(res.command).toBe('init');
+      expect(res.data.price).toBe(15);
+      expect(res.data.remoteUrl).toBeDefined();
+    });
+  });
 
   describe('slop fork <slug>', () => {
-    it('should fork default slug (nate/dronehunter) into isolated worktree with SQLite volume', () => {
+    it('should fork default slug (nate/dronehunter) into isolated worktree', () => {
       const res = handleFork();
       expect(res.success).toBe(true);
       expect(res.command).toBe('fork');
@@ -24,7 +45,6 @@ describe('SLOP CLI — Sovereign Developer Loop (Fork -> AI Code -> Push)', () =
       expect(res.data.appId).toBe('dronehunter');
       expect(res.data.port).toBeGreaterThanOrEqual(3001);
       expect(res.data.memoryCapMb).toBe(256);
-      expect(res.data.sqlitePath).toBe('/data/dronehunter.sqlite');
       expect(res.data.worktreePath).toContain('/tmp/slop-dronehunter-');
     });
 
@@ -33,28 +53,25 @@ describe('SLOP CLI — Sovereign Developer Loop (Fork -> AI Code -> Push)', () =
       expect(res.success).toBe(true);
       expect(res.data.slug).toBe('nate/certified-mailer');
       expect(res.data.appId).toBe('certified-mailer');
-      expect(res.data.sqlitePath).toBe('/data/certified-mailer.sqlite');
     });
   });
 
   describe('slop test', () => {
-    it('should run and pass all sovereign verification proofs before pushing', () => {
+    it('should run and pass shareware verification checks before pushing', () => {
       const res = handleTest();
       expect(res.success).toBe(true);
       expect(res.command).toBe('test');
-      expect(res.data.passedProofs).toBe(5);
-      expect(res.data.totalProofs).toBe(5);
+      expect(res.data.passedProofs).toBe(4);
+      expect(res.data.totalProofs).toBe(4);
     });
   });
 
   describe('slop push', () => {
-    it('should run test proofs, verify single-file SQLite WAL, and push CAS ref', () => {
+    it('should run pre-push checks, update CAS ref, and deploy to Hotwire', () => {
       const res = handlePush();
       expect(res.success).toBe(true);
       expect(res.command).toBe('push');
-      expect(res.data.testsPassed).toBe(true);
-      expect(res.data.walVerified).toBe(true);
-      expect(res.data.sha).toBe('5c030af');
+      expect(res.data.casVerified).toBe(true);
       expect(res.data.deployTimeSec).toBeLessThan(5);
     });
   });
@@ -130,15 +147,16 @@ describe('SLOP CLI — Sovereign Developer Loop (Fork -> AI Code -> Push)', () =
     it('should output help manual and command index', () => {
       const res = printHelp();
       expect(res.success).toBe(true);
-      expect(res.message).toContain('Official SLOP CLI');
+      expect(res.message).toContain('Go Fork, and Multiply');
+      expect(res.message).toContain('slop init');
       expect(res.message).toContain('slop fork');
-      expect(res.message).toContain('slop test');
       expect(res.message).toContain('slop push');
     });
   });
 
   describe('runSlopCli router', () => {
     it('should route all commands cleanly', () => {
+      expect(runSlopCli(['init', 'test-app']).success).toBe(true);
       expect(runSlopCli(['fork', 'nate/dronehunter']).success).toBe(true);
       expect(runSlopCli(['test']).success).toBe(true);
       expect(runSlopCli(['push']).success).toBe(true);

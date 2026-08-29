@@ -177,6 +177,26 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     // 5. Persist to Cloudflare D1 if database binding is available
     if (env && env.DB) {
+      // Auto-create repository and Hotwire drop listing if repo is new
+      try {
+        const existing = await env.DB.prepare('SELECT id FROM app_listings WHERE id = ?').bind(appId).first();
+        if (!existing) {
+          const appName = appId.replace(/[-_]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          await env.DB.prepare(`
+            INSERT INTO app_listings (id, name, tagline, description, price, version, creator_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          `).bind(
+            appId,
+            appName,
+            `${appName} — Go Fork, and Multiply!`,
+            `Shareware project created by @${committer || 'nate'}. Fork with AI and multiply.`,
+            '$15.00',
+            'v1.0.0',
+            committer ? `usr_${committer}` : 'usr_nate'
+          ).run();
+        }
+      } catch {}
+
       await env.DB.prepare(`
         INSERT INTO royalty_settlements (
           id, app_id, buyer_user_id, gross_cents, maker_cents, lineage_cents, pool_cents, stripe_transfer_id

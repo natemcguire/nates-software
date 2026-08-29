@@ -1,2 +1,10 @@
 #!/usr/bin/env sh
-exec node "$(dirname "$0")/slop.ts" "$@"
+TARGET="$0"
+while [ -h "$TARGET" ]; do
+  DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
+  TARGET="$(readlink "$TARGET")"
+  [ "${TARGET%${TARGET#?}}" = "/" ] || TARGET="$DIR/$TARGET"
+done
+DIR="$(cd -P "$(dirname "$TARGET")" && pwd)"
+exec npx tsx "$DIR/slop.ts" "$@"
+
