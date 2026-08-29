@@ -186,7 +186,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
 
       expect(manifest.localAgent.command).toBe('slop mod refs/features/dh-radar/v1.0.0');
       expect(plan.steps[1].command).toContain(manifest.localAgent.command);
-      expect(plan.singleLineCommand).toBe('slop fork nate/dronehunter');
+      expect(plan.singleLineCommand).toBe('slop fork "https://github.com/natemcguire/dronehunter.git"');
       expect(plan.singleLineCommand).not.toContain('slop dyno');
     });
 
@@ -199,7 +199,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
         agent: 'agy'
       });
 
-      expect(plan.singleLineCommand).toBe('slop fork nate/dronehunter');
+      expect(plan.singleLineCommand).toBe('slop fork "https://github.com/natemcguire/dronehunter.git"');
       expect(plan.singleLineCommand).not.toContain('agy');
       expect(plan.worktreeDir).toBe('<worktree-path-printed-by-slop>');
       expect(plan.steps[1].command).toContain('git switch -c feature/dh-radar');
@@ -218,7 +218,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       });
 
       expect(plan.steps[0].title).toContain('Install into a Verified Local Worktree');
-      expect(plan.steps[0].command).toBe('slop fork nate/certified-mailer');
+      expect(plan.steps[0].command).toBe('slop fork "https://github.com/natemcguire/certified-mailer.git"');
       expect(plan.steps[0].requiredEvidence).toBeDefined();
 
       expect(plan.steps[1].title).toContain('Claude');

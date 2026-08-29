@@ -294,7 +294,13 @@ export function handleInit(args: string[] = []): SlopCommandResult {
 
 export function handleFork(slugArg?: string): SlopCommandResult {
   const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/dronehunter";
-  const appId = slug.includes("/") ? slug.split("/")[1] : slug;
+  let appId = slug.replace(/\.git$/i, '').replace(/\/+$/, '').split('/').pop() || 'repository';
+  if (/^(ssh|https?):\/\//.test(slug)) {
+    try {
+      appId = new URL(slug).pathname.replace(/\.git$/i, '').replace(/\/+$/, '').split('/').pop() || 'repository';
+    } catch {}
+  }
+  appId = appId.replace(/[^a-zA-Z0-9._-]/g, '-');
   const worktreeId = `slop-${appId}-${Date.now().toString(36)}`;
   const worktreePath = `/tmp/${worktreeId}`;
 

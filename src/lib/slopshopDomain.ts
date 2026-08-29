@@ -620,11 +620,16 @@ export function coordinateFromForgeRepository(
   repository: ForgeRepositoryProjection,
   transport: ForgeSshTransport
 ): RepoCoordinate {
-  if (!transport.configured || !transport.active || !transport.host || !Number.isInteger(transport.port)) {
+  if (!transport.configured || !transport.active || !/^[a-zA-Z0-9.-]+$/.test(transport.host) ||
+      !Number.isInteger(transport.port) || transport.port < 1 || transport.port > 65535) {
     throw new Error('An active GITSMITH SSH transport is required.');
   }
   const owner = repository.ownerUsername?.trim() || 'unknown-owner';
   const rawSlug = repository.slug.trim().replace(/^\/+|\/+$/g, '');
+  if (!/^[a-zA-Z0-9._-]+(?:\/[a-zA-Z0-9._-]+)?$/.test(rawSlug) ||
+      !/^[a-zA-Z0-9._-]+$/.test(owner)) {
+    throw new Error('Forge repository owner or slug is invalid.');
+  }
   const canonicalSlug = rawSlug.includes('/') ? rawSlug : `${owner}/${rawSlug}`;
   const appId = repository.appId?.trim() || rawSlug.split('/').at(-1) || repository.id;
   const known = REPO_COORDINATES[appId];
@@ -776,7 +781,8 @@ export function generateLocalAgentPlan(params: {
 
   // Installation is authoritative and completes before SLOP offers to launch an
   // engine. Never chain an agent process behind an unverified clone/install.
-  const singleLineCommand = `slop fork ${params.coordinate.slug}`;
+  const cloneTarget = params.coordinate.repoUrl || params.coordinate.slug;
+  const singleLineCommand = `slop fork "${escapeShellDoubleQuotes(cloneTarget)}"`;
 
   // 4 Concrete Local Workflow Steps
   const steps: LocalWorkflowStep[] = [

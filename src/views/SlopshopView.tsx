@@ -130,7 +130,7 @@ export const SlopshopView: React.FC = () => {
 
   const handleCopyForkCmd = () => {
     playClickSound();
-    const cmd = `slop fork ${coordinate.slug}`;
+    const cmd = plan.singleLineCommand;
     navigator.clipboard.writeText(cmd);
     setCopiedForkCmd(true);
     setTimeout(() => setCopiedForkCmd(false), 2000);
@@ -334,7 +334,7 @@ export const SlopshopView: React.FC = () => {
               </button>
             </div>
             <div className="bg-black/90 px-2.5 py-1.5 rounded border border-slate-800 font-mono text-[10px] text-amber-300 truncate select-all">
-              slop fork {coordinate.slug}
+              {plan.singleLineCommand}
             </div>
           </div>
         </div>
