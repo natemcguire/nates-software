@@ -22,7 +22,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0002_webhook_idempotency_and_atomic_ledger.sql',
         '0006_canonical_forge_lineage.sql',
         '0007_dyno_real_world_benchmarks.sql',
-        '0008_session_security.sql'
+        '0008_session_security.sql',
+        '0009_durable_commerce.sql'
       ]);
     });
 
@@ -79,6 +80,15 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('dyno_task_attempts');
       expect(tables).toContain('dyno_tool_events');
       expect(tables).toContain('dyno_grader_results');
+
+      // Migration 0009 durable commerce tables
+      expect(tables).toContain('commerce_products');
+      expect(tables).toContain('commerce_orders');
+      expect(tables).toContain('commerce_order_allocations');
+      expect(tables).toContain('stripe_event_inbox');
+      expect(tables).toContain('commerce_licenses');
+      expect(tables).toContain('commerce_transfer_outbox');
+      expect(tables).toContain('commerce_order_events');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -536,6 +546,34 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           VALUES ('task_inv_wt', 'suite_chk', 'tk3', 'find_bug', 'Title', 'pd', 'fd', 'gd', 60, -1)
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('should freeze order economics and allocation rows', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, seller_user_id,
+          app_version, price_version, gross_cents, currency, lineage_snapshot_json
+        ) VALUES ('cord_immutable', 'checkout-1', 'usr_sam', 'dronehunter', 'usr_nate',
+                  'v1.0.0', 1, 1500, 'usd', '{}')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
+        ) VALUES ('calloc_immutable', 'cord_immutable', 0, 'maker', 'usr_nate', 9000, 1350)
+      `).run();
+
+      await expect(
+        ctx.d1.prepare('UPDATE commerce_orders SET gross_cents = 1 WHERE id = ?')
+          .bind('cord_immutable').run()
+      ).rejects.toThrow(/commerce order economics are immutable/);
+      await expect(
+        ctx.d1.prepare('UPDATE commerce_order_allocations SET amount_cents = 1 WHERE id = ?')
+          .bind('calloc_immutable').run()
+      ).rejects.toThrow(/commerce order allocations are immutable/);
+      await expect(
+        ctx.d1.prepare('DELETE FROM commerce_order_allocations WHERE id = ?')
+          .bind('calloc_immutable').run()
+      ).rejects.toThrow(/commerce order allocations are immutable/);
     });
   });
 

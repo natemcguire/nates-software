@@ -12,7 +12,8 @@ export const CANONICAL_MIGRATIONS = [
   '0002_webhook_idempotency_and_atomic_ledger.sql',
   '0006_canonical_forge_lineage.sql',
   '0007_dyno_real_world_benchmarks.sql',
-  '0008_session_security.sql'
+  '0008_session_security.sql',
+  '0009_durable_commerce.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];
