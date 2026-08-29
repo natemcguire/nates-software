@@ -18,6 +18,7 @@ export const DEFAULT_DEV_CONFIG: GatewayConfig = {
   sshEnabled: false,
   sshHost: '',
   sshPort: 22,
+  sshPublicPort: 22,
   productionEnabled: false,
   isProduction: false,
   port: 8789,
@@ -117,6 +118,24 @@ export function validateProductionStartup(config: GatewayConfig): void {
       'Production startup rejected: GITSMITH_GATEWAY_TOKEN must be at least 16 characters long.'
     );
   }
+
+  if (config.sshEnabled === true) {
+    if (!config.sshHost?.trim()) {
+      throw new ProductionStartupError(
+        'Production startup rejected: GITSMITH_SSH_HOST is required when SSH transport is enabled.'
+      );
+    }
+    if (!Number.isInteger(config.sshPort) || Number(config.sshPort) < 1 || Number(config.sshPort) > 65535) {
+      throw new ProductionStartupError(
+        'Production startup rejected: GITSMITH_SSH_PORT must be an integer between 1 and 65535.'
+      );
+    }
+    if (!Number.isInteger(config.sshPublicPort) || Number(config.sshPublicPort) < 1 || Number(config.sshPublicPort) > 65535) {
+      throw new ProductionStartupError(
+        'Production startup rejected: GITSMITH_SSH_PUBLIC_PORT must be an integer between 1 and 65535.'
+      );
+    }
+  }
 }
 
 /**
@@ -146,6 +165,16 @@ export function validateGatewayConfig(config: Partial<GatewayConfig>): { valid: 
 
   if (!config.gatewayToken || typeof config.gatewayToken !== 'string' || !config.gatewayToken.trim()) {
     errors.push('gatewayToken is required.');
+  }
+
+  if (config.sshEnabled === true) {
+    if (!config.sshHost?.trim()) errors.push('sshHost is required when SSH transport is enabled.');
+    if (!Number.isInteger(config.sshPort) || Number(config.sshPort) < 1 || Number(config.sshPort) > 65535) {
+      errors.push('sshPort must be an integer between 1 and 65535 when SSH transport is enabled.');
+    }
+    if (!Number.isInteger(config.sshPublicPort) || Number(config.sshPublicPort) < 1 || Number(config.sshPublicPort) > 65535) {
+      errors.push('sshPublicPort must be an integer between 1 and 65535 when SSH transport is enabled.');
+    }
   }
 
   // Numeric config range validations
@@ -210,6 +239,7 @@ export function loadGatewayConfigFromEnv(env: Record<string, string | undefined>
   const sshEnabled = env.GITSMITH_SSH_ENABLED === 'true';
   const sshHost = env.GITSMITH_SSH_HOST?.trim() || '';
   const sshPort = env.GITSMITH_SSH_PORT ? parseInt(env.GITSMITH_SSH_PORT, 10) : 22;
+  const sshPublicPort = env.GITSMITH_SSH_PUBLIC_PORT ? parseInt(env.GITSMITH_SSH_PUBLIC_PORT, 10) : sshPort;
 
   const productionEnabled = env.GITSMITH_PRODUCTION_ENABLED === 'true';
 
@@ -227,6 +257,7 @@ export function loadGatewayConfigFromEnv(env: Record<string, string | undefined>
     sshEnabled,
     sshHost,
     sshPort: isNaN(sshPort) ? 22 : sshPort,
+    sshPublicPort: isNaN(sshPublicPort) ? (isNaN(sshPort) ? 22 : sshPort) : sshPublicPort,
     productionEnabled,
     isProduction: isProd,
     port: isNaN(port!) ? DEFAULT_DEV_CONFIG.port : port,

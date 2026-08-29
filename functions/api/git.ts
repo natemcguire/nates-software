@@ -57,7 +57,9 @@ async function gatewayReadiness(env: any) {
       transport: {
         protocol: 'ssh',
         configured: payload?.checks?.transport?.configured === true,
-        active: payload?.checks?.transport?.active === true
+        active: payload?.checks?.transport?.active === true,
+        host: payload?.checks?.transport?.active === true ? String(payload?.checks?.transport?.host || '') : undefined,
+        port: payload?.checks?.transport?.active === true ? Number(payload?.checks?.transport?.port || 22) : undefined
       },
       checkedAt: payload?.timestamp || new Date().toISOString()
     };
@@ -341,6 +343,83 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   // =========================================================================
   // GATEWAY-AUTHENTICATED ACTIONS (Strictly requires valid Gateway Bearer Token)
   // =========================================================================
+  if (action === 'gateway-identify-ssh-key') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+    const keyType = String(body.keyType || '').trim();
+    const keyBase64 = String(body.keyBase64 || '').trim();
+    if (!keyType || !keyBase64) return failure('keyType and keyBase64 are required.', 400);
+    try {
+      const actor = await db.prepare(`
+        SELECT id FROM users
+        WHERE ssh_public_key = ? OR ssh_public_key LIKE ?
+        LIMIT 1
+      `).bind(`${keyType} ${keyBase64}`, `${keyType} ${keyBase64} %`).first();
+      if (!actor) return failure('SSH public key is not registered.', 401);
+      return Response.json({ success: true, actorUserId: (actor as any).id });
+    } catch (error: any) {
+      return failure(`SSH key lookup failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
+  if (action === 'gateway-authorize-ssh') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const keyType = String(body.keyType || '').trim();
+    const keyBase64 = String(body.keyBase64 || '').trim();
+    const owner = String(body.owner || '').trim();
+    const slug = String(body.slug || '').trim();
+    const operation = String(body.operation || '').trim();
+    if (!['ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'].includes(keyType)) {
+      return failure('Unsupported SSH public key type.', 400);
+    }
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(keyBase64) || keyBase64.length > 16384) {
+      return failure('Malformed SSH public key.', 400);
+    }
+    if (!owner || !slug || !['read', 'write'].includes(operation)) {
+      return failure('owner, slug, and operation (read or write) are required.', 400);
+    }
+
+    try {
+      const actor = await db.prepare(`
+        SELECT id, username FROM users
+        WHERE ssh_public_key = ? OR ssh_public_key LIKE ?
+        LIMIT 1
+      `).bind(`${keyType} ${keyBase64}`, `${keyType} ${keyBase64} %`).first();
+      if (!actor) return failure('SSH public key is not registered.', 401);
+
+      const repository = await db.prepare(`
+        SELECT r.id, r.storage_key AS storageKey, r.status, r.visibility,
+               CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+        FROM repositories r
+        JOIN users owner_user ON owner_user.id = r.owner_user_id
+        LEFT JOIN repository_members m ON m.repository_id = r.id AND m.user_id = ?
+        WHERE owner_user.username = ? AND r.slug = ?
+        LIMIT 1
+      `).bind((actor as any).id, (actor as any).id, owner, slug).first();
+      if (!repository) return failure('Repository not found.', 404);
+      if ((repository as any).status !== 'active') return failure('Repository is not active.', 409);
+
+      const role = String((repository as any).memberRole || '');
+      const mayRead = (repository as any).visibility !== 'private' || Boolean(role);
+      const mayWrite = ['writer', 'maintainer', 'owner'].includes(role);
+      if ((operation === 'read' && !mayRead) || (operation === 'write' && !mayWrite)) {
+        return failure('SSH key is not authorized for this repository operation.', 403);
+      }
+
+      return Response.json({
+        success: true,
+        actorUserId: (actor as any).id,
+        repositoryId: (repository as any).id,
+        storageKey: (repository as any).storageKey,
+        operation
+      });
+    } catch (error: any) {
+      return failure(`SSH authorization failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
   if (action === 'gateway-record-ref') {
     const gwAuth = await verifyGatewayAuth(request, env, db);
     if (!gwAuth.authorized) return gwAuth.errorResponse!;

@@ -318,7 +318,19 @@ export function handleFork(slugArg?: string): SlopCommandResult {
 
       // Resolve a real canonical source. Missing titles fail; SLOP never creates
       // an unrelated starter and calls it a fork.
-      if (slug.startsWith("file://") || slug.startsWith("/") || fsMod.existsSync(slug)) {
+      if (/^(ssh|https?):\/\//.test(slug)) {
+        const remote = new URL(slug);
+        if (!['ssh:', 'https:'].includes(remote.protocol) || remote.search || remote.hash ||
+            !/^[a-zA-Z0-9.-]+$/.test(remote.hostname) ||
+            !/^\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+(?:\.git)?$/.test(remote.pathname)) {
+          throw new Error('Canonical Git remote URL is invalid or contains unsupported components.');
+        }
+        const cp = getChildProcess();
+        if (!cp?.execFileSync) throw new Error('child_process is unavailable');
+        cp.execFileSync('git', ['clone', '--depth', '1', remote.toString(), worktreePath], {
+          stdio: 'pipe', timeout: 30000
+        });
+      } else if (slug.startsWith("file://") || slug.startsWith("/") || fsMod.existsSync(slug)) {
         const sourcePath = slug.startsWith("file://") ? slug.slice(7) : slug;
         if (!fsMod.existsSync(sourcePath)) throw new Error(`Canonical source does not exist: ${sourcePath}`);
         runCommandSync(`git clone --depth 1 file://${sourcePath} "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });

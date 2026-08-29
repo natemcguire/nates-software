@@ -46,6 +46,58 @@ describe('GITSMITH Repository Provisioning & Two-Phase Fork Lifecycle', () => {
     await createSession('usr_josh', 'session_josh');
   });
 
+  describe('0. Gateway SSH authorization boundary', () => {
+    const keyType = 'ssh-ed25519';
+    const keyBase64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187';
+
+    beforeEach(async () => {
+      await ctx.d1.prepare('UPDATE users SET ssh_public_key = ? WHERE id = ?')
+        .bind(`${keyType} ${keyBase64} nate@test`, 'usr_nate').run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_ssh', 'usr_nate', 'real-app', 'private', 'sha1', 'refs/heads/main', 'repositories/repo_ssh', 'active')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_members (repository_id, user_id, role, granted_by_user_id)
+        VALUES ('repo_ssh', 'usr_nate', 'owner', 'usr_nate')
+      `).run();
+    });
+
+    const gatewayRequest = (body: Record<string, unknown>, token = GATEWAY_SECRET) => gitApi.onRequestPost({
+      request: new Request('http://localhost/api/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body)
+      }),
+      env: testEnv({ GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET })
+    });
+
+    it('identifies an exact registered SSH key without exposing profile data', async () => {
+      const response = await gatewayRequest({ action: 'gateway-identify-ssh-key', keyType, keyBase64 });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true, actorUserId: 'usr_nate' });
+    });
+
+    it('authorizes owner writes and returns only the sandboxed storage identity', async () => {
+      const response = await gatewayRequest({
+        action: 'gateway-authorize-ssh', keyType, keyBase64,
+        owner: 'nate', slug: 'real-app', operation: 'write'
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        success: true, actorUserId: 'usr_nate', repositoryId: 'repo_ssh',
+        storageKey: 'repositories/repo_ssh', operation: 'write'
+      });
+    });
+
+    it('rejects unknown keys and invalid gateway credentials', async () => {
+      const unknown = await gatewayRequest({ action: 'gateway-identify-ssh-key', keyType, keyBase64: `${keyBase64}x` });
+      expect(unknown.status).toBe(401);
+      const invalidGateway = await gatewayRequest({ action: 'gateway-identify-ssh-key', keyType, keyBase64 }, 'wrong-token');
+      expect(invalidGateway.status).toBe(401);
+    });
+  });
+
   // =========================================================================
   // 1. FIRST-RUN REPOSITORY PROVISIONING
   // =========================================================================

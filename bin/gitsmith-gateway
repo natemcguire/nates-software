@@ -13,6 +13,7 @@ import {
   GatewayHealthChecker,
   ForgeOutboxDispatcher,
   GitsmithGatewayService,
+  GitsmithSshTransport,
   validateProductionStartup,
   validateGatewayConfig
 } from '../src/lib/gitsmith/index.ts';
@@ -51,9 +52,12 @@ async function main() {
 
     const service = new GitsmithGatewayService(config);
     const dispatcher = new ForgeOutboxDispatcher(config);
+    const sshTransport = new GitsmithSshTransport(config, service);
     fs.mkdirSync(config.reposRoot, { recursive: true });
     await service.replayPendingCallbacks();
     dispatcher.startPolling();
+    await sshTransport.start();
+    healthChecker.setTransportStatus(sshTransport.getStatus());
     const server = createGatewayServer(config, { service, dispatcher, healthChecker });
 
     const port = config.port || 8789;
@@ -66,16 +70,17 @@ async function main() {
       console.log(`   Health:        http://localhost:${port}/healthz`);
       console.log(`   Readiness:     http://localhost:${port}/readyz`);
       console.log(`   State:         readiness pending authenticated probe`);
+      console.log(`   SSH:           ${sshTransport.getStatus().active ? `${config.sshHost}:${config.sshPort}` : 'not active'}`);
       console.log(`======================================================\n`);
     });
 
     const shutdown = () => {
       console.log('\nStopping GITSMITH Gateway...');
       dispatcher.stopPolling();
-      server.close(() => {
+      void sshTransport.stop().finally(() => server.close(() => {
         console.log('GITSMITH Gateway stopped.');
         process.exit(0);
-      });
+      }));
     };
 
     process.on('SIGINT', shutdown);

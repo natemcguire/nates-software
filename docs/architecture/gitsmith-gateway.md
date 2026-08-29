@@ -97,4 +97,32 @@ npm run gateway -- start
   - Returns `200 OK` only when Git is available, storage root is writable, the dispatcher loop is running, and an authenticated control-plane probe succeeds.
   - Returns `503 Service Unavailable` with detailed check diagnostics if degraded.
 
-The HTTP CAS route is an authenticated operator/gateway route, not end-user Git Smart HTTP or SSH transport. Until a dedicated host, persistent volume, TLS boundary, and gateway secret are provisioned, production activation must remain disabled.
+## 7. End-User SSH Git Transport
+
+When `GITSMITH_SSH_ENABLED=true`, the gateway starts a second, raw TCP listener
+for standard Git-over-SSH. It accepts only the `git` SSH principal and registered
+public keys from PROFILE.CFG. It provides no PTY, interactive shell, port
+forwarding, or arbitrary command execution. The only accepted commands are
+strictly parsed `git-upload-pack '<owner>/<repo>.git'` and
+`git-receive-pack '<owner>/<repo>.git'` requests.
+
+Every command is authorized against the control plane. Reads require repository
+visibility or membership; writes require writer, maintainer, or owner membership.
+Storage keys come from D1 and pass the gateway's path and symlink sandbox before
+Git is spawned. `git-receive-pack` performs the authoritative atomic ref update.
+A bounded post-receive hook captures the exact old/new/ref tuple, and the gateway
+projects it into D1 using an idempotent callback. Callback failure creates a
+durable receipt on the mounted repository volume for restart replay.
+
+The Ed25519 server host key is generated once beneath the persistent repository
+root and survives deployments. Readiness separately reports storage provisioning
+and SSH transport, so an HTTP-healthy gateway cannot imply clone/push support.
+
+Required production variables:
+
+```bash
+GITSMITH_SSH_ENABLED=true
+GITSMITH_SSH_HOST=<public TCP proxy host>
+GITSMITH_SSH_PORT=2222
+GITSMITH_SSH_PUBLIC_PORT=<public TCP proxy port>
+```

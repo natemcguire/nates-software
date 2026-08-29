@@ -100,6 +100,49 @@ export class GitsmithGatewayService {
     return listAuthoritativeRefs(this.config.reposRoot, storageKey, prefix);
   }
 
+  /** Records a ref change already applied atomically by git-receive-pack. */
+  public async recordAppliedRef(params: {
+    repositoryId: string;
+    refName: string;
+    oldOid: string | null;
+    newOid: string | null;
+    actorUserId: string;
+    idempotencyKey: string;
+  }): Promise<{ reconciled: boolean; receiptPersisted?: boolean; error?: string }> {
+    const payload = {
+      action: 'gateway-record-ref',
+      repositoryId: params.repositoryId,
+      refName: params.refName,
+      oldOid: params.oldOid,
+      newOid: params.newOid,
+      expectedOldOid: params.oldOid === null ? undefined : params.oldOid,
+      operation: params.oldOid === null ? 'create' : (params.newOid === null ? 'delete' : 'update'),
+      idempotencyKey: params.idempotencyKey,
+      actorUserId: params.actorUserId,
+      signatureVerified: false
+    };
+    try {
+      const response = await this.fetchImpl(`${this.config.controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.config.gatewayToken}` },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const responseBody = await response.json().catch(() => ({}));
+        const error = responseBody?.error || `Control plane callback returned status ${response.status}`;
+        return { reconciled: false, receiptPersisted: this.persistCallbackReceipt(payload), error };
+      }
+      this.removeCallbackReceipt(params.idempotencyKey);
+      return { reconciled: true };
+    } catch (error: any) {
+      return {
+        reconciled: false,
+        receiptPersisted: this.persistCallbackReceipt(payload),
+        error: `Control plane unreachable: ${error.message}`
+      };
+    }
+  }
+
   /**
    * Safely provisions a bare git repository on disk.
    */

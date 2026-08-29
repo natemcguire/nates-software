@@ -9,6 +9,13 @@ import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 
 export class GatewayHealthChecker {
   private readonly startTime = Date.now();
+  private transportStatus: GatewayReadinessStatus['checks']['transport'] = {
+    protocol: 'ssh', configured: false, active: false, error: 'SSH transport is not configured.'
+  };
+
+  public setTransportStatus(status: GatewayReadinessStatus['checks']['transport']): void {
+    this.transportStatus = status;
+  }
 
   public getHealth(): GatewayHealthStatus {
     const uptimeSeconds = Math.floor((Date.now() - this.startTime) / 1000);
@@ -94,10 +101,8 @@ export class GatewayHealthChecker {
     // The current gateway may safely own bare storage and outbox work without
     // claiming that makers can clone or push over SSH.
     const transportConfigured = config.sshEnabled === true && Boolean(config.sshHost?.trim());
-    const transportActive = false;
-    const transportError = transportConfigured
-      ? 'SSH transport is configured but no active SSH listener has attested readiness.'
-      : 'SSH transport is not configured.';
+    const transportActive = transportConfigured && this.transportStatus.active;
+    const transportError = transportActive ? undefined : (this.transportStatus.error || 'SSH transport is not active.');
 
     // Truthful distinction between configured and active
     const isConfigured = storageConfigured && cpConfigured && Boolean(config.gatewayToken);

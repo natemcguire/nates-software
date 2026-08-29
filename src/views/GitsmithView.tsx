@@ -221,6 +221,7 @@ export const GitsmithView: React.FC = () => {
   const [gatewayReady, setGatewayReady] = useState(false);
   const [gatewayCheckState, setGatewayCheckState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [transportReady, setTransportReady] = useState(false);
+  const [transportEndpoint, setTransportEndpoint] = useState<{ host: string; port: number } | null>(null);
   const [showCreateRepo, setShowCreateRepo] = useState(false);
   const [newRepoSlug, setNewRepoSlug] = useState('');
   const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
@@ -256,10 +257,14 @@ export const GitsmithView: React.FC = () => {
       const ready = response.ok && payload?.success === true && payload?.ready === true;
       setGatewayReady(ready);
       setTransportReady(payload?.transport?.active === true);
+      setTransportEndpoint(payload?.transport?.active === true && payload?.transport?.host
+        ? { host: payload.transport.host, port: Number(payload.transport.port || 22) }
+        : null);
       setGatewayCheckState(ready ? 'ready' : 'unavailable');
     } catch {
       setGatewayReady(false);
       setTransportReady(false);
+      setTransportEndpoint(null);
       setGatewayCheckState('unavailable');
     }
   };
@@ -370,7 +375,10 @@ export const GitsmithView: React.FC = () => {
 
   const handleCopyClone = (repo: GitsmithRepo) => {
     playClickSound();
-    navigator.clipboard.writeText(`slop fork ${repo.owner}/${repo.name}`);
+    const source = repo.source === 'canonical' && transportEndpoint
+      ? `ssh://git@${transportEndpoint.host}:${transportEndpoint.port}/${repo.owner}/${repo.name}.git`
+      : `${repo.owner}/${repo.name}`;
+    navigator.clipboard.writeText(`slop fork ${source}`);
     setCopiedClone(true);
     setTimeout(() => setCopiedClone(false), 2000);
   };

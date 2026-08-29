@@ -10,6 +10,7 @@ export interface GatewayConfig {
   readonly sshEnabled?: boolean;
   readonly sshHost?: string;
   readonly sshPort?: number;
+  readonly sshPublicPort?: number;
   readonly productionEnabled?: boolean;
   readonly isProduction?: boolean;
   readonly port?: number;

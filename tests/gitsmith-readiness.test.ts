@@ -13,7 +13,7 @@ describe('GITSMITH public gateway readiness projection', () => {
         storage: { writable: true, root: '/secret/path' },
         controlPlane: { reachable: true, url: 'https://internal.example' },
         dispatcher: { running: true, processedCount: 12 },
-        transport: { protocol: 'ssh', configured: false, active: false }
+        transport: { protocol: 'ssh', configured: false, active: false, host: 'secret.internal', port: 2222 }
       }
     }));
 

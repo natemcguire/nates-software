@@ -8,3 +8,4 @@ export * from './gatewayService.ts';
 export * from './outboxDispatcher.ts';
 export * from './health.ts';
 export * from './server.ts';
+export * from './sshTransport.ts';
