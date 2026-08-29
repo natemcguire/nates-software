@@ -1,86 +1,99 @@
-// GET /api/feed - RSS 2.0 XML & JSON Feed v1.1 Syndication Engine
-// Live syndication for AI agents, newsletters, and Hacker News scrapers
+// Canonical HOTWIRE RSS 2.0 and JSON Feed syndication.
 
-import { INITIAL_APPS } from '../../src/data/mockData';
+const BASE_URL = 'https://nates-software.com';
+
+function xml(value: unknown): string {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function itemUrl(id: string): string {
+  return `${BASE_URL}/?app=${encodeURIComponent(id)}`;
+}
+
+function publishedDate(value: unknown): string {
+  const raw = String(value || '');
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(raw)
+    ? `${raw.replace(' ', 'T')}Z`
+    : raw;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+}
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
-  try {
-    const url = new URL(request.url);
-    const format = url.searchParams.get('format') || 'xml';
-    const baseUrl = 'https://nates-software.com';
+  const format = new URL(request.url).searchParams.get('format') === 'json' ? 'json' : 'xml';
+  if (!env?.DB) {
+    return format === 'json'
+      ? Response.json({ success: false, error: 'HOTWIRE feed storage is unavailable.' }, { status: 503 })
+      : new Response('HOTWIRE feed storage is unavailable.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
 
-    let apps = INITIAL_APPS;
-    if (env && env.DB) {
-      const { results } = await env.DB.prepare(`
-        SELECT id, name, tagline, description, price, version, creator_id, created_at
-        FROM app_listings
-        ORDER BY created_at DESC
-        LIMIT 20
-      `).all();
-      if (results && results.length > 0) {
-        apps = results as any;
-      }
-    }
+  try {
+    const { results } = await env.DB.prepare(`
+      SELECT a.id, a.name, a.tagline, a.description, a.price, a.version,
+             a.created_at, u.username AS creator
+        FROM app_listings a
+        JOIN users u ON u.id = a.creator_id
+       ORDER BY a.created_at DESC, a.id ASC
+       LIMIT 20
+    `).all();
+    const apps = results || [];
 
     if (format === 'json') {
-      const jsonFeed = {
+      return new Response(JSON.stringify({
         version: 'https://jsonfeed.org/version/1.1',
         title: "Nate's Software — Daily Shareware Drops",
-        home_page_url: baseUrl,
-        feed_url: `${baseUrl}/api/feed?format=json`,
-        description: 'Curated 12:01 AM UTC shareware releases, forkable projects, and lineage-aware mods.',
-        icon: `${baseUrl}/icon-512.svg`,
-        favicon: `${baseUrl}/favicon.ico`,
-        items: apps.map(app => ({
-          id: `${baseUrl}/#app-${app.id}`,
-          url: `https://${app.id}.nates-software.com`,
-          title: `${app.name} (${app.version || 'v1.0.0'})`,
-          content_text: `${app.tagline || app.description}. Shareware license: ${app.price || '$15.00'} (70% maker, 20% lineage royalty).`,
-          date_published: new Date().toISOString(),
-          authors: [{ name: app.author || app.creator || 'Nate McGuire', url: `${baseUrl}/profile` }]
+        home_page_url: BASE_URL,
+        feed_url: `${BASE_URL}/api/feed?format=json`,
+        description: 'Canonical HOTWIRE shareware releases from Nate’s Software.',
+        icon: `${BASE_URL}/icon-512.svg`,
+        favicon: `${BASE_URL}/favicon.ico`,
+        items: apps.map((app: any) => ({
+          id: `${BASE_URL}/drops/${encodeURIComponent(app.id)}/${encodeURIComponent(app.version)}`,
+          url: itemUrl(app.id),
+          title: `${app.name} (${app.version})`,
+          content_text: `${app.tagline || app.description} · Shareware price ${app.price}`,
+          date_published: publishedDate(app.created_at),
+          authors: [{ name: `@${app.creator}`, url: `${BASE_URL}/?view=profile&user=${encodeURIComponent(app.creator)}` }]
         }))
-      };
-
-      return new Response(JSON.stringify(jsonFeed, null, 2), {
-        headers: {
-          'Content-Type': 'application/feed+json; charset=utf-8',
-          'Access-Control-Allow-Origin': '*'
-        }
+      }, null, 2), {
+        headers: { 'Content-Type': 'application/feed+json; charset=utf-8', 'Access-Control-Allow-Origin': '*' }
       });
     }
 
-    // Default: RSS 2.0 XML
-    const itemsXml = apps.map(app => `
+    const items = apps.map((app: any) => `
     <item>
-      <title><![CDATA[${app.name} (${app.version || 'v1.0.0'}) - ${app.tagline || 'Shareware'}]]></title>
-      <link>https://${app.id}.nates-software.com</link>
-      <guid isPermaLink="false">nates-software-${app.id}-${app.version || '1.0.0'}</guid>
-      <pubDate>${new Date().toUTCString()}</pubDate>
-      <description><![CDATA[${app.description || app.tagline} · Shareware License ${app.price || '$15.00'}]]></description>
-      <author>nate@nates-software.com (@${app.author || app.creator || 'nate'})</author>
+      <title>${xml(`${app.name} (${app.version}) — ${app.tagline}`)}</title>
+      <link>${xml(itemUrl(app.id))}</link>
+      <guid isPermaLink="false">${xml(`nates-software-${app.id}-${app.version}`)}</guid>
+      <pubDate>${xml(new Date(publishedDate(app.created_at)).toUTCString())}</pubDate>
+      <description>${xml(`${app.description || app.tagline} · Shareware price ${app.price}`)}</description>
+      <author>${xml(`@${app.creator}`)}</author>
       <category>Shareware</category>
     </item>`).join('');
 
-    const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
+    const latest = apps.length > 0 ? publishedDate((apps[0] as any).created_at) : new Date(0).toISOString();
+    const feed = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Nate's Software — Daily Shareware Drops</title>
-    <link>${baseUrl}</link>
-    <description>Curated 12:01 AM UTC shareware releases, forkable projects, and lineage-aware mods.</description>
+    <title>Nate&apos;s Software — Daily Shareware Drops</title>
+    <link>${BASE_URL}</link>
+    <description>Canonical HOTWIRE shareware releases from Nate&apos;s Software.</description>
     <language>en-us</language>
-    <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
-    <atom:link href="${baseUrl}/api/feed" rel="self" type="application/rss+xml" />
-    ${itemsXml}
+    <lastBuildDate>${xml(new Date(latest).toUTCString())}</lastBuildDate>
+    <atom:link href="${BASE_URL}/api/feed" rel="self" type="application/rss+xml" />${items}
   </channel>
 </rss>`;
-
-    return new Response(rssXml.trim(), {
-      headers: {
-        'Content-Type': 'application/rss+xml; charset=utf-8',
-        'Access-Control-Allow-Origin': '*'
-      }
+    return new Response(feed, {
+      headers: { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Access-Control-Allow-Origin': '*' }
     });
-  } catch (err: any) {
-    return new Response(`Error generating syndication feed: ${err.message}`, { status: 500 });
+  } catch (error: any) {
+    return format === 'json'
+      ? Response.json({ success: false, error: `HOTWIRE feed query failed: ${error.message}` }, { status: 503 })
+      : new Response(`HOTWIRE feed query failed: ${error.message}`, { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   }
 };

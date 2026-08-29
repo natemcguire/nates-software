@@ -124,18 +124,17 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(Array.isArray(data.drops)).toBe(true);
     });
 
-    it('should generate valid RSS XML and JSON Feed syndication payloads', async () => {
+    it('should fail closed when syndication storage is unavailable', async () => {
       const mockEnv = {};
       const reqRss = new Request('http://localhost/api/feed?format=rss', { method: 'GET' });
       const resRss = await feedApi.onRequestGet({ request: reqRss, env: mockEnv });
-      expect(resRss.headers.get('Content-Type')).toContain('application/rss+xml');
-      const xmlText = await resRss.text();
-      expect(xmlText).toContain('<rss version="2.0"');
+      expect(resRss.status).toBe(503);
 
       const reqJson = new Request('http://localhost/api/feed?format=json', { method: 'GET' });
       const resJson = await feedApi.onRequestGet({ request: reqJson, env: mockEnv });
       const feedData = await resJson.json();
-      expect(feedData.title).toContain("Nate's Software");
+      expect(resJson.status).toBe(503);
+      expect(feedData.success).toBe(false);
     });
   });
 
