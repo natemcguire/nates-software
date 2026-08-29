@@ -58,20 +58,20 @@ describe('Security Hardening & Zero-Bypass Invariants', () => {
     expect(data.error).toBe('Invalid Stripe signature');
   });
 
-  it('should reject shelf license minting when appId is missing', async () => {
+  it('should reject direct shelf license minting with 405 Method Not Allowed', async () => {
     const mockEnv = {};
     const req = new Request('http://localhost/api/shelf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appId: '' })
+      body: JSON.stringify({ appId: 'dronehunter' })
     });
 
     const res = await shelfApi.onRequestPost({ request: req, env: mockEnv });
     const data = await res.json();
 
     expect(data.success).toBe(false);
-    expect(res.status).toBe(401);
-    expect(data.error).toContain('authenticated session');
+    expect(res.status).toBe(405);
+    expect(data.error).toContain('Direct license minting is disabled');
   });
 
   it('should reject invalid inbox actions', async () => {

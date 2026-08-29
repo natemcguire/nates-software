@@ -1,5 +1,7 @@
 import React from 'react';
 import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, FileText, Gauge, User, Terminal, MessageSquare, Award } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useCatalog } from '../context/CatalogContext';
 import { playClickSound } from '../lib/soundEngine';
 
 interface StartMenuProps {
@@ -9,6 +11,9 @@ interface StartMenuProps {
 }
 
 export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWindow }) => {
+  const { user, isAuthenticated } = useAuth();
+  const { shelfAppIds } = useCatalog();
+
   if (!isOpen) return null;
 
   const handleItemClick = (id: string) => {
@@ -35,8 +40,14 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         >
           <User size={16} className="text-blue-900" />
           <div className="flex flex-col">
-            <span className="font-bold">Nate McGuire</span>
-            <span className="text-[10px] text-gray-500">@nate &middot; My Shelf (3)</span>
+            <span className="font-bold">
+              {isAuthenticated && user ? (user.displayName || user.username) : 'Guest User'}
+            </span>
+            <span className="text-[10px] text-gray-500">
+              {isAuthenticated && user
+                ? `@${user.username} · My Shelf (${shelfAppIds.size})`
+                : 'Sign In · Profile & Shelf'}
+            </span>
           </div>
         </div>
 

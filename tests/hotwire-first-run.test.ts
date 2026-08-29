@@ -96,17 +96,24 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
   });
 
   // ==========================================================================
-  // 2. SHELF OWNERSHIP PURITY (NEVER GRANT SEED OWNERSHIP TO GUEST)
+  // 2. Shelf Ownership Purity for Guest First Run
   // ==========================================================================
   describe('2. Shelf Ownership Purity for Guest First Run', () => {
     it('should return empty shelf for user without shelf purchases in D1', async () => {
-      // Create fresh user in D1
+      // Create fresh user in D1 with session
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES ('usr_guest_demo', 'guest_demo', 'Guest User', 'user')
       `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_guest_demo', ?)
+      `).bind(await hashSessionToken('tok_guest_demo'), Date.now() + 100000).run();
 
-      const guestReq = new Request('http://localhost/api/shelf?username=guest_demo', { method: 'GET' });
+      const guestReq = new Request('http://localhost/api/shelf', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer tok_guest_demo' }
+      });
       const guestRes = await shelfApi.onRequestGet({ request: guestReq, env: { DB: ctx.d1 } });
       const guestData = await guestRes.json();
       expect(guestData.success).toBe(true);
@@ -114,13 +121,20 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should never grant automatic seed shelf ownership to new users', async () => {
-      // Create fresh user alice
+      // Create fresh user alice with session
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES ('usr_alice_new', 'alice_new', 'Alice', 'user')
       `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_alice_new', ?)
+      `).bind(await hashSessionToken('tok_alice_new'), Date.now() + 100000).run();
 
-      const req = new Request('http://localhost/api/shelf?username=alice_new', { method: 'GET' });
+      const req = new Request('http://localhost/api/shelf', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer tok_alice_new' }
+      });
       const res = await shelfApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
@@ -133,7 +147,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(ownedIds).not.toContain('picfitai');
     });
 
-    it('should only add items to shelf upon valid authenticated purchase/claim', async () => {
+    it('should reject direct minting and return canonical commerce licenses for authenticated user', async () => {
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES ('usr_bob_buyer', 'bob_buyer', 'Bob Buyer', 'user')
@@ -143,7 +157,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         VALUES (?, 'usr_bob_buyer', ?)
       `).bind(await hashSessionToken('tok_bob_123'), Date.now() + 100000).run();
 
-      // Claim dronehunter
+      // Direct POST minting is disabled
       const postReq = new Request('http://localhost/api/shelf', {
         method: 'POST',
         headers: {
@@ -153,17 +167,37 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         body: JSON.stringify({ appId: 'dronehunter' })
       });
       const postRes = await shelfApi.onRequestPost({ request: postReq, env: { DB: ctx.d1 } });
-      const postData = await postRes.json();
-      expect(postData.success).toBe(true);
-      expect(postData.licenseKey).toMatch(/^NSW-DR-\d+-/);
+      expect(postRes.status).toBe(405);
 
-      // Verify Bob now owns only dronehunter
-      const getReq = new Request('http://localhost/api/shelf?username=bob_buyer', { method: 'GET' });
+      // Seed a fulfilled order and its authoritative commerce license.
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, seller_user_id,
+          app_version, price_version, gross_cents, currency, lineage_snapshot_json, status
+        ) VALUES (
+          'order_bob_1', 'idem_bob_1', 'usr_bob_buyer', 'dronehunter', 'usr_nate',
+          'v1.0.0', 1, 1500, 'usd', '[]', 'fulfilled'
+        )
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_licenses
+          (id, order_id, app_id, owner_user_id, license_key_hash, license_key_last4, status)
+        VALUES
+          ('license_bob_1', 'order_bob_1', 'dronehunter', 'usr_bob_buyer',
+           'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '44A1', 'active')
+      `).run();
+
+      // Verify Bob now owns only dronehunter with safe masked key
+      const getReq = new Request('http://localhost/api/shelf', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer tok_bob_123' }
+      });
       const getRes = await shelfApi.onRequestGet({ request: getReq, env: { DB: ctx.d1 } });
       const getData = await getRes.json();
       expect(getData.shelf).toHaveLength(1);
       expect(getData.shelf[0].appId).toBe('dronehunter');
-      expect(getData.shelf[0].licenseKey).toBe(postData.licenseKey);
+      expect(getData.shelf[0].licenseKeyLast4).toBe('44A1');
+      expect(getData.shelf[0].maskedKey).toBe('NSW-DR-••••-44A1');
     });
   });
 

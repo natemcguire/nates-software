@@ -434,78 +434,42 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
   // 4. SHELF & LICENSE PERSISTENCE CONTRACTS (/api/shelf)
   // ==========================================================================
   describe('4. Shelf & License API Failure & Persistence Contracts (/api/shelf)', () => {
-    it('should query seeded shelf items for usr_nate from D1', async () => {
-      const req = new Request('http://localhost/api/shelf?username=nate', { method: 'GET' });
+    it('should ignore legacy seeded shelf items because commerce licenses are canonical', async () => {
+      const req = new Request('http://localhost/api/shelf', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer valid_test_token' }
+      });
       const res = await shelfApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
+      expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(data.shelf.length).toBe(3);
-      const appIds = data.shelf.map((s: any) => s.appId);
-      expect(appIds).toContain('dronehunter');
-      expect(appIds).toContain('certified-mailer');
-      expect(appIds).toContain('picfitai');
+      expect(data.shelf).toEqual([]);
     });
 
-    it('should reject shelf claim with 400 when appId is missing', async () => {
+    it('should reject unauthenticated GET /api/shelf with 401', async () => {
+      const req = new Request('http://localhost/api/shelf', { method: 'GET' });
+      const res = await shelfApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+    });
+
+    it('should reject direct license minting on POST /api/shelf with 405 Method Not Allowed', async () => {
       const req = new Request('http://localhost/api/shelf', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
-        body: JSON.stringify({})
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer valid_test_token'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
       });
 
       const res = await shelfApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(405);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toBe('appId is required');
-    });
-
-    it('should persist shelf claim in D1 and handle duplicate claim via ON CONFLICT DO NOTHING', async () => {
-      // Create a fresh test user with token
-      await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role)
-        VALUES ('usr_buyer1', 'buyer1', 'Buyer One', 'user')
-      `).run();
-      await ctx.d1.prepare(`
-        INSERT INTO user_sessions (token_hash, user_id, expires_at)
-        VALUES (?, 'usr_buyer1', ?)
-      `).bind(await hashSessionToken('tok_buyer1'), Date.now() + 100000).run();
-
-      const req1 = new Request('http://localhost/api/shelf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer tok_buyer1'
-        },
-        body: JSON.stringify({ appId: 'dronehunter' })
-      });
-
-      const res1 = await shelfApi.onRequestPost({ request: req1, env: { DB: ctx.d1 } });
-      const data1 = await res1.json();
-      expect(data1.success).toBe(true);
-
-      // Verify row exists in D1 shelf_items
-      const shelfRows = await ctx.d1.prepare('SELECT * FROM shelf_items WHERE user_id = ? AND app_id = ?').bind('usr_buyer1', 'dronehunter').all();
-      expect(shelfRows.results?.length).toBe(1);
-
-      // Duplicate post -> handled cleanly
-      const req2 = new Request('http://localhost/api/shelf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer tok_buyer1'
-        },
-        body: JSON.stringify({ appId: 'dronehunter' })
-      });
-
-      const res2 = await shelfApi.onRequestPost({ request: req2, env: { DB: ctx.d1 } });
-      const data2 = await res2.json();
-      expect(data2.success).toBe(true);
-
-      // Verify no duplicate row created
-      const shelfRowsAfter = await ctx.d1.prepare('SELECT * FROM shelf_items WHERE user_id = ? AND app_id = ?').bind('usr_buyer1', 'dronehunter').all();
-      expect(shelfRowsAfter.results?.length).toBe(1);
+      expect(data.error).toContain('Direct license minting is disabled');
     });
   });
 
@@ -571,14 +535,16 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
   // 6. INBOX & PROFILE CONTRACTS (/api/inbox, /api/profile)
   // ==========================================================================
   describe('6. Inbox & Profile Error & Persistence Contracts', () => {
-    it('should query user profile and shelf from D1, returning 404 for non-existent user', async () => {
+    it('should query public maker profile from D1, returning 404 for non-existent user', async () => {
       const reqValid = new Request('http://localhost/api/profile?username=nate', { method: 'GET' });
       const resValid = await profileApi.onRequestGet({ request: reqValid, env: { DB: ctx.d1 } });
       const dataValid = await resValid.json();
 
       expect(dataValid.success).toBe(true);
       expect(dataValid.user.username).toBe('nate');
-      expect(dataValid.shelf.length).toBe(3);
+      expect(dataValid.publishedApps).toBeDefined();
+      // Shelf is private and not exposed on public profile
+      expect(dataValid.shelf).toBeUndefined();
 
       const reqInvalid = new Request('http://localhost/api/profile?username=nonexistent_ghost', { method: 'GET' });
       const resInvalid = await profileApi.onRequestGet({ request: reqInvalid, env: { DB: ctx.d1 } });

@@ -1,70 +1,67 @@
-// GET /api/shelf
-// POST /api/shelf - Claim or purchase software license in D1 (Strictly Session Authorized)
+// MY SHELF is a private projection of commerce-issued entitlements.
+// License creation belongs exclusively to the verified commerce fulfillment path.
+import { requireAuth } from './_auth';
 
-import { getSessionUser, requireAuth } from './_auth';
+const unavailable = () => Response.json(
+  { success: false, error: 'Shelf service is temporarily unavailable' },
+  { status: 503 }
+);
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
+  const auth = await requireAuth(request, env);
+  if (auth.errorResponse) return auth.errorResponse;
+  if (!env?.DB) return unavailable();
+
   try {
-    const authUser = await getSessionUser(request, env);
-    const url = new URL(request.url);
-    const requestedUsername = url.searchParams.get('username');
+    const { results } = await env.DB.prepare(`
+      SELECT cl.id, cl.app_id AS appId, cl.license_key_last4 AS licenseKeyLast4,
+             cl.status, cl.issued_at AS purchasedDate, a.name, a.version,
+             a.tagline, a.storage, a.binaries, u.avatar_url AS creatorAvatar,
+             u.username AS creatorUsername
+      FROM commerce_licenses cl
+      JOIN app_listings a ON a.id = cl.app_id
+      JOIN users u ON u.id = a.creator_id
+      WHERE cl.owner_user_id = ? AND cl.status = 'active'
+      ORDER BY cl.issued_at DESC, cl.id ASC
+    `).bind(auth.user!.id).all();
 
-    let targetUserId = authUser?.id || 'usr_nate';
+    const shelf = (results || []).map((row: any) => ({
+      id: row.id,
+      appId: row.appId,
+      name: row.name,
+      version: row.version,
+      tagline: row.tagline,
+      storage: row.storage,
+      licenseKeyLast4: row.licenseKeyLast4,
+      maskedKey: `NSW-${String(row.appId).slice(0, 2).toUpperCase()}-••••-${row.licenseKeyLast4}`,
+      purchasedDate: row.purchasedDate,
+      creatorAvatar: row.creatorAvatar,
+      creatorUsername: row.creatorUsername,
+      binaries: safeObject(row.binaries),
+      status: row.status,
+      source: 'commerce'
+    }));
 
-    if (env && env.DB) {
-      if (requestedUsername && requestedUsername !== authUser?.username) {
-        const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(requestedUsername).first();
-        if (user) targetUserId = user.id as string;
-      }
-
-      const { results } = await env.DB.prepare(`
-        SELECT s.id, s.license_key AS licenseKey, s.purchased_at AS purchasedDate,
-               a.id AS appId, a.name, a.version, a.tagline
-        FROM shelf_items s
-        JOIN app_listings a ON s.app_id = a.id
-        WHERE s.user_id = ?
-      `).bind(targetUserId).all();
-
-      return Response.json({ success: true, shelf: results || [] });
-    }
-
-    return Response.json({ success: true, shelf: [] });
-  } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    return Response.json({ success: true, shelf });
+  } catch (error) {
+    console.error('shelf lookup failed', error);
+    return unavailable();
   }
 };
 
-export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
+export const onRequestPost = async (_context?: unknown) => Response.json({
+  success: false,
+  error: 'Direct license minting is disabled. Licenses are issued only after verified commerce fulfillment.'
+}, { status: 405, headers: { Allow: 'GET' } });
+
+function safeObject(value: unknown): Record<string, string> {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, string>;
+  if (typeof value !== 'string') return {};
   try {
-    const auth = await requireAuth(request, env);
-    if (auth.errorResponse) return auth.errorResponse;
-    const sessionUser = auth.user!;
-
-    const { appId } = await request.json() as any;
-    if (!appId) {
-      return Response.json({ success: false, error: 'appId is required' }, { status: 400 });
-    }
-
-    if (env && env.DB) {
-      const shelfId = `shelf_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
-      const licenseKey = `NSW-${appId.substring(0, 2).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}-${Date.now().toString(36).substring(4).toUpperCase()}`;
-
-      await env.DB.prepare(`
-        INSERT INTO shelf_items (id, user_id, app_id, license_key)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(user_id, app_id) DO NOTHING
-      `).bind(shelfId, sessionUser.id, appId, licenseKey).run();
-
-      return Response.json({
-        success: true,
-        shelfId,
-        licenseKey,
-        message: 'App successfully added to your authenticated shelf'
-      });
-    }
-
-    return Response.json({ success: true, message: 'Shelf updated in memory' });
-  } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
   }
-};
+}
