@@ -19,6 +19,9 @@ export interface InboxThread {
   readonly mergeAttemptId?: string;
   readonly mergeStatus?: string;
   readonly approvalStatus?: 'unreviewed' | 'approved' | 'rejected';
+  readonly approvalComment?: string;
+  readonly inReplyToId?: string;
+  readonly direction?: 'received' | 'sent';
 }
 
 export function filterThreadsByCategory(threads: readonly InboxThread[], category: string): readonly InboxThread[] {
@@ -46,18 +49,37 @@ export function calculateFolderCounts(threads: readonly InboxThread[]): FolderCo
   };
 }
 
+export function conversationForThread(threads: readonly InboxThread[], selectedId: string): readonly InboxThread[] {
+  const connected = new Set<string>([selectedId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const thread of threads) {
+      if (connected.has(thread.id) || (thread.inReplyToId && connected.has(thread.inReplyToId))) {
+        if (!connected.has(thread.id)) { connected.add(thread.id); changed = true; }
+        if (thread.inReplyToId && !connected.has(thread.inReplyToId)) { connected.add(thread.inReplyToId); changed = true; }
+      }
+    }
+  }
+  return threads
+    .filter(thread => connected.has(thread.id))
+    .sort((a, b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
+}
+
 export function formatProposalStatus(thread: InboxThread): {
   badgeLabel: string;
   badgeStyle: string;
   description: string;
   canApprove: boolean;
+  canReject: boolean;
 } {
   if (thread.isMerged && thread.mergeStatus === 'landed') {
     return {
       badgeLabel: 'Landed by GITSMITH',
       badgeStyle: 'bg-green-700 text-white',
       description: 'GITSMITH reports that this exact result commit is now the target ref.',
-      canApprove: false
+      canApprove: false,
+      canReject: false
     };
   }
 
@@ -65,20 +87,31 @@ export function formatProposalStatus(thread: InboxThread): {
     badgeLabel: 'Approved · Awaiting landing',
     badgeStyle: 'bg-blue-700 text-white',
     description: 'The immutable attempt is approved. GITSMITH has not reported the ref landed.',
-    canApprove: false
+    canApprove: false,
+    canReject: true
+  };
+
+  if (thread.approvalStatus === 'rejected') return {
+    badgeLabel: 'Changes requested',
+    badgeStyle: 'bg-red-100 text-red-800 border border-red-300',
+    description: 'This exact result commit was rejected. No Git ref was changed.',
+    canApprove: false,
+    canReject: false
   };
 
   if (!thread.mergeAttemptId || thread.mergeStatus !== 'preview_ready') return {
     badgeLabel: 'Not ready for approval',
     badgeStyle: 'bg-gray-200 text-gray-700 border border-gray-400',
     description: 'This message is not attached to a preview-ready immutable merge attempt.',
-    canApprove: false
+    canApprove: false,
+    canReject: false
   };
 
   return {
     badgeLabel: 'Pending Approval',
     badgeStyle: 'bg-amber-100 text-amber-800 border border-amber-300',
     description: 'Approve this exact result commit. Landing remains a separate GITSMITH operation.',
-    canApprove: true
+    canApprove: true,
+    canReject: true
   };
 }

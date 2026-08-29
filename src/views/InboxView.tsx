@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { InboxThread, filterThreadsByCategory, calculateFolderCounts, formatProposalStatus } from '../lib/inboxDomain';
+import { InboxThread, filterThreadsByCategory, calculateFolderCounts, conversationForThread, formatProposalStatus } from '../lib/inboxDomain';
 import { useAuth } from '../context/AuthContext';
 import {
   Check,
@@ -12,7 +12,8 @@ import {
   AlertCircle,
   Inbox,
   Lock,
-  CheckCheck
+  CheckCheck,
+  XCircle
 } from 'lucide-react';
 
 export const InboxView: React.FC = () => {
@@ -26,14 +27,17 @@ export const InboxView: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [reviewComment, setReviewComment] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const fetchInbox = useCallback(async () => {
-    setIsLoading(true);
+  const fetchInbox = useCallback(async (cursor?: string) => {
+    if (cursor) setIsLoadingMore(true); else setIsLoading(true);
     setFetchError(null);
     setActionError(null);
 
     try {
-      const res = await fetch('/api/inbox');
+      const res = await fetch(cursor ? `/api/inbox?cursor=${encodeURIComponent(cursor)}` : '/api/inbox');
       if (res.status === 401) {
         setFetchError('Authentication required: Log in to view your private developer inbox.');
         setThreads([]);
@@ -43,10 +47,11 @@ export const InboxView: React.FC = () => {
 
       const data = await res.json();
       if (data.success && Array.isArray(data.threads)) {
-        setThreads(data.threads);
+        setThreads(previous => cursor ? [...previous, ...data.threads] : data.threads);
+        setNextCursor(data.page?.nextCursor || null);
         setFetchError(null);
         if (data.threads.length > 0) {
-          setSelectedThreadId(prev => {
+          if (!cursor) setSelectedThreadId(prev => {
             if (prev && data.threads.some((t: InboxThread) => t.id === prev)) {
               return prev;
             }
@@ -57,15 +62,14 @@ export const InboxView: React.FC = () => {
         }
       } else {
         setFetchError(data.error || 'Failed to load inbox messages');
-        setThreads([]);
-        setSelectedThreadId(null);
+        if (!cursor) { setThreads([]); setSelectedThreadId(null); }
       }
     } catch (err: any) {
       setFetchError(err.message || 'Network error retrieving inbox');
-      setThreads([]);
-      setSelectedThreadId(null);
+      if (!cursor) { setThreads([]); setSelectedThreadId(null); }
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, []);
 
@@ -76,10 +80,11 @@ export const InboxView: React.FC = () => {
   const selectedThread = threads.find(t => t.id === selectedThreadId) || null;
   const filtered = filterThreadsByCategory(threads, activeFolder);
   const counts = calculateFolderCounts(threads);
+  const conversation = selectedThread ? conversationForThread(threads, selectedThread.id) : [];
 
   // Non-optimistic proposal approval
-  const handleApproveProposal = async (id: string) => {
-    setActionPending(`approve_${id}`);
+  const handleReviewProposal = async (id: string, decision: 'approve' | 'reject') => {
+    setActionPending(`${decision}_${id}`);
     setActionError(null);
     setActionSuccess(null);
 
@@ -87,7 +92,7 @@ export const InboxView: React.FC = () => {
       const res = await fetch('/api/inbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'approve', messageId: id })
+        body: JSON.stringify({ action: decision, messageId: id, comment: reviewComment })
       });
       const data = await res.json();
 
@@ -95,16 +100,18 @@ export const InboxView: React.FC = () => {
         setThreads(prev => prev.map(t => (t.id === id ? {
           ...t,
           approvalStatus: data.approvalStatus,
+          approvalComment: data.approvalComment,
           mergeStatus: data.mergeStatus,
           unread: false
         } : t)));
         setActionSuccess(data.message || 'Proposal approval recorded.');
+        setReviewComment('');
         setTimeout(() => setActionSuccess(null), 4000);
       } else {
-        setActionError(data.error || 'Failed to record proposal approval');
+        setActionError(data.error || `Failed to record proposal ${decision}`);
       }
     } catch (err: any) {
-      setActionError(err.message || 'Network error approving proposal');
+      setActionError(err.message || `Network error recording proposal ${decision}`);
     } finally {
       setActionPending(null);
     }
@@ -298,7 +305,7 @@ export const InboxView: React.FC = () => {
               )}
               {isAuthenticated && (
                 <button
-                  onClick={fetchInbox}
+                  onClick={() => fetchInbox()}
                   className="btn-w95 px-2.5 py-1 text-xs flex items-center gap-1 font-bold"
                 >
                   <RefreshCw size={11} /> Retry Fetch
@@ -325,7 +332,7 @@ export const InboxView: React.FC = () => {
                 <div className="flex justify-between items-center font-bold">
                   <span className="text-gray-900 flex items-center gap-1 truncate">
                     <span>{t.fromAvatar}</span>
-                    <span className="truncate">{t.from}</span>
+                    <span className="truncate">{t.direction === 'sent' ? `To: ${t.from}` : t.from}</span>
                   </span>
                   <span className="text-[10px] text-gray-500 shrink-0 font-mono">{t.time}</span>
                 </div>
@@ -336,6 +343,15 @@ export const InboxView: React.FC = () => {
                 <p className="text-gray-500 text-[11px] truncate">{t.body}</p>
               </div>
             ))
+          )}
+          {!isLoading && !fetchError && nextCursor && (
+            <button
+              onClick={() => fetchInbox(nextCursor)}
+              disabled={isLoadingMore}
+              className="btn-w95 m-2 px-2 py-1 text-[11px] font-bold disabled:opacity-50"
+            >
+              {isLoadingMore ? 'Loading…' : 'Load older messages'}
+            </button>
           )}
         </div>
       </div>
@@ -367,12 +383,12 @@ export const InboxView: React.FC = () => {
                     <span>{selectedThread.subject}</span>
                   </div>
                   <div className="text-gray-600 text-[11px] mt-0.5">
-                    From: <span className="font-bold text-gray-900">{selectedThread.from}</span> &middot;{' '}
+                    {selectedThread.direction === 'sent' ? 'To' : 'From'}: <span className="font-bold text-gray-900">{selectedThread.from}</span> &middot;{' '}
                     <span className="font-mono">{selectedThread.time}</span>
                   </div>
                 </div>
 
-                <button
+                {selectedThread.direction !== 'sent' && <button
                   onClick={() => handleToggleRead(selectedThread.id, selectedThread.unread)}
                   disabled={actionPending === `toggle_read_${selectedThread.id}`}
                   className="btn-w95 px-2 py-0.5 text-[10px] flex items-center gap-1 text-gray-700"
@@ -380,7 +396,7 @@ export const InboxView: React.FC = () => {
                 >
                   <CheckCheck size={11} />
                   {selectedThread.unread ? 'Mark Read' : 'Mark Unread'}
-                </button>
+                </button>}
               </div>
 
               {/* Message Body */}
@@ -405,6 +421,20 @@ export const InboxView: React.FC = () => {
                 )}
               </div>
 
+              {conversation.length > 1 && (
+                <div className="border border-gray-300 rounded bg-gray-50 p-2 space-y-2">
+                  <div className="font-bold text-[11px] text-gray-700">Conversation · {conversation.length} messages</div>
+                  {conversation.map(message => (
+                    <div key={message.id} className="bg-white border border-gray-200 p-2 rounded">
+                      <div className="text-[10px] text-gray-500 font-mono">
+                        {message.direction === 'sent' ? `You → ${message.from}` : `${message.from} → You`} · {message.time}
+                      </div>
+                      <div className="whitespace-pre-wrap mt-1">{message.body}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Action Box for Proposals */}
               {selectedThread.category === 'proposals' && (
                 (() => {
@@ -423,20 +453,46 @@ export const InboxView: React.FC = () => {
                         {status.description}
                       </div>
 
-                      <div className="flex justify-end pt-1">
-                        {!status.canApprove ? (
+                      {selectedThread.approvalComment && (
+                        <div className="bg-white border border-gray-300 rounded p-2 text-[11px]">
+                          <b>Review comment:</b> {selectedThread.approvalComment}
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-1.5 pt-1">
+                        {!status.canApprove && !status.canReject ? (
                           <span className={`${status.badgeStyle} font-bold px-3 py-1.5 rounded flex items-center gap-1 text-[11px]`}>
                             <Check size={13} /> {status.badgeLabel}
                           </span>
                         ) : (
-                          <button
-                            onClick={() => handleApproveProposal(selectedThread.id)}
-                            disabled={actionPending === `approve_${selectedThread.id}`}
-                            className="btn-w95 btn-w95-primary px-3 py-1.5 flex items-center gap-1 font-bold shadow-md disabled:opacity-50"
-                          >
-                            <GitPullRequest size={12} />
-                            {actionPending === `approve_${selectedThread.id}` ? 'Recording Approval...' : 'Record Approval →'}
-                          </button>
+                          <>
+                            <textarea
+                              value={reviewComment}
+                              onChange={event => setReviewComment(event.target.value)}
+                              maxLength={2000}
+                              placeholder="Review comment (required when requesting changes)"
+                              className="w-full min-h-16 p-1.5 border border-gray-400 bg-white text-xs"
+                            />
+                            <div className="text-[10px] text-gray-600">
+                              Approval records this exact result OID for GITSMITH. Requesting changes rejects it. Neither action moves a Git ref.
+                            </div>
+                            <div className="flex justify-end gap-2">
+                              {status.canReject && <button
+                                onClick={() => handleReviewProposal(selectedThread.id, 'reject')}
+                                disabled={Boolean(actionPending) || reviewComment.trim().length < 3}
+                                className="btn-w95 px-3 py-1.5 flex items-center gap-1 font-bold disabled:opacity-50"
+                              >
+                                <XCircle size={12} /> Request Changes
+                              </button>}
+                              {status.canApprove && <button
+                                onClick={() => handleReviewProposal(selectedThread.id, 'approve')}
+                                disabled={Boolean(actionPending)}
+                                className="btn-w95 btn-w95-primary px-3 py-1.5 flex items-center gap-1 font-bold shadow-md disabled:opacity-50"
+                              >
+                                <GitPullRequest size={12} /> Approve Exact OID
+                              </button>}
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>

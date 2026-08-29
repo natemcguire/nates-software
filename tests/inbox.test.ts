@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import * as inboxApi from '../functions/api/inbox';
 import { AuthProvider } from '../src/context/AuthContext';
 import { InboxView } from '../src/views/InboxView';
-import { calculateFolderCounts, filterThreadsByCategory, formatProposalStatus, InboxThread } from '../src/lib/inboxDomain';
+import { calculateFolderCounts, conversationForThread, filterThreadsByCategory, formatProposalStatus, InboxThread } from '../src/lib/inboxDomain';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 
 const authHeaders = { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' };
@@ -19,11 +19,11 @@ describe('INBOX.EXE live-mode integrity', () => {
 
   async function insertMessage(row: Record<string, unknown>) {
     await ctx.d1.prepare(`INSERT INTO inbox_messages
-      (id,user_id,sender_id,title,preview,content,unread,message_kind,feature_ref,merge_attempt_id,is_merged)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      (id,user_id,sender_id,title,preview,content,unread,message_kind,feature_ref,merge_attempt_id,is_merged,in_reply_to_id,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP))`).bind(
       row.id, row.user_id, row.sender_id ?? null, row.title, row.preview, row.content,
       row.unread ?? 1, row.message_kind ?? 'feedback', row.feature_ref ?? null,
-      row.merge_attempt_id ?? null, row.is_merged ?? 0
+      row.merge_attempt_id ?? null, row.is_merged ?? 0, row.in_reply_to_id ?? null, row.created_at ?? null
     ).run();
   }
 
@@ -42,6 +42,16 @@ describe('INBOX.EXE live-mode integrity', () => {
     ] as InboxThread[];
     expect(calculateFolderCounts(threads)).toEqual({ all: 2, proposals: 1, agent_logs: 0, royalties: 0, feedback: 1, unread: 1 });
     expect(filterThreadsByCategory(threads, 'proposals')).toEqual([threads[0]]);
+  });
+
+  it('builds a conversation only from persisted reply ancestry', () => {
+    const threads = [
+      { id: 'other', time: '2026-01-01T00:00:00Z' },
+      { id: 'reply-2', inReplyToId: 'reply-1', time: '2026-01-01T00:03:00Z' },
+      { id: 'root', time: '2026-01-01T00:01:00Z' },
+      { id: 'reply-1', inReplyToId: 'root', time: '2026-01-01T00:02:00Z' }
+    ] as InboxThread[];
+    expect(conversationForThread(threads, 'reply-2').map(thread => thread.id)).toEqual(['root', 'reply-1', 'reply-2']);
   });
 
   it('distinguishes unbound, approved, and authoritatively landed proposals', () => {
@@ -94,6 +104,32 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect(reply.unread).toBe(1);
   });
 
+  it('shows sent replies to their sender and allows continuing the real conversation', async () => {
+    await insertMessage(ownMessage('parent', { title: 'Feature review' }));
+    const first: any = await (await post({ action: 'reply', messageId: 'parent', text: 'Please revise this.' })).json();
+    const data: any = await (await get()).json();
+    const sent = data.threads.find((thread: any) => thread.id === first.messageId);
+    expect(sent).toMatchObject({ direction: 'sent', from: 'Sam Altman (@sam)', inReplyToId: 'parent', unread: false });
+
+    const response = await post({ action: 'reply', messageId: first.messageId, text: 'One more detail.' });
+    expect(response.status).toBe(200);
+    const second: any = await response.json();
+    expect(await ctx.d1.prepare('SELECT user_id FROM inbox_messages WHERE id=?').bind(second.messageId).first('user_id')).toBe('usr_sam');
+  });
+
+  it('paginates inbox and sent messages with a stable user-bound cursor', async () => {
+    for (let index = 0; index < 4; index += 1) {
+      await insertMessage(ownMessage(`page-${index}`, { created_at: '2026-01-01 00:00:00' }));
+    }
+    const first: any = await (await get('http://localhost/api/inbox?limit=2')).json();
+    expect(first.threads.map((thread: any) => thread.id)).toEqual(['page-3', 'page-2']);
+    expect(first.page).toMatchObject({ limit: 2, hasMore: true });
+    const second: any = await (await get(`http://localhost/api/inbox?limit=2&cursor=${encodeURIComponent(first.page.nextCursor)}`)).json();
+    expect(second.threads.map((thread: any) => thread.id)).toEqual(['page-1', 'page-0']);
+    expect(second.page.hasMore).toBe(false);
+    expect((await get('http://localhost/api/inbox?cursor=not-a-cursor')).status).toBe(400);
+  });
+
   it('rejects replies to another mailbox or a senderless system message', async () => {
     await insertMessage({ ...ownMessage('theirs'), user_id: 'usr_sam' });
     await insertMessage(ownMessage('system', { sender_id: null }));
@@ -128,6 +164,33 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect(await ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('proposal').first('is_merged')).toBe(0);
     const data: any = await (await get()).json();
     expect(data.threads[0]).toMatchObject({ approvalStatus: 'approved', mergeStatus: 'approved', isMerged: false, casNewSha: resultOid });
+  });
+
+  it('requires a rejection comment and records an exact idempotent rejection without landing', async () => {
+    const resultOid = '6'.repeat(40);
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES ('repo-reject','dronehunter','usr_nate','nate/reject-test','private','refs/heads/main','repos/reject','active')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-reject','repo-reject','refs/heads/main','usr_sam','preview_ready','reject-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-reject','job-reject',1,?,?,'tool','policy','preview_ready')`)
+      .bind('5'.repeat(40), resultOid).run();
+    await insertMessage(ownMessage('reject-proposal', { message_kind: 'proposal', merge_attempt_id: 'attempt-reject' }));
+
+    expect((await post({ action: 'reject', messageId: 'reject-proposal', comment: ' ' })).status).toBe(400);
+    expect((await post({ action: 'reject', messageId: 'reject-proposal', comment: 'Tests fail on Windows.' })).status).toBe(200);
+    expect((await post({ action: 'reject', messageId: 'reject-proposal', comment: 'Tests fail on Windows.' })).status).toBe(200);
+    const review: any = await ctx.d1.prepare('SELECT * FROM merge_approvals WHERE merge_attempt_id=?').bind('attempt-reject').first();
+    expect(review).toMatchObject({ decision: 'rejected', comment: 'Tests fail on Windows.', result_commit_oid: resultOid });
+    expect(await ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-reject').first('status')).toBe('rejected');
+    expect(await ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('reject-proposal').first('is_merged')).toBe(0);
+    const data: any = await (await get()).json();
+    expect(data.threads.find((thread: any) => thread.id === 'reject-proposal')).toMatchObject({
+      approvalStatus: 'rejected', approvalComment: 'Tests fail on Windows.', mergeStatus: 'rejected', isMerged: false
+    });
   });
 
   it('only reports landed when job and exact result OIDs agree', async () => {
