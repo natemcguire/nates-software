@@ -25,7 +25,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0008_session_security.sql',
         '0009_durable_commerce.sql',
         '0010_commerce_processing.sql',
-        '0011_commerce_money_movement.sql'
+        '0011_commerce_money_movement.sql',
+        '0012_commerce_refunds_disputes.sql'
       ]);
     });
 
@@ -96,6 +97,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('commerce_transfer_attempts');
       expect(tables).toContain('commerce_reversal_outbox');
       expect(tables).toContain('commerce_reversal_attempts');
+      expect(tables).toContain('commerce_refunds');
+      expect(tables).toContain('commerce_disputes');
+      expect(tables).toContain('commerce_refund_observations');
+      expect(tables).toContain('commerce_dispute_observations');
+      expect(tables).toContain('commerce_refund_allocations');
+      expect(tables).toContain('commerce_recovery_obligations');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -110,6 +117,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_transfer_economics_immutable');
       expect(triggers).toContain('commerce_reversal_requires_succeeded_transfer');
       expect(triggers).toContain('commerce_transfer_attempt_success_requires_outbox_success');
+      expect(triggers).toContain('commerce_refund_allocations_match_order');
+      expect(triggers).toContain('commerce_reversal_cumulative_guard');
     });
 
     it('should create all unique indices from migration 0002', () => {

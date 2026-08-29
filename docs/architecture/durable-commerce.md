@@ -2,7 +2,7 @@
 
 ## Status
 
-Migrations `0009_durable_commerce.sql` and `0010_commerce_processing.sql` define the canonical replacement for the legacy payment tables. Payment endpoints remain fail-closed unless `PAYMENTS_ENABLED=true`; that flag must not be enabled until checkout, webhook processing, fulfillment, refund/dispute handling, and transfer/reversal-worker proofs all pass against Stripe test mode and isolated preview D1.
+Migrations `0009` through `0012` define the canonical replacement for the legacy payment tables. Payment endpoints remain fail-closed unless `PAYMENTS_ENABLED=true`; that flag must not be enabled until checkout, webhook processing, fulfillment, refund/dispute handling, and transfer/reversal-worker proofs all pass against Stripe test mode and isolated preview D1.
 
 ## Authority boundaries
 
@@ -31,6 +31,17 @@ Migrations `0009_durable_commerce.sql` and `0010_commerce_processing.sql` define
 6. A processor claims the inbox event with a finite lease, re-fetches the authoritative Stripe object, rejects out-of-order or regressive transitions, and atomically marks the order paid while issuing exactly one encrypted-at-rest license and creating one outbox row per payable allocation.
 7. A worker executes Stripe Connect transfers with the outbox ID as Stripe's idempotency key. Failures remain retryable and observable; webhook code never transfers funds.
 8. Fulfillment completes only after the license exists. Payout delays do not revoke a legitimately paid license.
+
+## Refund, dispute, and recovery invariants
+
+- Stripe refund and dispute webhooks are delivery signals. Processing re-fetches the referenced Stripe object and records an append-only observation of the authoritative state.
+- Successful partial refunds accumulate against `commerce_orders.refunded_cents`; the order remains fulfilled until the cumulative amount equals the immutable gross amount. A full refund moves the order to `refunded` and the license to `refunded`.
+- A dispute revokes access while liability is open. A won dispute may restore the fulfilled order and active license; a lost dispute remains revoked and creates recovery obligations. State decisions use the authoritative dispute status, not webhook arrival order.
+- Refund allocation rows split each succeeded refund across the original frozen allocations with exact integer-cent conservation. They never alter the sale allocation rows.
+- Maker and ancestor debits become immutable recovery obligations. Protocol allocation is accounted for but never sent to Stripe Connect, so it creates no transfer reversal.
+- Transfer amounts are immutable. An exact, wholly unsent transfer may be cancelled; partial or in-flight obligations wait for a terminal transfer outcome. A succeeded transfer is recovered with a compensating reversal outbox row.
+- Cumulative non-cancelled reversals may never exceed the original transfer. Refund/dispute overlap must reconcile already-recorded recovery before creating another obligation.
+- Reversal execution has its own commissioning flag and service credential. Payment and payout enablement do not implicitly authorize clawbacks.
 
 ## Non-negotiable constraints
 

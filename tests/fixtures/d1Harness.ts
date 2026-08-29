@@ -15,7 +15,8 @@ export const CANONICAL_MIGRATIONS = [
   '0008_session_security.sql',
   '0009_durable_commerce.sql',
   '0010_commerce_processing.sql',
-  '0011_commerce_money_movement.sql'
+  '0011_commerce_money_movement.sql',
+  '0012_commerce_refunds_disputes.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];
