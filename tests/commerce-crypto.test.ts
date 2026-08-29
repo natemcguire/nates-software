@@ -26,7 +26,7 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
   describe('1. License Key Generation, Hashing & Formatting', () => {
     it('generates a formatted license key with application prefix', () => {
       const key = generateLicenseKey('dronehunter');
-      expect(key).toMatch(/^NSW-DR-[0-9A-F]{4}-[0-9A-F]{4}$/);
+      expect(key).toMatch(/^NSW-DR(?:-[0-9A-F]{4}){8}$/);
     });
 
     it('generates unique cryptographic keys across iterations', () => {

@@ -13,6 +13,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
   const defaultEnv = () => ({
     DB: ctx.d1,
     STRIPE_SECRET_KEY: 'sk_test_mock_secret_key_123',
+    STRIPE_LIVEMODE: 'false',
     LICENSE_ENCRYPTION_KEYS_JSON: keysJson,
     LICENSE_ACTIVE_KEY_VERSION: '1'
   });
@@ -222,6 +223,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'eur', // Tampered currency!
           livemode: false,
           metadata: { orderId }
@@ -245,6 +247,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           id: 'pi_no_order',
           status: 'succeeded',
           amount: 1500,
+          amount_received: 1500,
           currency: 'usd',
           livemode: false,
           metadata: {} // Missing orderId!
@@ -274,6 +277,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'usd',
           livemode: false,
           metadata: { orderId, appId: 'dronehunter', buyerUserId: 'usr_nate' }
@@ -425,6 +429,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'usd',
           livemode: false,
           metadata: { orderId, appId: 'dronehunter', buyerUserId: 'usr_buyer_dev' }
@@ -463,6 +468,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'usd',
           livemode: false,
           metadata: { orderId }

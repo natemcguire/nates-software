@@ -158,7 +158,7 @@ $ slop login
 * **Preview D1:** `nates-software-preview-db` (ID: `a265f092-cee4-42da-ac84-e87dbbd53315`)
 * **Production R2:** `nates-software-storage`
 * **Preview R2:** `nates-software-preview-storage`
-* **Canonical migrations:** `0001`, `0002`, `0006`, `0007`, `0008`, `0009` under `migrations/`.
+* **Canonical migrations:** `0001`, `0002`, `0006`, `0007`, `0008`, `0009`, `0010` under `migrations/`.
 * The retired legacy D1 `nates-software-db` is not an application binding and must not be selected for new work.
 
 ### Release invariant

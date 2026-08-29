@@ -10,6 +10,7 @@ Migrations `0009_durable_commerce.sql` and `0010_commerce_processing.sql` define
 - `commerce_products` supplies the active server price, currency, seller, and price version.
 - `repositories` plus immutable `repository_forks` supply purchase-time ancestry.
 - Stripe supplies payment state. A webhook is a delivery signal, not unquestioned state authority.
+- `STRIPE_LIVEMODE` must explicitly match both the signed event and the re-fetched Stripe object; test/live events can never cross environments.
 - D1 is authoritative for order, license, allocation, event-inbox, and outbox workflow state.
 
 ## Economic policy

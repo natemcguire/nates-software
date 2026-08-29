@@ -40,21 +40,22 @@ export function generateBase64EncryptionKey(): string {
 
 /**
  * Generates a cryptographically random license key with recognizable application prefix.
- * Format: `NSW-<APP_PREFIX>-<HEX4>-<HEX4>` (e.g., `NSW-DH-8F12-9A4B`).
+ * Format: `NSW-<APP_PREFIX>-<8 x HEX4>` with 128 bits of entropy.
  */
 export function generateLicenseKey(appId?: string): string {
   const rawPrefix = (appId || 'SW').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   const prefix = (rawPrefix.length >= 2 ? rawPrefix.slice(0, 2) : 'SW').padEnd(2, 'X');
 
-  const randomBytes = crypto.getRandomValues(new Uint8Array(4));
+  const randomBytes = crypto.getRandomValues(new Uint8Array(16));
   const hex = Array.from(randomBytes)
     .map(b => b.toString(16).padStart(2, '0').toUpperCase())
     .join('');
 
-  const part1 = hex.slice(0, 4);
-  const part2 = hex.slice(4, 8);
-
-  return `NSW-${prefix}-${part1}-${part2}`;
+  const groups = hex.match(/.{4}/g);
+  if (!groups || groups.length !== 8) {
+    throw new LicenseCryptoError('Failed to generate a 128-bit license key');
+  }
+  return `NSW-${prefix}-${groups.join('-')}`;
 }
 
 /**

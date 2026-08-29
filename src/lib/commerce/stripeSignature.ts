@@ -106,7 +106,10 @@ export async function verifyStripeSignature(
     return { valid: false, reason: 'Malformed stripe-signature header: missing timestamp or v1 signature' };
   }
 
-  const timestamp = parseInt(timestampStr, 10);
+  if (!/^\d+$/.test(timestampStr)) {
+    return { valid: false, reason: 'Malformed stripe-signature timestamp' };
+  }
+  const timestamp = Number(timestampStr);
   if (!Number.isSafeInteger(timestamp) || timestamp <= 0) {
     return { valid: false, reason: 'Malformed stripe-signature timestamp' };
   }
@@ -120,7 +123,7 @@ export async function verifyStripeSignature(
 
   const computedSig = await computeStripeSignature(rawBody, timestamp, secret);
 
-  const isMatch = signatures.some(candidate => constantTimeCompare(candidate, computedSig));
+  const isMatch = signatures.some(candidate => /^[a-f0-9]{64}$/i.test(candidate) && constantTimeCompare(candidate.toLowerCase(), computedSig));
   if (!isMatch) {
     return { valid: false, reason: 'Invalid Stripe signature' };
   }

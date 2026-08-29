@@ -148,7 +148,7 @@ export async function claimInboxEvent(
         attempt_count = attempt_count + 1
     WHERE event_id = ?
       AND (
-        status IN ('received', 'retryable_failure')
+        (status IN ('received', 'retryable_failure') AND next_attempt_at <= datetime('now'))
         OR (status = 'processing' AND (expires_at IS NULL OR expires_at < datetime('now')))
       )
   `).bind(claimToken, leaseSec, eventId).run();

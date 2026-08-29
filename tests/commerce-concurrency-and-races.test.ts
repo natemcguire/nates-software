@@ -13,6 +13,7 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
   const defaultEnv = () => ({
     DB: ctx.d1,
     STRIPE_SECRET_KEY: 'sk_test_mock_secret_key_123',
+    STRIPE_LIVEMODE: 'false',
     LICENSE_ENCRYPTION_KEYS_JSON: keysJson,
     LICENSE_ACTIVE_KEY_VERSION: '1'
   });
@@ -90,6 +91,7 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'usd',
           livemode: false,
           metadata: { orderId, appId: 'dronehunter', buyerUserId: 'usr_nate' }
@@ -147,6 +149,7 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'usd',
           livemode: false,
           metadata: { orderId }
@@ -195,7 +198,13 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
       expect(inboxRow.attempt_count).toBe(1);
       expect(inboxRow.last_error).toMatch(/Network error/i);
 
-      // Another worker can re-claim the retryable event
+      // Backoff is enforced before another worker may re-claim it.
+      const earlyClaim = await claimInboxEvent(ctx.d1, eventId);
+      expect(earlyClaim.claimed).toBe(false);
+      await ctx.d1.prepare(`
+        UPDATE stripe_event_inbox SET next_attempt_at = datetime('now', '-1 second')
+        WHERE event_id = ?
+      `).bind(eventId).run();
       const reClaim = await claimInboxEvent(ctx.d1, eventId);
       expect(reClaim.claimed).toBe(true);
     });
@@ -239,6 +248,7 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
           id: piId,
           status: 'succeeded',
           amount: grossCents,
+          amount_received: grossCents,
           currency: 'usd',
           livemode: true, // Livemode mismatch!
           metadata: { orderId }

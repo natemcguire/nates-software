@@ -101,6 +101,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       const triggers = ctx.getTriggerNames();
       expect(triggers).toContain('repository_forks_immutable_update');
       expect(triggers).toContain('repository_forks_immutable_delete');
+      expect(triggers).toContain('commerce_license_requires_fulfilled_order');
+      expect(triggers).toContain('commerce_outbox_requires_fulfilled_allocation');
     });
 
     it('should create all unique indices from migration 0002', () => {
@@ -581,6 +583,33 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         ctx.d1.prepare('DELETE FROM commerce_order_allocations WHERE id = ?')
           .bind('calloc_immutable').run()
       ).rejects.toThrow(/commerce order allocations are immutable/);
+    });
+
+    it('should reject licenses and payout work unless the immutable fulfilled order matches', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, seller_user_id,
+          app_version, price_version, gross_cents, currency, lineage_snapshot_json, status
+        ) VALUES ('cord_cancelled', 'checkout-cancelled', 'usr_sam', 'dronehunter', 'usr_nate',
+                  'v1.0.0', 1, 1500, 'usd', '{}', 'cancelled')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
+        ) VALUES ('calloc_cancelled', 'cord_cancelled', 0, 'maker', 'usr_nate', 9000, 1350)
+      `).run();
+
+      await expect(ctx.d1.prepare(`
+        INSERT INTO commerce_licenses
+          (id, order_id, app_id, owner_user_id, license_key_hash, license_key_last4)
+        VALUES ('clic_cancelled', 'cord_cancelled', 'dronehunter', 'usr_sam', ?, 'ABCD')
+      `).bind('a'.repeat(64)).run()).rejects.toThrow(/commerce license requires matching fulfilled order/);
+
+      await expect(ctx.d1.prepare(`
+        INSERT INTO commerce_transfer_outbox
+          (id, order_id, allocation_id, destination_user_id, amount_cents, currency)
+        VALUES ('cout_cancelled', 'cord_cancelled', 'calloc_cancelled', 'usr_nate', 1350, 'usd')
+      `).run()).rejects.toThrow(/commerce outbox requires matching fulfilled allocation/);
     });
   });
 

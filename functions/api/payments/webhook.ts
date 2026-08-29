@@ -45,6 +45,12 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
 
   // 4. Verify raw-body Stripe v1 HMAC with constant-time comparison and 5-minute tolerance
   const rawBody = await request.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 1_048_576) {
+    return Response.json(
+      { success: false, error: 'Stripe event payload exceeds the 1 MiB limit' },
+      { status: 413 }
+    );
+  }
   const sigResult = await verifyStripeSignature(rawBody, sigHeader, webhookSecret);
   if (!sigResult.valid) {
     return Response.json(
@@ -64,7 +70,7 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  if (!event || typeof event !== 'object' || !event.id || !event.type) {
+  if (!event || typeof event !== 'object' || !event.id || !event.type || typeof event.livemode !== 'boolean') {
     return Response.json(
       { success: false, error: 'Malformed Stripe event payload: missing id or type' },
       { status: 400 }
@@ -82,6 +88,12 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
   const payloadSha256 = await hashPayload(rawBody);
   const eventId = String(event.id).trim();
   const eventType = String(event.type).trim();
+  if (!/^evt_[A-Za-z0-9_]+$/.test(eventId) || eventId.length > 255 || eventType.length > 255) {
+    return Response.json(
+      { success: false, error: 'Malformed Stripe event payload: invalid event id or type' },
+      { status: 400 }
+    );
+  }
   const stripeObjectId = event.data?.object?.id ? String(event.data.object.id).trim() : null;
   const livemode = Boolean(event.livemode);
 

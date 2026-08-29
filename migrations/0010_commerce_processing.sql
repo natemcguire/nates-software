@@ -49,3 +49,38 @@ CREATE TABLE IF NOT EXISTS commerce_license_secret_events (
 );
 CREATE INDEX IF NOT EXISTS idx_commerce_license_secret_events
     ON commerce_license_secret_events(license_id, created_at);
+
+-- D1 batch statements do not fail when a conditional UPDATE affects zero rows.
+-- These insert guards turn a lost order-state CAS into an atomic batch failure,
+-- preventing a cancelled/refunded order from receiving a license or payout.
+CREATE TRIGGER IF NOT EXISTS commerce_license_requires_fulfilled_order
+BEFORE INSERT ON commerce_licenses
+WHEN NOT EXISTS (
+    SELECT 1 FROM commerce_orders o
+    WHERE o.id = NEW.order_id
+      AND o.status = 'fulfilled'
+      AND o.app_id = NEW.app_id
+      AND o.buyer_user_id = NEW.owner_user_id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'commerce license requires matching fulfilled order');
+END;
+
+CREATE TRIGGER IF NOT EXISTS commerce_outbox_requires_fulfilled_allocation
+BEFORE INSERT ON commerce_transfer_outbox
+WHEN NOT EXISTS (
+    SELECT 1
+    FROM commerce_orders o
+    JOIN commerce_order_allocations a ON a.order_id = o.id
+    WHERE o.id = NEW.order_id
+      AND o.status = 'fulfilled'
+      AND o.currency = NEW.currency
+      AND a.id = NEW.allocation_id
+      AND a.role IN ('maker', 'ancestor')
+      AND a.recipient_user_id = NEW.destination_user_id
+      AND a.amount_cents = NEW.amount_cents
+      AND a.amount_cents > 0
+)
+BEGIN
+    SELECT RAISE(ABORT, 'commerce outbox requires matching fulfilled allocation');
+END;

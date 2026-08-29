@@ -218,7 +218,7 @@ export async function processStripeInboxEvent(
   }
 
   // PaymentIntent ID validation on order
-  if (order.stripe_payment_intent_id && order.stripe_payment_intent_id !== paymentIntentId) {
+  if (!order.stripe_payment_intent_id || order.stripe_payment_intent_id !== paymentIntentId) {
     const msg = `Order PaymentIntent ID mismatch: order has '${order.stripe_payment_intent_id}', Stripe returned '${paymentIntentId}'`;
     await markInboxTerminalFailure(db, eventId, claimToken, msg);
     return { success: false, terminal: true, error: msg };
@@ -228,6 +228,13 @@ export async function processStripeInboxEvent(
   const stripeAmount = parseInt(String(stripePi.amount), 10);
   if (stripeAmount !== order.gross_cents) {
     const msg = `Gross amount mismatch: Stripe amount (${stripeAmount}) !== order gross_cents (${order.gross_cents})`;
+    await markInboxTerminalFailure(db, eventId, claimToken, msg);
+    return { success: false, terminal: true, error: msg };
+  }
+
+  const stripeAmountReceived = Number(stripePi.amount_received);
+  if (!Number.isSafeInteger(stripeAmountReceived) || stripeAmountReceived !== order.gross_cents) {
+    const msg = `Received amount mismatch: Stripe amount_received (${stripePi.amount_received}) !== order gross_cents (${order.gross_cents})`;
     await markInboxTerminalFailure(db, eventId, claimToken, msg);
     return { success: false, terminal: true, error: msg };
   }
@@ -246,6 +253,18 @@ export async function processStripeInboxEvent(
   const stripeLivemode = Boolean(stripePi.livemode);
   if (eventLivemode !== stripeLivemode) {
     const msg = `Livemode mismatch: event livemode (${eventLivemode}) !== Stripe livemode (${stripeLivemode})`;
+    await markInboxTerminalFailure(db, eventId, claimToken, msg);
+    return { success: false, terminal: true, error: msg };
+  }
+
+  if (env?.STRIPE_LIVEMODE !== 'true' && env?.STRIPE_LIVEMODE !== 'false') {
+    const msg = 'STRIPE_LIVEMODE must be explicitly configured as true or false';
+    await releaseInboxClaim(db, eventId, claimToken, msg, 30);
+    return { success: false, retryable: true, error: msg };
+  }
+  const configuredLivemode = env.STRIPE_LIVEMODE === 'true';
+  if (stripeLivemode !== configuredLivemode) {
+    const msg = `Stripe livemode (${stripeLivemode}) does not match configured environment (${configuredLivemode})`;
     await markInboxTerminalFailure(db, eventId, claimToken, msg);
     return { success: false, terminal: true, error: msg };
   }
