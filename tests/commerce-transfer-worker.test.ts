@@ -148,6 +148,25 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     };
   }
 
+  function successfulTransfer(
+    seed: Awaited<ReturnType<typeof seedOrderAndOutbox>>,
+    id: string,
+    destination = seed.stripeAccountId
+  ) {
+    return {
+      id,
+      amount: seed.amountCents,
+      currency: seed.currency,
+      destination,
+      transfer_group: seed.orderId,
+      metadata: {
+        orderId: seed.orderId,
+        allocationId: seed.allocId,
+        outboxId: seed.outboxId
+      }
+    };
+  }
+
   // ==========================================================================
   // 1. AUTHENTICATION & ENVIRONMENT CONFIGURATION (FAIL-CLOSED)
   // ==========================================================================
@@ -400,7 +419,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       let capturedBody = '';
       const mockFetch = vi.fn().mockImplementation(async (_url, init) => {
         capturedBody = init.body;
-        return new Response(JSON.stringify({ id: 'tr_success_snapshot_1' }), {
+        return new Response(JSON.stringify(successfulTransfer(seed, 'tr_success_snapshot_1')), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'request-id': 'req_snap_1' }
         });
@@ -431,7 +450,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       let capturedBody = '';
       const mockFetch = vi.fn().mockImplementation(async (_url, init) => {
         capturedBody = init.body;
-        return new Response(JSON.stringify({ id: 'tr_success_immut_1' }), {
+        return new Response(JSON.stringify(successfulTransfer(seed, 'tr_success_immut_1', snapshottedAccount)), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -487,7 +506,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
           WHERE outbox_id = ?
         `).bind(seed.outboxId).first();
 
-        return new Response(JSON.stringify({ id: 'tr_exact_12345' }), {
+        return new Response(JSON.stringify(successfulTransfer(seed, 'tr_exact_12345')), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'request-id': 'req_exact_1' }
         });
@@ -547,7 +566,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
           });
         }
         // Attempt 2 succeeds
-        return new Response(JSON.stringify({ id: 'tr_retry_success_99' }), {
+        return new Response(JSON.stringify(successfulTransfer(seed, 'tr_retry_success_99')), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'request-id': 'req_succ_2' }
         });
@@ -602,11 +621,35 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
   // 7. HTTP RESPONSE CLASSIFICATIONS
   // ==========================================================================
   describe('7. HTTP Response Classifications (2xx, 429, 5xx, 4xx)', () => {
+    it('parks a 2xx transfer response whose economics do not match the durable request', async () => {
+      const seed = await seedOrderAndOutbox();
+      const mismatched = { ...successfulTransfer(seed, 'tr_mismatch_1'), amount: seed.amountCents - 1 };
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(mismatched), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'request-id': 'req_mismatch_1' }
+        })
+      );
+
+      const result = await processTransferOutboxItem(ctx.d1, defaultEnv(), seed.outboxId, {
+        stripeFetchOverride: mockFetch
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.terminal).toBe(true);
+      expect(result.ambiguous).toBe(true);
+      expect(result.errorCode).toBe('response_mismatch');
+      const row: any = await ctx.d1.prepare('SELECT status, stripe_transfer_id FROM commerce_transfer_outbox WHERE id = ?')
+        .bind(seed.outboxId).first();
+      expect(row.status).toBe('terminal_failure');
+      expect(row.stripe_transfer_id).toBeNull();
+    });
+
     it('2xx with valid tr_ ID marks attempt + outbox succeeded and inserts audit event', async () => {
       const seed = await seedOrderAndOutbox();
 
       const mockFetch = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ id: 'tr_valid_777' }), {
+        new Response(JSON.stringify(successfulTransfer(seed, 'tr_valid_777')), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'request-id': 'req_ok_1' }
         })
@@ -790,7 +833,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       let stripeCalls = 0;
       const mockFetch = vi.fn().mockImplementation(async () => {
         stripeCalls++;
-        return new Response(JSON.stringify({ id: 'tr_race_winner' }), {
+        return new Response(JSON.stringify(successfulTransfer(seed, 'tr_race_winner')), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         });
@@ -873,7 +916,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       ).run();
 
       const mockFetch = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ id: 'tr_reconciled_after_2h' }), {
+        new Response(JSON.stringify(successfulTransfer(seed, 'tr_reconciled_after_2h')), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -930,7 +973,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       const seed = await seedOrderAndOutbox();
 
       const mockFetch = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ id: 'tr_created_on_stripe' }), {
+        new Response(JSON.stringify(successfulTransfer(seed, 'tr_created_on_stripe')), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
         })
@@ -1014,7 +1057,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         const outboxId = body.get('metadata[outboxId]');
 
         if (outboxId === seed1.outboxId) {
-          return new Response(JSON.stringify({ id: 'tr_b1_ok' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          return new Response(JSON.stringify(successfulTransfer(seed1, 'tr_b1_ok')), { status: 200, headers: { 'Content-Type': 'application/json' } });
         } else if (outboxId === seed2.outboxId) {
           return new Response(JSON.stringify({ error: { message: 'Stripe 500' } }), { status: 500, headers: { 'Content-Type': 'application/json' } });
         } else {

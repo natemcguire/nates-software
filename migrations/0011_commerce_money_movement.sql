@@ -113,3 +113,16 @@ WHEN NOT EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'commerce reversal requires a matching succeeded transfer');
 END;
+
+CREATE TRIGGER IF NOT EXISTS commerce_transfer_attempt_success_requires_outbox_success
+BEFORE UPDATE OF outcome ON commerce_transfer_attempts
+WHEN NEW.outcome = 'succeeded'
+ AND NOT EXISTS (
+    SELECT 1 FROM commerce_transfer_outbox t
+    WHERE t.id = NEW.outbox_id
+      AND t.status = 'succeeded'
+      AND t.stripe_transfer_id = NEW.stripe_transfer_id
+ )
+BEGIN
+    SELECT RAISE(ABORT, 'transfer attempt success requires persisted outbox success');
+END;

@@ -109,6 +109,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_outbox_requires_fulfilled_allocation');
       expect(triggers).toContain('commerce_transfer_economics_immutable');
       expect(triggers).toContain('commerce_reversal_requires_succeeded_transfer');
+      expect(triggers).toContain('commerce_transfer_attempt_success_requires_outbox_success');
     });
 
     it('should create all unique indices from migration 0002', () => {

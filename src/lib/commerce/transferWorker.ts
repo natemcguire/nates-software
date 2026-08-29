@@ -360,8 +360,8 @@ export async function processTransferOutboxItem(
     SELECT id, attempt_number, outcome, started_at,
            (strftime('%s', 'now') - strftime('%s', started_at)) AS elapsed_seconds
     FROM commerce_transfer_attempts
-    WHERE outbox_id = ? AND outcome = 'ambiguous'
-    ORDER BY attempt_number DESC
+    WHERE outbox_id = ? AND outcome IN ('ambiguous', 'started')
+    ORDER BY started_at ASC, attempt_number ASC
     LIMIT 1
   `).bind(outboxId).first();
 
@@ -465,20 +465,21 @@ export async function processTransferOutboxItem(
   // 7. Atomically Snapshot destination_stripe_account if null (never change once snapshotted)
   let targetStripeAccount = outbox.destination_stripe_account;
   if (!targetStripeAccount) {
-    targetStripeAccount = resolvedAccountId;
     try {
-      await db.prepare(`
+      const snapshotResult = await db.prepare(`
         UPDATE commerce_transfer_outbox
         SET destination_stripe_account = ?
         WHERE id = ? AND claim_token = ? AND destination_stripe_account IS NULL
-      `).bind(targetStripeAccount, outboxId, claimToken).run();
+      `).bind(resolvedAccountId, outboxId, claimToken).run();
+      if ((snapshotResult?.meta?.changes ?? 0) !== 1) {
+        throw new Error('destination snapshot claim was lost');
+      }
     } catch (snapErr: any) {
-      // Re-fetch in case already snapshotted
-      const fresh: any = await db.prepare(`
-        SELECT destination_stripe_account FROM commerce_transfer_outbox WHERE id = ?
-      `).bind(outboxId).first();
-      targetStripeAccount = fresh?.destination_stripe_account || resolvedAccountId;
+      const errorMsg = `Could not durably snapshot payout destination: ${snapErr.message}`;
+      await releaseTransferClaim(db, outboxId, claimToken, errorMsg, 30);
+      return { success: false, retryable: true, outboxId, orderId: outbox.order_id, allocationId: outbox.allocation_id, error: errorMsg };
     }
+    targetStripeAccount = resolvedAccountId;
   }
 
   // 8. Require Persisted stripe_idempotency_key exactly transfer:<outbox-id>
@@ -500,14 +501,19 @@ export async function processTransferOutboxItem(
 
   if (!persistedKey) {
     try {
-      await db.prepare(`
+      const keyResult = await db.prepare(`
         UPDATE commerce_transfer_outbox
         SET stripe_idempotency_key = ?
         WHERE id = ? AND claim_token = ? AND stripe_idempotency_key IS NULL
       `).bind(expectedIdempotencyKey, outboxId, claimToken).run();
+      if ((keyResult?.meta?.changes ?? 0) !== 1) {
+        throw new Error('idempotency snapshot claim was lost');
+      }
       persistedKey = expectedIdempotencyKey;
-    } catch {
-      persistedKey = expectedIdempotencyKey;
+    } catch (keyErr: any) {
+      const errorMsg = `Could not durably persist Stripe idempotency identity: ${keyErr.message}`;
+      await releaseTransferClaim(db, outboxId, claimToken, errorMsg, 30);
+      return { success: false, retryable: true, outboxId, orderId: outbox.order_id, allocationId: outbox.allocation_id, error: errorMsg };
     }
   }
 
@@ -516,7 +522,14 @@ export async function processTransferOutboxItem(
   const requestSha256 = await hashPayload(requestBodyString);
 
   // 10. Persist Started Attempt Record Before External Call
-  const attemptNumber = outbox.attempt_count > 0 ? outbox.attempt_count : 1;
+  const attemptSequence: any = await db.prepare(`
+    SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt_number
+    FROM commerce_transfer_attempts WHERE outbox_id = ?
+  `).bind(outboxId).first();
+  const attemptNumber = Math.max(
+    outbox.attempt_count > 0 ? outbox.attempt_count : 1,
+    Number(attemptSequence?.max_attempt_number || 0) + 1
+  );
   const attemptId = `cta_${crypto.randomUUID().replace(/-/g, '')}`;
 
   try {
@@ -525,9 +538,6 @@ export async function processTransferOutboxItem(
         id, outbox_id, attempt_number, stripe_idempotency_key,
         request_sha256, outcome, started_at
       ) VALUES (?, ?, ?, ?, ?, 'started', datetime('now'))
-      ON CONFLICT(outbox_id, attempt_number) DO UPDATE SET
-        request_sha256 = excluded.request_sha256,
-        outcome = 'started'
     `).bind(
       attemptId,
       outboxId,
@@ -712,6 +722,40 @@ export async function processTransferOutboxItem(
         httpStatus,
         stripeRequestId,
         error: errorMsg
+      };
+    }
+
+    const responseMatchesRequest =
+      Number(transferData.amount) === outbox.amount_cents &&
+      String(transferData.currency || '').toLowerCase() === String(outbox.currency).toLowerCase() &&
+      transferData.destination === targetStripeAccount &&
+      transferData.transfer_group === outbox.order_id &&
+      transferData.metadata?.orderId === outbox.order_id &&
+      transferData.metadata?.allocationId === outbox.allocation_id &&
+      transferData.metadata?.outboxId === outbox.id;
+    if (!responseMatchesRequest) {
+      const errorMsg = `Stripe returned transfer '${transferId}' with economics or metadata that do not match the durable outbox request; manual reconciliation required`;
+      await db.batch([
+        db.prepare(`
+          UPDATE commerce_transfer_attempts
+          SET outcome = 'ambiguous', http_status = ?, stripe_request_id = ?,
+              stripe_transfer_id = ?, error_code = 'response_mismatch', error_message = ?,
+              completed_at = datetime('now')
+          WHERE id = ?
+        `).bind(httpStatus, stripeRequestId, transferId, errorMsg, attemptId),
+        db.prepare(`
+          UPDATE commerce_transfer_outbox
+          SET status = 'terminal_failure', last_http_status = ?, last_stripe_request_id = ?,
+              last_error = ?, completed_at = datetime('now'), claim_token = NULL,
+              lease_expires_at = NULL
+          WHERE id = ? AND claim_token = ?
+        `).bind(httpStatus, stripeRequestId, errorMsg, outboxId, claimToken)
+      ]);
+      return {
+        success: false, terminal: true, ambiguous: true, outboxId,
+        orderId: outbox.order_id, allocationId: outbox.allocation_id,
+        attemptNumber, httpStatus, stripeRequestId, stripeTransferId: transferId,
+        errorCode: 'response_mismatch', error: errorMsg
       };
     }
 
