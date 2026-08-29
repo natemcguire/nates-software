@@ -6,6 +6,32 @@
  */
 
 import { calculateDynoGrade } from "../src/lib/dynoDomain.ts";
+
+const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+
+function getFs(): any {
+  if (!isNode) return null;
+  try {
+    const req = typeof globalThis !== 'undefined' && (globalThis as any).require ? (globalThis as any).require : null;
+    return req ? req('fs') : null;
+  } catch {
+    return null;
+  }
+}
+
+function runCommandSync(cmd: string, opts: any = {}): string {
+  if (!isNode) return '';
+  try {
+    const req = typeof globalThis !== 'undefined' && (globalThis as any).require ? (globalThis as any).require : null;
+    const cp = req ? req('child_process') : null;
+    if (cp && cp.execSync) {
+      return cp.execSync(cmd, opts);
+    }
+  } catch (err: any) {
+    if (opts.throwError) throw err;
+  }
+  return '';
+}
 import { RigRuntimeBackend, MEMORY_CAP_MB } from "../src/lib/rigBackend.ts";
 import { INITIAL_APPS as APPS_DATA } from "../src/data/mockData.ts";
 
@@ -67,8 +93,8 @@ export function handleInit(args: string[] = []): SlopCommandResult {
     try {
       const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
       const pkgPath = `${cwd}/package.json`;
-      if (typeof require !== "undefined" && require("fs").existsSync(pkgPath)) {
-        const pkg = JSON.parse(require("fs").readFileSync(pkgPath, "utf-8"));
+      if (getFs()?.existsSync(pkgPath)) {
+        const pkg = JSON.parse(getFs()?.readFileSync(pkgPath, "utf-8") || '{}');
         projectName = pkg.name || cwd.split("/").pop() || "my-shareware-app";
         if (!tagline && pkg.description) tagline = pkg.description;
       } else {
@@ -86,11 +112,11 @@ export function handleInit(args: string[] = []): SlopCommandResult {
 
   if (typeof process !== "undefined" && !process.env.VITEST) {
     try {
-      const { execSync } = require("child_process");
+      
       try {
-        execSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
+        runCommandSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
       } catch {
-        execSync(`git remote set-url slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
+        runCommandSync(`git remote set-url slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
       }
     } catch {}
   }
@@ -98,17 +124,17 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   // Create or update local slop.json if not present
   const configFile = "slop.json";
   try {
-    const fs = require("fs");
+    
     const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
     const configPath = `${cwd}/${configFile}`;
-    if (!fs.existsSync(configPath)) {
+    if (!getFs()?.existsSync(configPath)) {
       const configData = {
         name: formattedTitle,
         tagline: formattedTagline,
         price: parseInt(price, 10) || 15,
         handle
       };
-      fs.writeFileSync(configPath, JSON.stringify(configData, null, 2) + "\n");
+      getFs()?.writeFileSync(configPath, JSON.stringify(configData, null, 2) + "\n");
     }
   } catch {}
 
@@ -154,11 +180,12 @@ export function handleFork(slugArg?: string): SlopCommandResult {
 
   // Real disk creation and worktree provisioning
   try {
-    const fs = require("fs");
-    const { execSync } = require("child_process");
+    
+    
 
-    if (!fs.existsSync(worktreePath)) {
-      fs.mkdirSync(worktreePath, { recursive: true });
+    const fsMod = getFs();
+    if (fsMod && !fsMod.existsSync(worktreePath)) {
+      fsMod.mkdirSync(worktreePath, { recursive: true });
     }
 
     // Check if local source project exists
@@ -166,16 +193,17 @@ export function handleFork(slugArg?: string): SlopCommandResult {
       `/Volumes/MacMiniExtra/Projects/${appId}`,
       `/Users/nate/Projects/${appId}`
     ];
-    const foundLocal = localSources.find(p => fs.existsSync(p));
+    const foundLocal = localSources.find(p => getFs()?.existsSync(p));
 
     if (foundLocal && !process.env.VITEST) {
       try {
-        execSync(`git clone --depth 1 file://${foundLocal} ${worktreePath}`, { stdio: "ignore", timeout: 5000 });
+        runCommandSync(`git clone --depth 1 file://${foundLocal} ${worktreePath}`, { stdio: "ignore", timeout: 5000 });
       } catch {}
     }
 
     // If not cloned from local, create a real runnable project template in worktree
-    if (!fs.existsSync(`${worktreePath}/package.json`)) {
+    const fsMod2 = getFs();
+    if (fsMod2 && !fsMod2.existsSync(`${worktreePath}/package.json`)) {
       const starterPkg = {
         name: `${appId}-fork`,
         version: "1.0.0",
@@ -189,15 +217,15 @@ export function handleFork(slugArg?: string): SlopCommandResult {
           "react-dom": "^19.0.0"
         }
       };
-      fs.writeFileSync(`${worktreePath}/package.json`, JSON.stringify(starterPkg, null, 2) + "\n");
-      fs.writeFileSync(`${worktreePath}/README.md`, `# 🚀 ${appId}\nForked from ${slug}. Go Fork, and Multiply!\n`);
-      fs.writeFileSync(`${worktreePath}/slop.json`, JSON.stringify({ name: appId, price: 15, handle: "nate" }, null, 2) + "\n");
+      fsMod2.writeFileSync(`${worktreePath}/package.json`, JSON.stringify(starterPkg, null, 2) + "\n");
+      fsMod2.writeFileSync(`${worktreePath}/README.md`, `# 🚀 ${appId}\nForked from ${slug}. Go Fork, and Multiply!\n`);
+      fsMod2.writeFileSync(`${worktreePath}/slop.json`, JSON.stringify({ name: appId, price: 15, handle: "nate" }, null, 2) + "\n");
       
       // Initialize real git repo
       if (!process.env.VITEST) {
         try {
-          execSync(`cd ${worktreePath} && git init && git config user.name "Nate McGuire" && git config user.email "nate@nates-software.com" && git add -A && git commit -m "feat(fork): initialize from ${slug}"`, { stdio: "ignore", timeout: 3000 });
-          execSync(`cd ${worktreePath} && git remote add slop ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`, { stdio: "ignore", timeout: 1000 });
+          runCommandSync(`cd ${worktreePath} && git init && git config user.name "Nate McGuire" && git config user.email "nate@nates-software.com" && git add -A && git commit -m "feat(fork): initialize from ${slug}"`, { stdio: "ignore", timeout: 3000 });
+          runCommandSync(`cd ${worktreePath} && git remote add slop ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`, { stdio: "ignore", timeout: 1000 });
         } catch {}
       }
     }
@@ -240,26 +268,26 @@ export function handlePush(args: string[] = []): SlopCommandResult {
   let gitError: string | null = null;
 
   try {
-    const { execSync } = require("child_process");
+    
     const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
     appId = cwd.split("/").pop() || appId;
 
     try {
-      sha = execSync("git rev-parse --short HEAD", { encoding: "utf-8", timeout: 1000 }).trim();
+      sha = (runCommandSync("git rev-parse --short HEAD", { encoding: "utf-8", timeout: 1000 }) || sha).trim();
     } catch {}
 
     // In live CLI execution (non-test), verify real git push
     if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
       try {
-        const remotes = execSync("git remote", { encoding: "utf-8" });
+        const remotes = runCommandSync("git remote", { encoding: "utf-8" });
         if (remotes.includes("slop")) {
-          execSync("git push slop HEAD:main", { stdio: "pipe", timeout: 10000 });
+          runCommandSync("git push slop HEAD:main", { stdio: "pipe", timeout: 10000, throwError: true });
           pushedGit = true;
         } else {
           // Auto-add remote if missing
           const remoteUrl = `ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`;
-          execSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore" });
-          execSync("git push slop HEAD:main", { stdio: "pipe", timeout: 10000 });
+          runCommandSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore" });
+          runCommandSync("git push slop HEAD:main", { stdio: "pipe", timeout: 10000, throwError: true });
           pushedGit = true;
         }
       } catch (err: any) {
