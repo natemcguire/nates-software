@@ -35,7 +35,7 @@ const PROMPT_PRESETS: Record<string, string[]> = {
   picfitai: [
     'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.',
     'Refactor the outfit synthesis pipeline to call Google Gemini 2.5 Flash Vision API with realistic fabric drape.',
-    'Add single-file SQLite user credit ledger in WAL mode with Stripe webhook signature validation.'
+    'Add a configurable user credit ledger with Stripe webhook signature validation; document the chosen storage adapter.'
   ]
 };
 
@@ -105,7 +105,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
             <div className="text-right font-mono text-[11px]">
               <div className="text-emerald-800 font-bold">70% Maker Royalty</div>
-              <div className="text-gray-500">{app.id === 'dronehunter' ? 'Local-First (Storage Freedom)' : `/data/${app.id}.sqlite (WAL)`}</div>
+              <div className="text-gray-500">Storage declared by each app</div>
             </div>
           </div>
 

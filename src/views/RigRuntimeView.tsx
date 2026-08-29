@@ -40,9 +40,9 @@ export const RigRuntimeView: React.FC = () => {
   const [buildCommand, setBuildCommand] = useState('npm run build');
   const [startCommand, setStartCommand] = useState('node dist/server.js');
   const [healthEndpoint, setHealthEndpoint] = useState('/healthz');
-  const [storageKind, setStorageKind] = useState<RigStorageKind | 'none'>('sqlite');
-  const [storagePath, setStoragePath] = useState('/data/app.sqlite');
-  const [storagePersistence, setStoragePersistence] = useState<RigStoragePersistence>('persistent');
+  const [storageKind, setStorageKind] = useState<RigStorageKind | 'none'>('none');
+  const [storagePath, setStoragePath] = useState('/data');
+  const [storagePersistence, setStoragePersistence] = useState<RigStoragePersistence>('ephemeral');
   const [storageSizeMb, setStorageSizeMb] = useState<number>(64);
   const [memoryCapMb, setMemoryCapMb] = useState<number>(256);
   const [ttlSeconds, setTtlSeconds] = useState<number>(900); // 15m default
@@ -92,7 +92,7 @@ export const RigRuntimeView: React.FC = () => {
               {
                 name: 'default-storage',
                 kind: storageKind,
-                mountPath: storagePath.trim() || `/data/${cleanAppId}.sqlite`,
+                mountPath: storagePath.trim() || '/data',
                 sizeMb: storageSizeMb,
                 persistence: storagePersistence
               }
@@ -478,7 +478,7 @@ export const RigRuntimeView: React.FC = () => {
                         value={storagePath}
                         onChange={e => setStoragePath(e.target.value)}
                         className="w-full p-1 border border-gray-400 font-mono text-xs rounded bg-white"
-                        placeholder="/data/app.sqlite"
+                        placeholder="/data"
                       />
                     </div>
                     <div>

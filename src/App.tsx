@@ -118,8 +118,8 @@ function AppInner() {
       upvotes: 42,
       forkCount: 12,
       tags: ['Shareware', 'App'],
-      sqliteDatabase: '/data/app.sqlite',
-      sqliteSize: '1.4 MB',
+      sqliteDatabase: '',
+      sqliteSize: 'Not specified',
       screenshots: ['https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'],
       comments: []
     };

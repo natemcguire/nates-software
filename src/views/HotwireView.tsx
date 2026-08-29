@@ -181,8 +181,8 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         forkCount: 0,
         forks: 0,
         tags: ['Shareware'],
-        sqliteDatabase: '/data/app.sqlite',
-        sqliteSize: '1.4 MB',
+        sqliteDatabase: '',
+        sqliteSize: 'Not specified',
         screenshots: [],
         comments: []
       };
