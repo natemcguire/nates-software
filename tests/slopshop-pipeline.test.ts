@@ -9,6 +9,7 @@ import {
   FileModification
 } from '../src/lib/slopshopPipeline';
 import { onRequestGet, onRequestPost } from '../functions/api/pipeline';
+import { createTestD1Database } from './fixtures/d1Harness';
 
 describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () => {
   const engine = new SlopshopPipelineEngine('dronehunter');
@@ -544,6 +545,56 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
       expect(json.success).toBe(false);
       expect(json.status).toBe('rejected_edge_runtime_unsupported');
       expect(json.error).toContain('Edge runtime cannot execute Git revert operations');
+    });
+
+    it('queues one pinned RIG verification workflow without claiming preview readiness', async () => {
+      const ctx = await createTestD1Database({ foreignKeys: true });
+      const targetOid = 'a'.repeat(40);
+      const resultOid = 'b'.repeat(40);
+      await ctx.d1.prepare(`INSERT INTO repositories
+        (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+        VALUES ('repo-verify','usr_nate','verify-me','private','refs/heads/main','repositories/repo-verify','active')`).run();
+      await ctx.d1.prepare(`INSERT INTO repository_refs (repository_id,ref_name,commit_oid,version)
+        VALUES ('repo-verify','refs/heads/main',?,1),
+               ('repo-verify','refs/heads/feature-verify',?,1)`).bind(targetOid, resultOid).run();
+      const env = {
+        DB: ctx.d1,
+        RIG_VERIFICATION_IMAGE_DIGEST: `node@sha256:${'c'.repeat(64)}`,
+        RIG_TOOLCHAIN_VERSION: 'rig-toolchain-1',
+        RIG_TEST_POLICY_VERSION: 'repo-native-1'
+      };
+      const request = () => new Request('https://nates-software.com/api/pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          action: 'request_verification', targetRepositoryId: 'repo-verify',
+          targetRef: 'refs/heads/main', sourceRef: 'refs/heads/feature-verify',
+          idempotencyKey: 'verify-feature-001', sourceManifestDigest: `sha256:${'d'.repeat(64)}`,
+          buildCommand: 'npm run build', testCommand: 'npm test', instructions: 'Verify the feature branch.'
+        })
+      });
+      const first = await onRequestPost({ request: request(), env });
+      const firstBody: any = await first.json();
+      const second = await onRequestPost({ request: request(), env });
+      expect(first.status).toBe(202);
+      expect(firstBody).toMatchObject({ success: true, idempotent: false,
+        verification: { jobStatus: 'queued', attemptStatus: 'preparing', buildStatus: 'queued' } });
+      expect(second.status).toBe(200);
+      expect(await second.json()).toMatchObject({ success: true, idempotent: true });
+      expect(await ctx.d1.prepare("SELECT count(*) AS count FROM forge_outbox_events WHERE event_type='build.verification_requested'").first('count')).toBe(1);
+      expect(await ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind(firstBody.verification.mergeAttemptId).first('status')).toBe('preparing');
+    });
+
+    it('fails closed when RIG verification policy is absent', async () => {
+      const response = await onRequestPost({
+        request: new Request('https://nates-software.com/api/pipeline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+          body: JSON.stringify({ action: 'request_verification' })
+        }),
+        env: { DB: (await createTestD1Database()).d1 }
+      });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ success: false, error: 'RIG verification policy is not configured.' });
     });
   });
 });

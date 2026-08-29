@@ -6,6 +6,9 @@ pages_build_output_dir = "dist"
 [vars]
 GITSMITH_GATEWAY_URL = "https://gitsmith-gateway-production.up.railway.app"
 RIG_GATEWAY_URL = "https://rig-provider.nates-software.com"
+RIG_VERIFICATION_IMAGE_DIGEST = "node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e"
+RIG_TOOLCHAIN_VERSION = "node-24-bookworm-slim"
+RIG_TEST_POLICY_VERSION = "rig-node-v1-bridge-egress"
 
 # Cloudflare D1 (Serverless SQLite at Edge)
 [[d1_databases]]
@@ -33,3 +36,6 @@ bucket_name = "nates-software-preview-storage"
 [env.preview.vars]
 GITSMITH_GATEWAY_URL = "https://gitsmith-gateway-production.up.railway.app"
 RIG_GATEWAY_URL = "https://rig-provider.nates-software.com"
+RIG_VERIFICATION_IMAGE_DIGEST = "node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e"
+RIG_TOOLCHAIN_VERSION = "node-24-bookworm-slim"
+RIG_TEST_POLICY_VERSION = "rig-node-v1-bridge-egress"

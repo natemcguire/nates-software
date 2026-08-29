@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import {
   initBareRepo,
   readAuthoritativeRef,
+  archiveAuthoritativeCommit,
   hasGitObject,
   updateAuthoritativeRefCas,
   cloneOrFetchForFork,
@@ -220,6 +221,14 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
       // Verify authoritative ref in Git
       const currentRef = readAuthoritativeRef(tempRoot, storageKey, 'refs/heads/main');
       expect(currentRef).toBe(commit1);
+    });
+
+    it('exports only the exact immutable commit tree as a tar archive', () => {
+      const commit = createRealGitCommit(repoPath, 'Archived commit');
+      const archive = archiveAuthoritativeCommit(tempRoot, storageKey, commit);
+      expect(Buffer.isBuffer(archive)).toBe(true);
+      expect(archive.length).toBeGreaterThan(0);
+      expect(() => archiveAuthoritativeCommit(tempRoot, storageKey, 'f'.repeat(40))).toThrow(/does not exist/);
     });
 
     it('updates ref via atomic CAS (commit1 -> commit2)', () => {

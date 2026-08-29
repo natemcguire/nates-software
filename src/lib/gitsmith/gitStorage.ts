@@ -320,6 +320,31 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
 }
 
 /**
+ * Exports one exact commit from the authoritative bare repository as a tar archive.
+ * The caller receives only the committed tree: no Git metadata, working tree state,
+ * untracked files, or mutable ref lookup is involved.
+ */
+export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string, commitOid: string): Buffer {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    throw new Error(pathRes.error || 'Authoritative repository does not exist.');
+  }
+  if (!isValidGitOid(commitOid)) throw new Error('commitOid must be a valid Git object ID.');
+  if (!hasGitObject(reposRoot, storageKey, commitOid)) throw new Error('Requested commit does not exist in the authoritative repository.');
+  try {
+    return execFileSync('git', ['archive', '--format=tar', `${commitOid}^{commit}`], {
+      cwd: pathRes.resolvedPath,
+      encoding: 'buffer',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 30_000
+    });
+  } catch (error: any) {
+    throw new Error(`Unable to archive authoritative commit: ${String(error?.stderr || error?.message || error).trim()}`);
+  }
+}
+
+/**
  * Lists all authoritative refs in a bare repository.
  */
 export function listAuthoritativeRefs(

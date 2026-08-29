@@ -14,6 +14,10 @@ export RIG_PRODUCTION_ENABLED="true"
 export RIG_STATE_PATH="/Volumes/MacMiniExtra/ServiceData/nates-software/rig/instances.json"
 export RIG_MAX_INSTANCES_PER_OWNER="2"
 export RIG_MAX_TOTAL_INSTANCES="3"
+export RIG_CONTROL_PLANE_URL="https://nates-software.com"
+export RIG_VERIFICATION_JOBS_ROOT="/Volumes/MacMiniExtra/ServiceData/nates-software/rig/jobs"
+export RIG_VERIFICATION_POLL_MS="15000"
+export RIG_VERIFICATION_TIMEOUT_MS="600000"
 export RIG_GATEWAY_SERVICE_SECRET="$(/usr/bin/security find-generic-password -a "${USER}" -s com.nates-software.rig.gateway -w)"
 
 cd /Volumes/MacMiniExtra/Projects/nates_software

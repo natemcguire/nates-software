@@ -7,6 +7,7 @@ import { GitsmithGatewayService } from './gatewayService.ts';
 import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 import { GatewayHealthChecker } from './health.ts';
 import { constantTimeTokenCompare } from '../forgeDomain.ts';
+import { archiveAuthoritativeCommit } from './gitStorage.ts';
 
 export interface CreateServerOptions {
   service?: GitsmithGatewayService;
@@ -76,6 +77,31 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       }
       return constantTimeTokenCompare(token, config.gatewayToken);
     };
+
+    // Authenticated immutable source export for the RIG verification worker.
+    if (req.method === 'GET' && url.pathname === '/api/gateway/archive') {
+      if (!verifyToken()) {
+        res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Valid gateway token required.' }));
+        return;
+      }
+      const storageKey = String(url.searchParams.get('storageKey') || '').trim();
+      const commitOid = String(url.searchParams.get('commitOid') || '').trim();
+      try {
+        const archive = archiveAuthoritativeCommit(config.reposRoot, storageKey, commitOid);
+        res.writeHead(200, {
+          'Content-Type': 'application/x-tar',
+          'Content-Length': archive.length,
+          'Cache-Control': 'private, no-store',
+          'X-Gitsmith-Commit-Oid': commitOid
+        });
+        res.end(archive);
+      } catch (error: any) {
+        res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: error?.message || 'Commit archive not found.' }));
+      }
+      return;
+    }
 
     // 5. POST /api/gateway/cas - Authoritative CAS ref update
     if (req.method === 'POST' && url.pathname === '/api/gateway/cas') {

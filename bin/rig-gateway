@@ -2,6 +2,7 @@
 import { createRigGatewayServer, loadRigGatewayConfig, validateRigGatewayConfig } from '../src/lib/rig/server.ts';
 import { BoundedDockerProvider, RigDockerControlApi } from '../src/lib/rigDockerProvider.ts';
 import { JsonRigInstanceStateStore } from '../src/lib/rig/stateStore.ts';
+import { RigVerificationWorker, loadRigVerificationWorkerConfig } from '../src/lib/rig/verificationWorker.ts';
 
 const config = loadRigGatewayConfig();
 validateRigGatewayConfig(config);
@@ -34,8 +35,17 @@ const reaper = setInterval(async () => {
 }, 30_000);
 reaper.unref();
 
+const verificationConfig = loadRigVerificationWorkerConfig();
+const verificationWorker = verificationConfig ? new RigVerificationWorker(verificationConfig) : null;
+const verifier = verificationWorker ? setInterval(() => {
+  verificationWorker.pollOnce().catch(error => console.error('[RIG] verification worker failed:', error));
+}, verificationConfig!.pollIntervalMs) : null;
+verifier?.unref();
+verificationWorker?.pollOnce().catch(error => console.error('[RIG] initial verification poll failed:', error));
+
 const shutdown = () => {
   clearInterval(reaper);
+  if (verifier) clearInterval(verifier);
   server.close(() => process.exit(0));
 };
 process.on('SIGINT', shutdown);
