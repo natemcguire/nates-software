@@ -34,7 +34,13 @@ function runDocker(args: string[], timeoutMs: number): Promise<{ exitCode: numbe
 
 export class RigVerificationWorker {
   private busy = false;
-  constructor(private readonly config: RigVerificationWorkerConfig, private readonly workerFetch: typeof fetch = fetch) {}
+  private readonly config: RigVerificationWorkerConfig;
+  private readonly workerFetch: typeof fetch;
+
+  constructor(config: RigVerificationWorkerConfig, workerFetch: typeof fetch = fetch) {
+    this.config = config;
+    this.workerFetch = workerFetch;
+  }
 
   private async post(body: unknown): Promise<any> {
     const response = await this.workerFetch(new URL('/api/rig-verification', this.config.controlPlaneUrl), {
