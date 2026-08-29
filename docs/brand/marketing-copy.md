@@ -37,8 +37,8 @@ You fork a title, tell Claude or Codex what to change, and package the work as a
 - *White Paper available: AST syntax slicing, component dependency graphs, and AI agent handoff.*
 
 ### 3. RIG.EXE — The runtime with no ceremony
-Hosts your micro-apps. Each one gets private SQLite on local disk. You start the process; the database file sits beside the binary. Storage stays with you. No tenant ID, no dashboard tour you have to finish before the program will work.
-- *White Paper available: Container lifecycle, single-file SQLite persistence, and OOM recovery.*
+Runs real builds and previews in disposable, bounded containers. Bring SQLite, Postgres, object storage, flat files, browser storage, or nothing persistent. RIG runs the declared workload and reports real health and resource evidence without choosing the app's database for it.
+- *White Paper available: Ephemeral container lifecycle, storage freedom, and evidence-backed OOM recovery.*
 
 ### 4. GITSMITH — A bare Git forge that knows what a feature is
 You host the repos here. A fork grew a better export, or a calendar view you want; GITSMITH pulls that feature across histories instead of treating every hunk as sacred. Semantic merge for people who fork as a habit. History you can read. Branches you can keep.
@@ -50,12 +50,8 @@ Three panes. People and agents on the left, the thread in the middle, the propos
 
 ---
 
-## Nate's LLM Specs — The Dyno Software Measurement Tool
-Every app in the marketplace is benchmarked with **Nate's LLM Specs**:
-- **LLM Moddability Score**: How cleanly Claude/Codex can parse and extend the AST without breaking dependencies.
-- **AST Branch Cleanliness**: Semantic divergence rate between forks.
-- **Storage Architecture**: Single-file SQLite WAL mode isolation vs multi-tenant lock-in.
-- **Compiled Target Breadth**: Available native binaries (macOS DMG, Windows EXE, Linux AppImage, iOS TestFlight).
+## DYNO — The LLM Dynamometer
+DYNO measures a complete LLM driving system—model, harness, tools, environment, and execution—on repeatable real-world developer commands. It is a standalone evaluation product, not a benchmark of marketplace apps. Public Street runs are self-reported; Reproduced and Certified results require progressively stronger independent evidence, with Certified Double-Blind reserved for attested private evaluations.
 
 ---
 

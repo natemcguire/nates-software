@@ -57,7 +57,7 @@ Nate's Software is implemented as a full web-based operating system adhering to 
 2. **`HOTWIRE.EXE` (`hotwire`):** 12:01 AM daily drops leaderboard with interactive Claude-style artifact sandbox (`RetroCalc Pro`).
 3. **`SLOPSHOP.EXE` (`slopshop`):** The AI speed shop with live AST splicing pipeline and terminal logging.
 4. **`INBOX.EXE` (`inbox`):** 3-pane email client with 1-click CAS merge proposal approvals.
-5. **`RIG_RUNTIME.EXE` (`rig`):** Container runtime HUD with single-file SQLite database backup downloaders.
+5. **`RIG_RUNTIME.EXE` (`rig`):** Ephemeral container runtime HUD with resource evidence and optional declared-volume controls.
 6. **`WHITE_PAPERS.DOC` (`papers`):** Dedicated in-depth reader for the 5 architectural white papers written by Codex Sol Max.
 
 ---

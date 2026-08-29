@@ -3,7 +3,7 @@
 ## 1. Executive Summary: Can It Be Done Mostly on Cloudflare?
 **YES. Virtually the entire platform can run on Cloudflare with zero server management, sub-50ms global latency, and near-zero idle infrastructure cost.**
 
-Because Nate's Software is fundamentally built on **unbundled micro-tools, real Git repositories, and single-file SQLite databases**, Cloudflare's edge primitives (Workers, Pages, D1, R2, KV, and Durable Objects) are an ideal architectural fit.
+Because Nate's Software is fundamentally built on **unbundled micro-tools, real Git repositories, and application-selected storage**, Cloudflare's edge primitives (Workers, Pages, D1, R2, KV, and Durable Objects) are an effective fit for the hosted control plane without constraining how distributed apps persist their own data.
 
 ---
 

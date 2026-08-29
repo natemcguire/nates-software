@@ -12,7 +12,7 @@ export const WhitePapersView: React.FC = () => {
     rig: {
       id: 'rig',
       title: "1. RIG.EXE Architectural White Paper",
-      subtitle: "Micro-Container Runtime & Single-File SQLite Storage Engine",
+      subtitle: "Runtime-Agnostic Ephemeral Build & Preview Isolation",
       icon: <Cpu size={16} className="text-green-700" />,
       content: WHITEPAPERS_DATA.rig
     },

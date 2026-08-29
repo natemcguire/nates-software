@@ -15,8 +15,8 @@ Every capability in the marketplace is an independent, old-school shareware prod
 ├───────────────────┼───────────────────┼───────────────────┼───────────────────┼─────────────┤
 │ • Ephemeral Linux │ • 1-click fork    │ • Daily 12:01 AM  │ • Bare Git over   │ • 3-Pane    │
 │   WebContainers   │ • AI Agent hooks  │   drops board     │   SSH port 22     │   Outlook   │
-│ • SQLite volume   │ • Modular feature │ • Upvotes &       │ • 41s Semantic AI │ • Async     │
-│   mounts & WAL    │   cherry-picker   │   maker streaks   │   Merge Queue     │   Markdown  │
+│ • Optional volume │ • Modular feature │ • Upvotes &       │ • 41s Semantic AI │ • Async     │
+│   declarations    │   cherry-picker   │   maker streaks   │   Merge Queue     │   Markdown  │
 │ • OOM recovery &  │ • AST syntax      │ • Nate's Software  │ • Atomic CAS      │ • Action    │
 │   instant boot    │   patch engine    │   spec benchmarks │   update-ref      │   Proposals │
 └───────────────────┴───────────────────┴───────────────────┴───────────────────┴─────────────┘

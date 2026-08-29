@@ -134,7 +134,7 @@ export function useWindowManager() {
     },
     rig: {
       id: 'rig',
-      title: "RIG.EXE — [Micro-Container & SQLite Volume HUD]",
+      title: "RIG.EXE — [Ephemeral Runtime & Build HUD]",
       icon: '⚙️',
       isOpen: false,
       isMinimized: false,

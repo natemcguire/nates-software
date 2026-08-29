@@ -127,7 +127,7 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
           {soundOn ? <Volume2 size={14} className="text-blue-900" /> : <VolumeX size={14} className="text-gray-500" />}
         </button>
 
-        <span title="Local-First Single-File SQLite Active" className="flex items-center">
+        <span title="Portable Software & Storage Freedom" className="flex items-center">
           <ShieldCheck size={14} className="text-green-700" />
         </span>
 
