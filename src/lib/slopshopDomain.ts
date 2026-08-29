@@ -18,6 +18,22 @@ export interface RepoCoordinate {
   readonly icon: string;
 }
 
+export interface ForgeRepositoryProjection {
+  readonly id: string;
+  readonly appId?: string | null;
+  readonly slug: string;
+  readonly ownerUsername?: string | null;
+  readonly status: string;
+}
+
+export interface ForgeSshTransport {
+  readonly protocol: 'ssh';
+  readonly configured: boolean;
+  readonly active: boolean;
+  readonly host: string;
+  readonly port: number;
+}
+
 export interface FeaturePreset {
   readonly id: string;
   readonly name: string;
@@ -130,7 +146,7 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     author: 'nate',
     slug: 'nate/dronehunter',
     repoUrl: 'https://github.com/natemcguire/dronehunter.git',
-    sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/dronehunter.git',
+    sshRemote: '',
     defaultPort: 3004,
     localPathHint: '~/Projects/dronehunter',
     techStack: ['TypeScript', 'Vite', 'HTML5 Canvas', 'Web Audio API', 'Local Storage'],
@@ -145,7 +161,7 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     author: 'nate',
     slug: 'nate/certified-mailer',
     repoUrl: 'https://github.com/natemcguire/certified-mailer.git',
-    sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/certified-mailer.git',
+    sshRemote: '',
     defaultPort: 3005,
     sqliteDatabase: 'Browser localStorage (unencrypted)',
     localPathHint: '~/Projects/certified-mailer',
@@ -161,7 +177,7 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     author: 'nate',
     slug: 'nate/picfitai',
     repoUrl: 'https://github.com/natemcguire/picfitai.git',
-    sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/picfitai.git',
+    sshRemote: '',
     defaultPort: 3006,
     sqliteDatabase: '',
     localPathHint: '~/Projects/picfitai',
@@ -430,6 +446,21 @@ new file mode 100644
   ]
 };
 
+export const CUSTOM_FEATURE_PRESET: FeaturePreset = {
+  id: 'custom-feature',
+  name: '🧩 Custom Repository Feature',
+  category: 'Repository-defined',
+  description: 'Describe a feature after inspecting this repository’s actual structure and conventions.',
+  prompt: 'Inspect this repository first. Then implement the requested feature using its existing architecture, tests, runtime, and storage choices. Do not assume filenames, frameworks, or persistence technology that are not present.',
+  targetFiles: [],
+  verificationCriteria: [
+    'Repository-native tests pass',
+    'Repository-native build or validation command passes',
+    'The final diff contains only changes required by the requested feature'
+  ],
+  blueprintDiffPreview: 'No speculative diff is generated before the repository is inspected.'
+};
+
 // ---------------------------------------------------------------------------
 // Agent Tools Configuration
 // ---------------------------------------------------------------------------
@@ -569,20 +600,47 @@ export function getAppCoordinate(appId: string): RepoCoordinate {
     name: cleanId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     author: 'custom',
     slug: `custom/${cleanId}`,
-    repoUrl: `https://github.com/custom/${cleanId}.git`,
-    sshRemote: `ssh://git@gitsmith.nates-software.com:2222/custom/${cleanId}.git`,
+    repoUrl: '',
+    sshRemote: '',
     defaultPort: 3010,
     localPathHint: `~/Projects/${cleanId}`,
     techStack: ['Repository-defined runtime', 'Repository-defined persistence'],
     tagline: `Custom software application repository (${cleanId}).`,
     version: 'v1.0.0',
-    price: '$15.00',
+    price: 'Not listed',
     icon: '📦'
   };
 }
 
 export function getFeaturePresets(appId: string): FeaturePreset[] {
-  return FEATURE_MOD_PRESETS[appId] || FEATURE_MOD_PRESETS.dronehunter;
+  return FEATURE_MOD_PRESETS[appId] || [CUSTOM_FEATURE_PRESET];
+}
+
+export function coordinateFromForgeRepository(
+  repository: ForgeRepositoryProjection,
+  transport: ForgeSshTransport
+): RepoCoordinate {
+  if (!transport.configured || !transport.active || !transport.host || !Number.isInteger(transport.port)) {
+    throw new Error('An active GITSMITH SSH transport is required.');
+  }
+  const owner = repository.ownerUsername?.trim() || 'unknown-owner';
+  const rawSlug = repository.slug.trim().replace(/^\/+|\/+$/g, '');
+  const canonicalSlug = rawSlug.includes('/') ? rawSlug : `${owner}/${rawSlug}`;
+  const appId = repository.appId?.trim() || rawSlug.split('/').at(-1) || repository.id;
+  const known = REPO_COORDINATES[appId];
+  const remote = `ssh://git@${transport.host}:${transport.port}/${canonicalSlug}.git`;
+  return {
+    ...(known || getAppCoordinate(appId)),
+    appId,
+    name: known?.name || appId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    author: owner,
+    slug: canonicalSlug,
+    repoUrl: remote,
+    sshRemote: remote,
+    tagline: known?.tagline || `Active GITSMITH repository ${canonicalSlug}.`,
+    version: known?.version || 'Forge repository',
+    price: known?.price || 'Not listed'
+  };
 }
 
 export function getAgentTools(): AgentToolMeta[] {

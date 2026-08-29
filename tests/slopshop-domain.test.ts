@@ -12,6 +12,7 @@ import {
   escapeShellDoubleQuotes,
   generateFeatureManifest,
   generateLocalAgentPlan,
+  coordinateFromForgeRepository,
   getEvidenceChecklist,
   evaluateGatewayLandingStatus
 } from '../src/lib/slopshopDomain';
@@ -31,7 +32,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(drone.name).toBe('DroneHunter 95');
       expect(drone.slug).toBe('nate/dronehunter');
       expect(drone.repoUrl).toContain('github.com/natemcguire/dronehunter.git');
-      expect(drone.sshRemote).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/dronehunter.git');
+      expect(drone.sshRemote).toBe('');
       expect(drone.defaultPort).toBe(3004);
       expect(drone.sqliteDatabase).toBeUndefined();
       expect(drone.techStack).toContain('Local Storage');
@@ -49,8 +50,23 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       const custom = getAppCoordinate('my-custom-tool');
       expect(custom.appId).toBe('my-custom-tool');
       expect(custom.slug).toBe('custom/my-custom-tool');
-      expect(custom.repoUrl).toContain('my-custom-tool.git');
+      expect(custom.repoUrl).toBe('');
       expect(custom.defaultPort).toBe(3010);
+    });
+
+    it('should derive live clone coordinates from verified GITSMITH transport', () => {
+      const coordinate = coordinateFromForgeRepository({
+        id: 'repo_1', appId: 'my-tool', slug: 'my-tool', ownerUsername: 'nate', status: 'active'
+      }, { protocol: 'ssh', configured: true, active: true, host: 'forge.example.test', port: 10609 });
+      expect(coordinate.slug).toBe('nate/my-tool');
+      expect(coordinate.repoUrl).toBe('ssh://git@forge.example.test:10609/nate/my-tool.git');
+      expect(coordinate.sshRemote).toBe(coordinate.repoUrl);
+    });
+
+    it('should fail closed without an active GITSMITH transport', () => {
+      expect(() => coordinateFromForgeRepository({
+        id: 'repo_1', slug: 'my-tool', ownerUsername: 'nate', status: 'active'
+      }, { protocol: 'ssh', configured: true, active: false, host: 'forge.example.test', port: 10609 })).toThrow('active GITSMITH');
     });
 
     it('should preserve backward-compatible WORKTREE_CONFIGS', () => {
@@ -61,6 +77,13 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
   });
 
   describe('Feature Mod Presets', () => {
+    it('uses a neutral repository-inspection preset for unknown applications', () => {
+      const preset = getFeaturePresets('my-tool')[0];
+      expect(preset.id).toBe('custom-feature');
+      expect(preset.targetFiles).toEqual([]);
+      expect(preset.prompt).toContain('Inspect this repository first');
+      expect(preset.prompt).not.toContain('Drone');
+    });
     it('should provide rich presets with prompts, target files, and verification criteria for each app', () => {
       const dronePresets = getFeaturePresets('dronehunter');
       expect(dronePresets.length).toBeGreaterThanOrEqual(3);

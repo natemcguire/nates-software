@@ -25,6 +25,7 @@ import {
   getAppCoordinate,
   getFeaturePresets,
   getAgentTools,
+  coordinateFromForgeRepository,
   generateLocalAgentPlan,
   getEvidenceChecklist,
   evaluateGatewayLandingStatus,
@@ -41,9 +42,11 @@ export const SlopshopView: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<AgentToolId>('agy');
   const [activeTab, setActiveTab] = useState<'spec' | 'command' | 'evidence' | 'gateway'>('spec');
   const [makerHandle, setMakerHandle] = useState<string>('@nate');
+  const [forgeCoordinates, setForgeCoordinates] = useState<RepoCoordinate[] | null>(null);
 
   // Active coordinate & presets
-  const coordinate: RepoCoordinate = getAppCoordinate(selectedAppId);
+  const coordinate: RepoCoordinate = forgeCoordinates?.find(item => item.appId === selectedAppId)
+    || getAppCoordinate(selectedAppId);
   const presets: FeaturePreset[] = getFeaturePresets(selectedAppId);
   const [activePreset, setActivePreset] = useState<FeaturePreset>(presets[0]);
   const [customPrompt, setCustomPrompt] = useState<string>(presets[0].prompt);
@@ -57,9 +60,30 @@ export const SlopshopView: React.FC = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/git?action=gateway-readiness', { cache: 'no-store', signal: controller.signal })
-      .then(async response => ({ response, body: await response.json() }))
-      .then(({ response, body }) => setGatewayState(response.ok && body?.ready === true ? 'ready' : 'unavailable'))
+    Promise.all([
+      fetch('/api/git?action=gateway-readiness', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal }),
+      fetch('/api/git?action=list', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
+    ]).then(async ([readyResponse, reposResponse]) => ({
+      readyResponse,
+      readiness: await readyResponse.json(),
+      reposResponse,
+      repositories: await reposResponse.json()
+    })).then(({ readyResponse, readiness, reposResponse, repositories }) => {
+      const ready = readyResponse.ok && readiness?.ready === true;
+      setGatewayState(ready ? 'ready' : 'unavailable');
+      if (!ready || !reposResponse.ok || !Array.isArray(repositories?.repositories)) return;
+      const coordinates = repositories.repositories
+        .filter((repository: any) => repository?.status === 'active')
+        .map((repository: any) => coordinateFromForgeRepository(repository, readiness.transport));
+      setForgeCoordinates(coordinates);
+      if (coordinates.length && !coordinates.some((item: RepoCoordinate) => item.appId === selectedAppId)) {
+        const first = coordinates[0];
+        const firstPresets = getFeaturePresets(first.appId);
+        setSelectedAppId(first.appId);
+        setActivePreset(firstPresets[0]);
+        setCustomPrompt(firstPresets[0].prompt);
+      }
+    })
       .catch(error => { if (error?.name !== 'AbortError') setGatewayState('unavailable'); });
     return () => controller.abort();
   }, []);
@@ -75,7 +99,7 @@ export const SlopshopView: React.FC = () => {
 
   const evidenceChecklist = getEvidenceChecklist(activePreset);
   const gatewayPrerequisites = evaluateGatewayLandingStatus({ coordinate, feature: activePreset });
-  const allCoordinates = getAppCoordinates();
+  const allCoordinates = forgeCoordinates?.length ? forgeCoordinates : getAppCoordinates();
   const allAgentTools = getAgentTools();
 
   const handleSelectApp = (app: RepoCoordinate) => {
