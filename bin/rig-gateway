@@ -1,0 +1,13 @@
+#!/usr/bin/env node
+import { createRigGatewayServer, loadRigGatewayConfig, validateRigGatewayConfig } from '../src/lib/rig/server.ts';
+
+const config = loadRigGatewayConfig();
+validateRigGatewayConfig(config);
+const server = createRigGatewayServer(config);
+server.listen(config.port, config.host, () => {
+  console.log(`RIG provider gateway listening on ${config.host}:${config.port}`);
+});
+
+const shutdown = () => server.close(() => process.exit(0));
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
