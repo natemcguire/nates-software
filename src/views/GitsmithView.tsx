@@ -17,9 +17,13 @@ import {
   Folder,
   FileText,
   GripVertical,
-  Globe
+  Globe,
+  Plus,
+  X
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAuth } from '../context/AuthContext';
+import { useAlert } from '../context/AlertContext';
 
 import { ForkWithAiModal } from '../components/ForkWithAiModal';
 import { Bot } from 'lucide-react';
@@ -149,6 +153,8 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
 ];
 
 export const GitsmithView: React.FC = () => {
+  const { user, openAuthModal } = useAuth();
+  const { showAlert } = useAlert();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo>(GITSMITH_REPOS[0]);
@@ -157,6 +163,64 @@ export const GitsmithView: React.FC = () => {
   const [showForkModal, setShowForkModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'commits' | 'lineage'>('code');
+  const [canonicalRepoCount, setCanonicalRepoCount] = useState<number | null>(null);
+  const [showCreateRepo, setShowCreateRepo] = useState(false);
+  const [newRepoSlug, setNewRepoSlug] = useState('');
+  const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
+  const [isCreatingRepo, setIsCreatingRepo] = useState(false);
+
+  const refreshCanonicalRepositories = async () => {
+    try {
+      const response = await fetch('/api/git?list=1', { credentials: 'same-origin' });
+      const payload = await response.json();
+      if (response.ok && payload.success && Array.isArray(payload.repositories)) {
+        setCanonicalRepoCount(payload.repositories.length);
+      }
+    } catch {
+      setCanonicalRepoCount(null);
+    }
+  };
+
+  useEffect(() => {
+    void refreshCanonicalRepositories();
+  }, [user?.id]);
+
+  const handleCreateRepository = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user) {
+      openAuthModal('login');
+      return;
+    }
+    setIsCreatingRepo(true);
+    try {
+      const response = await fetch('/api/git', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create-repository',
+          slug: newRepoSlug.trim(),
+          visibility: newRepoVisibility
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error || payload.errors?.join(' ') || 'Repository creation failed.');
+      }
+      setNewRepoSlug('');
+      setShowCreateRepo(false);
+      await refreshCanonicalRepositories();
+      showAlert(
+        `${payload.repository.slug} is queued for Git gateway provisioning. It becomes active only after the gateway confirms its first authoritative ref.`,
+        'Repository Provisioning Started',
+        'success'
+      );
+    } catch (error: any) {
+      showAlert(error?.message || 'Repository creation failed.', 'GITSMITH', 'error');
+    } finally {
+      setIsCreatingRepo(false);
+    }
+  };
 
   // Interactive Resizable Split Panes
   const [sidebarWidth, setSidebarWidth] = useState<number>(320);
@@ -214,8 +278,7 @@ export const GitsmithView: React.FC = () => {
 
   const handleCopyClone = (repo: GitsmithRepo) => {
     playClickSound();
-    const url = `git clone ssh://git@nates-software.com:2222/${repo.owner}/${repo.name}.git`;
-    navigator.clipboard.writeText(url);
+    navigator.clipboard.writeText(`slop fork ${repo.owner}/${repo.name}`);
     setCopiedClone(true);
     setTimeout(() => setCopiedClone(false), 2000);
   };
@@ -247,7 +310,7 @@ export const GitsmithView: React.FC = () => {
           </div>
           <span className="text-slate-400 font-mono text-xs hidden sm:inline flex items-center gap-1.5">
             <Globe size={13} className="text-sky-400" />
-            <span>gitsmith.nates-software.com · Public Bare Repositories</span>
+            <span>Repository control plane · Git transport requires the GITSMITH gateway</span>
           </span>
         </div>
 
@@ -255,14 +318,58 @@ export const GitsmithView: React.FC = () => {
         <div className="flex items-center gap-2.5 text-xs font-mono">
           <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-emerald-400">
             <ShieldCheck size={14} />
-            <span>SSH Verified (@nate)</span>
+            <span>{canonicalRepoCount === null ? 'Control plane' : `${canonicalRepoCount} canonical repos`}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-amber-400">
             <Sparkles size={14} />
             <span>70/20/10 Lineage Pool</span>
           </div>
+          <button
+            onClick={() => user ? setShowCreateRepo(true) : openAuthModal('login')}
+            className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 px-2.5 py-1 rounded border border-sky-400 text-white font-bold"
+          >
+            <Plus size={14} /> New Repository
+          </button>
         </div>
       </div>
+
+      {showCreateRepo && (
+        <form onSubmit={handleCreateRepository} className="bg-slate-900 border-b border-sky-700 px-4 py-3 flex items-end gap-3 flex-wrap">
+          <div className="flex-1 min-w-[220px]">
+            <label htmlFor="gitsmith-repo-slug" className="block text-[11px] text-sky-300 font-bold mb-1">Repository slug</label>
+            <input
+              id="gitsmith-repo-slug"
+              value={newRepoSlug}
+              onChange={event => setNewRepoSlug(event.target.value.toLowerCase())}
+              placeholder="my-shareware-app"
+              pattern="[a-z0-9][a-z0-9._-]*"
+              maxLength={100}
+              required
+              className="w-full bg-slate-950 border border-slate-600 rounded px-3 py-1.5 text-white font-mono focus:outline-none focus:border-sky-400"
+            />
+          </div>
+          <div>
+            <label htmlFor="gitsmith-repo-visibility" className="block text-[11px] text-sky-300 font-bold mb-1">Visibility</label>
+            <select
+              id="gitsmith-repo-visibility"
+              value={newRepoVisibility}
+              onChange={event => setNewRepoVisibility(event.target.value as typeof newRepoVisibility)}
+              className="bg-slate-950 border border-slate-600 rounded px-3 py-1.5 text-white"
+            >
+              <option value="public">Public</option>
+              <option value="unlisted">Unlisted</option>
+              <option value="private">Private</option>
+            </select>
+          </div>
+          <button disabled={isCreatingRepo} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded font-bold">
+            {isCreatingRepo ? 'Queuing…' : 'Create & Provision'}
+          </button>
+          <button type="button" onClick={() => setShowCreateRepo(false)} className="p-1.5 text-slate-400 hover:text-white" aria-label="Close repository form">
+            <X size={16} />
+          </button>
+          <p className="basis-full text-[11px] text-slate-400">The control plane creates a provisioning record first. Git objects and refs become active only after confirmation from the authoritative gateway.</p>
+        </form>
+      )}
 
       {/* Main Forge Body Grid with Resizable Split Panes */}
       <div className="flex-1 flex overflow-hidden">
@@ -284,8 +391,8 @@ export const GitsmithView: React.FC = () => {
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1 font-mono">
-              <span className="font-bold text-slate-300">{filteredRepos.length} Public Repos</span>
-              <span className="text-sky-400 font-bold">All Makers</span>
+              <span className="font-bold text-slate-300">{filteredRepos.length} Catalog Previews</span>
+              <span className="text-sky-400 font-bold">Sample data</span>
             </div>
           </div>
 
@@ -396,10 +503,10 @@ export const GitsmithView: React.FC = () => {
                 <button
                   onClick={() => handleCopyClone(selectedRepo)}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-                  title="Copy git clone SSH command"
+                  title="Copy SLOP install command"
                 >
                   {copiedClone ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-                  <span>{copiedClone ? 'Copied SSH!' : 'Clone'}</span>
+                  <span>{copiedClone ? 'Install copied!' : 'Install'}</span>
                 </button>
               </div>
             </div>
