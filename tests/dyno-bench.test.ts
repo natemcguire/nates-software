@@ -3,12 +3,13 @@ import {
   calculateDynoScore,
   generateBadgeMarkdown,
   REAL_WORLD_DEV_TASKS,
-  LEADERBOARD_PRESETS
+  LEADERBOARD_PRESETS,
+  NEUTRAL_DEV_FIXTURES
 } from '../src/lib/dynoDomain';
 
 describe('DYNO Real-World AI Developer Benchmark Suite', () => {
-  it('should calculate credible real-world developer scores across all performance dimensions', () => {
-    // Claude 3.7 Sonnet + Antigravity CLI preset
+  it('should calculate credible real-world developer scores deterministically across all performance dimensions', () => {
+    // High-performing autonomous run
     const result = calculateDynoScore({
       tasksCompleted: 44,
       totalTasks: 50,
@@ -41,19 +42,24 @@ describe('DYNO Real-World AI Developer Benchmark Suite', () => {
     expect(poorRun.grade).toContain('Grade C');
   });
 
-  it('should provide 10 verified real-world engineering task specs covering core workflows', () => {
-    expect(REAL_WORLD_DEV_TASKS.length).toBe(10);
+  it('should provide verified neutral task specs derived directly from canonical fixtures', () => {
+    expect(REAL_WORLD_DEV_TASKS.length).toBe(NEUTRAL_DEV_FIXTURES.length);
+    expect(REAL_WORLD_DEV_TASKS.length).toBeGreaterThanOrEqual(7);
+
     const categories = REAL_WORLD_DEV_TASKS.map(t => t.category);
-    expect(categories).toContain('explain_repo');
     expect(categories).toContain('find_bug');
     expect(categories).toContain('implement_feature');
     expect(categories).toContain('repair_test');
-    expect(categories).toContain('modify_schema');
-    expect(categories).toContain('resolve_conflict');
-    expect(categories).toContain('refactor_safe');
-    expect(categories).toContain('build_package');
     expect(categories).toContain('follow_repo_rules');
     expect(categories).toContain('recover_failure');
+
+    REAL_WORLD_DEV_TASKS.forEach(t => {
+      expect(t.id).toBeDefined();
+      expect(t.name).toBeDefined();
+      expect(t.prompt).toBeDefined();
+      expect(t.expectedFiles.length).toBeGreaterThan(0);
+      expect(t.hiddenTestCount).toBeGreaterThanOrEqual(1);
+    });
   });
 
   it('should generate valid Markdown badge snippet with dev score', () => {
@@ -62,13 +68,8 @@ describe('DYNO Real-World AI Developer Benchmark Suite', () => {
     expect(badge).toContain('https://nates-software.com/dyno/@nate');
   });
 
-  it('should contain verified leaderboard presets comparing model harnesses', () => {
-    expect(LEADERBOARD_PRESETS.length).toBeGreaterThanOrEqual(3);
-    const topEntry = LEADERBOARD_PRESETS[0];
-    expect(topEntry.subject.agentHarness).toContain('Antigravity CLI');
-    expect(topEntry.overallDynoScore).toBeGreaterThan(800);
-    // Explicitly verify benchmark evaluates model + harness + environment on 50 tasks
-    expect(topEntry.totalTasks).toBe(50);
-    expect(topEntry.subject.suiteVersion).toContain('DYNO Real-World Dev Suite');
+  it('should eliminate hardcoded fabricated leaderboard presets in favor of canonical D1 querying', () => {
+    // LEADERBOARD_PRESETS must be empty to ensure the product never serves fake/hardcoded leaderboards
+    expect(LEADERBOARD_PRESETS).toEqual([]);
   });
 });

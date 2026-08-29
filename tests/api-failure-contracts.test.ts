@@ -682,14 +682,20 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data.drops.length).toBeGreaterThanOrEqual(3);
     });
 
-    it('should return hardware benchmark payload from /api/dyno?bench=true', async () => {
-      const req = new Request('http://localhost/api/dyno?bench=true', { method: 'GET' });
+    it('should query canonical DYNO leaderboard from D1 and reject deprecated fake /bench queries', async () => {
+      const benchReq = new Request('http://localhost/api/dyno?bench=true', { method: 'GET' });
+      const benchRes = await dynoApi.onRequestGet({ request: benchReq, env: { DB: ctx.d1 } });
+      expect(benchRes.status).toBe(400);
+      const benchData = await benchRes.json();
+      expect(benchData.success).toBe(false);
+      expect(benchData.error).toContain('Hardware throughput bench is deprecated');
+
+      const req = new Request('http://localhost/api/dyno', { method: 'GET' });
       const res = await dynoApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
       expect(data.success).toBe(true);
-      expect(data.bench.chip).toContain('Apple M4 Max');
-      expect(data.bench.throughputTokPerSec).toBeGreaterThan(100);
+      expect(Array.isArray(data.leaderboard)).toBe(true);
     });
   });
 

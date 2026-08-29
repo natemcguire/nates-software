@@ -207,12 +207,13 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(data).toHaveProperty('success');
     });
 
-    it('should benchmark hardware token velocity with dynoApi', async () => {
+    it('should query canonical developer benchmark leaderboard from dynoApi', async () => {
       const mockEnv = {};
-      const req = new Request('http://localhost/api/dyno?bench=true', { method: 'GET' });
+      const req = new Request('http://localhost/api/dyno', { method: 'GET' });
       const res = await dynoApi.onRequestGet({ request: req, env: mockEnv });
       const data = await res.json();
       expect(data.success).toBe(true);
+      expect(Array.isArray(data.leaderboard)).toBe(true);
     });
   });
 
