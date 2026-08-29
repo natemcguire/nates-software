@@ -42,7 +42,45 @@ export interface ShelfItem {
   readonly status: 'active' | 'revoked' | 'refunded';
   readonly source: 'commerce' | 'legacy';
   readonly screenshots?: string[];
-  readonly binaries?: Record<string, any>;
+  readonly binaries?: Record<string, string>;
+}
+
+const ARTIFACT_LABELS: Readonly<Record<string, string>> = {
+  web: 'Open App',
+  mac: 'Download for macOS',
+  win: 'Download for Windows',
+  linux: 'Download for Linux',
+  ios: 'Open iOS Release',
+  source: 'Download Source',
+  export: 'Export App Data'
+};
+
+export interface PublishedArtifactLink {
+  readonly kind: string;
+  readonly label: string;
+  readonly url: string;
+}
+
+/** Accept only known, HTTPS maker-published artifact actions. */
+export function publishedArtifactLinks(value: unknown): PublishedArtifactLink[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const links: PublishedArtifactLink[] = [];
+  for (const [kind, rawUrl] of Object.entries(value as Record<string, unknown>)) {
+    const label = ARTIFACT_LABELS[kind];
+    if (!label || typeof rawUrl !== 'string') continue;
+    try {
+      const url = new URL(rawUrl);
+      if (url.protocol !== 'https:') continue;
+      links.push({ kind, label, url: url.toString() });
+    } catch {
+      // Invalid maker metadata is omitted instead of becoming a clickable URL.
+    }
+  }
+  return links;
+}
+
+export function safePublishedArtifacts(value: unknown): Record<string, string> {
+  return Object.fromEntries(publishedArtifactLinks(value).map(link => [link.kind, link.url]));
 }
 
 export interface LineageBreakdownItem {

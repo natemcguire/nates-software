@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Key, HardDrive, MessageSquare, Check, Sparkles,
-  DollarSign, RefreshCw, AlertTriangle,
+  DollarSign, RefreshCw, AlertTriangle, ExternalLink, Download,
   LogIn, UserPlus, ShieldCheck, Search, ArrowLeft
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -10,7 +10,8 @@ import {
   validateMakerProfile,
   formatCentsToUsd,
   ShelfItem,
-  LineageBreakdownItem
+  LineageBreakdownItem,
+  publishedArtifactLinks
 } from '../lib/profileDomain';
 
 interface ProfileViewProps {
@@ -408,6 +409,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
             ) : (
               <div className="space-y-2.5">
                 {shelfApps.map((app) => {
+                  const artifactLinks = publishedArtifactLinks(app.binaries);
                   return (
                     <div key={app.id} className="border-2 border-gray-700 bg-gray-50 p-3 rounded flex items-center justify-between gap-3 shadow-sm hover:bg-blue-50/40 transition-colors">
                       <div className="flex items-center gap-3">
@@ -431,9 +433,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                         </div>
                       </div>
 
-                      <p className="text-[11px] text-gray-500 max-w-48 text-right">
-                        Verified install and export links will appear when the maker publishes them.
-                      </p>
+                      {artifactLinks.length > 0 ? (
+                        <div className="flex flex-col gap-1 items-end">
+                          {artifactLinks.map(link => (
+                            <a key={link.kind} href={link.url} target="_blank" rel="noopener noreferrer"
+                              className="btn-w95 px-2.5 py-1 text-[11px] font-bold flex items-center gap-1">
+                              {link.kind === 'web' || link.kind === 'ios' ? <ExternalLink size={11} /> : <Download size={11} />}
+                              {link.label}
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 max-w-48 text-right">
+                          No install or export link has been published for this title.
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -640,7 +654,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                 className="w-full p-2 border border-gray-400 font-mono text-xs bg-gray-50"
                 placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... user@machine"
               />
-              <p className="text-gray-500 text-[11px] mt-1">Allows passwordless git push to <code className="font-mono bg-gray-200 px-1">git@gitsmith.dev:{profileData.username}/...</code></p>
+              <p className="text-gray-500 text-[11px] mt-1">Registers this public key for GITSMITH authorization. A clone/push address appears only after that repository's SSH transport is activated.</p>
             </div>
 
             <div className="pt-3 border-t border-gray-300 flex justify-between items-center">

@@ -5,7 +5,8 @@ import {
   extractLicenseKeyLast4,
   sanitizePublicProfile,
   formatCentsToUsd,
-  calculateMakerEconomics
+  calculateMakerEconomics,
+  publishedArtifactLinks
 } from '../src/lib/profileDomain';
 import * as profileApi from '../functions/api/profile';
 import * as shelfApi from '../functions/api/shelf';
@@ -70,6 +71,21 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
       expect(extractLicenseKeyLast4('NSW-DRONE-9812-77F2')).toBe('77F2');
       expect(extractLicenseKeyLast4('12')).toBe('0012');
       expect(extractLicenseKeyLast4('')).toBe('0000');
+    });
+
+    it('should expose only known HTTPS maker-published artifact actions', () => {
+      expect(publishedArtifactLinks({
+        web: 'https://example.com/app',
+        mac: 'https://cdn.example.com/app.dmg',
+        export: 'https://example.com/export',
+        source: 'javascript:alert(1)',
+        unknown: 'https://example.com/hidden',
+        win: 42
+      })).toEqual([
+        { kind: 'web', label: 'Open App', url: 'https://example.com/app' },
+        { kind: 'mac', label: 'Download for macOS', url: 'https://cdn.example.com/app.dmg' },
+        { kind: 'export', label: 'Export App Data', url: 'https://example.com/export' }
+      ]);
     });
 
     it('should sanitize database user rows into strictly public profiles', () => {
@@ -406,6 +422,12 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
         INSERT INTO commerce_license_secrets (license_id, ciphertext_base64, iv_base64, algorithm, key_version)
         VALUES (?, ?, ?, 'AES-256-GCM', ?)
       `).bind(licenseId, encryptedSecret.ciphertextBase64, encryptedSecret.ivBase64, encryptedSecret.keyVersion).run();
+      await ctx.d1.prepare('UPDATE app_listings SET binaries = ? WHERE id = ?').bind(JSON.stringify({
+        web: 'https://drone.example.com',
+        mac: 'https://cdn.example.com/drone.dmg',
+        source: 'javascript:alert(1)',
+        privateInstaller: 'https://example.com/not-allowlisted'
+      }), 'dronehunter').run();
 
       // Query shelf
       const req = new Request('http://localhost/api/shelf', {
@@ -426,6 +448,10 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
       expect(item.maskedKey).toBe('NSW-DR-••••-88A2');
       expect(item.source).toBe('commerce');
       expect(item.status).toBe('active');
+      expect(item.binaries).toEqual({
+        web: 'https://drone.example.com/',
+        mac: 'https://cdn.example.com/drone.dmg'
+      });
       // Plaintext key is NOT leaked in default shelf response
       expect(item.rawLicenseKey).toBeUndefined();
       expect(item.licenseKey).toBeUndefined();

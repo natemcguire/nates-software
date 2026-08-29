@@ -2,7 +2,7 @@
 // POST /api/profile (Authenticated profile update)
 
 import { getSessionUser, requireAuth } from './_auth';
-import { validateMakerProfile, calculateMakerEconomics } from '../../src/lib/profileDomain';
+import { validateMakerProfile, calculateMakerEconomics, safePublishedArtifacts } from '../../src/lib/profileDomain';
 
 const unavailable = (message = 'Profile service is temporarily unavailable') => Response.json(
   { success: false, error: message },
@@ -61,7 +61,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const formattedApps = (publishedApps || []).map((app: any) => ({
       ...app,
       screenshots: parseJsonColumn(app.screenshots, []),
-      binaries: parseJsonColumn(app.binaries, {}),
+      binaries: safePublishedArtifacts(parseJsonColumn(app.binaries, {})),
       tags: parseJsonColumn(app.tags, [])
     }));
 
@@ -214,5 +214,5 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 function parseJsonColumn(value: unknown, fallback: unknown) {
   if (value === null || value === undefined || value === '') return fallback;
   if (typeof value !== 'string') return value;
-  return JSON.parse(value);
+  try { return JSON.parse(value); } catch { return fallback; }
 }

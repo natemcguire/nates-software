@@ -1,6 +1,7 @@
 // MY SHELF is a private projection of commerce-issued entitlements.
 // License creation belongs exclusively to the verified commerce fulfillment path.
 import { requireAuth } from './_auth';
+import { safePublishedArtifacts } from '../../src/lib/profileDomain';
 
 const unavailable = () => Response.json(
   { success: false, error: 'Shelf service is temporarily unavailable' },
@@ -37,7 +38,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       purchasedDate: row.purchasedDate,
       creatorAvatar: row.creatorAvatar,
       creatorUsername: row.creatorUsername,
-      binaries: safeObject(row.binaries),
+      binaries: safePublishedArtifacts(parseObject(row.binaries)),
       status: row.status,
       source: 'commerce'
     }));
@@ -54,9 +55,9 @@ export const onRequestPost = async (_context?: unknown) => Response.json({
   error: 'Direct license minting is disabled. Licenses are issued only after verified commerce fulfillment.'
 }, { status: 405, headers: { Allow: 'GET' } });
 
-function safeObject(value: unknown): Record<string, string> {
+function parseObject(value: unknown): Record<string, unknown> {
   if (!value) return {};
-  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, string>;
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
   if (typeof value !== 'string') return {};
   try {
     const parsed = JSON.parse(value);
