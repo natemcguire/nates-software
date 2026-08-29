@@ -700,9 +700,9 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
   });
 
   // ==========================================================================
-  // 8. STRIPE PAYMENTS & WEBHOOK SETTLEMENT CONTRACTS
+  // 8. PAYMENT COMMISSIONING BOUNDARY
   // ==========================================================================
-  describe('8. Stripe Payments & Webhook Settlement Contracts', () => {
+  describe('8. Payment Commissioning Boundary', () => {
     it('should reject create-intent with 400 when appId is missing', async () => {
       const req = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
@@ -711,13 +711,13 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       });
 
       const res = await createIntentApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(503);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toBe('appId is required');
+      expect(data.error).toContain('temporarily unavailable');
     });
 
-    it('should calculate exact 70/20/10 split and persist pending order in D1', async () => {
+    it('should not trust client pricing or persist an order while disabled', async () => {
       const req = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -727,21 +727,13 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const res = await createIntentApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
-      expect(data.success).toBe(true);
-      expect(data.amountCents).toBe(1500);
-      expect(data.splits.makerCents).toBe(1050);
-      expect(data.splits.lineageCents).toBe(300);
-      expect(data.splits.platformCents).toBe(150);
-      expect(data.splits.conservationVerified).toBe(true);
-
-      // Verify pending order in D1
-      const orderInDb = await ctx.d1.prepare('SELECT * FROM orders WHERE stripe_payment_intent_id = ?').bind(data.paymentIntentId).first();
-      expect(orderInDb).not.toBeNull();
-      expect((orderInDb as any).status).toBe('pending');
-      expect((orderInDb as any).gross_cents).toBe(1500);
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
+      const orders = await ctx.d1.prepare('SELECT * FROM orders WHERE app_id = ?').bind('dronehunter').all();
+      expect(orders.results).toHaveLength(0);
     });
 
-    it('should handle Stripe Connect Express onboarding link generation and save account in D1', async () => {
+    it('should not fabricate onboarding or save an account while disabled', async () => {
       const req = new Request('http://localhost/api/payments/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -751,16 +743,13 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const res = await onboardApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
-      expect(data.success).toBe(true);
-      expect(data.accountId).toBeTruthy();
-      expect(data.url).toContain('stripe.com');
-
-      // Verify stripe_accounts table in D1
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
       const stripeAccInDb = await ctx.d1.prepare('SELECT * FROM stripe_accounts WHERE user_id = ?').bind('usr_nate').first();
-      expect(stripeAccInDb).not.toBeNull();
+      expect(stripeAccInDb).toBeNull();
     });
 
-    it('should reject webhook with 400 on malformed JSON payload', async () => {
+    it('should reject webhook before parsing while settlement is disabled', async () => {
       const req = new Request('http://localhost/api/payments/webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -768,13 +757,13 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       });
 
       const res = await webhookApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(503);
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toBe('Invalid JSON body');
+      expect(data.error).toBe('Payment settlement is not enabled.');
     });
 
-    it('should handle duplicate webhook idempotently via D1 processed_webhook_events table', async () => {
+    it('should not process even a duplicate webhook while settlement is disabled', async () => {
       const eventId = 'evt_test_dedup_100';
       await ctx.d1.prepare(`
         INSERT INTO processed_webhook_events (event_id, event_type)
@@ -794,9 +783,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const res = await webhookApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
-      expect(data.success).toBe(true);
-      expect(data.duplicate).toBe(true);
-      expect(data.message).toContain('already processed');
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
     });
   });
 
@@ -822,7 +810,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
      * The API reports simulated success to webhook callers, but D1 rolls back the entire batch!
      * As a result, orders remain 'pending', 0 licenses are minted, and 0 shelf items are added.
      */
-    it('proves that webhook settlement D1 batch fails (due to SQL column mismatch in production code) and returns simulated success without writing to D1', async () => {
+    it('prevents the known webhook settlement failure path while payments are disabled', async () => {
       const buyerId = 'usr_nate';
       const piId = 'pi_gap_prove_1';
       const orderId = 'ord_gap_prove_1';
@@ -851,10 +839,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const res = await webhookApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();
 
-      // CURRENT BEHAVIOR: Endpoint reports simulated success
-      expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.settled).toBe(true);
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
 
       // PROOF OF GAP: D1 database batch failed and rolled back!
       // Order status was NEVER updated to 'completed'

@@ -6,6 +6,12 @@ import { createSettlementRecord, AncestorNode } from '../../../src/lib/gitsmithB
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
+    if (env?.PAYMENTS_ENABLED !== 'true') {
+      return Response.json(
+        { success: false, error: 'Checkout is temporarily unavailable while durable settlement is being commissioned.' },
+        { status: 503 }
+      );
+    }
     const body = await request.json() as any;
     const { appId, buyerId = 'usr_guest', currency = 'usd', customPriceCents, makerId, ancestors } = body;
 

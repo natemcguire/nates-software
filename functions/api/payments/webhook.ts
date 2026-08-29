@@ -47,6 +47,12 @@ async function verifyStripeSignature(payload: string, sigHeader: string, secret:
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
+    if (env?.PAYMENTS_ENABLED !== 'true') {
+      return Response.json(
+        { success: false, error: 'Payment settlement is not enabled.' },
+        { status: 503 }
+      );
+    }
     const rawBody = await request.text();
     const sigHeader = request.headers.get('stripe-signature');
     const webhookSecret = env?.STRIPE_WEBHOOK_SECRET;

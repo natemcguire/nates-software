@@ -3,6 +3,12 @@
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
+    if (env?.PAYMENTS_ENABLED !== 'true') {
+      return Response.json(
+        { success: false, error: 'Maker payouts are temporarily unavailable while Stripe Connect settlement is being commissioned.' },
+        { status: 503 }
+      );
+    }
     const body = await request.json() as any;
     const userId = body.userId || body.username || 'usr_nate';
     const email = body.email;

@@ -37,6 +37,7 @@ describe('Security Hardening & Zero-Bypass Invariants', () => {
 
   it('should reject webhook requests with invalid or missing Stripe signatures', async () => {
     const mockEnv = {
+      PAYMENTS_ENABLED: 'true',
       STRIPE_WEBHOOK_SECRET: 'whsec_test_secret_123456'
     };
 

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { ShieldCheck, CreditCard, Lock, Sparkles, Copy } from 'lucide-react';
-import { playClickSound, playSuccessChime } from '../lib/soundEngine';
-import { useAuth } from '../context/AuthContext';
+import { ShieldCheck, Lock, Sparkles, AlertTriangle } from 'lucide-react';
+import { playClickSound } from '../lib/soundEngine';
 
 export interface CheckoutModalProps {
   isOpen: boolean;
@@ -18,14 +17,9 @@ export interface CheckoutModalProps {
   onSuccess?: (licenseKey: string) => void;
 }
 
-export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, app, onSuccess }) => {
-  const { user } = useAuth();
-  const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
-  const [expiry, setExpiry] = useState('12/28');
-  const [cvc, setCvc] = useState('888');
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, app }) => {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [mintedKey, setMintedKey] = useState<string | null>(null);
-  const [copiedKey, setCopiedKey] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -40,56 +34,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
+    setCheckoutError(null);
     playClickSound();
 
     try {
-      // 1. Create intent
       const intentRes = await fetch('/api/payments/create-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appId: app.id,
-          buyerId: user?.id || 'usr_guest',
-          customPriceCents: priceCents
-        })
+        body: JSON.stringify({ appId: app.id })
       });
       const intentData = await intentRes.json();
-
-      // 2. Settle via webhook simulation
-      const webhookRes = await fetch('/api/payments/webhook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventType: 'payment_intent.succeeded',
-          paymentIntentId: intentData.paymentIntentId || `pi_${Date.now()}`,
-          appId: app.id,
-          buyerId: user?.id || 'usr_guest'
-        })
-      });
-      const webhookData = await webhookRes.json();
-
       setIsProcessing(false);
-      if (webhookData.success && webhookData.licenseKey) {
-        setMintedKey(webhookData.licenseKey);
-        playSuccessChime();
-        if (onSuccess) onSuccess(webhookData.licenseKey);
+      if (!intentRes.ok || !intentData.success) {
+        setCheckoutError(intentData.error || 'Checkout is currently unavailable.');
+        return;
       }
-    } catch {
-      // Fallback
-      const fallbackKey = `NSW-${app.id.substring(0, 2).toUpperCase()}-9821-4401`;
+      setCheckoutError('Secure Stripe payment element is not yet available. No charge was made.');
+    } catch (error: any) {
       setIsProcessing(false);
-      setMintedKey(fallbackKey);
-      playSuccessChime();
-      if (onSuccess) onSuccess(fallbackKey);
+      setCheckoutError(error?.message || 'Checkout network request failed. No charge was made.');
     }
-  };
-
-  const handleCopyKey = () => {
-    if (!mintedKey) return;
-    playClickSound();
-    navigator.clipboard.writeText(mintedKey);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
   };
 
   return (
@@ -110,41 +74,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
         </div>
 
         <div className="p-4 bg-w95-gray space-y-4">
-          {mintedKey ? (
-            <div className="bg-green-50 border-2 border-green-700 p-4 space-y-3 text-center">
-              <div className="text-3xl">🎉</div>
-              <div className="font-bold text-green-900 text-sm">LICENSE REGISTERED &amp; MINTED!</div>
-              <div className="text-xs text-gray-700">
-                Your Local-First license key for <strong>{app.name}</strong> is active and saved to your Disk Shelf.
-              </div>
-
-              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-2 font-mono font-bold text-sm text-blue-900 flex items-center justify-between">
-                <span>{mintedKey}</span>
-                <button
-                  onClick={handleCopyKey}
-                  className="btn-w95 px-2 py-0.5 text-xs flex items-center gap-1"
-                >
-                  <Copy size={12} />
-                  <span>{copiedKey ? 'Copied!' : 'Copy'}</span>
-                </button>
-              </div>
-
-              <button
-                onClick={() => { playClickSound(); onClose(); }}
-                className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs w-full mt-2"
-              >
-                Close &amp; Return to App
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handlePay} className="space-y-3">
+          <form onSubmit={handlePay} className="space-y-3">
               {/* Product Header */}
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
                   <div>
                     <div className="font-bold text-gray-900 text-sm">{app.name}</div>
-                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Single-file SQLite WAL</div>
+                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Runtime &amp; storage defined by maker</div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -173,43 +110,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               </div>
 
-              {/* Card Inputs */}
-              <div>
-                <label className="block text-gray-800 font-bold mb-1 font-mono">Card Number</label>
-                <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white flex items-center px-2 py-1">
-                  <CreditCard size={14} className="text-gray-400 mr-2" />
-                  <input
-                    type="text"
-                    value={cardNumber}
-                    onChange={(e) => setCardNumber(e.target.value)}
-                    className="w-full font-mono text-xs outline-none bg-transparent"
-                    required
-                  />
+              <div className="bg-amber-50 border border-amber-500 p-3 text-amber-950 flex items-start gap-2">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Checkout is being commissioned.</div>
+                  <div className="mt-1 leading-relaxed">
+                    Card details are not collected here. Purchases will open only after secure Stripe checkout,
+                    durable orders, license delivery, and lineage settlement are verified together.
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-gray-800 font-bold mb-1 font-mono">Expiration</label>
-                  <input
-                    type="text"
-                    value={expiry}
-                    onChange={(e) => setExpiry(e.target.value)}
-                    className="w-full bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-1 font-mono text-xs outline-none"
-                    required
-                  />
+              {checkoutError && (
+                <div role="alert" className="bg-red-50 border border-red-600 p-2 text-red-900">
+                  {checkoutError}
                 </div>
-                <div>
-                  <label className="block text-gray-800 font-bold mb-1 font-mono">CVC / CVV</label>
-                  <input
-                    type="text"
-                    value={cvc}
-                    onChange={(e) => setCvc(e.target.value)}
-                    className="w-full bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-1 font-mono text-xs outline-none"
-                    required
-                  />
-                </div>
-              </div>
+              )}
 
               <div className="flex items-center justify-between pt-2 border-t border-gray-300">
                 <button
@@ -226,11 +142,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                   className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5"
                 >
                   <ShieldCheck size={14} />
-                  <span>{isProcessing ? 'Processing Split...' : `Pay $${(priceCents / 100).toFixed(2)} with Stripe`}</span>
+                  <span>{isProcessing ? 'Checking...' : 'Check checkout availability'}</span>
                 </button>
               </div>
-            </form>
-          )}
+          </form>
         </div>
       </div>
     </div>
