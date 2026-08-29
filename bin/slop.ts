@@ -903,12 +903,13 @@ export function handleStatus(): SlopCommandResult {
   const containers = rig.listContainers();
 
   const lines = [
-    `[RIG.EXE] Connected to container fleet:`,
+    `[RIG.EXE] Local control-plane state (provider disconnected):`,
     ...containers.map(c =>
       `  ● ${c.name.padEnd(32)} (Port ${c.port}) - ${c.memoryMb}MB / ${c.memoryCapMb}MB`
     ),
-    `✔ Active ports: [${summary.activePorts.join(", ")}] (${summary.availablePorts.length} available in 3001..3010).`,
-    `✔ Zero lock or port collisions. Scale-to-zero active.`
+    containers.length === 0 ? `  No registered instances.` : '',
+    `Active simulated port reservations: [${summary.activePorts.join(", ")}] (${summary.availablePorts.length} available in 3001..3010).`,
+    `No container provider is connected; this command reports local control-plane state only.`
   ];
 
   console.log(lines.join("\n"));
@@ -916,7 +917,7 @@ export function handleStatus(): SlopCommandResult {
   return {
     success: true,
     command: "status",
-    message: `Active fleet: ${containers.length} containers online`,
+    message: `Local RIG state: ${containers.length} registered instances; provider disconnected`,
     data: {
       containers,
       activePorts: summary.activePorts,

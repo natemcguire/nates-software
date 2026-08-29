@@ -1,312 +1,496 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
   MicroDynoPortAllocator,
   RigMemoryGovernor,
-  SqliteWalEngine,
-  R2SnapshotEngine,
+  RigControlPlane,
   RigRuntimeBackend,
   PORT_RANGE_START,
   PORT_RANGE_END,
   MEMORY_CAP_MB
-} from "../src/lib/rigBackend.ts";
-import { INITIAL_FLEET, validateRigContainer } from "../src/lib/rigDomain.ts";
+} from '../src/lib/rigBackend';
+import {
+  type RigSpec,
+  validateRigSpec,
+  validateRigStorageMount,
+  validateRigTransition,
+  isValidRigTransition,
+  formatBytes,
+  formatDuration
+} from '../src/lib/rigDomain';
 
-describe("Micro-Dyno Port Allocator (3001..3010) with Collision Avoidance", () => {
+describe('1. Rig Domain Validation & Storage/Runtime Freedom', () => {
+  it('should validate a complete and valid RigSpec with Docker adapter and SQLite storage', () => {
+    const validSpec: RigSpec = {
+      id: 'rig-dronehunter-01',
+      appId: 'dronehunter',
+      name: 'DroneHunter Telemetry',
+      runtime: {
+        adapter: 'docker',
+        buildCommand: 'npm run build',
+        startCommand: 'node dist/server.js',
+        healthEndpoint: '/healthz'
+      },
+      resources: {
+        memoryCapMb: 256,
+        cpuCores: 1
+      },
+      storage: [
+        {
+          name: 'db-volume',
+          kind: 'sqlite',
+          mountPath: '/data/app.sqlite',
+          sizeMb: 64,
+          persistence: 'persistent'
+        }
+      ],
+      preferredPort: 3005,
+      ttlSeconds: 900,
+      source: 'demo',
+      createdAt: new Date().toISOString()
+    };
+
+    const result = validateRigSpec(validSpec);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.id).toBe('rig-dronehunter-01');
+      expect(result.data.runtime.adapter).toBe('docker');
+      expect(result.data.storage?.[0].kind).toBe('sqlite');
+      expect(result.data.source).toBe('demo');
+    }
+  });
+
+  it('should validate stateless specs without storage mounts', () => {
+    const statelessSpec: RigSpec = {
+      id: 'rig-stateless-calc',
+      appId: 'calc',
+      name: 'Stateless Calculator',
+      runtime: {
+        adapter: 'wasm',
+        startCommand: 'wasm-runner app.wasm'
+      },
+      resources: {
+        memoryCapMb: 128
+      },
+      ttlSeconds: 300,
+      source: 'demo',
+      createdAt: new Date().toISOString()
+    };
+
+    const result = validateRigSpec(statelessSpec);
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data.storage).toBeUndefined();
+      expect(result.data.runtime.adapter).toBe('wasm');
+    }
+  });
+
+  it('should validate generic storage mounts across volume, directory, ephemeral, and block kinds', () => {
+    const kinds = ['volume', 'directory', 'ephemeral', 'block'] as const;
+    for (const kind of kinds) {
+      const mountRes = validateRigStorageMount({
+        kind,
+        mountPath: `/data/${kind}-storage`,
+        persistence: 'ephemeral',
+        sizeMb: 128
+      });
+      expect(mountRes.valid).toBe(true);
+    }
+  });
+
+  it('should reject storage mounts with path traversal attempts', () => {
+    const traversalRes = validateRigStorageMount({
+      kind: 'sqlite',
+      mountPath: '/data/../etc/passwd',
+      persistence: 'persistent'
+    });
+    expect(traversalRes.valid).toBe(false);
+    if (!traversalRes.valid) {
+      expect(traversalRes.errors.some(e => e.includes('path traversal'))).toBe(true);
+    }
+  });
+
+  it('should reject invalid specs (missing appId, missing startCommand, invalid TTL, invalid source)', () => {
+    const invalidSpec = {
+      id: 'invalid-spec',
+      appId: '',
+      name: '',
+      runtime: {
+        adapter: 'unknown-adapter',
+        startCommand: ''
+      },
+      resources: {
+        memoryCapMb: -50
+      },
+      ttlSeconds: 0,
+      source: 'fake-source'
+    };
+
+    const result = validateRigSpec(invalidSpec);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors.length).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it('should format bytes and durations truthfully', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(1024)).toBe('1.0 KB');
+    expect(formatBytes(1048576)).toBe('1.0 MB');
+    expect(formatBytes(1073741824)).toBe('1.0 GB');
+
+    expect(formatDuration(45)).toBe('45s');
+    expect(formatDuration(900)).toBe('15m 00s');
+    expect(formatDuration(3665)).toBe('1h 01m 05s');
+  });
+});
+
+describe('2. Deterministic Lifecycle Transitions & Validation', () => {
+  it('should validate legal lifecycle state transitions', () => {
+    // Normal progression: queued -> building -> starting -> healthy
+    expect(isValidRigTransition('queued', 'building')).toBe(true);
+    expect(isValidRigTransition('building', 'starting')).toBe(true);
+    expect(isValidRigTransition('starting', 'healthy')).toBe(true);
+
+    // Degradation & Recovery: healthy -> degraded -> healthy
+    expect(isValidRigTransition('healthy', 'degraded')).toBe(true);
+    expect(isValidRigTransition('degraded', 'healthy')).toBe(true);
+
+    // Failures & Expiry from active:
+    expect(isValidRigTransition('healthy', 'crashed')).toBe(true);
+    expect(isValidRigTransition('healthy', 'oom')).toBe(true);
+    expect(isValidRigTransition('healthy', 'expired')).toBe(true);
+    expect(isValidRigTransition('healthy', 'stopped')).toBe(true);
+
+    // Restarts:
+    expect(isValidRigTransition('stopped', 'queued')).toBe(true);
+    expect(isValidRigTransition('crashed', 'queued')).toBe(true);
+    expect(isValidRigTransition('oom', 'queued')).toBe(true);
+    expect(isValidRigTransition('expired', 'queued')).toBe(true);
+  });
+
+  it('should reject illegal lifecycle transitions', () => {
+    expect(isValidRigTransition('queued', 'healthy')).toBe(false);
+    expect(isValidRigTransition('stopped', 'healthy')).toBe(false);
+    expect(isValidRigTransition('expired', 'building')).toBe(false);
+    expect(isValidRigTransition('building', 'expired')).toBe(false);
+
+    const val = validateRigTransition('queued', 'healthy');
+    expect(val.valid).toBe(false);
+    expect(val.error).toContain("Illegal state transition from 'queued' to 'healthy'");
+  });
+});
+
+describe('3. MicroDynoPortAllocator: Collisions, Exhaustion, and Safe Release', () => {
   let allocator: MicroDynoPortAllocator;
 
   beforeEach(() => {
     allocator = new MicroDynoPortAllocator(PORT_RANGE_START, PORT_RANGE_END);
   });
 
-  it("should have valid port boundary [3001..3010]", () => {
+  it('should initialize with boundary ports [3001..3010] all available', () => {
     expect(allocator.minPort).toBe(3001);
     expect(allocator.maxPort).toBe(3010);
     expect(allocator.getAvailablePorts().length).toBe(10);
+    expect(allocator.getAllocatedPorts().length).toBe(0);
   });
 
-  it("should allocate ports sequentially starting from 3001", () => {
-    const p1 = allocator.allocate("app-1");
-    const p2 = allocator.allocate("app-2");
-    const p3 = allocator.allocate("app-3");
+  it('should allocate ports sequentially and respect availability check', () => {
+    const p1 = allocator.allocate('app-1');
+    const p2 = allocator.allocate('app-2');
 
     expect(p1).toBe(3001);
     expect(p2).toBe(3002);
-    expect(p3).toBe(3003);
     expect(allocator.isAvailable(3001)).toBe(false);
-    expect(allocator.isAvailable(3004)).toBe(true);
+    expect(allocator.isAvailable(3002)).toBe(false);
+    expect(allocator.isAvailable(3003)).toBe(true);
   });
 
-  it("should respect preferred port if available", () => {
-    const port = allocator.allocate("app-custom", 3007);
-    expect(port).toBe(3007);
-    expect(allocator.isAvailable(3007)).toBe(false);
+  it('should allocate preferred port if free, and avoid collisions with fallback', () => {
+    const preferred = allocator.allocate('app-fav', 3007);
+    expect(preferred).toBe(3007);
 
-    // Next automatic allocation should still pick lowest available (3001)
-    const nextPort = allocator.allocate("app-next");
-    expect(nextPort).toBe(3001);
+    // Contender asks for 3007 -> falls back to lowest available (3001)
+    const fallback = allocator.allocate('app-contender', 3007);
+    expect(fallback).toBe(3001);
   });
 
-  it("should fallback to lowest available if preferred port is already occupied (collision avoidance)", () => {
-    allocator.allocate("app-owner", 3005);
-    const fallback = allocator.allocate("app-contender", 3005);
-    expect(fallback).toBe(3001); // 3001 is lowest free
-  });
+  it('should release ports and allow immediate reuse', () => {
+    const p1 = allocator.allocate('app-a');
+    allocator.allocate('app-b');
+    expect(p1).toBe(3001);
 
-  it("should release ports and make them available again", () => {
-    allocator.allocate("app-1"); // 3001
-    allocator.allocate("app-2"); // 3002
-    allocator.release(3001);
-
+    expect(allocator.release(p1)).toBe(true);
     expect(allocator.isAvailable(3001)).toBe(true);
-    const reused = allocator.allocate("app-3");
+
+    const reused = allocator.allocate('app-c');
     expect(reused).toBe(3001);
   });
 
-  it("should release ports by appId", () => {
-    allocator.allocate("multi-app");
-    allocator.allocate("multi-app");
-    const released = allocator.releaseByApp("multi-app");
-    expect(released).toEqual([3001, 3002]);
-    expect(allocator.getAvailablePorts().length).toBe(10);
-  });
-
-  it("should throw PortExhaustionError when all 10 ports (3001..3010) are allocated", () => {
+  it('should throw when all 10 ports are allocated (port pool exhaustion)', () => {
     for (let i = 1; i <= 10; i++) {
-      allocator.allocate(`worker-\${i}`);
+      allocator.allocate(`worker-${i}`);
     }
     expect(allocator.getAvailablePorts().length).toBe(0);
-
-    expect(() => allocator.allocate("overflow-worker")).toThrow(/Port pool exhausted/i);
+    expect(() => allocator.allocate('overflow')).toThrow(/Port pool exhausted/i);
   });
 
-  it("should reject invalid appId for allocation", () => {
-    expect(() => allocator.allocate("")).toThrow(/non-empty string/);
-  });
+  it('should release ports by appId and containerId/instanceId', () => {
+    allocator.allocate('tenant-a', undefined, 'inst-1');
+    allocator.allocate('tenant-a', undefined, 'inst-2');
+    allocator.allocate('tenant-b', undefined, 'inst-3');
 
-  it("should reject out-of-range ports in isAvailable", () => {
-    expect(allocator.isAvailable(80)).toBe(false);
-    expect(allocator.isAvailable(3000)).toBe(false);
-    expect(allocator.isAvailable(3011)).toBe(false);
+    const released = allocator.releaseByApp('tenant-a');
+    expect(released).toEqual([3001, 3002]);
+    expect(allocator.isAvailable(3001)).toBe(true);
+    expect(allocator.isAvailable(3002)).toBe(true);
+    expect(allocator.isAvailable(3003)).toBe(false);
+
+    allocator.releaseByInstance('inst-3');
+    expect(allocator.isAvailable(3003)).toBe(true);
   });
 });
 
-describe("RIG Memory Governor (256MB Cap Enforcement)", () => {
+describe('4. RigMemoryGovernor & Honest OOM Observation (No Fabricated Checkpointing)', () => {
   let governor: RigMemoryGovernor;
 
   beforeEach(() => {
     governor = new RigMemoryGovernor();
   });
 
-  it("should enforce strict 256MB cap constant", () => {
+  it('should enforce strict 256MB cap constant', () => {
     expect(governor.memoryCapMb).toBe(256);
     expect(MEMORY_CAP_MB).toBe(256);
   });
 
-  it("should allow memory allocations within 256MB limit", () => {
-    const container = INITIAL_FLEET[0];
-    const decision1 = governor.evaluate(container, 48);
-    expect(decision1.allowed).toBe(true);
-    expect(decision1.action).toBe("none");
-    expect(decision1.memoryMb).toBe(48);
+  it('should allow memory usage within limits without side-effects', () => {
+    const target = { memoryCapMb: 256, status: 'healthy', memoryMb: 24 };
+    const decision = governor.evaluate(target, 48);
 
-    const decision2 = governor.evaluate(container, 256);
-    expect(decision2.allowed).toBe(true);
-    expect(decision2.action).toBe("none");
-    expect(decision2.memoryMb).toBe(256);
+    expect(decision.allowed).toBe(true);
+    expect(decision.action).toBe('none');
+    expect(decision.memoryMb).toBe(48);
+    expect(decision.status).toBe('healthy');
   });
 
-  it("should trigger OOM recovery when requested memory exceeds 256MB cap", () => {
-    const container = INITIAL_FLEET[0];
-    const decision = governor.evaluate(container, 384);
+  it('should observe OOM when requested memory exceeds cap without claiming fake WAL checkpointing', () => {
+    const target = { memoryCapMb: 256, status: 'healthy', memoryMb: 128 };
+    const decision = governor.evaluate(target, 384);
 
     expect(decision.allowed).toBe(false);
-    expect(decision.action).toBe("oom_recovered");
-    expect(decision.status).toBe("oom_recovered");
-    expect(decision.memoryMb).toBe(24); // Clamped to baseline
-    expect(decision.message).toContain("exceeds strict 256MB cap");
+    expect(decision.action).toBe('oom');
+    expect(decision.status).toBe('oom');
+    expect(decision.message).toContain('exceeds strict 256MB cap');
+    // Ensure no fake WAL or R2 claims in message
+    expect(decision.message).not.toContain('WAL checkpointed');
+    expect(decision.message).not.toContain('Cloudflare R2');
   });
 
-  it("should reject invalid memory requests (negative or non-finite)", () => {
-    const container = INITIAL_FLEET[0];
-    expect(governor.evaluate(container, -10).allowed).toBe(false);
-    expect(governor.evaluate(container, NaN).allowed).toBe(false);
-    expect(governor.evaluate(container, Infinity).allowed).toBe(false);
-  });
-
-  it("should compute fleet memory statistics accurately", () => {
-    const stats = governor.getFleetStats(INITIAL_FLEET);
-    expect(stats.totalCapMb).toBe(INITIAL_FLEET.length * 256);
-    expect(stats.totalUsedMb).toBe(48 + 24 + 38);
-    expect(stats.healthyCount).toBe(3);
-    expect(stats.oomCount).toBe(0);
-    expect(stats.usagePercent).toBeGreaterThan(0);
+  it('should reject negative, NaN, or non-finite memory requests', () => {
+    const target = { memoryCapMb: 256, status: 'healthy', memoryMb: 32 };
+    expect(governor.evaluate(target, -1).allowed).toBe(false);
+    expect(governor.evaluate(target, NaN).allowed).toBe(false);
+    expect(governor.evaluate(target, Infinity).allowed).toBe(false);
   });
 });
 
-describe("SQLite WAL Checkpoint Engine", () => {
-  let walEngine: SqliteWalEngine;
+describe('5. RigControlPlane / RigRuntimeBackend: Deterministic Control Plane', () => {
+  let controlPlane: RigControlPlane;
 
   beforeEach(() => {
-    walEngine = new SqliteWalEngine();
+    controlPlane = new RigControlPlane({ initialFleet: [] });
   });
 
-  it("should trigger TRUNCATE checkpoint and flush journal bytes", () => {
-    const report = walEngine.triggerCheckpoint("/data/app.sqlite", 65536, 1468006, "TRUNCATE");
-    expect(report.success).toBe(true);
-    expect(report.bytesFlushed).toBe(65536);
-    expect(report.finalWalSizeBytes).toBe(0);
-    expect(report.finalSqliteSizeBytes).toBe(1468006 + 65536);
-    expect(report.mode).toBe("TRUNCATE");
-    expect(report.log).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
+  it('should start with empty instances list and full port availability', () => {
+    expect(controlPlane.listInstances()).toEqual([]);
+    const summary = controlPlane.getStatusSummary();
+    expect(summary.totalInstances).toBe(0);
+    expect(summary.activePorts.length).toBe(0);
+    expect(summary.availablePorts.length).toBe(10);
+    expect(summary.provider.connected).toBe(false);
   });
 
-  it("should support PASSIVE, FULL, and RESTART checkpoint modes", () => {
-    const passiveReport = walEngine.triggerCheckpoint("/data/test.sqlite", 10000, 50000, "PASSIVE");
-    expect(passiveReport.mode).toBe("PASSIVE");
-    expect(passiveReport.success).toBe(true);
-
-    const restartReport = walEngine.triggerCheckpoint("/data/test.sqlite", 10000, 50000, "RESTART");
-    expect(restartReport.mode).toBe("RESTART");
-    expect(restartReport.success).toBe(true);
-  });
-
-  it("should reject path traversal in SQLite volume path", () => {
-    expect(() =>
-      walEngine.triggerCheckpoint("/data/../etc/passwd.sqlite", 100, 100)
-    ).toThrow(/path traversal/i);
-  });
-
-  it("should reject negative size values", () => {
-    expect(() =>
-      walEngine.triggerCheckpoint("/data/valid.sqlite", -5, 100)
-    ).toThrow(/non-negative/i);
-  });
-});
-
-describe("Cloudflare R2 Snapshot Backup Engine", () => {
-  let r2: R2SnapshotEngine;
-
-  beforeEach(() => {
-    r2 = new R2SnapshotEngine("rig-test-bucket");
-  });
-
-  it("should create and store R2 snapshot metadata with SHA-256", () => {
-    const snap = r2.createSnapshot("wallart", "/data/wallart.sqlite", 15518920);
-    expect(snap.id).toContain("snap-wallart-");
-    expect(snap.r2Bucket).toBe("rig-test-bucket");
-    expect(snap.sizeBytes).toBe(15518920);
-    expect(snap.checksumSha256.length).toBe(64);
-    expect(snap.walCheckpointed).toBe(true);
-    expect(snap.status).toBe("stored");
-  });
-
-  it("should verify snapshot integrity", () => {
-    const snap = r2.createSnapshot("retro-calc", "/data/app.sqlite", 1468006);
-    const verification = r2.verifySnapshot(snap.id);
-    expect(verification.valid).toBe(true);
-    expect(verification.checksumMatches).toBe(true);
-    expect(verification.snapshot?.status).toBe("verified");
-  });
-
-  it("should list snapshots sorted newest first", () => {
-    r2.createSnapshot("app-a", "/data/app-a.sqlite", 1000);
-    r2.createSnapshot("app-b", "/data/app-b.sqlite", 2000);
-    const list = r2.listSnapshots();
-    expect(list.length).toBe(2);
-
-    const filtered = r2.listSnapshots("app-a");
-    expect(filtered.length).toBe(1);
-    expect(filtered[0].appId).toBe("app-a");
-  });
-
-  it("should restore snapshot with zero lock contention", () => {
-    const snap = r2.createSnapshot("sailtrack", "/data/telemetry.sqlite", 4404019);
-    const restore = r2.restoreSnapshot(snap.id);
-    expect(restore.success).toBe(true);
-    expect(restore.restoredPath).toBe("/data/telemetry.sqlite");
-    expect(restore.message).toContain("zero locks");
-  });
-
-  it("should delete snapshot", () => {
-    const snap = r2.createSnapshot("temp-app", "/data/temp.sqlite", 500);
-    expect(r2.getSnapshot(snap.id)).toBeDefined();
-    expect(r2.deleteSnapshot(snap.id)).toBe(true);
-    expect(r2.getSnapshot(snap.id)).toBeUndefined();
-  });
-});
-
-describe("RigRuntimeBackend (Unified Fleet & Volume Manager)", () => {
-  let backend: RigRuntimeBackend;
-
-  beforeEach(() => {
-    backend = new RigRuntimeBackend(INITIAL_FLEET);
-  });
-
-  it("should initialize with initial fleet and reserve their ports", () => {
-    const summary = backend.getStatusSummary();
-    expect(summary.totalContainers).toBe(INITIAL_FLEET.length);
-    expect(summary.activePorts).toEqual([3001, 3002, 3003]);
-    expect(summary.availablePorts.length).toBe(7);
-  });
-
-  it("should spawn new micro-container and allocate next available port (3004)", () => {
-    const container = backend.spawnContainer({
-      appId: "dronehunter",
-      name: "nate/dronehunter",
-      initialMemoryMb: 32
+  it('should register a new instance spec in queued state and allocate port', () => {
+    const instance = controlPlane.createInstance({
+      appId: 'dronehunter',
+      name: 'DroneHunter Telemetry',
+      runtime: {
+        adapter: 'docker',
+        startCommand: 'node dist/index.js'
+      },
+      resources: { memoryCapMb: 256 },
+      ttlSeconds: 900,
+      source: 'demo'
     });
 
-    expect(container.port).toBe(3004);
-    expect(container.memoryCapMb).toBe(256);
-    expect(container.sqlitePath).toBe("/data/dronehunter.sqlite");
-    expect(container.status).toBe("online");
-
-    const validCheck = validateRigContainer(container);
-    expect(validCheck.valid).toBe(true);
+    expect(instance.spec.appId).toBe('dronehunter');
+    expect(instance.observed.lifecycle).toBe('queued');
+    expect(instance.observed.allocatedPort).toBe(3001);
+    expect(instance.observed.events.length).toBe(1);
+    expect(instance.observed.events[0].toState).toBe('queued');
   });
 
-  it("should reject container spawn if initial memory exceeds 256MB cap", () => {
-    expect(() =>
-      backend.spawnContainer({
-        appId: "heavy-app",
-        name: "heavy/app",
-        initialMemoryMb: 512
-      })
-    ).toThrow(/exceeds 256MB/i);
+  it('should advance instance legally through building -> starting -> healthy', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'wallart',
+      name: 'WallArt Studio',
+      runtime: { adapter: 'process', startCommand: 'npm start' }
+    });
+
+    const building = controlPlane.transitionState(inst.spec.id, 'building', 'Building bundle');
+    expect(building.observed.lifecycle).toBe('building');
+
+    const starting = controlPlane.transitionState(inst.spec.id, 'starting', 'Starting web process');
+    expect(starting.observed.lifecycle).toBe('starting');
+    expect(starting.observed.startedAt).toBeDefined();
+
+    const healthy = controlPlane.transitionState(inst.spec.id, 'healthy', 'Health check /healthz responded 200');
+    expect(healthy.observed.lifecycle).toBe('healthy');
+    expect(healthy.observed.events.length).toBe(4);
   });
 
-  it("should update container memory and trigger OOM recovery if cap exceeded", () => {
-    const containerId = INITIAL_FLEET[0].id;
-    const result = backend.updateMemory(containerId, 500);
+  it('should reject illegal transitions in control plane', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'app-jump',
+      name: 'Jump App',
+      runtime: { adapter: 'wasm', startCommand: 'wasm-run' }
+    });
 
-    expect(result.decision.action).toBe("oom_recovered");
-    expect(result.container.status).toBe("oom_recovered");
-    expect(result.container.memoryMb).toBe(24);
-    expect(result.container.walJournalSizeBytes).toBe(0); // Checkpointed
+    // queued -> healthy is illegal (must build/start)
+    expect(() => controlPlane.transitionState(inst.spec.id, 'healthy')).toThrow(/Illegal state transition/i);
   });
 
-  it("should trigger WAL checkpoint on a specific container", () => {
-    const containerId = INITIAL_FLEET[0].id;
-    const { container, report } = backend.checkpointContainerWal(containerId);
-    expect(report.success).toBe(true);
-    expect(container.walJournalSizeBytes).toBe(0);
+  it('should observe memory limit exceedance, transition to OOM, and release port', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'leaky-app',
+      name: 'Leaky App',
+      runtime: { adapter: 'docker', startCommand: 'leak' },
+      resources: { memoryCapMb: 256 }
+    });
+
+    const allocatedPort = inst.observed.allocatedPort!;
+    expect(controlPlane.portAllocator.isAvailable(allocatedPort)).toBe(false);
+
+    // Advance to healthy
+    controlPlane.transitionState(inst.spec.id, 'building');
+    controlPlane.transitionState(inst.spec.id, 'starting');
+    controlPlane.transitionState(inst.spec.id, 'healthy');
+
+    // Update memory beyond 256MB cap
+    const result = controlPlane.updateMemory(inst.spec.id, 512);
+    expect(result.decision.action).toBe('oom');
+    expect(result.instance.observed.lifecycle).toBe('oom');
+    expect(result.instance.observed.allocatedPort).toBeUndefined();
+
+    // Port should now be released
+    expect(controlPlane.portAllocator.isAvailable(allocatedPort)).toBe(true);
   });
 
-  it("should trigger R2 snapshot backup for container", () => {
-    const containerId = INITIAL_FLEET[0].id;
-    const { container, snapshot, checkpointReport } = backend.backupContainerToR2(containerId);
-    expect(checkpointReport.success).toBe(true);
-    expect(snapshot.appId).toBe(container.appId);
-    expect(snapshot.walCheckpointed).toBe(true);
+  it('should automatically release port when stopped, crashed, or deleted', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'stopping-app',
+      name: 'Stopping App',
+      runtime: { adapter: 'process', startCommand: 'run' }
+    });
+    const port = inst.observed.allocatedPort!;
+
+    // Stop instance
+    const stopped = controlPlane.stopInstance(inst.spec.id);
+    expect(stopped.observed.lifecycle).toBe('stopped');
+    expect(stopped.observed.allocatedPort).toBeUndefined();
+    expect(controlPlane.portAllocator.isAvailable(port)).toBe(true);
+
+    // Delete instance
+    expect(controlPlane.deleteInstance(inst.spec.id)).toBe(true);
+    expect(controlPlane.getInstance(inst.spec.id)).toBeUndefined();
   });
 
-  it("should terminate container and release port", () => {
-    const initialPortCount = backend.getStatusSummary().availablePorts.length;
-    const c = backend.spawnContainer({ appId: "disposable", name: "disp" });
-    expect(backend.getStatusSummary().availablePorts.length).toBe(initialPortCount - 1);
+  it('should enforce TTL expiry and release resources', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'ephemeral-app',
+      name: 'Ephemeral App',
+      runtime: { adapter: 'simulation', startCommand: 'run' },
+      ttlSeconds: 60
+    });
+    const port = inst.observed.allocatedPort!;
 
-    const terminated = backend.terminateContainer(c.id);
-    expect(terminated).toBe(true);
-    expect(backend.getStatusSummary().availablePorts.length).toBe(initialPortCount);
+    // Move to healthy
+    controlPlane.transitionState(inst.spec.id, 'building');
+    controlPlane.transitionState(inst.spec.id, 'starting');
+    controlPlane.transitionState(inst.spec.id, 'healthy');
+
+    // Check expiry at now (should not be expired yet)
+    const notExpired = controlPlane.checkExpiry(new Date());
+    expect(notExpired.length).toBe(0);
+    expect(controlPlane.getInstance(inst.spec.id)?.observed.lifecycle).toBe('healthy');
+
+    // Fast forward 120 seconds into future
+    const futureDate = new Date(Date.now() + 120 * 1000);
+    const expiredList = controlPlane.checkExpiry(futureDate);
+
+    expect(expiredList.length).toBe(1);
+    expect(expiredList[0].spec.id).toBe(inst.spec.id);
+    expect(expiredList[0].observed.lifecycle).toBe('expired');
+    expect(expiredList[0].observed.allocatedPort).toBeUndefined();
+    expect(controlPlane.portAllocator.isAvailable(port)).toBe(true);
+  });
+
+  it('should restart instance from stopped/oom/crashed/expired, reacquiring port and resetting timer', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'reboot-app',
+      name: 'Reboot App',
+      runtime: { adapter: 'docker', startCommand: 'run' }
+    });
+
+    controlPlane.stopInstance(inst.spec.id);
+    expect(controlPlane.getInstance(inst.spec.id)?.observed.lifecycle).toBe('stopped');
+
+    const restarted = controlPlane.restartInstance(inst.spec.id);
+    expect(restarted.observed.lifecycle).toBe('queued');
+    expect(restarted.observed.allocatedPort).toBeDefined();
+    expect(restarted.observed.memoryMb).toBe(0);
+    expect(restarted.observed.events.some(e => e.reason?.includes('restarted'))).toBe(true);
+  });
+
+  it('should support legacy RigRuntimeBackend alias and spawnContainer compatibility', () => {
+    const backend = new RigRuntimeBackend({ initialFleet: [] });
+    const c = backend.spawnContainer({
+      appId: 'legacy-app',
+      name: 'Legacy Container',
+      initialMemoryMb: 32,
+      sqliteFileName: 'legacy'
+    });
+
+    expect(c.appId).toBe('legacy-app');
+    expect(c.port).toBe(3001);
+    expect(c.memoryMb).toBe(32);
+    expect(c.memoryCapMb).toBe(256);
+    expect(c.sqlitePath).toBe('/data/legacy.sqlite');
+
+    const containers = backend.listContainers();
+    expect(containers.length).toBe(1);
+
+    expect(backend.terminateContainer(c.id)).toBe(true);
+    expect(backend.listContainers().length).toBe(0);
+  });
+
+  it('should never claim fake container execution, R2 uploads, or cryptographic checksums', () => {
+    const inst = controlPlane.createInstance({
+      appId: 'honest-app',
+      name: 'Honest App',
+      runtime: { adapter: 'simulation', startCommand: 'run' },
+      source: 'demo'
+    });
+
+    expect(inst.spec.source).toBe('demo');
+    const providerStatus = controlPlane.getProviderStatus();
+    expect(providerStatus.connected).toBe(false);
+    expect(providerStatus.message).toContain('Provider disconnected');
+
+    // Verify events contain honest control-plane audit logs
+    inst.observed.events.forEach(evt => {
+      expect(evt.reason).not.toContain('Uploaded to R2');
+      expect(evt.reason).not.toContain('Litestream replication');
+      expect(evt.reason).not.toContain('irrefutable evidence');
+    });
   });
 });

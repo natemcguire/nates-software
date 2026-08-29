@@ -130,12 +130,13 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop status', () => {
-    it('should inspect micro-containers, memory limits, and active ports', () => {
+    it('should truthfully report an empty local control plane when no provider is connected', () => {
       const res = handleStatus();
       expect(res.success).toBe(true);
       expect(res.command).toBe('status');
-      expect(res.data.containers.length).toBeGreaterThan(0);
+      expect(res.data.containers).toEqual([]);
       expect(res.data.availablePorts.length).toBeGreaterThan(0);
+      expect(res.message).toContain('provider disconnected');
     });
   });
 

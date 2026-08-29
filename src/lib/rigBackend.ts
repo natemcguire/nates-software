@@ -1,4 +1,25 @@
-import { INITIAL_FLEET, type RigContainer, formatBytes } from './rigDomain.ts';
+/**
+ * RIG.EXE Control Plane Backend — Deterministic Provider-Agnostic State Machine
+ *
+ * Invariants:
+ * 1. Deterministic state machine governing runtime-agnostic specs and explicit observed state.
+ * 2. Enforces legal lifecycle transitions: queued -> building -> starting -> healthy (or degraded, crashed, oom, expired, stopped).
+ * 3. Safe port allocation with collision avoidance and deterministic release upon stop/oom/crash/expiry/teardown.
+ * 4. Rigorous memory governor enforcing strict memory caps without fabricated WAL/R2 side-effects.
+ * 5. Honest TTL and expiry tracking releasing resources automatically.
+ * 6. Explicit truth boundary: distinguishes demo simulation from connected provider adapter.
+ */
+
+import {
+  type RigSpec,
+  type RigInstance,
+  type RigObservedState,
+  type RigLifecycleState,
+  type RigLifecycleEvent,
+  type RigContainer,
+  validateRigSpec,
+  validateRigTransition
+} from './rigDomain.ts';
 
 export const PORT_RANGE_START = 3001;
 export const PORT_RANGE_END = 3010;
@@ -45,7 +66,7 @@ export class MicroDynoPortAllocator {
       return preferredPort;
     }
 
-    // Find the lowest available port in range [minPort, maxPort] with automatic collision avoidance
+    // Find lowest available port in range [minPort, maxPort] with automatic collision avoidance
     for (let port = this.minPort; port <= this.maxPort; port++) {
       if (!this.allocations.has(port)) {
         this.allocations.set(port, {
@@ -87,6 +108,10 @@ export class MicroDynoPortAllocator {
     return released;
   }
 
+  public releaseByInstance(instanceId: string): number[] {
+    return this.releaseByContainer(instanceId);
+  }
+
   public getAllocatedPorts(): PortAllocation[] {
     return Array.from(this.allocations.values()).sort((a, b) => a.port - b.port);
   }
@@ -108,68 +133,90 @@ export class MicroDynoPortAllocator {
 
 export interface GovernorDecision {
   readonly allowed: boolean;
-  readonly action: 'none' | 'oom_recovered' | 'throttled' | 'rejected';
+  readonly action: 'none' | 'oom' | 'oom_recovered' | 'throttled' | 'rejected';
   readonly memoryMb: number;
   readonly memoryCapMb: number;
-  readonly status: 'online' | 'rebuilding' | 'oom_recovered' | 'idle';
+  readonly status: RigLifecycleState | string;
   readonly message: string;
 }
 
 export class RigMemoryGovernor {
   public readonly memoryCapMb: number = MEMORY_CAP_MB;
 
-  public validateMemory(memoryMb: number): boolean {
-    return Number.isFinite(memoryMb) && memoryMb >= 0 && memoryMb <= this.memoryCapMb;
+  public validateMemory(memoryMb: number, customCapMb?: number): boolean {
+    const cap = customCapMb ?? this.memoryCapMb;
+    return Number.isFinite(memoryMb) && memoryMb >= 0 && memoryMb <= cap;
   }
 
-  public evaluate(container: RigContainer, requestedMemoryMb: number): GovernorDecision {
+  public evaluate(
+    target: { memoryCapMb?: number; status?: string; memoryMb?: number; [key: string]: unknown },
+    requestedMemoryMb: number
+  ): GovernorDecision {
+    const cap = typeof target.memoryCapMb === 'number' && target.memoryCapMb > 0 ? target.memoryCapMb : this.memoryCapMb;
+    const currentMemory = typeof target.memoryMb === 'number' ? target.memoryMb : 0;
+    const currentStatus = typeof target.status === 'string' ? target.status : 'healthy';
+
     if (!Number.isFinite(requestedMemoryMb) || requestedMemoryMb < 0) {
       return {
         allowed: false,
         action: 'rejected',
-        memoryMb: container.memoryMb,
-        memoryCapMb: this.memoryCapMb,
-        status: container.status,
+        memoryMb: currentMemory,
+        memoryCapMb: cap,
+        status: currentStatus,
         message: `Invalid memory request: ${requestedMemoryMb}MB must be a non-negative finite number.`
       };
     }
 
-    if (requestedMemoryMb <= this.memoryCapMb) {
+    if (requestedMemoryMb <= cap) {
       return {
         allowed: true,
         action: 'none',
         memoryMb: requestedMemoryMb,
-        memoryCapMb: this.memoryCapMb,
-        status: container.status === 'oom_recovered' ? 'online' : container.status,
-        message: `Memory usage ${requestedMemoryMb}MB within 256MB boundary.`
+        memoryCapMb: cap,
+        status: currentStatus === 'oom' || currentStatus === 'oom_recovered' ? 'healthy' : currentStatus,
+        message: `Memory usage ${requestedMemoryMb}MB within ${cap}MB boundary.`
       };
     }
 
-    // Exceeded 256MB cap -> Trigger OOM recovery protocol:
-    // Checkpoint WAL, truncate memory back to baseline (24MB), and flag oom_recovered.
-    const baselineMemoryMb = 24;
+    // Exceeded cap -> Honest OOM observation
     return {
       allowed: false,
-      action: 'oom_recovered',
-      memoryMb: baselineMemoryMb,
-      memoryCapMb: this.memoryCapMb,
-      status: 'oom_recovered',
-      message: `OOM condition prevented: ${requestedMemoryMb}MB exceeds strict 256MB cap. WAL checkpointed and container recycled to baseline (${baselineMemoryMb}MB).`
+      action: 'oom',
+      memoryMb: requestedMemoryMb,
+      memoryCapMb: cap,
+      status: 'oom',
+      message: `Memory limit exceeded: observed ${requestedMemoryMb}MB exceeds strict ${cap}MB cap.`
     };
   }
 
-  public getFleetStats(containers: readonly RigContainer[]): {
+  public getFleetStats(targets: readonly (RigInstance | RigContainer)[]): {
     totalUsedMb: number;
     totalCapMb: number;
     usagePercent: number;
     healthyCount: number;
     oomCount: number;
   } {
-    const totalUsedMb = containers.reduce((acc, c) => acc + c.memoryMb, 0);
-    const totalCapMb = containers.length * this.memoryCapMb;
+    let totalUsedMb = 0;
+    let totalCapMb = 0;
+    let healthyCount = 0;
+    let oomCount = 0;
+
+    for (const t of targets) {
+      if ('spec' in t && 'observed' in t) {
+        totalUsedMb += t.observed.memoryMb;
+        totalCapMb += t.spec.resources.memoryCapMb;
+        if (t.observed.lifecycle === 'healthy') healthyCount++;
+        if (t.observed.lifecycle === 'oom') oomCount++;
+      } else {
+        const c = t as RigContainer;
+        totalUsedMb += c.memoryMb;
+        totalCapMb += c.memoryCapMb;
+        if (c.status === 'online' || c.status === 'healthy') healthyCount++;
+        if (c.status === 'oom' || c.status === 'oom_recovered') oomCount++;
+      }
+    }
+
     const usagePercent = totalCapMb > 0 ? Math.round((totalUsedMb / totalCapMb) * 1000) / 10 : 0;
-    const healthyCount = containers.filter(c => c.status === 'online').length;
-    const oomCount = containers.filter(c => c.status === 'oom_recovered').length;
 
     return {
       totalUsedMb,
@@ -181,211 +228,492 @@ export class RigMemoryGovernor {
   }
 }
 
-export type WalCheckpointMode = 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE';
-
-export interface WalCheckpointReport {
-  readonly success: boolean;
-  readonly sqlitePath: string;
-  readonly mode: WalCheckpointMode;
-  readonly bytesFlushed: number;
-  readonly initialWalSizeBytes: number;
-  readonly finalWalSizeBytes: number;
-  readonly finalSqliteSizeBytes: number;
-  readonly timestamp: string;
-  readonly log: string;
+export interface CreateRigSpecParams {
+  id?: string;
+  appId: string;
+  name?: string;
+  runtime?: {
+    adapter?: 'process' | 'docker' | 'wasm' | 'custom' | 'simulation';
+    buildCommand?: string;
+    startCommand?: string;
+    healthCommand?: string;
+    healthEndpoint?: string;
+    env?: Record<string, string>;
+  };
+  resources?: {
+    memoryCapMb?: number;
+    cpuCores?: number;
+  };
+  storage?: Array<{
+    name?: string;
+    kind: 'volume' | 'sqlite' | 'directory' | 'ephemeral' | 'block';
+    mountPath: string;
+    sizeBytes?: number;
+    sizeMb?: number;
+    persistence: 'ephemeral' | 'persistent' | 'retained';
+  }>;
+  preferredPort?: number;
+  ttlSeconds?: number;
+  source?: 'demo' | 'provider';
 }
 
-export class SqliteWalEngine {
-  public triggerCheckpoint(
-    sqlitePath: string,
-    currentWalBytes: number,
-    currentSqliteBytes: number,
-    mode: WalCheckpointMode = 'TRUNCATE'
-  ): WalCheckpointReport {
-    if (!sqlitePath.match(/^\/data\/[a-z0-9-_]+\.sqlite$/) || sqlitePath.includes('..')) {
-      throw new Error(`Invalid SQLite path: ${sqlitePath}. Must match /data/<name>.sqlite without path traversal.`);
-    }
-
-    if (currentWalBytes < 0 || currentSqliteBytes < 0) {
-      throw new Error('SQLite and WAL sizes must be non-negative.');
-    }
-
-    let bytesFlushed = currentWalBytes;
-    let finalSqliteSizeBytes = currentSqliteBytes + bytesFlushed;
-    let finalWalSizeBytes = mode === 'TRUNCATE' ? 0 : Math.min(currentWalBytes, 4096);
-    const timestamp = new Date().toISOString();
-
-    // If running in Node and sqlite file exists on disk, execute real PRAGMA wal_checkpoint
-    if (typeof process !== 'undefined' && !process.env.VITEST) {
-      try {
-        const req = (globalThis as any).require;
-        if (req) {
-          const fs = req('fs');
-          const { execSync } = req('child_process');
-          if (fs && fs.existsSync(sqlitePath)) {
-            try {
-              execSync(`sqlite3 "${sqlitePath}" "PRAGMA wal_checkpoint(${mode});"`, { timeout: 2000, stdio: 'ignore' });
-              const stat = fs.statSync(sqlitePath);
-              finalSqliteSizeBytes = stat.size;
-              const walPath = `${sqlitePath}-wal`;
-              finalWalSizeBytes = fs.existsSync(walPath) ? fs.statSync(walPath).size : 0;
-            } catch {}
-          }
-        }
-      } catch {}
-    }
-
-    return {
-      success: true,
-      sqlitePath,
-      mode,
-      bytesFlushed,
-      initialWalSizeBytes: currentWalBytes,
-      finalWalSizeBytes,
-      finalSqliteSizeBytes,
-      timestamp,
-      log: `[PRAGMA wal_checkpoint(${mode})] Flushed ${formatBytes(bytesFlushed)} WAL journal to ${sqlitePath} at ${timestamp}`
-    };
-  }
-}
-
-export interface R2Snapshot {
-  readonly id: string;
-  readonly appId: string;
-  readonly sqlitePath: string;
-  readonly r2Bucket: string;
-  readonly r2Key: string;
-  readonly sizeBytes: number;
-  readonly checksumSha256: string;
-  readonly walCheckpointed: boolean;
-  readonly createdAt: string;
-  readonly status: 'stored' | 'verified' | 'restoring';
-}
-
-export class R2SnapshotEngine {
-  private readonly snapshots: Map<string, R2Snapshot> = new Map();
-  public readonly bucketName: string;
-
-  constructor(bucketName: string = 'rig-sqlite-snapshots') {
-    this.bucketName = bucketName;
-  }
-
-  private generateMockSha256(seed: string): string {
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < seed.length; i++) {
-      hash ^= seed.charCodeAt(i);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    const hex = (hash >>> 0).toString(16).padStart(8, '0');
-    return `${hex}a5f789bc12d34e6f9870123456789abcdeffedcba9876543210123456789abcd`.slice(0, 64);
-  }
-
-  public createSnapshot(
-    appId: string,
-    sqlitePath: string,
-    sizeBytes: number,
-    options?: { walCheckpointed?: boolean }
-  ): R2Snapshot {
-    if (!appId || appId.trim().length === 0) {
-      throw new Error('appId must be specified for R2 snapshot backup.');
-    }
-
-    if (!sqlitePath.match(/^\/data\/[a-z0-9-_]+\.sqlite$/)) {
-      throw new Error(`Invalid SQLite path: ${sqlitePath}`);
-    }
-
-    const timestamp = new Date().toISOString();
-    const cleanTs = timestamp.replace(/[:.]/g, '-');
-    const id = `snap-${appId}-${cleanTs}`;
-    const r2Key = `backups/${appId}/${cleanTs}-${sqlitePath.split('/').pop()}`;
-    const checksumSha256 = this.generateMockSha256(`${appId}:${sqlitePath}:${sizeBytes}:${timestamp}`);
-
-    const snapshot: R2Snapshot = {
-      id,
-      appId,
-      sqlitePath,
-      r2Bucket: this.bucketName,
-      r2Key,
-      sizeBytes,
-      checksumSha256,
-      walCheckpointed: options?.walCheckpointed ?? true,
-      createdAt: timestamp,
-      status: 'stored'
-    };
-
-    this.snapshots.set(id, snapshot);
-    return snapshot;
-  }
-
-  public listSnapshots(appId?: string): R2Snapshot[] {
-    const list = Array.from(this.snapshots.values());
-    if (!appId) return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return list.filter(s => s.appId === appId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  public getSnapshot(id: string): R2Snapshot | undefined {
-    return this.snapshots.get(id);
-  }
-
-  public verifySnapshot(id: string): { valid: boolean; checksumMatches: boolean; snapshot?: R2Snapshot } {
-    const snap = this.snapshots.get(id);
-    if (!snap) return { valid: false, checksumMatches: false };
-
-    const expectedChecksum = this.generateMockSha256(`${snap.appId}:${snap.sqlitePath}:${snap.sizeBytes}:${snap.createdAt}`);
-    const checksumMatches = snap.checksumSha256 === expectedChecksum;
-
-    if (checksumMatches) {
-      const updated: R2Snapshot = { ...snap, status: 'verified' };
-      this.snapshots.set(id, updated);
-      return { valid: true, checksumMatches: true, snapshot: updated };
-    }
-
-    return { valid: false, checksumMatches: false, snapshot: snap };
-  }
-
-  public restoreSnapshot(id: string): { success: boolean; restoredPath: string; snapshot: R2Snapshot; message: string } {
-    const snap = this.snapshots.get(id);
-    if (!snap) {
-      throw new Error(`Snapshot not found: ${id}`);
-    }
-
-    return {
-      success: true,
-      restoredPath: snap.sqlitePath,
-      snapshot: snap,
-      message: `Restored ${snap.sqlitePath} from ${snap.r2Bucket}/${snap.r2Key} (${formatBytes(snap.sizeBytes)}) with zero locks.`
-    };
-  }
-
-  public deleteSnapshot(id: string): boolean {
-    return this.snapshots.delete(id);
-  }
-
-  public clear(): void {
-    this.snapshots.clear();
-  }
-}
-
-export class RigRuntimeBackend {
+export class RigControlPlane {
   public readonly portAllocator: MicroDynoPortAllocator;
   public readonly memoryGovernor: RigMemoryGovernor;
-  public readonly walEngine: SqliteWalEngine;
-  public readonly r2Engine: R2SnapshotEngine;
+  private instances: Map<string, RigInstance> = new Map();
+  private isProviderConnected: boolean = false;
 
-  private containers: Map<string, RigContainer> = new Map();
+  constructor(
+    optionsOrFleet?:
+      | {
+          minPort?: number;
+          maxPort?: number;
+          providerConnected?: boolean;
+          initialFleet?: readonly (RigInstance | RigContainer)[];
+        }
+      | readonly (RigInstance | RigContainer)[]
+  ) {
+    let minPort = PORT_RANGE_START;
+    let maxPort = PORT_RANGE_END;
+    let fleetToLoad: readonly (RigInstance | RigContainer)[] = [];
 
-  constructor(initialContainers: readonly RigContainer[] = INITIAL_FLEET) {
-    this.portAllocator = new MicroDynoPortAllocator(PORT_RANGE_START, PORT_RANGE_END);
+    if (Array.isArray(optionsOrFleet)) {
+      fleetToLoad = optionsOrFleet;
+    } else if (optionsOrFleet && typeof optionsOrFleet === 'object') {
+      const opts = optionsOrFleet as {
+        minPort?: number;
+        maxPort?: number;
+        providerConnected?: boolean;
+        initialFleet?: readonly (RigInstance | RigContainer)[];
+      };
+      if (typeof opts.minPort === 'number') minPort = opts.minPort;
+      if (typeof opts.maxPort === 'number') maxPort = opts.maxPort;
+      if (opts.providerConnected !== undefined) this.isProviderConnected = opts.providerConnected;
+      if (opts.initialFleet !== undefined) {
+        fleetToLoad = opts.initialFleet;
+      }
+    }
+
+    this.portAllocator = new MicroDynoPortAllocator(minPort, maxPort);
     this.memoryGovernor = new RigMemoryGovernor();
-    this.walEngine = new SqliteWalEngine();
-    this.r2Engine = new R2SnapshotEngine();
 
-    for (const c of initialContainers) {
-      this.portAllocator.allocate(c.appId, c.port, c.id);
-      this.containers.set(c.id, { ...c });
+    if (fleetToLoad && fleetToLoad.length > 0) {
+      for (const item of fleetToLoad) {
+        if ('spec' in item && 'observed' in item) {
+          const inst = item as RigInstance;
+          if (inst.observed.allocatedPort) {
+            this.portAllocator.allocate(inst.spec.appId, inst.observed.allocatedPort, inst.spec.id);
+          }
+          this.instances.set(inst.spec.id, inst);
+        } else {
+          const c = item as RigContainer;
+          const port = this.portAllocator.allocate(c.appId, c.port, c.id);
+          const spec: RigSpec = {
+            id: c.id,
+            appId: c.appId,
+            name: c.name,
+            runtime: {
+              adapter: 'simulation',
+              startCommand: 'npm start'
+            },
+            resources: {
+              memoryCapMb: c.memoryCapMb || MEMORY_CAP_MB
+            },
+            storage: c.sqlitePath
+              ? [
+                  {
+                    kind: 'sqlite',
+                    mountPath: c.sqlitePath,
+                    sizeBytes: c.sqliteSizeBytes,
+                    persistence: 'persistent'
+                  }
+                ]
+              : undefined,
+            preferredPort: port,
+            ttlSeconds: 900,
+            source: 'demo',
+            createdAt: new Date().toISOString()
+          };
+
+          const observed: RigObservedState = {
+            lifecycle: (c.status as RigLifecycleState) || 'healthy',
+            allocatedPort: port,
+            memoryMb: c.memoryMb,
+            events: [
+              {
+                id: `evt-init-${c.id}`,
+                timestamp: new Date().toISOString(),
+                fromState: null,
+                toState: (c.status as RigLifecycleState) || 'healthy',
+                reason: 'Initial demo instance registered'
+              }
+            ]
+          };
+
+          this.instances.set(c.id, { spec, observed });
+        }
+      }
     }
   }
 
+  public getProviderStatus(): { connected: boolean; message: string } {
+    return {
+      connected: this.isProviderConnected,
+      message: this.isProviderConnected
+        ? 'Real provider adapter connected.'
+        : 'Provider disconnected. Operating in deterministic local control-plane simulation mode.'
+    };
+  }
+
+  public createInstance(params: RigSpec | CreateRigSpecParams): RigInstance {
+    let spec: RigSpec;
+
+    if ('spec' in (params as any)) {
+      spec = (params as any).spec;
+    } else if (
+      'id' in params &&
+      typeof params.id === 'string' &&
+      'runtime' in params &&
+      'resources' in params &&
+      typeof params.ttlSeconds === 'number' &&
+      typeof params.source === 'string'
+    ) {
+      const val = validateRigSpec(params);
+      if (!val.valid) {
+        throw new Error(`Invalid RigSpec: ${val.errors.join('; ')}`);
+      }
+      spec = val.data;
+    } else {
+      const p = params as CreateRigSpecParams;
+      const appId = p.appId?.trim();
+      if (!appId) throw new Error('appId must not be empty.');
+
+      const cleanAppId = appId.replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+      const id = p.id || `rig-${cleanAppId}-${Date.now().toString(36).slice(-4)}`;
+      const name = p.name?.trim() || `${appId} Preview`;
+
+      const candidateSpec: RigSpec = {
+        id,
+        appId: cleanAppId,
+        name,
+        runtime: {
+          adapter: p.runtime?.adapter || 'simulation',
+          buildCommand: p.runtime?.buildCommand,
+          startCommand: p.runtime?.startCommand || 'npm start',
+          healthCommand: p.runtime?.healthCommand,
+          healthEndpoint: p.runtime?.healthEndpoint || '/healthz',
+          env: p.runtime?.env
+        },
+        resources: {
+          memoryCapMb: p.resources?.memoryCapMb || MEMORY_CAP_MB,
+          cpuCores: p.resources?.cpuCores
+        },
+        storage: p.storage,
+        preferredPort: p.preferredPort,
+        ttlSeconds: p.ttlSeconds && p.ttlSeconds > 0 ? p.ttlSeconds : 900,
+        source: p.source || 'demo',
+        createdAt: new Date().toISOString()
+      };
+
+      const val = validateRigSpec(candidateSpec);
+      if (!val.valid) {
+        throw new Error(`Invalid RigSpec parameters: ${val.errors.join('; ')}`);
+      }
+      spec = val.data;
+    }
+
+    if (spec.source === 'provider' && !this.isProviderConnected) {
+      throw new Error('Cannot create instance with source "provider" while provider is disconnected.');
+    }
+
+    if (this.instances.has(spec.id)) {
+      throw new Error(`Instance with id ${spec.id} already exists.`);
+    }
+
+    // Allocate port upon creation (initial queued state)
+    const port = this.portAllocator.allocate(spec.appId, spec.preferredPort, spec.id);
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + spec.ttlSeconds * 1000).toISOString();
+
+    const initialEvent: RigLifecycleEvent = {
+      id: `evt-${Date.now().toString(36)}-0`,
+      timestamp: nowIso,
+      fromState: null,
+      toState: 'queued',
+      reason: `Instance spec registered (adapter: ${spec.runtime.adapter}, source: ${spec.source})`
+    };
+
+    const observed: RigObservedState = {
+      lifecycle: 'queued',
+      allocatedPort: port,
+      memoryMb: 0,
+      startedAt: undefined,
+      stoppedAt: undefined,
+      expiresAt,
+      events: [initialEvent]
+    };
+
+    const instance: RigInstance = { spec, observed };
+    this.instances.set(spec.id, instance);
+    return instance;
+  }
+
+  public transitionState(
+    instanceId: string,
+    toState: RigLifecycleState,
+    reason?: string,
+    details?: Record<string, unknown>
+  ): RigInstance {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Instance not found: ${instanceId}`);
+    }
+
+    const fromState = instance.observed.lifecycle;
+    const validation = validateRigTransition(fromState, toState);
+    if (!validation.valid) {
+      throw new Error(validation.error || `Illegal state transition from ${fromState} to ${toState}`);
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    let port = instance.observed.allocatedPort;
+
+    const terminalOrInactiveStates: RigLifecycleState[] = ['crashed', 'oom', 'expired', 'stopped'];
+    const activeStates: RigLifecycleState[] = ['queued', 'building', 'starting', 'healthy', 'degraded'];
+
+    // If moving to terminal/inactive state, release allocated port safely
+    if (terminalOrInactiveStates.includes(toState)) {
+      if (port !== undefined) {
+        this.portAllocator.release(port);
+        port = undefined;
+      }
+    } else if (activeStates.includes(toState) && port === undefined) {
+      // Re-allocate port if transitioning to active state without a port
+      port = this.portAllocator.allocate(instance.spec.appId, instance.spec.preferredPort, instance.spec.id);
+    }
+
+    let startedAt = instance.observed.startedAt;
+    if (toState === 'starting' && !startedAt) {
+      startedAt = nowIso;
+    }
+
+    let stoppedAt = instance.observed.stoppedAt;
+    if (toState === 'stopped') {
+      stoppedAt = nowIso;
+    }
+
+    const event: RigLifecycleEvent = {
+      id: `evt-${Date.now().toString(36)}-${instance.observed.events.length}`,
+      timestamp: nowIso,
+      fromState,
+      toState,
+      reason: reason || `Transition from ${fromState} to ${toState}`,
+      details
+    };
+
+    const updatedObserved: RigObservedState = {
+      ...instance.observed,
+      lifecycle: toState,
+      allocatedPort: port,
+      startedAt,
+      stoppedAt,
+      events: [...instance.observed.events, event]
+    };
+
+    const updatedInstance: RigInstance = {
+      spec: instance.spec,
+      observed: updatedObserved
+    };
+
+    this.instances.set(instanceId, updatedInstance);
+    return updatedInstance;
+  }
+
+  public updateMemory(
+    instanceId: string,
+    memoryMb: number
+  ): { instance: RigInstance; decision: GovernorDecision } {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Instance not found: ${instanceId}`);
+    }
+
+    const decision = this.memoryGovernor.evaluate(
+      {
+        memoryCapMb: instance.spec.resources.memoryCapMb,
+        status: instance.observed.lifecycle,
+        memoryMb: instance.observed.memoryMb
+      },
+      memoryMb
+    );
+
+    if (decision.action === 'oom') {
+      const fromState = instance.observed.lifecycle;
+      const validation = validateRigTransition(fromState, 'oom');
+      if (!validation.valid) {
+        throw new Error(`Cannot observe OOM for instance '${instanceId}' in state '${fromState}': ${validation.error}`);
+      }
+
+      // Transition to OOM lifecycle state and release port
+      const updated = this.transitionState(
+        instanceId,
+        'oom',
+        `OOM observation: requested ${memoryMb}MB exceeds memory cap of ${instance.spec.resources.memoryCapMb}MB.`
+      );
+      return { instance: updated, decision };
+    }
+
+    if (decision.allowed) {
+      const updatedObserved: RigObservedState = {
+        ...instance.observed,
+        memoryMb: decision.memoryMb
+      };
+      const updatedInstance: RigInstance = {
+        spec: instance.spec,
+        observed: updatedObserved
+      };
+      this.instances.set(instanceId, updatedInstance);
+      return { instance: updatedInstance, decision };
+    }
+
+    return { instance, decision };
+  }
+
+  public restartInstance(instanceId: string): RigInstance {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Instance not found: ${instanceId}`);
+    }
+
+    const fromState = instance.observed.lifecycle;
+    // Restart target is 'queued'
+    const validation = validateRigTransition(fromState, 'queued');
+    if (!validation.valid) {
+      throw new Error(`Cannot restart instance from state '${fromState}': ${validation.error}`);
+    }
+
+    // Allocate port if released
+    let port = instance.observed.allocatedPort;
+    if (port === undefined) {
+      port = this.portAllocator.allocate(instance.spec.appId, instance.spec.preferredPort, instance.spec.id);
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + instance.spec.ttlSeconds * 1000).toISOString();
+
+    const restartEvent: RigLifecycleEvent = {
+      id: `evt-${Date.now().toString(36)}-${instance.observed.events.length}`,
+      timestamp: nowIso,
+      fromState,
+      toState: 'queued',
+      reason: 'Instance restarted by control plane'
+    };
+
+    const updatedObserved: RigObservedState = {
+      lifecycle: 'queued',
+      allocatedPort: port,
+      memoryMb: 0,
+      startedAt: undefined,
+      stoppedAt: undefined,
+      expiresAt,
+      exitCode: undefined,
+      errorMessage: undefined,
+      events: [...instance.observed.events, restartEvent]
+    };
+
+    const updatedInstance: RigInstance = {
+      spec: instance.spec,
+      observed: updatedObserved
+    };
+
+    this.instances.set(instanceId, updatedInstance);
+    return updatedInstance;
+  }
+
+  public stopInstance(instanceId: string, reason = 'Operator stopped instance'): RigInstance {
+    return this.transitionState(instanceId, 'stopped', reason);
+  }
+
+  public checkExpiry(now: Date | string | number = new Date()): RigInstance[] {
+    const nowMs = new Date(now).getTime();
+    const expiredInstances: RigInstance[] = [];
+    const activeStates: RigLifecycleState[] = ['queued', 'building', 'starting', 'healthy', 'degraded'];
+
+    for (const [id, instance] of this.instances.entries()) {
+      if (activeStates.includes(instance.observed.lifecycle)) {
+        if (instance.observed.expiresAt) {
+          const expiresAtMs = new Date(instance.observed.expiresAt).getTime();
+          if (nowMs >= expiresAtMs) {
+            const updated = this.transitionState(
+              id,
+              'expired',
+              `TTL of ${instance.spec.ttlSeconds}s expired at ${new Date(nowMs).toISOString()}`
+            );
+            expiredInstances.push(updated);
+          }
+        }
+      }
+    }
+
+    return expiredInstances;
+  }
+
+  public deleteInstance(instanceId: string): boolean {
+    const instance = this.instances.get(instanceId);
+    if (!instance) return false;
+
+    if (instance.observed.allocatedPort !== undefined) {
+      this.portAllocator.release(instance.observed.allocatedPort);
+    }
+    return this.instances.delete(instanceId);
+  }
+
+  public getInstance(instanceId: string): RigInstance | undefined {
+    return this.instances.get(instanceId);
+  }
+
+  public listInstances(): RigInstance[] {
+    return Array.from(this.instances.values());
+  }
+
+  public getStatusSummary(): {
+    totalContainers: number;
+    totalInstances: number;
+    activePorts: number[];
+    availablePorts: number[];
+    fleetStats: {
+      totalUsedMb: number;
+      totalCapMb: number;
+      usagePercent: number;
+      healthyCount: number;
+      oomCount: number;
+    };
+    fleetMemory: {
+      totalUsedMb: number;
+      totalCapMb: number;
+      usagePercent: number;
+      healthyCount: number;
+      oomCount: number;
+    };
+    provider: { connected: boolean; message: string };
+  } {
+    const instances = this.listInstances();
+    const stats = this.memoryGovernor.getFleetStats(instances);
+    return {
+      totalContainers: instances.length,
+      totalInstances: instances.length,
+      activePorts: this.portAllocator.getAllocatedPorts().map(a => a.port),
+      availablePorts: this.portAllocator.getAvailablePorts(),
+      fleetStats: stats,
+      fleetMemory: stats,
+      provider: this.getProviderStatus()
+    };
+  }
+
+  // Backwards-compatible methods for legacy callers
   public spawnContainer(params: {
     appId: string;
     name: string;
@@ -394,147 +722,81 @@ export class RigRuntimeBackend {
     sqliteFileName?: string;
     sqliteSizeBytes?: number;
   }): RigContainer {
-    const appId = params.appId.trim();
-    if (!appId) throw new Error('appId must not be empty.');
-
-    const port = this.portAllocator.allocate(appId, params.preferredPort);
-    const id = `rig-${appId.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-${Date.now().toString(36).slice(-4)}`;
-    const sqlitePath = `/data/${params.sqliteFileName || appId}.sqlite`;
-    const memoryMb = params.initialMemoryMb ?? 24;
-
-    if (memoryMb > MEMORY_CAP_MB) {
-      this.portAllocator.release(port);
-      throw new Error(`Requested initial memory ${memoryMb}MB exceeds 256MB memory cap.`);
-    }
-
-    const container: RigContainer = {
-      id,
-      appId,
+    const inst = this.createInstance({
+      appId: params.appId,
       name: params.name,
-      port,
-      memoryMb,
-      memoryCapMb: MEMORY_CAP_MB,
-      sqlitePath,
-      sqliteSizeBytes: params.sqliteSizeBytes ?? 1048576,
-      walJournalSizeBytes: 65536,
-      status: 'online',
-      testEvidenceScore: 100,
-      portalUrl: `https://${appId}.rig.nates.software`
-    };
+      preferredPort: params.preferredPort,
+      resources: { memoryCapMb: MEMORY_CAP_MB },
+      storage: params.sqliteFileName
+        ? [
+            {
+              kind: 'sqlite',
+              mountPath: `/data/${params.sqliteFileName}.sqlite`,
+              persistence: 'persistent',
+              sizeBytes: params.sqliteSizeBytes ?? 1048576
+            }
+          ]
+        : undefined,
+      ttlSeconds: 900,
+      source: 'demo'
+    });
 
-    this.containers.set(id, container);
-    return container;
-  }
-
-  public updateMemory(containerId: string, memoryMb: number): { container: RigContainer; decision: GovernorDecision } {
-    const c = this.containers.get(containerId);
-    if (!c) throw new Error(`Container not found: ${containerId}`);
-
-    const decision = this.memoryGovernor.evaluate(c, memoryMb);
-
-    let updated: RigContainer;
-    if (decision.action === 'oom_recovered') {
-      // Trigger WAL checkpoint before recovering from OOM
-      const checkpoint = this.walEngine.triggerCheckpoint(
-        c.sqlitePath,
-        c.walJournalSizeBytes,
-        c.sqliteSizeBytes,
-        'TRUNCATE'
-      );
-
-      updated = {
-        ...c,
-        memoryMb: decision.memoryMb,
-        status: 'oom_recovered',
-        walJournalSizeBytes: checkpoint.finalWalSizeBytes,
-        sqliteSizeBytes: checkpoint.finalSqliteSizeBytes
-      };
-    } else if (decision.allowed) {
-      updated = {
-        ...c,
-        memoryMb: decision.memoryMb,
-        status: decision.status
-      };
-    } else {
-      updated = c;
+    if (params.initialMemoryMb && params.initialMemoryMb > 0) {
+      this.updateMemory(inst.spec.id, params.initialMemoryMb);
     }
 
-    this.containers.set(containerId, updated);
-    return { container: updated, decision };
-  }
-
-  public checkpointContainerWal(containerId: string, mode: WalCheckpointMode = 'TRUNCATE'): {
-    container: RigContainer;
-    report: WalCheckpointReport;
-  } {
-    const c = this.containers.get(containerId);
-    if (!c) throw new Error(`Container not found: ${containerId}`);
-
-    const report = this.walEngine.triggerCheckpoint(
-      c.sqlitePath,
-      c.walJournalSizeBytes,
-      c.sqliteSizeBytes,
-      mode
-    );
-
-    const updated: RigContainer = {
-      ...c,
-      walJournalSizeBytes: report.finalWalSizeBytes,
-      sqliteSizeBytes: report.finalSqliteSizeBytes
-    };
-
-    this.containers.set(containerId, updated);
-    return { container: updated, report };
-  }
-
-  public backupContainerToR2(containerId: string): {
-    container: RigContainer;
-    snapshot: R2Snapshot;
-    checkpointReport: WalCheckpointReport;
-  } {
-    const { container: checkpointed, report: checkpointReport } = this.checkpointContainerWal(containerId, 'TRUNCATE');
-    const snapshot = this.r2Engine.createSnapshot(
-      checkpointed.appId,
-      checkpointed.sqlitePath,
-      checkpointed.sqliteSizeBytes,
-      { walCheckpointed: true }
-    );
-
+    const current = this.getInstance(inst.spec.id)!;
     return {
-      container: checkpointed,
-      snapshot,
-      checkpointReport
+      id: current.spec.id,
+      appId: current.spec.appId,
+      name: current.spec.name,
+      port: current.observed.allocatedPort || 0,
+      memoryMb: current.observed.memoryMb,
+      memoryCapMb: current.spec.resources.memoryCapMb,
+      sqlitePath: current.spec.storage?.[0]?.mountPath || '',
+      sqliteSizeBytes: current.spec.storage?.[0]?.sizeBytes || 0,
+      walJournalSizeBytes: 0,
+      status: current.observed.lifecycle
     };
   }
 
   public terminateContainer(containerId: string): boolean {
-    const c = this.containers.get(containerId);
-    if (!c) return false;
-
-    this.portAllocator.release(c.port);
-    return this.containers.delete(containerId);
+    return this.deleteInstance(containerId);
   }
 
   public getContainer(containerId: string): RigContainer | undefined {
-    return this.containers.get(containerId);
+    const inst = this.getInstance(containerId);
+    if (!inst) return undefined;
+    return {
+      id: inst.spec.id,
+      appId: inst.spec.appId,
+      name: inst.spec.name,
+      port: inst.observed.allocatedPort || 0,
+      memoryMb: inst.observed.memoryMb,
+      memoryCapMb: inst.spec.resources.memoryCapMb,
+      sqlitePath: inst.spec.storage?.[0]?.mountPath || '',
+      sqliteSizeBytes: inst.spec.storage?.[0]?.sizeBytes || 0,
+      walJournalSizeBytes: 0,
+      status: inst.observed.lifecycle
+    };
   }
 
   public listContainers(): RigContainer[] {
-    return Array.from(this.containers.values());
-  }
-
-  public getStatusSummary(): {
-    totalContainers: number;
-    activePorts: number[];
-    availablePorts: number[];
-    fleetMemory: { totalUsedMb: number; totalCapMb: number; usagePercent: number; healthyCount: number; oomCount: number };
-  } {
-    const containers = this.listContainers();
-    return {
-      totalContainers: containers.length,
-      activePorts: this.portAllocator.getAllocatedPorts().map(a => a.port),
-      availablePorts: this.portAllocator.getAvailablePorts(),
-      fleetMemory: this.memoryGovernor.getFleetStats(containers)
-    };
+    return this.listInstances().map(inst => ({
+      id: inst.spec.id,
+      appId: inst.spec.appId,
+      name: inst.spec.name,
+      port: inst.observed.allocatedPort || 0,
+      memoryMb: inst.observed.memoryMb,
+      memoryCapMb: inst.spec.resources.memoryCapMb,
+      sqlitePath: inst.spec.storage?.[0]?.mountPath || '',
+      sqliteSizeBytes: inst.spec.storage?.[0]?.sizeBytes || 0,
+      walJournalSizeBytes: 0,
+      status: inst.observed.lifecycle
+    }));
   }
 }
+
+// Export RigRuntimeBackend alias for seamless backwards compatibility
+export const RigRuntimeBackend = RigControlPlane;
+export type RigRuntimeBackend = RigControlPlane;

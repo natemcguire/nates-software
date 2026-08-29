@@ -1,372 +1,806 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cpu, Download, ShieldCheck, Terminal, Copy, Check, Play, RefreshCw, Layers } from 'lucide-react';
-import { INITIAL_FLEET, RigContainer, formatBytes } from '../lib/rigDomain';
+import {
+  Cpu,
+  ShieldCheck,
+  AlertTriangle,
+  Play,
+  Square,
+  RotateCcw,
+  Trash2,
+  HardDrive,
+  Clock,
+  Activity,
+  Layers,
+  Flame,
+  Zap,
+  Info,
+  Server
+} from 'lucide-react';
+import {
+  type RigInstance,
+  type RigLifecycleState,
+  type RigRuntimeAdapterKind,
+  type RigStorageKind,
+  type RigStoragePersistence,
+  type RigSpec,
+  formatDuration
+} from '../lib/rigDomain';
+import { RigControlPlane } from '../lib/rigBackend';
 
 export const RigRuntimeView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'onboard' | 'fleet' | 'storage'>('onboard');
-  const [copiedRemote, setCopiedRemote] = useState(false);
-  const [copiedPush, setCopiedPush] = useState(false);
-  const [liveProdUrl, setLiveProdUrl] = useState('https://picfit.ai');
-  const [isBuilding, setIsBuilding] = useState(false);
-  const [fleet, setFleet] = useState<RigContainer[]>([...INITIAL_FLEET]);
-  const [restartingIds, setRestartingIds] = useState<Set<string>>(new Set());
+  // Deterministic control-plane instance
+  const controlPlaneRef = useRef<RigControlPlane>(new RigControlPlane());
+  const [instances, setInstances] = useState<RigInstance[]>([]);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
+
+  // Configuration Form State (Empty initial first-run)
+  const [appId, setAppId] = useState('dronehunter');
+  const [appName, setAppName] = useState('DroneHunter Telemetry');
+  const [adapter, setAdapter] = useState<RigRuntimeAdapterKind>('docker');
+  const [buildCommand, setBuildCommand] = useState('npm run build');
+  const [startCommand, setStartCommand] = useState('node dist/server.js');
+  const [healthEndpoint, setHealthEndpoint] = useState('/healthz');
+  const [storageKind, setStorageKind] = useState<RigStorageKind | 'none'>('sqlite');
+  const [storagePath, setStoragePath] = useState('/data/app.sqlite');
+  const [storagePersistence, setStoragePersistence] = useState<RigStoragePersistence>('persistent');
+  const [storageSizeMb, setStorageSizeMb] = useState<number>(64);
+  const [memoryCapMb, setMemoryCapMb] = useState<number>(256);
+  const [ttlSeconds, setTtlSeconds] = useState<number>(900); // 15m default
+  const [autoProgress, setAutoProgress] = useState<boolean>(true);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const timersRef = useRef<NodeJS.Timeout[]>([]);
 
-  const [buildLogs, setBuildLogs] = useState<string[]>([
-    "[GITSMITH] Hook post-receive initialized for repo: nate/dronehunter",
-    "[RIG.EXE] Allocated isolated Linux micro-container (ID: rig-wa-9812)",
-    "[RIG.EXE] Mounted Local-First volume: /data/dronehunter.sqlite (WAL mode)",
-    "[BUILD] Running: npm run build (Vite 6 + React 19 + Tailwind)",
-    "[BUILD] Transformed 1,837 modules in 0.99s -> dist/ (392 kB JS, 34 kB CSS)",
-    "[PORTAL] Booted ephemeral dev server on port 3002 (dyno://nate/dronehunter:3002)",
-    "[TESTS] Irrefutable Evidence Pass: 500 SQLite simulated writes verified in 0.04s",
-    "[STATUS] ● Ephemeral build live and ready for testing."
-  ]);
-
-  const remoteCmd = "git remote add nate git@git.nates-software.com:nate/dronehunter.git";
-  const pushCmd = "git push nate main";
+  const refreshState = () => {
+    const list = controlPlaneRef.current.listInstances();
+    setInstances([...list]);
+    if (selectedInstanceId && !list.some(i => i.spec.id === selectedInstanceId)) {
+      setSelectedInstanceId(list.length > 0 ? list[0].spec.id : null);
+    } else if (!selectedInstanceId && list.length > 0) {
+      setSelectedInstanceId(list[0].spec.id);
+    }
+  };
 
   useEffect(() => {
+    refreshState();
     return () => {
       timersRef.current.forEach(t => clearTimeout(t));
       timersRef.current = [];
     };
   }, []);
 
-  const copyRemote = async () => {
+  const handleLaunchPlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!appId.trim()) {
+      setFormError('App ID is required.');
+      return;
+    }
+    if (!startCommand.trim()) {
+      setFormError('Start command is required.');
+      return;
+    }
+
     try {
-      await navigator.clipboard.writeText(remoteCmd);
-      setCopiedRemote(true);
-      const t = setTimeout(() => setCopiedRemote(false), 2000);
-      timersRef.current.push(t);
-    } catch {}
+      const cleanAppId = appId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+      const specId = `rig-${cleanAppId}-${Date.now().toString(36).slice(-4)}`;
+
+      const storageMounts =
+        storageKind !== 'none'
+          ? [
+              {
+                name: 'default-storage',
+                kind: storageKind,
+                mountPath: storagePath.trim() || `/data/${cleanAppId}.sqlite`,
+                sizeMb: storageSizeMb,
+                persistence: storagePersistence
+              }
+            ]
+          : undefined;
+
+      const newSpec: RigSpec = {
+        id: specId,
+        appId: cleanAppId,
+        name: appName.trim() || cleanAppId,
+        runtime: {
+          adapter,
+          buildCommand: buildCommand.trim() || undefined,
+          startCommand: startCommand.trim(),
+          healthEndpoint: healthEndpoint.trim() || undefined
+        },
+        resources: {
+          memoryCapMb,
+          cpuCores: 1
+        },
+        storage: storageMounts,
+        ttlSeconds,
+        source: 'demo',
+        createdAt: new Date().toISOString()
+      };
+
+      const instance = controlPlaneRef.current.createInstance(newSpec);
+      refreshState();
+      setSelectedInstanceId(instance.spec.id);
+
+      // Auto-progress through lifecycle states if enabled
+      if (autoProgress) {
+        // Step 1: building
+        const t1 = setTimeout(() => {
+          try {
+            controlPlaneRef.current.transitionState(
+              specId,
+              'building',
+              buildCommand.trim()
+                ? `Simulated build phase; command plan: ${buildCommand.trim()}`
+                : 'Simulated build phase; command plan: none'
+            );
+            refreshState();
+          } catch {}
+        }, 600);
+        timersRef.current.push(t1);
+
+        // Step 2: starting
+        const t2 = setTimeout(() => {
+          try {
+            controlPlaneRef.current.transitionState(
+              specId,
+              'starting',
+              `Simulated start phase; command plan: ${startCommand.trim()}`
+            );
+            controlPlaneRef.current.updateMemory(specId, 32);
+            refreshState();
+          } catch {}
+        }, 1300);
+        timersRef.current.push(t2);
+
+        // Step 3: healthy
+        const t3 = setTimeout(() => {
+          try {
+            controlPlaneRef.current.transitionState(
+              specId,
+              'healthy',
+              'Simulated healthy observation; no probe executed'
+            );
+            refreshState();
+          } catch {}
+        }, 2000);
+        timersRef.current.push(t3);
+      }
+    } catch (err: any) {
+      setFormError(err.message || 'Failed to create instance.');
+    }
   };
 
-  const copyPush = async () => {
+  const handleStepTransition = (id: string, targetState: RigLifecycleState, reason?: string) => {
     try {
-      await navigator.clipboard.writeText(pushCmd);
-      setCopiedPush(true);
-      const t = setTimeout(() => setCopiedPush(false), 2000);
-      timersRef.current.push(t);
-    } catch {}
+      controlPlaneRef.current.transitionState(id, targetState, reason);
+      refreshState();
+    } catch (err: any) {
+      alert(`Transition error: ${err.message}`);
+    }
   };
 
-  const handleRestartContainer = (id: string) => {
-    setRestartingIds(prev => new Set(prev).add(id));
-    setFleet(prev => prev.map(c => c.id === id ? { ...c, status: 'rebuilding' } : c));
-
-    const t = setTimeout(() => {
-      setFleet(prev => prev.map(c => c.id === id ? { ...c, status: 'online' } : c));
-      setRestartingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }, 900);
-    timersRef.current.push(t);
+  const handleStop = (id: string) => {
+    try {
+      controlPlaneRef.current.stopInstance(id, 'Simulated stop by operator');
+      refreshState();
+    } catch (err: any) {
+      alert(`Stop error: ${err.message}`);
+    }
   };
 
-  const runSimulatedPush = () => {
-    setIsBuilding(true);
-    setBuildLogs(["[GITSMITH] Receiving objects: 100% (142/142)..."]);
+  const handleRestart = (id: string) => {
+    try {
+      controlPlaneRef.current.restartInstance(id);
+      refreshState();
 
-    const steps = [
-      "[GITSMITH] CAS atomic update: refs/heads/main -> 5c030af (OK)",
-      "[RIG.EXE] Spinning up isolated micro-container (CPU limit: 2 cores, RAM limit: 256MB)",
-      "[STORAGE] Initialized SQLite WAL volume at /data/dronehunter.sqlite",
-      "[BUILD] Compiling TypeScript AST & bundling assets with Vite 6...",
-      "[BUILD] Build complete in 0.99s! Bundle size: 392 kB JS",
-      "[EVIDENCE] Running 10k SQLite stress tests & visual regression checks...",
-      "[EVIDENCE] Irrefutable Evidence: 100% test pass rate, 0 lock contentions, <0.08ms latency",
-      "[PORTAL] Live Ephemeral URL: https://dronehunter.nates-software.com (Port 3002)",
-      "[HOTWIRE] Submitted build to 12:01 AM Daily Drops Board (Batch #84)"
-    ];
+      if (autoProgress) {
+        const t1 = setTimeout(() => {
+          try {
+            controlPlaneRef.current.transitionState(id, 'building', 'Simulated build phase; command plan: rebuild');
+            refreshState();
+          } catch {}
+        }, 400);
+        timersRef.current.push(t1);
 
-    steps.forEach((step, idx) => {
-      const t = setTimeout(() => {
-        setBuildLogs(prev => [...prev, step]);
-        if (idx === steps.length - 1) setIsBuilding(false);
-      }, (idx + 1) * 350);
-      timersRef.current.push(t);
-    });
+        const t2 = setTimeout(() => {
+          try {
+            controlPlaneRef.current.transitionState(id, 'starting', 'Simulated start phase; command plan: restart');
+            controlPlaneRef.current.updateMemory(id, 28);
+            refreshState();
+          } catch {}
+        }, 900);
+        timersRef.current.push(t2);
+
+        const t3 = setTimeout(() => {
+          try {
+            controlPlaneRef.current.transitionState(id, 'healthy', 'Simulated healthy observation; no probe executed');
+            refreshState();
+          } catch {}
+        }, 1400);
+        timersRef.current.push(t3);
+      }
+    } catch (err: any) {
+      alert(`Restart error: ${err.message}`);
+    }
   };
 
-  const activeOnlineCount = fleet.filter(c => c.status === 'online').length;
+  const handleSimulateOOM = (id: string) => {
+    try {
+      const inst = controlPlaneRef.current.getInstance(id);
+      const exceedMb = (inst?.spec.resources.memoryCapMb || 256) + 128;
+      controlPlaneRef.current.updateMemory(id, exceedMb);
+      refreshState();
+    } catch (err: any) {
+      alert(`OOM error: ${err.message}`);
+    }
+  };
+
+  const handleSimulateCrash = (id: string) => {
+    try {
+      controlPlaneRef.current.transitionState(id, 'crashed', 'Simulated crash; exit code 1');
+      refreshState();
+    } catch (err: any) {
+      alert(`Crash simulation error: ${err.message}`);
+    }
+  };
+
+  const handleSimulateExpiry = (id: string) => {
+    try {
+      // Force expiry by checking with future timestamp
+      const inst = controlPlaneRef.current.getInstance(id);
+      if (inst) {
+        controlPlaneRef.current.transitionState(
+          id,
+          'expired',
+          `Simulated TTL expiry after ${inst.spec.ttlSeconds}s boundary`
+        );
+        refreshState();
+      }
+    } catch (err: any) {
+      alert(`Expiry simulation error: ${err.message}`);
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    controlPlaneRef.current.deleteInstance(id);
+    refreshState();
+  };
+
+  const summary = controlPlaneRef.current.getStatusSummary();
+  const selectedInstance = instances.find(i => i.spec.id === selectedInstanceId);
+
+  const getStatusBadge = (state: RigLifecycleState) => {
+    switch (state) {
+      case 'queued':
+        return <span className="bg-blue-100 text-blue-800 border border-blue-400 font-mono font-bold px-2 py-0.5 rounded text-[10px]">QUEUED</span>;
+      case 'building':
+        return <span className="bg-amber-100 text-amber-900 border border-amber-400 font-mono font-bold px-2 py-0.5 rounded text-[10px] animate-pulse">BUILDING...</span>;
+      case 'starting':
+        return <span className="bg-purple-100 text-purple-800 border border-purple-400 font-mono font-bold px-2 py-0.5 rounded text-[10px] animate-pulse">STARTING...</span>;
+      case 'healthy':
+        return <span className="bg-green-100 text-green-800 border border-green-500 font-mono font-bold px-2 py-0.5 rounded text-[10px]">● HEALTHY</span>;
+      case 'degraded':
+        return <span className="bg-yellow-100 text-yellow-900 border border-yellow-500 font-mono font-bold px-2 py-0.5 rounded text-[10px]">▲ DEGRADED</span>;
+      case 'crashed':
+        return <span className="bg-red-100 text-red-800 border border-red-500 font-mono font-bold px-2 py-0.5 rounded text-[10px]">✕ CRASHED</span>;
+      case 'oom':
+        return <span className="bg-rose-100 text-rose-900 border border-rose-500 font-mono font-bold px-2 py-0.5 rounded text-[10px]">⚠ OOM (CAP EXCEEDED)</span>;
+      case 'expired':
+        return <span className="bg-gray-200 text-gray-800 border border-gray-400 font-mono font-bold px-2 py-0.5 rounded text-[10px]">⏱ EXPIRED</span>;
+      case 'stopped':
+        return <span className="bg-slate-200 text-slate-700 border border-slate-400 font-mono font-bold px-2 py-0.5 rounded text-[10px]">■ STOPPED</span>;
+      default:
+        return <span className="bg-gray-100 text-gray-800 font-mono px-2 py-0.5 rounded text-[10px]">{state}</span>;
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
       {/* Top Header Navigation */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Cpu size={16} className="text-green-400" />
-          <span className="font-bold text-sm text-green-300 font-mono">RIG.EXE BUILDER &amp; EPHEMERAL FLEET</span>
-          <span className="bg-green-900 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded border border-green-500 font-mono">
-            ● DEMO FLEET / SIMULATED HUD ({activeOnlineCount} ACTIVE / {fleet.length} TOTAL)
+          <Cpu size={16} className="text-cyan-400" />
+          <span className="font-bold text-sm text-cyan-300 font-mono">RIG.EXE CONTROL-PLANE PREVIEW</span>
+          <span className="bg-blue-950 text-cyan-200 text-[10px] font-bold px-2 py-0.5 rounded border border-cyan-600 font-mono">
+            RUNTIME &amp; STORAGE AGNOSTIC
           </span>
         </div>
 
-        {/* Tab Controls */}
-        <div className="flex gap-1 font-sans">
-          <button
-            onClick={() => setActiveTab('onboard')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'onboard' ? 'btn-w95-primary' : 'text-black'}`}
-          >
-            🚀 Onboard &amp; Push
-          </button>
-          <button
-            onClick={() => setActiveTab('fleet')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'fleet' ? 'btn-w95-primary' : 'text-black'}`}
-          >
-            ⚡ Parallel Fleet ({fleet.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('storage')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'storage' ? 'btn-w95-primary' : 'text-black'}`}
-          >
-            💾 Storage &amp; Persistence
-          </button>
+        {/* Boundary Indicator */}
+        <div className="flex items-center gap-2">
+          <span className="bg-amber-950/80 text-amber-300 border border-amber-500/80 px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1">
+            <AlertTriangle size={11} className="text-amber-400" />
+            PROVIDER STATUS: DISCONNECTED (SIMULATION ONLY)
+          </span>
         </div>
       </div>
 
-      {/* Main Tab Content */}
-      <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
-        {/* TAB 1: Onboard New Project & Push Remote */}
-        {activeTab === 'onboard' && (
-          <div className="grid grid-cols-12 gap-4 h-full">
-            {/* Left: Setup Instructions */}
-            <div className="col-span-6 space-y-3 flex flex-col justify-between">
-              <div>
-                <div className="border-b pb-2 mb-2">
-                  <span className="font-bold text-sm text-w95-blue">Connect Your Codebase to RIG.EXE</span>
-                  <p className="text-gray-600 text-xs">
-                    Push any local repository to your Local-First Git forge remote. RIG.EXE automatically allocates an isolated cloud container, mounts your optional local-first storage or state volume (apps are runtime and storage independent), and boots your live ephemeral portal.
-                  </p>
-                </div>
+      {/* Honest Boundary Notice Banner */}
+      <div className="bg-amber-50 border-b border-amber-300 px-3 py-1.5 text-[11px] text-amber-900 flex items-center justify-between flex-wrap gap-1">
+        <div className="flex items-center gap-1.5">
+          <Info size={13} className="text-amber-700 shrink-0" />
+          <span>
+            <strong>Deterministic State Machine Preview:</strong> No external cloud provider or live container daemon is attached. Specs, state transitions, port allocations, and resource limits run in local simulation.
+          </span>
+        </div>
+        <div className="text-[10px] text-amber-800 font-mono">
+          Allocated Ports: {summary.activePorts.length > 0 ? summary.activePorts.join(', ') : 'None'} | Available: {summary.availablePorts.length}
+        </div>
+      </div>
 
-                {/* Step 1 */}
-                <div className="bg-gray-50 border border-gray-300 p-2.5 rounded space-y-1.5 mb-2.5">
-                  <div className="font-bold text-gray-900 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <span className="bg-w95-blue text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">1</span>
-                      Add Git Remote:
-                    </span>
-                    <button
-                      onClick={copyRemote}
-                      className="btn-w95 text-[10px] py-0.5 px-2 flex items-center gap-1"
-                    >
-                      {copiedRemote ? <Check size={10} className="text-green-600" /> : <Copy size={10} />}
-                      {copiedRemote ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                  <div className="bg-black text-green-400 p-2 font-mono text-[11px] rounded border border-gray-700 truncate">
-                    $ {remoteCmd}
-                  </div>
-                </div>
+      {/* Main Responsive Grid */}
+      <div className="flex-1 p-3 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-3">
+        {/* Left Column: Spec Configuration & Plan Builder Form */}
+        <div className="lg:col-span-5 flex flex-col gap-3">
+          <div className="bg-white border-2 border-gray-800 p-3 rounded shadow-sm">
+            <div className="border-b pb-1.5 mb-2.5 flex items-center justify-between">
+              <span className="font-bold text-xs text-w95-blue flex items-center gap-1.5">
+                <Layers size={13} /> Runtime Manifest Builder
+              </span>
+              <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded border border-gray-300 font-mono">
+                source: demo
+              </span>
+            </div>
 
-                {/* Step 2 */}
-                <div className="bg-gray-50 border border-gray-300 p-2.5 rounded space-y-1.5 mb-2.5">
-                  <div className="font-bold text-gray-900 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <span className="bg-w95-blue text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">2</span>
-                      Push Code &amp; Trigger Ephemeral Build:
-                    </span>
-                    <button
-                      onClick={copyPush}
-                      className="btn-w95 text-[10px] py-0.5 px-2 flex items-center gap-1"
-                    >
-                      {copiedPush ? <Check size={10} className="text-green-600" /> : <Copy size={10} />}
-                      {copiedPush ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                  <div className="bg-black text-green-400 p-2 font-mono text-[11px] rounded border border-gray-700 truncate">
-                    $ {pushCmd}
-                  </div>
+            <form onSubmit={handleLaunchPlan} className="space-y-2.5">
+              {formError && (
+                <div className="p-2 bg-red-50 border border-red-400 text-red-700 text-xs rounded">
+                  {formError}
                 </div>
+              )}
 
-                {/* Step 3: Optional Live URL */}
-                <div className="bg-gray-50 border border-gray-300 p-2.5 rounded space-y-1.5 mb-2.5">
-                  <div className="font-bold text-gray-900 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <span className="bg-w95-blue text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">3</span>
-                      Live Production URL (Optional):
-                    </span>
-                    <span className="text-[10px] text-blue-700 font-mono">External Host</span>
-                  </div>
+              {/* App ID and Display Name */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">App ID</label>
                   <input
-                    type="url"
-                    value={liveProdUrl}
-                    onChange={(e) => setLiveProdUrl(e.target.value)}
+                    type="text"
+                    value={appId}
+                    onChange={e => setAppId(e.target.value)}
                     className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white"
-                    placeholder="https://picfit.ai or https://myapp.com"
+                    placeholder="e.g. dronehunter"
+                    required
                   />
                 </div>
-
-                {/* Step 3: Invariants */}
-                <div className="bg-blue-50 border border-w95-blue p-2.5 rounded space-y-1">
-                  <div className="font-bold text-w95-blue flex items-center gap-1">
-                    <ShieldCheck size={13} className="text-green-700" /> Automated Build Invariants:
-                  </div>
-                  <ul className="text-[11px] text-gray-700 list-disc list-inside space-y-0.5">
-                    <li>Runtime &amp; storage independent (optional persistence mounted at <code className="bg-gray-200 px-1 font-mono">/data/app.sqlite</code>)</li>
-                    <li>Zero port collisions &middot; scale-to-zero micro-container</li>
-                    <li>Instant live preview portal &amp; automatic HOTWIRE submission</li>
-                  </ul>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Display Name</label>
+                  <input
+                    type="text"
+                    value={appName}
+                    onChange={e => setAppName(e.target.value)}
+                    className="w-full p-1.5 border border-gray-400 text-xs rounded bg-white"
+                    placeholder="e.g. DroneHunter"
+                  />
                 </div>
               </div>
 
-              {/* Action Trigger */}
-              <button
-                onClick={runSimulatedPush}
-                disabled={isBuilding}
-                className="btn-w95 btn-w95-primary w-full py-2.5 text-xs flex items-center justify-center gap-2 font-bold shadow-md"
-              >
-                <Play size={13} /> {isBuilding ? 'BUILDING EPHEMERAL RIG (Vite + Runtime)...' : '⚡ TEST / SIMULATE GIT PUSH BUILD PIPELINE'}
-              </button>
-            </div>
-
-            {/* Right: Live Build Console HUD */}
-            <div className="col-span-6 bg-black text-green-400 p-3 rounded border-2 border-gray-700 flex flex-col justify-between shadow-inner font-mono text-[11px] overflow-hidden">
+              {/* Runtime Adapter Selection */}
               <div>
-                <div className="flex justify-between items-center border-b border-gray-800 pb-1.5 mb-2 text-gray-400 text-xs">
-                  <span className="flex items-center gap-1.5 text-yellow-400">
-                    <Terminal size={13} /> RIG.EXE Automated Build Console (Simulated)
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Runtime Adapter</label>
+                <select
+                  value={adapter}
+                  onChange={e => setAdapter(e.target.value as RigRuntimeAdapterKind)}
+                  className="w-full p-1.5 border border-gray-400 text-xs rounded bg-white font-mono"
+                >
+                  <option value="docker">Docker Container (docker)</option>
+                  <option value="process">Direct Process (process)</option>
+                  <option value="wasm">WebAssembly Sandbox (wasm)</option>
+                  <option value="custom">Custom Adapter (custom)</option>
+                  <option value="simulation">Local Simulation (simulation)</option>
+                </select>
+              </div>
+
+              {/* Build and Start Commands */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Build Command (Optional)</label>
+                  <input
+                    type="text"
+                    value={buildCommand}
+                    onChange={e => setBuildCommand(e.target.value)}
+                    className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white"
+                    placeholder="e.g. npm run build"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Start Command</label>
+                  <input
+                    type="text"
+                    value={startCommand}
+                    onChange={e => setStartCommand(e.target.value)}
+                    className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white"
+                    placeholder="e.g. node dist/server.js"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Health Endpoint */}
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Health Check Endpoint</label>
+                <input
+                  type="text"
+                  value={healthEndpoint}
+                  onChange={e => setHealthEndpoint(e.target.value)}
+                  className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white"
+                  placeholder="/healthz"
+                />
+              </div>
+
+              {/* Storage Mode (Runtime & Storage Freedom) */}
+              <div className="bg-gray-50 border border-gray-300 p-2 rounded space-y-1.5">
+                <div className="font-bold text-gray-800 text-[11px] flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <HardDrive size={12} className="text-gray-600" /> Storage Declaration (Generic Mount)
                   </span>
-                  <span className="text-[10px] text-gray-500 font-sans">Stream at 1000 Baud</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Optional</span>
                 </div>
 
-                <div className="space-y-1 overflow-y-auto max-h-[310px] pr-1">
-                  {buildLogs.map((log, idx) => (
-                    <div
-                      key={idx}
-                      className={`leading-relaxed ${
-                        log.includes('[EVIDENCE]') || log.includes('[PORTAL]')
-                          ? 'text-yellow-300 font-bold'
-                          : log.includes('[HOTWIRE]')
-                          ? 'text-cyan-300 font-bold'
-                          : ''
-                      }`}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-600 mb-0.5">Storage Kind</label>
+                    <select
+                      value={storageKind}
+                      onChange={e => setStorageKind(e.target.value as RigStorageKind)}
+                      className="w-full p-1 border border-gray-400 text-xs rounded bg-white"
                     >
-                      {log}
+                      <option value="none">None (Stateless)</option>
+                      <option value="sqlite">SQLite Database</option>
+                      <option value="volume">Generic Volume</option>
+                      <option value="directory">Directory Mount</option>
+                      <option value="ephemeral">Ephemeral tmpfs</option>
+                      <option value="block">Block Storage</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-600 mb-0.5">Persistence Policy</label>
+                    <select
+                      value={storagePersistence}
+                      disabled={storageKind === 'none'}
+                      onChange={e => setStoragePersistence(e.target.value as RigStoragePersistence)}
+                      className="w-full p-1 border border-gray-400 text-xs rounded bg-white disabled:bg-gray-100"
+                    >
+                      <option value="persistent">Persistent</option>
+                      <option value="ephemeral">Ephemeral (Wipe on stop)</option>
+                      <option value="retained">Retained</option>
+                    </select>
+                  </div>
+                </div>
+
+                {storageKind !== 'none' && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[10px] text-gray-600 mb-0.5">Mount Path</label>
+                      <input
+                        type="text"
+                        value={storagePath}
+                        onChange={e => setStoragePath(e.target.value)}
+                        className="w-full p-1 border border-gray-400 font-mono text-xs rounded bg-white"
+                        placeholder="/data/app.sqlite"
+                      />
                     </div>
-                  ))}
-                  {isBuilding && <div className="text-gray-400 animate-pulse">_</div>}
+                    <div>
+                      <label className="block text-[10px] text-gray-600 mb-0.5">Size Limit (MB)</label>
+                      <input
+                        type="number"
+                        value={storageSizeMb}
+                        onChange={e => setStorageSizeMb(Number(e.target.value) || 64)}
+                        className="w-full p-1 border border-gray-400 font-mono text-xs rounded bg-white"
+                        min="1"
+                        max="4096"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Resource Limits and TTL */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Memory Cap</label>
+                  <select
+                    value={memoryCapMb}
+                    onChange={e => setMemoryCapMb(Number(e.target.value))}
+                    className="w-full p-1.5 border border-gray-400 text-xs rounded bg-white font-mono"
+                  >
+                    <option value="128">128 MB</option>
+                    <option value="256">256 MB (Standard)</option>
+                    <option value="512">512 MB</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">TTL / Auto-Expiry</label>
+                  <select
+                    value={ttlSeconds}
+                    onChange={e => setTtlSeconds(Number(e.target.value))}
+                    className="w-full p-1.5 border border-gray-400 text-xs rounded bg-white font-mono"
+                  >
+                    <option value="300">5 Minutes (300s)</option>
+                    <option value="900">15 Minutes (900s)</option>
+                    <option value="1800">30 Minutes (1800s)</option>
+                    <option value="3600">1 Hour (3600s)</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-800 flex justify-between items-center text-[10px] text-gray-500 font-sans">
-                <span>✔ Git CAS Hook &middot; Zero Lock Contentions</span>
-                <span className="text-green-400 font-mono font-bold">{isBuilding ? 'BUILDING...' : 'EXIT 0 (OK)'}</span>
+              {/* Options */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="autoProgress"
+                  checked={autoProgress}
+                  onChange={e => setAutoProgress(e.target.checked)}
+                  className="rounded text-blue-600"
+                />
+                <label htmlFor="autoProgress" className="text-[11px] text-gray-700 cursor-pointer">
+                  Auto-step lifecycle: <span className="font-mono text-[10px] text-gray-500">queued &rarr; building &rarr; starting &rarr; healthy</span>
+                </label>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* TAB 2: Parallel Fleet (Orbs) */}
-        {activeTab === 'fleet' && (
-          <div className="space-y-3">
-            <div className="border-b pb-2 flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-w95-blue">Parallel Ephemeral Fleet ("Orbs")</span>
-                  <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
-                    DEMO SIMULATION
-                  </span>
-                </div>
-                <p className="text-gray-600 text-xs">
-                  Every branch and mod runs on its own isolated micro-VM in the cloud with zero local CPU/port contention.
-                </p>
-              </div>
-              <span className="bg-green-100 text-green-800 font-mono font-bold px-2 py-1 rounded text-xs">
-                GPU-Style 10x Parallelism
-              </span>
-            </div>
-
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="bg-w95-blue text-white text-left">
-                  <th className="p-2">Container ID / App</th>
-                  <th className="p-2">Port</th>
-                  <th className="p-2">Memory / Cap</th>
-                  <th className="p-2">Storage / Persistence</th>
-                  <th className="p-2">Evidence</th>
-                  <th className="p-2">Status</th>
-                  <th className="p-2">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fleet.map((c) => {
-                  const isRebuilding = restartingIds.has(c.id) || c.status === 'rebuilding';
-                  return (
-                    <tr key={c.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2 font-bold text-w95-blue">
-                        <div>{c.name}</div>
-                        <span className="text-[10px] text-gray-500 font-mono">{c.id}</span>
-                      </td>
-                      <td className="p-2 font-mono font-bold">{c.port}</td>
-                      <td className="p-2 text-green-700 font-bold font-mono">
-                        {c.memoryMb} MB / {c.memoryCapMb} MB
-                      </td>
-                      <td className="p-2 font-mono text-[11px]">
-                        <div>{c.sqlitePath} ({formatBytes(c.sqliteSizeBytes)})</div>
-                        <div className="text-gray-500 text-[10px]">WAL: {formatBytes(c.walJournalSizeBytes)}</div>
-                      </td>
-                      <td className="p-2 text-green-700 font-bold">✔ {c.testEvidenceScore}% Pass</td>
-                      <td className="p-2">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                          isRebuilding ? 'bg-yellow-100 text-yellow-900 border border-yellow-400' : 'bg-green-100 text-green-800'
-                        }`}>
-                          ● {isRebuilding ? 'REBUILDING...' : c.status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="p-2">
-                        <button
-                          onClick={() => handleRestartContainer(c.id)}
-                          disabled={isRebuilding}
-                          className="btn-w95 text-[10px] py-0.5 px-2 flex items-center gap-1"
-                        >
-                          <RefreshCw size={10} className={isRebuilding ? 'animate-spin' : ''} />
-                          {isRebuilding ? 'Rebooting...' : 'Restart'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* TAB 3: Storage & Persistence Recovery */}
-        {activeTab === 'storage' && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-blue-50 border-2 border-w95-blue p-3 rounded space-y-2">
-              <span className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
-                <Layers size={14} /> Database &amp; Storage Disk Export
-              </span>
-              <p className="text-gray-700 text-xs">
-                Export stateful containers' complete, uncorrupted storage files or database snapshots to your local computer with zero locks (or deploy completely stateless).
-              </p>
-              <a
-                href="data:text/plain;charset=utf-8,WallArt%20Database%20Backup"
-                download="wallart-live.sqlite"
-                className="btn-w95 btn-w95-primary w-full py-1.5 flex items-center justify-center gap-1.5"
+              {/* Launch Action */}
+              <button
+                type="submit"
+                className="btn-w95 btn-w95-primary w-full py-2 text-xs flex items-center justify-center gap-1.5 font-bold shadow"
               >
-                <Download size={13} /> Export wallart.sqlite ({formatBytes(15518920)})
-              </a>
-            </div>
+                <Play size={13} /> Launch Demo Plan (Simulation)
+              </button>
+            </form>
+          </div>
 
-            <div className="bg-yellow-50 border-2 border-yellow-500 p-3 rounded space-y-2">
-              <span className="font-bold text-yellow-900 text-sm">OOM Crash Proofing (Exit 137)</span>
-              <p className="text-yellow-800 text-xs">
-                Strict 256MB memory cap. If arbitrary user code leaks memory, RIG.EXE safely checkpoints active storage volumes and restarts clean in &lt;50ms.
-              </p>
-              <div className="text-[11px] text-green-800 font-mono font-bold">
-                ✔ Litestream replication to Cloudflare R2 active
+          {/* Fleet Statistics */}
+          <div className="bg-white border-2 border-gray-800 p-2.5 rounded shadow-sm text-[11px] space-y-1.5">
+            <div className="font-bold text-gray-800 flex items-center justify-between border-b pb-1">
+              <span className="flex items-center gap-1">
+                <Activity size={12} className="text-blue-700" /> Control Plane Metrics
+              </span>
+              <span className="text-[10px] font-mono text-gray-500">
+                {summary.totalInstances} instance{summary.totalInstances !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center pt-1 font-mono">
+              <div className="bg-gray-50 p-1.5 rounded border border-gray-200">
+                <div className="text-gray-500 text-[9px]">ACTIVE MEMORY</div>
+                <div className="font-bold text-gray-800">{summary.fleetStats.totalUsedMb} MB</div>
+              </div>
+              <div className="bg-gray-50 p-1.5 rounded border border-gray-200">
+                <div className="text-gray-500 text-[9px]">TOTAL CAP</div>
+                <div className="font-bold text-gray-800">{summary.fleetStats.totalCapMb} MB</div>
+              </div>
+              <div className="bg-gray-50 p-1.5 rounded border border-gray-200">
+                <div className="text-gray-500 text-[9px]">ACTIVE PORTS</div>
+                <div className="font-bold text-blue-700">{summary.activePorts.length} / 10</div>
               </div>
             </div>
           </div>
-        )}
+        </div>
+
+        {/* Right Column: Instances List & Detail HUD */}
+        <div className="lg:col-span-7 flex flex-col gap-3">
+          {instances.length === 0 ? (
+            /* Empty First-Run State */
+            <div className="bg-white border-2 border-gray-800 p-8 rounded shadow-sm text-center flex flex-col items-center justify-center h-full min-h-[360px]">
+              <div className="w-14 h-14 bg-blue-50 border-2 border-blue-200 rounded-full flex items-center justify-center text-blue-700 mb-3">
+                <Server size={28} />
+              </div>
+              <h3 className="font-bold text-sm text-gray-900 mb-1">No Active RIG Instances</h3>
+              <p className="text-gray-600 text-xs max-w-md mb-4">
+                The control plane is currently empty. Configure a runtime manifest on the left and click <strong>Launch Demo Plan</strong> to observe lifecycle transitions, port allocation, and resource governance in a deterministic simulation.
+              </p>
+              <div className="bg-gray-50 border border-gray-300 p-3 rounded text-left text-xs max-w-md space-y-1.5">
+                <div className="font-bold text-gray-800 flex items-center gap-1">
+                  <ShieldCheck size={13} className="text-green-600" /> Truthful Guarantees:
+                </div>
+                <ul className="list-disc list-inside text-[11px] text-gray-600 space-y-0.5">
+                  <li>Zero hardcoded or fabricated initial fleet containers</li>
+                  <li>Runtime &amp; storage agnostic (stateless, SQLite, or generic volumes)</li>
+                  <li>Deterministic 9-state lifecycle machine with legal transitions</li>
+                  <li>Safe port allocation &amp; automatic release on stop/expiry</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            /* Active Instances & Detail View */
+            <div className="flex flex-col gap-3 h-full">
+              {/* Instance Selector Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto bg-gray-200 p-1 rounded border border-gray-400">
+                {instances.map(inst => (
+                  <button
+                    key={inst.spec.id}
+                    onClick={() => setSelectedInstanceId(inst.spec.id)}
+                    className={`btn-w95 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap ${
+                      selectedInstanceId === inst.spec.id ? 'btn-w95-primary' : 'text-black'
+                    }`}
+                  >
+                    <span>{inst.spec.name}</span>
+                    {getStatusBadge(inst.observed.lifecycle)}
+                  </button>
+                ))}
+              </div>
+
+              {selectedInstance && (
+                <div className="bg-white border-2 border-gray-800 p-3.5 rounded shadow-sm flex flex-col justify-between flex-1 gap-3">
+                  {/* Instance Header */}
+                  <div>
+                    <div className="flex items-center justify-between border-b pb-2 mb-2.5 flex-wrap gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-gray-900">{selectedInstance.spec.name}</span>
+                          <span className="text-[10px] font-mono text-gray-500">({selectedInstance.spec.id})</span>
+                          {getStatusBadge(selectedInstance.observed.lifecycle)}
+                        </div>
+                        <div className="text-[11px] text-gray-500 font-mono mt-0.5">
+                          App: {selectedInstance.spec.appId} | Source: {selectedInstance.spec.source} | Adapter: {selectedInstance.spec.runtime.adapter}
+                        </div>
+                      </div>
+
+                      {/* Status Badges */}
+                      <div className="flex items-center gap-1.5 font-mono text-xs">
+                        <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded border border-gray-300">
+                          Port: {selectedInstance.observed.allocatedPort ? (
+                            <strong className="text-blue-700">{selectedInstance.observed.allocatedPort}</strong>
+                          ) : (
+                            <span className="text-gray-500">None (Released)</span>
+                          )}
+                        </span>
+                        <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded border border-gray-300">
+                          Mem: <strong>{selectedInstance.observed.memoryMb}</strong> / {selectedInstance.spec.resources.memoryCapMb} MB
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Spec Summary Card */}
+                    <div className="grid grid-cols-2 gap-2 bg-gray-50 border border-gray-300 p-2 rounded text-[11px] mb-3">
+                      <div>
+                        <span className="text-gray-500 font-bold block text-[10px]">COMMANDS</span>
+                        <div className="font-mono text-gray-800 truncate">
+                          {selectedInstance.spec.runtime.buildCommand && (
+                            <div>Build: <code className="bg-gray-200 px-1">{selectedInstance.spec.runtime.buildCommand}</code></div>
+                          )}
+                          <div>Start: <code className="bg-gray-200 px-1">{selectedInstance.spec.runtime.startCommand}</code></div>
+                          {selectedInstance.spec.runtime.healthEndpoint && (
+                            <div>Health: <code className="bg-gray-200 px-1">{selectedInstance.spec.runtime.healthEndpoint}</code></div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 font-bold block text-[10px]">STORAGE &amp; TTL</span>
+                        <div className="font-mono text-gray-800">
+                          {selectedInstance.spec.storage && selectedInstance.spec.storage.length > 0 ? (
+                            selectedInstance.spec.storage.map((s, idx) => (
+                              <div key={idx} className="truncate">
+                                {s.kind}: {s.mountPath} ({s.persistence}{s.sizeMb ? `, ${s.sizeMb}MB` : ''})
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-gray-500">Stateless (No volume mounted)</div>
+                          )}
+                          <div>TTL: {formatDuration(selectedInstance.spec.ttlSeconds)}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interactive Control-Plane Actions */}
+                    <div className="space-y-1 mb-3">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block">
+                        Deterministic Control Actions
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {/* Progressive State Advancers */}
+                        {selectedInstance.observed.lifecycle === 'queued' && (
+                          <button
+                            onClick={() => handleStepTransition(selectedInstance.spec.id, 'building', 'Simulated build phase; no command executed')}
+                            className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold"
+                          >
+                            <Play size={11} /> Step &rarr; Building
+                          </button>
+                        )}
+                        {selectedInstance.observed.lifecycle === 'building' && (
+                          <button
+                            onClick={() => handleStepTransition(selectedInstance.spec.id, 'starting', 'Simulated start phase; no process started')}
+                            className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold"
+                          >
+                            <Play size={11} /> Step &rarr; Starting
+                          </button>
+                        )}
+                        {selectedInstance.observed.lifecycle === 'starting' && (
+                          <button
+                            onClick={() => handleStepTransition(selectedInstance.spec.id, 'healthy', 'Simulated healthy observation; no probe executed')}
+                            className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold text-green-700"
+                          >
+                            <Play size={11} /> Step &rarr; Healthy
+                          </button>
+                        )}
+
+                        {/* Standard Lifecycle Actions */}
+                        <button
+                          onClick={() => handleRestart(selectedInstance.spec.id)}
+                          className="btn-w95 text-xs py-1 px-2 flex items-center gap-1"
+                        >
+                          <RotateCcw size={11} /> Restart
+                        </button>
+                        <button
+                          onClick={() => handleStop(selectedInstance.spec.id)}
+                          disabled={selectedInstance.observed.lifecycle === 'stopped'}
+                          className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <Square size={11} /> Stop
+                        </button>
+
+                        {/* Fault Injection Simulation Controls */}
+                        <button
+                          onClick={() => handleSimulateOOM(selectedInstance.spec.id)}
+                          disabled={selectedInstance.observed.lifecycle === 'stopped' || selectedInstance.observed.lifecycle === 'oom'}
+                          className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 text-rose-700 disabled:opacity-50"
+                          title="Simulate memory allocation beyond cap to observe honest OOM state and port release"
+                        >
+                          <Flame size={11} /> Simulate OOM
+                        </button>
+                        <button
+                          onClick={() => handleSimulateCrash(selectedInstance.spec.id)}
+                          disabled={selectedInstance.observed.lifecycle === 'stopped' || selectedInstance.observed.lifecycle === 'crashed'}
+                          className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 text-red-700 disabled:opacity-50"
+                          title="Simulate sudden process crash"
+                        >
+                          <Zap size={11} /> Simulate Crash
+                        </button>
+                        <button
+                          onClick={() => handleSimulateExpiry(selectedInstance.spec.id)}
+                          disabled={selectedInstance.observed.lifecycle === 'expired' || selectedInstance.observed.lifecycle === 'stopped'}
+                          className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 text-gray-700 disabled:opacity-50"
+                          title="Simulate TTL timeout and resource reclamation"
+                        >
+                          <Clock size={11} /> Simulate Expiry
+                        </button>
+                        <button
+                          onClick={() => handleDelete(selectedInstance.spec.id)}
+                          className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 text-red-800 ml-auto"
+                        >
+                          <Trash2 size={11} /> Destroy
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Chronological Event Timeline */}
+                    <div className="bg-black text-green-400 p-2.5 rounded border border-gray-700 font-mono text-[11px] space-y-1 max-h-[220px] overflow-y-auto">
+                      <div className="text-gray-400 border-b border-gray-800 pb-1 mb-1 text-[10px] flex items-center justify-between">
+                        <span>LIFECYCLE &amp; CONTROL AUDIT TIMELINE</span>
+                        <span>{selectedInstance.observed.events.length} event{selectedInstance.observed.events.length !== 1 ? 's' : ''}</span>
+                      </div>
+                      {selectedInstance.observed.events.map((evt, idx) => (
+                        <div key={idx} className="leading-tight flex items-start gap-1.5">
+                          <span className="text-gray-500 shrink-0">
+                            [{new Date(evt.timestamp).toLocaleTimeString()}]
+                          </span>
+                          <span className="text-yellow-300 font-bold shrink-0">
+                            [{evt.toState.toUpperCase()}]
+                          </span>
+                          <span className="text-green-300">
+                            {evt.reason || `Transitioned to ${evt.toState}`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Footer status summary */}
+                  <div className="pt-2 border-t border-gray-300 flex items-center justify-between text-[10px] text-gray-600">
+                    <span>
+                      Created: {new Date(selectedInstance.spec.createdAt).toLocaleTimeString()}
+                    </span>
+                    <span>
+                      Expires: {selectedInstance.observed.expiresAt ? new Date(selectedInstance.observed.expiresAt).toLocaleTimeString() : 'N/A'}
+                    </span>
+                    <span className="font-mono font-bold text-gray-800">
+                      Truth Source: {selectedInstance.spec.source}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
