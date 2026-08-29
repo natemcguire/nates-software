@@ -29,6 +29,76 @@ export type RigStorageKind = 'volume' | 'sqlite' | 'directory' | 'ephemeral' | '
 
 export type RigStoragePersistence = 'ephemeral' | 'persistent' | 'retained';
 
+export type RigNetworkPolicy = 'none' | 'bridge';
+
+export interface RigOwnerIdentity {
+  readonly ownerId: string;
+  readonly username?: string;
+  readonly role?: 'owner' | 'admin' | 'viewer';
+}
+
+export class RigAuthenticationError extends Error {
+  constructor(message = 'Authentication required: missing or invalid owner identity.') {
+    super(message);
+    this.name = 'RigAuthenticationError';
+  }
+}
+
+export class RigAuthorizationError extends Error {
+  constructor(message = 'Unauthorized: owner does not have permission for this resource.') {
+    super(message);
+    this.name = 'RigAuthorizationError';
+  }
+}
+
+export class RigQuotaExceededError extends Error {
+  constructor(message = 'Quota exceeded: maximum allowed RIG instances reached for owner.') {
+    super(message);
+    this.name = 'RigQuotaExceededError';
+  }
+}
+
+export class RigSecurityViolationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RigSecurityViolationError';
+  }
+}
+
+export class RigPreflightError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RigPreflightError';
+  }
+}
+
+export const IMAGE_DIGEST_REGEX = /^(?:[a-z0-9]+(?:[._\/-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[a-zA-Z0-9_.-]+)?@sha256:[a-f0-9]{64}$/i;
+
+export function isValidImageDigest(image: string): boolean {
+  if (typeof image !== 'string' || image.trim().length === 0) return false;
+  return IMAGE_DIGEST_REGEX.test(image.trim());
+}
+
+export const FORBIDDEN_MOUNT_PATHS: readonly string[] = [
+  '/var/run/docker.sock',
+  '/run/docker.sock',
+  '/docker.sock',
+  '/proc',
+  '/sys',
+  '/dev',
+  '/etc/shadow',
+  '/etc/sudoers',
+  '/root'
+];
+
+export function isForbiddenMountPath(mountPath: string): boolean {
+  if (typeof mountPath !== 'string') return true;
+  const normalized = mountPath.toLowerCase().replace(/\/+/g, '/').replace(/\/$/, '');
+  return FORBIDDEN_MOUNT_PATHS.some(
+    forbidden => normalized === forbidden || normalized.startsWith(forbidden + '/')
+  );
+}
+
 export interface RigRuntimeConfig {
   readonly adapter: RigRuntimeAdapterKind;
   readonly buildCommand?: string;
@@ -37,6 +107,7 @@ export interface RigRuntimeConfig {
   readonly healthEndpoint?: string;
   readonly env?: Readonly<Record<string, string>>;
   readonly imageDigest?: string;
+  readonly networkPolicy?: RigNetworkPolicy;
 }
 
 export interface RigStorageMount {
@@ -51,12 +122,14 @@ export interface RigStorageMount {
 export interface RigResourceLimits {
   readonly memoryCapMb: number;
   readonly cpuCores?: number;
+  readonly pidsLimit?: number;
 }
 
 export interface RigSpec {
   readonly id: string;
   readonly appId: string;
   readonly name: string;
+  readonly ownerId?: string;
   readonly runtime: RigRuntimeConfig;
   readonly resources: RigResourceLimits;
   readonly storage?: readonly RigStorageMount[];
@@ -192,6 +265,9 @@ export function validateRigStorageMount(mount: unknown): RigValidationResult<Rig
     return { valid: false, errors: ['Storage mount must be a non-null object.'] };
   }
   const m = mount as Record<string, unknown>;
+  if (m.name !== undefined && (typeof m.name !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(m.name))) {
+    errors.push('Storage mount name must match /^[a-zA-Z0-9_-]{1,64}$/');
+  }
   const validKinds: RigStorageKind[] = ['volume', 'sqlite', 'directory', 'ephemeral', 'block'];
   if (typeof m.kind !== 'string' || !validKinds.includes(m.kind as RigStorageKind)) {
     if (m.kind === 'none') {
@@ -207,6 +283,12 @@ export function validateRigStorageMount(mount: unknown): RigValidationResult<Rig
     errors.push('Storage mountPath must be an absolute path starting with "/".');
   } else if (m.mountPath.includes('..')) {
     errors.push('Storage mountPath must not contain path traversal (..).');
+  } else if (isForbiddenMountPath(m.mountPath)) {
+    errors.push(`Storage mountPath "${m.mountPath}" targets forbidden system path or docker socket.`);
+  }
+
+  if ('hostPath' in m || 'hostDir' in m || 'bind' in m) {
+    errors.push('Host bind mounts are forbidden; only isolated named volumes and tmpfs are allowed.');
   }
 
   const validPersistence: RigStoragePersistence[] = ['ephemeral', 'persistent', 'retained'];
@@ -218,8 +300,8 @@ export function validateRigStorageMount(mount: unknown): RigValidationResult<Rig
     errors.push('Storage sizeBytes must be a non-negative finite number.');
   }
 
-  if (m.sizeMb !== undefined && (typeof m.sizeMb !== 'number' || !Number.isFinite(m.sizeMb) || m.sizeMb < 0)) {
-    errors.push('Storage sizeMb must be a non-negative finite number.');
+  if (m.sizeMb !== undefined && (typeof m.sizeMb !== 'number' || !Number.isInteger(m.sizeMb) || m.sizeMb < 1 || m.sizeMb > 256)) {
+    errors.push('Storage sizeMb must be an integer between 1 and 256.');
   }
 
   if (errors.length > 0) {
@@ -260,13 +342,17 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
     errors.push('Rig spec must specify a non-empty string name.');
   }
 
+  if (s.ownerId !== undefined && (typeof s.ownerId !== 'string' || !s.ownerId.match(/^[a-zA-Z0-9_-]{1,64}$/))) {
+    errors.push('Rig spec ownerId must match /^[a-zA-Z0-9_-]{1,64}$/');
+  }
+
   const validSources: RigTruthSource[] = ['demo', 'provider'];
   if (typeof s.source !== 'string' || !validSources.includes(s.source as RigTruthSource)) {
     errors.push(`Rig spec source must be one of: ${validSources.join(', ')}`);
   }
 
-  if (typeof s.ttlSeconds !== 'number' || !Number.isInteger(s.ttlSeconds) || s.ttlSeconds <= 0) {
-    errors.push('Rig spec ttlSeconds must be a positive integer.');
+  if (typeof s.ttlSeconds !== 'number' || !Number.isInteger(s.ttlSeconds) || s.ttlSeconds <= 0 || s.ttlSeconds > 86400) {
+    errors.push('Rig spec ttlSeconds must be a positive integer no greater than 86400.');
   }
 
   if (s.preferredPort !== undefined) {
@@ -291,6 +377,28 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
     if (typeof r.startCommand !== 'string' || r.startCommand.trim().length === 0) {
       errors.push('Runtime startCommand must be a non-empty string.');
     }
+    if (r.imageDigest !== undefined && (typeof r.imageDigest !== 'string' || !isValidImageDigest(r.imageDigest))) {
+      errors.push('Runtime imageDigest must be pinned with an immutable sha256 digest format (e.g. image@sha256:<64-hex>).');
+    }
+    if (r.networkPolicy !== undefined && r.networkPolicy !== 'none' && r.networkPolicy !== 'bridge') {
+      errors.push('Runtime networkPolicy must be "none" or "bridge".');
+    }
+    if (r.env !== undefined) {
+      if (typeof r.env !== 'object' || r.env === null || Array.isArray(r.env)) {
+        errors.push('Runtime env must be a key-value object.');
+      } else {
+        for (const [k, v] of Object.entries(r.env)) {
+          if (!k.match(/^[a-zA-Z_][a-zA-Z0-9_]*$/)) {
+            errors.push(`Invalid environment variable key "${k}": must match /^[a-zA-Z_][a-zA-Z0-9_]*$/`);
+          }
+          if (typeof v !== 'string') {
+            errors.push(`Environment variable value for "${k}" must be a string.`);
+          } else if (v.includes('\0')) {
+            errors.push(`Environment variable "${k}" contains forbidden null byte.`);
+          }
+        }
+      }
+    }
   }
 
   // Resource limits validation
@@ -303,6 +411,9 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
     }
     if (res.cpuCores !== undefined && (typeof res.cpuCores !== 'number' || !Number.isFinite(res.cpuCores) || res.cpuCores <= 0)) {
       errors.push('Resource limits cpuCores must be a positive finite number.');
+    }
+    if (res.pidsLimit !== undefined && (typeof res.pidsLimit !== 'number' || !Number.isInteger(res.pidsLimit) || res.pidsLimit <= 0 || res.pidsLimit > 100)) {
+      errors.push('Resource limits pidsLimit must be a positive integer <= 100.');
     }
   }
 
@@ -336,6 +447,7 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
       id: String(s.id),
       appId: String(s.appId),
       name: String(s.name),
+      ownerId: typeof s.ownerId === 'string' ? s.ownerId : undefined,
       runtime: {
         adapter: runtimeObj.adapter as RigRuntimeAdapterKind,
         buildCommand: typeof runtimeObj.buildCommand === 'string' ? runtimeObj.buildCommand : undefined,
@@ -343,11 +455,13 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
         healthCommand: typeof runtimeObj.healthCommand === 'string' ? runtimeObj.healthCommand : undefined,
         healthEndpoint: typeof runtimeObj.healthEndpoint === 'string' ? runtimeObj.healthEndpoint : undefined,
         env: typeof runtimeObj.env === 'object' && runtimeObj.env !== null ? (runtimeObj.env as Record<string, string>) : undefined,
-        imageDigest: typeof runtimeObj.imageDigest === 'string' ? runtimeObj.imageDigest : undefined
+        imageDigest: typeof runtimeObj.imageDigest === 'string' ? runtimeObj.imageDigest : undefined,
+        networkPolicy: (runtimeObj.networkPolicy as RigNetworkPolicy) || undefined
       },
       resources: {
         memoryCapMb: Number(resourcesObj.memoryCapMb),
-        cpuCores: typeof resourcesObj.cpuCores === 'number' ? Number(resourcesObj.cpuCores) : undefined
+        cpuCores: typeof resourcesObj.cpuCores === 'number' ? Number(resourcesObj.cpuCores) : undefined,
+        pidsLimit: typeof resourcesObj.pidsLimit === 'number' ? Number(resourcesObj.pidsLimit) : undefined
       },
       storage: validatedStorage.length > 0 ? validatedStorage : undefined,
       preferredPort: typeof s.preferredPort === 'number' ? s.preferredPort : undefined,
