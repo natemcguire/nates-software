@@ -637,7 +637,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject drop publishing with 400 for domain validation errors (e.g. empty name)', async () => {
       const req = new Request('http://localhost/api/drops', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ name: '', version: 'v1.0.0' })
       });
 

@@ -2,8 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   createTestD1Database,
   TestD1Context,
-  CANONICAL_MIGRATIONS
+  CANONICAL_MIGRATIONS,
+  getMigrationsDir
 } from './fixtures/d1Harness';
+import * as fs from 'fs';
+import * as path from 'path';
 
 describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
   let ctx: TestD1Context;
@@ -27,7 +30,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0010_commerce_processing.sql',
         '0011_commerce_money_movement.sql',
         '0012_commerce_refunds_disputes.sql',
-        '0013_commerce_refund_finalization.sql'
+        '0013_commerce_refund_finalization.sql',
+        '0014_hotwire_votes.sql'
       ]);
     });
 
@@ -104,6 +108,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('commerce_dispute_observations');
       expect(tables).toContain('commerce_refund_allocations');
       expect(tables).toContain('commerce_recovery_obligations');
+
+      // Migration 0014 Hotwire upvotes table
+      expect(tables).toContain('drop_upvotes');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -124,11 +131,39 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_refund_finalized_immutable');
     });
 
-    it('should create all unique indices from migration 0002', () => {
+    it('should create all unique indices from migration 0002 and 0014', () => {
       const indices = ctx.getIndexNames();
       expect(indices).toContain('idx_licenses_order');
       expect(indices).toContain('idx_shelf_user_app');
       expect(indices).toContain('idx_transfers_order_role');
+      expect(indices).toContain('idx_drop_upvotes_voter');
+    });
+
+    it('should upgrade the legacy runtime-created vote table without losing valid votes', async () => {
+      const legacy = await createTestD1Database({
+        foreignKeys: true,
+        migrations: CANONICAL_MIGRATIONS.slice(0, -1)
+      });
+      await legacy.d1.exec(`
+        CREATE TABLE drop_upvotes (
+          app_id TEXT NOT NULL,
+          voter_hash TEXT NOT NULL,
+          voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (app_id, voter_hash)
+        );
+        INSERT INTO drop_upvotes (app_id, voter_hash) VALUES
+          ('dronehunter', 'valid-vote'),
+          ('deleted-app', 'orphan-vote');
+      `);
+
+      const migration = fs.readFileSync(path.join(getMigrationsDir(), '0014_hotwire_votes.sql'), 'utf8');
+      await legacy.d1.exec(migration);
+
+      const votes = await legacy.d1.prepare('SELECT app_id, voter_hash FROM drop_upvotes ORDER BY voter_hash').all();
+      expect(votes.results).toEqual([{ app_id: 'dronehunter', voter_hash: 'valid-vote' }]);
+      const foreignKeys = legacy.rawDb.exec('PRAGMA foreign_key_list(drop_upvotes);');
+      expect(foreignKeys[0]?.values.some(row => row[2] === 'app_listings' && row[6] === 'CASCADE')).toBe(true);
+      expect(legacy.runForeignKeyCheck()).toEqual([]);
     });
   });
 

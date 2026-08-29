@@ -1,4 +1,4 @@
-import { getSessionUser } from './_auth';
+import { requireAuth } from './_auth';
 // GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking, batch window filtering, and live maker streaks
 // POST /api/drops - Authenticated/validated shareware drop publishing with commerce_products synchronization
 
@@ -12,7 +12,7 @@ import {
   buildMakerLeaderboard,
   DropRankingInput
 } from '../../src/lib/hotwireBackend';
-import { validateDropSubmission } from '../../src/lib/hotwireDomain';
+import { validateDropSubmission, parseAndValidatePrice } from '../../src/lib/hotwireDomain';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -41,16 +41,16 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const whereClauses: string[] = [];
 
     if (batchFilter.type === 'today' && batchFilter.windowStart && batchFilter.windowEnd) {
-      whereClauses.push(`a.created_at >= ? AND a.created_at < ?`);
+      whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
       queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
     } else if (batchFilter.type === 'yesterday' && batchFilter.windowStart && batchFilter.windowEnd) {
-      whereClauses.push(`a.created_at >= ? AND a.created_at < ?`);
+      whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
       queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
     } else if (batchFilter.type === 'archive' && batchFilter.windowEnd) {
-      whereClauses.push(`a.created_at < ?`);
+      whereClauses.push(`datetime(a.created_at) < datetime(?)`);
       queryParams.push(batchFilter.windowEnd.toISOString());
     } else if (batchFilter.type === 'custom' && batchFilter.windowStart && batchFilter.windowEnd) {
-      whereClauses.push(`a.created_at >= ? AND a.created_at < ?`);
+      whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
       queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
     }
 
@@ -158,11 +158,36 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    const body = await request.json();
-    const { id, name, tagline, description, creator, version, license, price, storage, tags, screenshots, binaries, liveUrl } = body;
+    if (!env || !env.DB) {
+      return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
+    }
+
+    // Strictly require same-origin authenticated session
+    const { user: authUser, errorResponse } = await requireAuth(request, env);
+    if (errorResponse || !authUser) {
+      return errorResponse || Response.json({ success: false, error: 'Unauthorized: Valid authenticated session required' }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return Response.json({ success: false, error: 'Request body must be valid JSON object' }, { status: 400 });
+    }
+    const { id, name, tagline, description, version, license, price, storage, tags, screenshots, binaries, liveUrl } = body;
+
+    // Server-generated ID for new items or sanitized provided ID
+    let dropId: string;
+    if (id && typeof id === 'string' && id.trim().length > 0) {
+      dropId = id.trim();
+    } else {
+      const cleanSlug = typeof name === 'string'
+        ? name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+        : 'drop';
+      dropId = `app_${cleanSlug || 'drop'}_${Date.now().toString(36)}`;
+    }
 
     // Strict domain validation
     const validation = validateDropSubmission({
+      id: dropId,
       name,
       version,
       storage,
@@ -174,22 +199,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: validation.errors.join(' ') }, { status: 400 });
     }
 
-    // Server-generated ID for new items
-    const dropId = id && id.trim().length > 0 ? id : `app_${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}_${Date.now().toString(36)}`;
+    // Strict price validation
+    const priceValidation = parseAndValidatePrice(price);
+    if (!priceValidation.valid) {
+      return Response.json({ success: false, error: priceValidation.error || 'Invalid price' }, { status: 400 });
+    }
 
-    // Strictly derive creator identity from authenticated session
-    const authUser = await getSessionUser(request, env);
-    const creatorHandle = (authUser && authUser.username !== 'nate' ? authUser.username : (creator || authUser?.username || 'nate')).replace(/^@/, '');
-    const creatorId = authUser?.id || `usr_${creatorHandle}`;
+    // Strictly derive creator identity from authenticated session ONLY
+    const creatorId = authUser.id;
 
-    // Ensure creator user exists in users table (prevents foreign key errors on unseeded/guest drops)
-    if (env && env.DB) {
-      try {
-        await env.DB.prepare(`
-          INSERT OR IGNORE INTO users (id, username, display_name, role, is_verified_maker)
-          VALUES (?, ?, ?, 'maker', 1)
-        `).bind(creatorId, creatorHandle, creatorHandle).run();
-      } catch {}
+    // Prevent one maker overwriting another maker's existing listing ID
+    const existingListing = await env.DB.prepare('SELECT id, creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
+    if (existingListing && existingListing.creator_id !== creatorId) {
+      return Response.json({
+        success: false,
+        error: 'Forbidden: drop listing ID is owned by another maker'
+      }, { status: 403 });
     }
 
     // Merge liveUrl into binaries.web if provided
@@ -198,10 +223,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       mergedBinaries.web = liveUrl.trim();
     }
 
-    const parsedPriceStr = price || '$15.00';
-    const parsedPriceCents = Math.round(parseFloat(String(parsedPriceStr).replace(/[^0-9.]/g, '') || '15') * 100);
-
-    await env.DB.prepare(`
+    const listingStmt = env.DB.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
@@ -214,32 +236,48 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         tags = excluded.tags,
         screenshots = excluded.screenshots,
         binaries = excluded.binaries
+      WHERE app_listings.creator_id = excluded.creator_id
+      RETURNING id
     `).bind(
       dropId,
       name.trim(),
-      tagline ? tagline.trim() : 'Local-First single-file shareware',
-      description ? description.trim() : '',
+      tagline ? String(tagline).trim() : 'Local-First single-file shareware',
+      description ? String(description).trim() : '',
       creatorId,
       version.trim(),
       license || 'MIT',
-      parsedPriceStr,
+      priceValidation.priceStr,
       storage || 'App-managed storage',
       JSON.stringify(Array.isArray(tags) ? tags : []),
       JSON.stringify(Array.isArray(screenshots) ? screenshots : []),
       JSON.stringify(mergedBinaries)
-    ).run();
+    );
 
-    // Synchronize with commerce_products so the drop is immediately and truthfully purchasable
-    try {
-      await env.DB.prepare(`
-        INSERT INTO commerce_products (app_id, seller_user_id, price_cents, currency, status)
-        VALUES (?, ?, ?, 'usd', 'active')
-        ON CONFLICT(app_id) DO UPDATE SET
-          price_cents = excluded.price_cents,
-          status = 'active',
-          updated_at = CURRENT_TIMESTAMP
-      `).bind(dropId, creatorId, Math.max(100, parsedPriceCents)).run();
-    } catch {}
+    // Synchronize with commerce_products so the drop is immediately purchasable
+    // Atomic listing + commerce product write using D1 batch
+    const productPriceCents = priceValidation.priceCents;
+    const productStmt = env.DB.prepare(`
+      INSERT INTO commerce_products (app_id, seller_user_id, price_cents, currency, status)
+      SELECT id, creator_id, ?, 'usd', 'active'
+      FROM app_listings
+      WHERE id = ? AND creator_id = ?
+      ON CONFLICT(app_id) DO UPDATE SET
+        price_cents = excluded.price_cents,
+        status = 'active',
+        updated_at = CURRENT_TIMESTAMP
+      WHERE commerce_products.seller_user_id = excluded.seller_user_id
+      RETURNING app_id
+    `).bind(productPriceCents, dropId, creatorId);
+
+    const batchResults = await env.DB.batch([listingStmt, productStmt]);
+    const listingWritten = Boolean(batchResults?.[0]?.results?.[0]);
+    const productWritten = Boolean(batchResults?.[1]?.results?.[0]);
+    if (!batchResults || batchResults.length < 2 || !batchResults[0].success || !batchResults[1].success) {
+      return Response.json({ success: false, error: 'Failed to atomically persist listing and commerce product' }, { status: 500 });
+    }
+    if (!listingWritten || !productWritten) {
+      return Response.json({ success: false, error: 'Drop ID was claimed concurrently by another maker' }, { status: 409 });
+    }
 
     const batchWindow = getCurrentBatchWindow();
 
@@ -250,6 +288,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       message: 'Drop published successfully to Cloudflare D1'
     });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message || 'Failed to process drop submission' }, { status: 500 });
+    console.error('HOTWIRE drop publication failed', err);
+    return Response.json({ success: false, error: 'Failed to process drop submission' }, { status: 500 });
   }
 };

@@ -42,7 +42,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks'>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(new Set());
-  const [selectedBatch, setSelectedBatch] = useState<string>('all');
+  const [selectedBatch, setSelectedBatch] = useState<string>('today');
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
 
   // Sync internal apps and selected app with catalog updates
@@ -71,7 +71,9 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     setActiveFilter(filter);
     if (filter !== 'streaks') {
       const sort = filter === 'forked' ? 'forks' : filter === 'alltime' ? 'alltime' : 'today';
-      refreshCatalog({ sort, batch: selectedBatch });
+      const batch = filter === 'alltime' ? 'all' : filter === 'today' ? 'today' : selectedBatch;
+      setSelectedBatch(batch);
+      refreshCatalog({ sort, batch });
     }
   };
 
@@ -95,44 +97,21 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     e.stopPropagation();
     playClickSound();
 
-    // Snapshot pre-vote state for rollback
     const wasUpvoted = upvotedApps.has(appId);
-    const prevUpvotedSet = new Set(upvotedApps);
-    const prevApps = [...apps];
-    const prevSelectedApp = selectedApp ? { ...selectedApp } : null;
-
-    // Optimistic UI update
-    setUpvotedApps(prev => {
-      const next = new Set(prev);
-      if (wasUpvoted) next.delete(appId);
-      else next.add(appId);
-      return next;
-    });
-
-    setApps(prev => prev.map(app => {
-      if (app.id === appId) {
-        const newUpvotes = wasUpvoted ? Math.max(0, app.upvotes - 1) : app.upvotes + 1;
-        return { ...app, upvotes: newUpvotes };
-      }
-      return app;
-    }));
-
-    if (selectedApp && selectedApp.id === appId) {
-      setSelectedApp(prev => ({
-        ...prev!,
-        upvotes: wasUpvoted ? Math.max(0, prev!.upvotes - 1) : prev!.upvotes + 1
-      }));
-    }
+    setUpvotedApps(prev => new Set(prev).add(appId));
 
     try {
+      // Single optimistic upvote layer handled authoritatively by CatalogContext
       await catalogUpvote(appId);
       playSuccessChime();
     } catch (err: any) {
-      // Rollback optimistic state immediately on rejection
-      setUpvotedApps(prevUpvotedSet);
-      setApps(prevApps);
-      if (prevSelectedApp && prevSelectedApp.id === appId) {
-        setSelectedApp(prevSelectedApp);
+      // Rollback upvoted visual state if this vote was rejected
+      if (!wasUpvoted) {
+        setUpvotedApps(prev => {
+          const next = new Set(prev);
+          next.delete(appId);
+          return next;
+        });
       }
 
       // Truthfully explain rejection and authenticated/network requirements

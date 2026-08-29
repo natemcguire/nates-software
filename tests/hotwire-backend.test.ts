@@ -26,6 +26,7 @@ import {
   MAKER_BADGE_TIERS,
   DropRankingInput
 } from '../src/lib/hotwireBackend';
+import { validateDropSubmission, parseAndValidatePrice } from '../src/lib/hotwireDomain';
 
 describe('1. Daily 12:01 AM UTC Batch Rollover & Time-To-Next-Drop Logic', () => {
   it('should assign timestamps before 00:01:00 UTC to previous day batch', () => {
@@ -479,5 +480,31 @@ describe('6. Batch Window Querying, Resolution & Maker Leaderboard', () => {
     expect(leaderboard[0].badgeInfo.tier).toBe('Hot Streak');
     expect(leaderboard[1].username).toBe('alice');
     expect(leaderboard[1].badgeInfo.tier).toBe('Iron Maker');
+  });
+});
+
+describe('7. Domain Drop Validation & Price Parsing Robustness', () => {
+  it('should parse and format valid price strings and numbers', () => {
+    expect(parseAndValidatePrice('$15.00')).toEqual({ valid: true, priceStr: '$15.00', priceCents: 1500 });
+    expect(parseAndValidatePrice('20.50')).toEqual({ valid: true, priceStr: '$20.50', priceCents: 2050 });
+    expect(parseAndValidatePrice(25)).toEqual({ valid: true, priceStr: '$25.00', priceCents: 2500 });
+    expect(parseAndValidatePrice('$1')).toEqual({ valid: true, priceStr: '$1.00', priceCents: 100 });
+    expect(parseAndValidatePrice(undefined)).toEqual({ valid: true, priceStr: '$15.00', priceCents: 1500 });
+  });
+
+  it('should reject invalid or out-of-bounds prices', () => {
+    expect(parseAndValidatePrice('invalid_price').valid).toBe(false);
+    expect(parseAndValidatePrice('$0').valid).toBe(false);
+    expect(parseAndValidatePrice(-10).valid).toBe(false);
+    expect(parseAndValidatePrice(999999).valid).toBe(false);
+  });
+
+  it('should validate drop ID slug format', () => {
+    const valid = validateDropSubmission({ name: 'Valid Name', version: 'v1.0.0', id: 'valid-drop_123' });
+    expect(valid.valid).toBe(true);
+
+    const invalid = validateDropSubmission({ name: 'Valid Name', version: 'v1.0.0', id: 'bad drop ID with spaces!' });
+    expect(invalid.valid).toBe(false);
+    expect(invalid.errors[0]).toContain('Drop ID must be 2-64 characters');
   });
 });

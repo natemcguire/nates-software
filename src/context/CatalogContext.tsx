@@ -37,17 +37,29 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAuthoritativeLive, setIsAuthoritativeLive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentSort, setCurrentSort] = useState<string>('today');
-  const [currentBatch, setCurrentBatch] = useState<string>('all');
+  const [currentBatch, setCurrentBatch] = useState<string>('today');
+
+  const sortRef = React.useRef(currentSort);
+  const batchRef = React.useRef(currentBatch);
+  sortRef.current = currentSort;
+  batchRef.current = currentBatch;
 
   const fetchAuthoritativeCatalog = useCallback(async (opts?: { sort?: string; batch?: string }) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const activeSort = opts?.sort || currentSort || 'today';
-      const activeBatch = opts?.batch !== undefined ? opts.batch : currentBatch;
-      setCurrentSort(activeSort);
-      setCurrentBatch(activeBatch);
+      const activeSort = opts?.sort ?? sortRef.current ?? 'today';
+      const activeBatch = opts?.batch !== undefined ? opts.batch : (batchRef.current ?? 'today');
+
+      if (activeSort !== sortRef.current) {
+        sortRef.current = activeSort;
+        setCurrentSort(activeSort);
+      }
+      if (activeBatch !== batchRef.current) {
+        batchRef.current = activeBatch;
+        setCurrentBatch(activeBatch);
+      }
 
       const params = new URLSearchParams();
       if (activeSort) params.set('sort', activeSort);
@@ -134,7 +146,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsLoading(false);
     }
-  }, [currentSort, currentBatch]);
+  }, []);
 
   useEffect(() => {
     fetchAuthoritativeCatalog();
@@ -149,8 +161,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [shelfAppIds]);
 
   const upvoteApp = useCallback(async (appId: string): Promise<boolean> => {
-    const targetApp = apps.find(a => a.id === appId);
-    const originalUpvotes = targetApp?.upvotes ?? 0;
+    const originalUpvotes = apps.find(a => a.id === appId)?.upvotes ?? 0;
 
     // 1. Optimistic UI update
     setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: (a.upvotes || 0) + 1 } : a));

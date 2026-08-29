@@ -3,70 +3,66 @@ import { validateAndHashVote } from '../../src/lib/hotwireBackend';
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    const { appId, voterKey } = await request.json();
-    if (!appId) {
+    const body = await request.json().catch(() => ({}));
+    const { appId, voterKey } = body || {};
+    if (!appId || typeof appId !== 'string' || !appId.trim()) {
       return Response.json({ success: false, error: 'appId is required' }, { status: 400 });
     }
 
+    if (!env || !env.DB) {
+      return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
+    }
+
+    const cleanAppId = appId.trim();
     const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || 'anonymous_ip';
-    const validation = await validateAndHashVote(appId, clientIp, voterKey);
+    const validation = await validateAndHashVote(cleanAppId, clientIp, voterKey);
 
     if (!validation.valid || !validation.voterHash) {
       return Response.json({ success: false, error: validation.error || 'Invalid vote payload' }, { status: 400 });
     }
 
     // Verify app exists
-    const app = await env.DB.prepare('SELECT id, upvotes FROM app_listings WHERE id = ?').bind(appId).first();
+    const app = await env.DB.prepare('SELECT id, upvotes FROM app_listings WHERE id = ?').bind(cleanAppId).first();
     if (!app) {
       return Response.json({ success: false, error: 'App listing not found' }, { status: 404 });
     }
 
-    // Attempt to record in idempotent vote registry if table exists
-    try {
-      await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS drop_upvotes (
-          app_id TEXT NOT NULL,
-          voter_hash TEXT NOT NULL,
-          voted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (app_id, voter_hash)
-        )
-      `).run();
-
-      const existing = await env.DB.prepare(`
-        SELECT 1 FROM drop_upvotes WHERE app_id = ? AND voter_hash = ?
-      `).bind(appId, validation.voterHash).first();
-
-      if (existing) {
-        // Idempotent return - vote already counted
-        return Response.json({
-          success: true,
-          alreadyVoted: true,
-          upvotes: app.upvotes,
-          voterHash: validation.voterHash,
-          message: 'Vote already recorded for this drop.'
-        });
-      }
-
-      await env.DB.prepare(`
-        INSERT INTO drop_upvotes (app_id, voter_hash) VALUES (?, ?)
-      `).bind(appId, validation.voterHash).run();
-    } catch {
-      // Fall through to update if table migration skipped
-    }
-
-    // Atomic increment
-    const { results } = await env.DB.prepare(`
+    // D1 batch is one transaction. SQLite changes() in the second statement
+    // reflects whether INSERT OR IGNORE inserted a new vote, so the vote record
+    // and denormalized leaderboard count cannot diverge.
+    const insertStmt = env.DB.prepare(`
+      INSERT OR IGNORE INTO drop_upvotes (app_id, voter_hash) VALUES (?, ?)
+    `).bind(cleanAppId, validation.voterHash);
+    const incrementStmt = env.DB.prepare(`
       UPDATE app_listings
       SET upvotes = upvotes + 1
-      WHERE id = ?
+      WHERE id = ? AND changes() > 0
       RETURNING upvotes
-    `).bind(appId).all();
+    `).bind(cleanAppId);
+    const countStmt = env.DB.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind(cleanAppId);
+    const [insertResult, incrementResult, countResult] = await env.DB.batch([
+      insertStmt,
+      incrementStmt,
+      countStmt
+    ]);
+    const inserted = (insertResult?.meta?.changes ?? 0) > 0;
+    const currentUpvotes = Number(countResult?.results?.[0]?.upvotes ?? app.upvotes ?? 0);
 
-    const newUpvotes = results?.[0]?.upvotes || (app.upvotes + 1);
+    if (!inserted) {
+      // Idempotent return - duplicate vote already counted
+      return Response.json({
+        success: true,
+        alreadyVoted: true,
+        upvotes: currentUpvotes,
+        voterHash: validation.voterHash,
+        message: 'Vote already recorded for this drop.'
+      });
+    }
+
     return Response.json({
       success: true,
       alreadyVoted: false,
-      upvotes: newUpvotes,
+      upvotes: Number(incrementResult?.results?.[0]?.upvotes ?? currentUpvotes),
       voterHash: validation.voterHash
     });
   } catch (err: any) {
