@@ -275,27 +275,11 @@ export function handleFork(slugArg?: string): SlopCommandResult {
       }
 
       // Check if local source project exists
-      let cloned = false;
       if (slug.startsWith("file://") || slug.startsWith("/") || fsMod.existsSync(slug)) {
         const sourcePath = slug.startsWith("file://") ? slug.slice(7) : slug;
         if (fsMod.existsSync(sourcePath)) {
           try {
             runCommandSync(`git clone --depth 1 file://${sourcePath} "${worktreePath}"`, { stdio: "pipe", timeout: 8000, throwError: true });
-            cloned = true;
-          } catch {}
-        }
-      }
-
-      if (!cloned) {
-        const localSources = [
-          `/Volumes/MacMiniExtra/Projects/${appId}`,
-          `/Users/nate/Projects/${appId}`
-        ];
-        const foundLocal = localSources.find(p => getFs()?.existsSync(p));
-        if (foundLocal) {
-          try {
-            runCommandSync(`git clone --depth 1 file://${foundLocal} "${worktreePath}"`, { stdio: "pipe", timeout: 8000, throwError: true });
-            cloned = true;
           } catch {}
         }
       }
