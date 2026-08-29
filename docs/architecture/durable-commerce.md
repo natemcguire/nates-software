@@ -39,6 +39,8 @@ Migrations `0009_durable_commerce.sql` and `0010_commerce_processing.sql` define
 - License keys are stored only as AES-256-GCM ciphertext plus a SHA-256 verification hash and last four characters. Encryption keys are versioned outside D1 so ciphertext can be rotated without changing the license.
 - The canonical commerce license is not dual-written into legacy `shelf_items`, whose required plaintext `license_key` column violates this storage boundary. Shelf reads must migrate to the canonical commerce tables before checkout is enabled.
 - External calls cannot be rolled back with D1. Each call therefore needs a stable idempotency key and a durable reconciliation state.
+- A payout destination account is snapshotted before the first Stripe call and then immutable. Retrying the same idempotency key with changed parameters is forbidden.
+- Ambiguous transfer outcomes are retried only inside the provider's safe idempotency window. Afterward they require explicit reconciliation; blindly repeating an expired key can duplicate money movement.
 - No caught database or Stripe error may be converted into `{ success: true }`.
 - Refund and dispute transitions must be monotonic, audited, and handled before live payments are enabled.
 
