@@ -2,7 +2,7 @@
 
 ## Status
 
-Migrations `0009` through `0012` define the canonical replacement for the legacy payment tables. Payment endpoints remain fail-closed unless `PAYMENTS_ENABLED=true`; that flag must not be enabled until checkout, webhook processing, fulfillment, refund/dispute handling, and transfer/reversal-worker proofs all pass against Stripe test mode and isolated preview D1.
+Migrations `0009` through `0013` define the canonical replacement for the legacy payment tables. Payment endpoints remain fail-closed unless `PAYMENTS_ENABLED=true`; that flag must not be enabled until checkout, webhook processing, fulfillment, refund/dispute handling, and transfer/reversal-worker proofs all pass against Stripe test mode and isolated preview D1.
 
 ## Authority boundaries
 
@@ -36,6 +36,8 @@ Migrations `0009` through `0012` define the canonical replacement for the legacy
 
 - Stripe refund and dispute webhooks are delivery signals. Processing re-fetches the referenced Stripe object and records an append-only observation of the authoritative state.
 - Successful partial refunds accumulate against `commerce_orders.refunded_cents`; the order remains fulfilled until the cumulative amount equals the immutable gross amount. A full refund moves the order to `refunded` and the license to `refunded`.
+- Refund processing re-fetches both the Refund and its PaymentIntent. The pair must agree on payment, charge, currency, amount bounds, and live/test environment before D1 changes.
+- Cumulative allocation uses a house-monotone highest-averages method with deterministic sequence tie-breaking. A later partial refund can never reduce a recipient's already-recorded recovery amount.
 - A dispute revokes access while liability is open. A won dispute may restore the fulfilled order and active license; a lost dispute remains revoked and creates recovery obligations. State decisions use the authoritative dispute status, not webhook arrival order.
 - Refund allocation rows split each succeeded refund across the original frozen allocations with exact integer-cent conservation. They never alter the sale allocation rows.
 - Maker and ancestor debits become immutable recovery obligations. Protocol allocation is accounted for but never sent to Stripe Connect, so it creates no transfer reversal.

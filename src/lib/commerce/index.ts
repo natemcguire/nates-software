@@ -7,3 +7,5 @@ export * from './licenseCrypto';
 export * from './stripeInbox';
 export * from './eventProcessor';
 export * from './transferWorker';
+export * from './recoveryDomain';
+export * from './refundProcessor';

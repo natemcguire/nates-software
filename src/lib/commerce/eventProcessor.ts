@@ -14,6 +14,7 @@ import {
   hashLicenseKey
 } from './licenseCrypto';
 import { ProcessEventResult } from './types';
+import { isRefundEventType, processRefundInboxEvent } from './refundProcessor';
 
 export interface ProcessorOptions {
   claimToken?: string;
@@ -110,6 +111,17 @@ export async function processStripeInboxEvent(
   }
 
   const eventType = inboxRow.event_type || event?.type;
+
+  if (isRefundEventType(eventType)) {
+    return processRefundInboxEvent(
+      db,
+      env,
+      inboxRow,
+      event,
+      claimToken,
+      options?.stripeFetchOverride || globalThis.fetch
+    );
+  }
 
   // 3. Handle unsupported event types fail-closed with explicit error
   if (eventType !== 'payment_intent.succeeded') {

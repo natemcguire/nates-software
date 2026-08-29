@@ -26,7 +26,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0009_durable_commerce.sql',
         '0010_commerce_processing.sql',
         '0011_commerce_money_movement.sql',
-        '0012_commerce_refunds_disputes.sql'
+        '0012_commerce_refunds_disputes.sql',
+        '0013_commerce_refund_finalization.sql'
       ]);
     });
 
@@ -119,6 +120,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_transfer_attempt_success_requires_outbox_success');
       expect(triggers).toContain('commerce_refund_allocations_match_order');
       expect(triggers).toContain('commerce_reversal_cumulative_guard');
+      expect(triggers).toContain('commerce_refund_finalization_guard');
+      expect(triggers).toContain('commerce_refund_finalized_immutable');
     });
 
     it('should create all unique indices from migration 0002', () => {
