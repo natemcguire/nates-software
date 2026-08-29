@@ -6,3 +6,4 @@ export * from './stripeSignature';
 export * from './licenseCrypto';
 export * from './stripeInbox';
 export * from './eventProcessor';
+export * from './transferWorker';
