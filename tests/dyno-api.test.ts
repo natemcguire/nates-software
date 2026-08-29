@@ -166,6 +166,14 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(data.success).toBe(true);
       expect(data.leaderboard).toEqual([]);
       expect(data.count).toBe(0);
+      expect(data.suite).toMatchObject({
+        id: CANONICAL_DYNO_SUITE_ID,
+        slug: CANONICAL_DYNO_SUITE_SLUG,
+        version: CANONICAL_DYNO_SUITE_VERSION,
+        status: 'active',
+        task_manifest_digest: CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
+        grader_version: CANONICAL_DYNO_GRADER_VERSION
+      });
     });
 
     it('should reject deprecated /api/dyno?bench=true with 400 and honest error', async () => {

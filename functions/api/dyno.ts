@@ -25,6 +25,17 @@ const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/i;
 const ID_REGEX = /^[a-zA-Z0-9_-]{4,128}$/;
 const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
+const canonicalSuiteSummary = () => ({
+  id: CANONICAL_DYNO_SUITE_ID,
+  slug: CANONICAL_DYNO_SUITE_SLUG,
+  version: CANONICAL_DYNO_SUITE_VERSION,
+  name: CANONICAL_DYNO_SUITE_NAME,
+  status: 'active',
+  published_at: null,
+  task_manifest_digest: CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
+  grader_version: CANONICAL_DYNO_GRADER_VERSION
+});
+
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const url = new URL(request.url);
@@ -151,18 +162,16 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       if (requestedSuiteId && !ID_REGEX.test(requestedSuiteId)) {
         return Response.json({ success: false, error: 'Invalid suite ID format' }, { status: 400 });
       }
-      const suite = requestedSuiteId
+      const storedSuite = requestedSuiteId
         ? await env.DB.prepare(`SELECT id, slug, version, name, status, published_at
             FROM dyno_suites WHERE id = ? AND status IN ('active', 'retired')`).bind(requestedSuiteId).first()
-        : await env.DB.prepare(`SELECT id, slug, version, name, status, published_at
-            FROM dyno_suites WHERE status = 'active'
-            ORDER BY published_at DESC, created_at DESC, id DESC LIMIT 1`).first();
-      if (requestedSuiteId && !suite) {
+        : await env.DB.prepare(`SELECT id, slug, version, name, status, published_at,
+                   task_manifest_digest, grader_version
+            FROM dyno_suites WHERE id = ? AND status = 'active'`).bind(CANONICAL_DYNO_SUITE_ID).first();
+      if (requestedSuiteId && !storedSuite) {
         return Response.json({ success: false, error: 'Published DYNO suite not found' }, { status: 404 });
       }
-      if (!suite) {
-        return Response.json({ success: true, leaderboard: [], count: 0, suite: null });
-      }
+      const suite = storedSuite || canonicalSuiteSummary();
       const { results } = await env.DB.prepare(`
         SELECT r.id, r.suite_id, r.repetition, r.status, r.verification_status,
                r.evaluation_class, r.official_evaluator, r.official_published_at,
@@ -198,7 +207,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     return Response.json({
       success: true,
       leaderboard: [],
-      count: 0
+      count: 0,
+      suite: canonicalSuiteSummary()
     });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
