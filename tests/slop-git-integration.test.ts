@@ -52,13 +52,16 @@ describe('Local Bare Repository Git Integration', () => {
   it('should push real commits to local bare repository and update remote refs with genuine SHA', () => {
     process.chdir(workRepoPath);
 
-    const localShaBefore = execSync('git rev-parse --short HEAD', { cwd: workRepoPath, encoding: 'utf-8' }).trim();
+    const localShaBefore = execSync('git rev-parse HEAD', { cwd: workRepoPath, encoding: 'utf-8' }).trim();
     const pushRes = handlePush();
 
     expect(pushRes.success).toBe(true);
     expect(pushRes.command).toBe('push');
     expect(pushRes.data.pushedGit).toBe(true);
     expect(pushRes.data.casVerified).toBe(true);
+    expect(pushRes.data.published).toBe(false);
+    expect(pushRes.data.deployed).toBe(false);
+    expect(pushRes.message).toBe('Git ref pushed and verified');
     expect(pushRes.data.sha).toBe(localShaBefore);
     expect(pushRes.data.remoteRef).toBe('refs/heads/main');
 

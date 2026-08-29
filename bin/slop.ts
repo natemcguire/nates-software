@@ -460,6 +460,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
   let appId = args[0] || "my-shareware-app";
   let gitError: string | null = null;
   let success = false;
+  let remoteHeadVerified = false;
 
   const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
 
@@ -482,7 +483,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       }
 
       // 2. Get HEAD SHA
-      sha = runCommandSync("git rev-parse --short HEAD", { encoding: "utf-8", stdio: "pipe", throwError: true }).trim();
+      sha = runCommandSync("git rev-parse HEAD", { encoding: "utf-8", stdio: "pipe", throwError: true }).trim();
       if (!sha) {
         throw new Error("Repository has no commits to push");
       }
@@ -514,6 +515,17 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       const env = { ...process.env, GIT_SSH_COMMAND: "ssh -o ConnectTimeout=1 -o BatchMode=yes" };
       runCommandSync(`git push ${targetRemote} ${pushRefspec}`, { stdio: "pipe", timeout: 5000, env, throwError: true });
       pushedGit = true;
+      const remoteHead = runCommandSync(`git ls-remote ${targetRemote} ${remoteRef}`, {
+        encoding: "utf-8",
+        stdio: "pipe",
+        timeout: 5000,
+        env,
+        throwError: true
+      }).trim().split(/\s+/)[0];
+      remoteHeadVerified = remoteHead === sha;
+      if (!remoteHeadVerified) {
+        throw new Error(`Remote ref verification failed for ${remoteRef}`);
+      }
       success = true;
     } catch (err: any) {
       gitError = err.stderr ? err.stderr.toString().trim() : (err.message || "Git push failed");
@@ -528,24 +540,24 @@ export function handlePush(args: string[] = []): SlopCommandResult {
     const output = [
       `[GITSMITH] Pushing to forge...`,
       `  ✔ Remote push succeeded`,
-      `  ✔ CAS compare-and-swap update: ${remoteRef} -> ${sha} (OK)`,
-      `  ✔ Queued for 12:01 AM Daily Drop on HOTWIRE`,
-      `  ✔ 70/20/10 Lineage Royalty contract active`,
-      `🚀 Deployed live! Go Fork, and Multiply.`
+      `  ✔ Remote ref verified: ${remoteRef} -> ${sha}`,
+      `  ℹ This command does not publish a HOTWIRE drop or deploy an app.`,
+      `Next: run "slop drop" when you are ready to submit a release.`
     ].join("\n");
     console.log(output);
 
     return {
       success: true,
       command: "push",
-      message: "Deployed live to Nate's Software",
+      message: "Git ref pushed and verified",
       data: {
         appId,
         sha,
         remoteRef,
-        casVerified: true,
+        casVerified: remoteHeadVerified,
         pushedGit: true,
-        deployTimeSec: 1.18
+        published: false,
+        deployed: false
       }
     };
   } else {
@@ -563,7 +575,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         appId,
         sha,
         remoteRef,
-        casVerified: false,
+        casVerified: remoteHeadVerified,
         pushedGit,
         error: gitError
       }
@@ -1102,7 +1114,7 @@ Commands:
   slop fork <slug>     Clone app into isolated worktree with micro-dyno
   slop mod <package>   Weld AST feature package/manifest into worktree with test verification
                        Options: --worktree=<path>, --skip-tests, --no-rollback, --json
-  slop push            Push project to GITSMITH and deploy to Hotwire
+  slop push            Push a Git ref and verify the remote head
   slop test            Run shareware verification checks
   slop drop [slug]     Package and queue app for 12:01 AM UTC Daily Drop
   slop publish [slug]  Alias for slop drop
