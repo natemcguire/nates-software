@@ -23,7 +23,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0006_canonical_forge_lineage.sql',
         '0007_dyno_real_world_benchmarks.sql',
         '0008_session_security.sql',
-        '0009_durable_commerce.sql'
+        '0009_durable_commerce.sql',
+        '0010_commerce_processing.sql'
       ]);
     });
 
@@ -89,6 +90,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('commerce_licenses');
       expect(tables).toContain('commerce_transfer_outbox');
       expect(tables).toContain('commerce_order_events');
+      expect(tables).toContain('commerce_license_secrets');
+      expect(tables).toContain('commerce_license_secret_events');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
