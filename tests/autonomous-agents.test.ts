@@ -67,7 +67,12 @@ describe('Hosted RIG and Autonomous Agents Runtime', () => {
   });
 
   it('should execute autonomous AI merge worker transitions with sandboxed test proof', () => {
-    const worker = new AutonomousMergeWorker();
+    const worker = new AutonomousMergeWorker({
+      provisionPreview: ({ job, testEvidenceDigest }) => ({
+        previewUrl: `https://preview.test/${job.id}`,
+        evidenceDigest: testEvidenceDigest
+      })
+    });
     const initialJob = createMergeJob({
       targetRepositoryId: 'dronehunter',
       sourceRepositoryId: 'dronehunter-mod',
@@ -81,12 +86,12 @@ describe('Hosted RIG and Autonomous Agents Runtime', () => {
     }));
 
     expect(completedJob.status).toBe('preview_ready');
-    expect(completedJob.previewUrl).toContain('preview-dronehunter-mod');
+    expect(completedJob.previewUrl).toContain('preview.test');
     expect(completedJob.evidenceDigest).toBe('sha256:7a92c81e9b14c');
   });
 
   it('should fan-out agent campaigns across multiple target app forks in the agent inbox', () => {
-    const campaignManager = new AgentCampaignManager();
+    const campaignManager = new AgentCampaignManager({ dispatch: () => true });
     const report = campaignManager.dispatchCampaign({
       campaignId: 'cmp_sqlite_index_opt',
       title: 'SQLite Index Optimization & PRAGMA wal_autocheckpoint',
@@ -101,5 +106,20 @@ describe('Hosted RIG and Autonomous Agents Runtime', () => {
     expect(report.proposals.length).toBe(3);
     expect(report.proposals[0].targetAppId).toBe('dronehunter');
     expect(report.proposals[0].status).toBe('pending');
+  });
+
+  it('should not claim proposal delivery without a dispatcher', () => {
+    const report = new AgentCampaignManager().dispatchCampaign({
+      campaignId: 'cmp_planned_only',
+      title: 'Planned campaign',
+      summary: 'No delivery provider is configured.',
+      featureRef: 'refs/features/example/v1',
+      casNewSha: '8f4a21e',
+      targetAppIds: ['dronehunter']
+    });
+
+    expect(report.targetsCount).toBe(1);
+    expect(report.dispatchedCount).toBe(0);
+    expect(report.dispatchedAt).toBeUndefined();
   });
 });

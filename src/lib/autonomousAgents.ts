@@ -73,7 +73,18 @@ export interface CampaignFanoutReport {
   readonly targetsCount: number;
   readonly dispatchedCount: number;
   readonly proposals: AgentProposal[];
-  readonly dispatchedAt: string;
+  readonly dispatchedAt?: string;
+}
+
+export interface PreviewProvisioner {
+  provisionPreview(input: {
+    readonly job: MergeJobRecord;
+    readonly testEvidenceDigest: string;
+  }): { readonly previewUrl: string; readonly evidenceDigest: string };
+}
+
+export interface CampaignProposalDispatcher {
+  dispatch(proposal: AgentProposal): boolean;
 }
 
 export class HostedRigManager {
@@ -209,6 +220,8 @@ export class HostedRigManager {
 }
 
 export class AutonomousMergeWorker {
+  public constructor(private readonly previewProvisioner?: PreviewProvisioner) {}
+
   public executeAutonomousMerge(
     job: MergeJobRecord,
     testRunner: () => { success: boolean; evidenceDigest: string }
@@ -221,15 +234,27 @@ export class AutonomousMergeWorker {
       return transitionMergeJob(currentJob, 'failed');
     }
 
-    const previewUrl = `https://preview-${currentJob.sourceRepositoryId}.nates-software.com`;
+    if (!this.previewProvisioner) {
+      throw new Error('Preview unavailable: no preview provisioner is configured.');
+    }
+
+    const preview = this.previewProvisioner.provisionPreview({
+      job: currentJob,
+      testEvidenceDigest: testResult.evidenceDigest
+    });
+    if (!/^https:\/\//.test(preview.previewUrl) || !preview.evidenceDigest.trim()) {
+      throw new Error('Preview provisioner returned invalid evidence.');
+    }
     return transitionMergeJob(currentJob, 'preview_ready', {
-      previewUrl,
-      evidenceDigest: testResult.evidenceDigest
+      previewUrl: preview.previewUrl,
+      evidenceDigest: preview.evidenceDigest
     });
   }
 }
 
 export class AgentCampaignManager {
+  public constructor(private readonly dispatcher?: CampaignProposalDispatcher) {}
+
   public dispatchCampaign(params: {
     campaignId: string;
     title: string;
@@ -263,13 +288,17 @@ export class AgentCampaignManager {
       createdAt: new Date().toISOString()
     }));
 
+    const dispatchedCount = this.dispatcher
+      ? proposals.reduce((count, proposal) => count + (this.dispatcher!.dispatch(proposal) ? 1 : 0), 0)
+      : 0;
+
     return {
       campaignId,
       title,
       targetsCount: targetAppIds.length,
-      dispatchedCount: proposals.length,
+      dispatchedCount,
       proposals,
-      dispatchedAt: new Date().toISOString()
+      dispatchedAt: dispatchedCount > 0 ? new Date().toISOString() : undefined
     };
   }
 }
