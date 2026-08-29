@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 import { createRigGatewayServer, loadRigGatewayConfig, validateRigGatewayConfig } from '../src/lib/rig/server.ts';
-import { RigDockerControlApi } from '../src/lib/rigDockerProvider.ts';
+import { BoundedDockerProvider, RigDockerControlApi } from '../src/lib/rigDockerProvider.ts';
 import { JsonRigInstanceStateStore } from '../src/lib/rig/stateStore.ts';
 
 const config = loadRigGatewayConfig();
 validateRigGatewayConfig(config);
-const api = new RigDockerControlApi();
+const dockerProvider = new BoundedDockerProvider({
+  config: {
+    maxInstancesPerOwner: config.maxInstancesPerOwner,
+    maxTotalInstances: config.maxTotalInstances
+  }
+});
+const api = new RigDockerControlApi({
+  dockerProvider,
+  maxInstancesPerOwner: config.maxInstancesPerOwner
+});
 const stateStore = new JsonRigInstanceStateStore(config.statePath, config.productionEnabled);
 const persisted = await stateStore.load();
 const reconciliation = await api.restoreInstances(persisted);

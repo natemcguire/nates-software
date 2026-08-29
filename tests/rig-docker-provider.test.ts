@@ -690,6 +690,26 @@ describe('RIG.EXE Bounded Docker Provider Adapter & Control API', () => {
       expect(restarted.observed.allocatedPort).toBeDefined();
     });
 
+    it('restarts a healthy provider instance through stopped and queued states', async () => {
+      const inst = await controlApi.createInstance(sampleOwner, {
+        appId: 'live-restart-app',
+        name: 'Live Restart App',
+        runtime: { adapter: 'docker', startCommand: 'run', imageDigest: validPinnedDigest, networkPolicy: 'none' },
+        resources: { memoryCapMb: 128 },
+        ttlSeconds: 600,
+        source: 'provider'
+      });
+      expect(inst.observed.lifecycle).toBe('healthy');
+
+      const restarted = await controlApi.restartInstance(sampleOwner, inst.spec.id);
+      expect(restarted.observed.lifecycle).toBe('healthy');
+      expect(restarted.observed.events.slice(-3).map(event => [event.fromState, event.toState])).toEqual([
+        ['healthy', 'stopped'],
+        ['stopped', 'queued'],
+        ['queued', 'healthy']
+      ]);
+    });
+
     it('reaps expired instances and releases ports safely', async () => {
       const inst = await controlApi.createInstance(sampleOwner, {
         appId: 'expiring-app',

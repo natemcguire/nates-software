@@ -1304,7 +1304,19 @@ export class RigDockerControlApi {
     this.authorizeAccess(owner, instance);
 
     const fromState = instance.observed.lifecycle;
-    const validation = validateRigTransition(fromState, 'queued');
+    const restartEvents: RigLifecycleEvent[] = [...instance.observed.events];
+    let transitionFrom = fromState;
+    if (fromState !== 'stopped' && validateRigTransition(fromState, 'stopped').valid) {
+      restartEvents.push({
+        id: `evt-${Date.now().toString(36)}-${restartEvents.length}`,
+        timestamp: new Date().toISOString(),
+        fromState,
+        toState: 'stopped',
+        reason: 'Instance stopped for control-plane restart'
+      });
+      transitionFrom = 'stopped';
+    }
+    const validation = validateRigTransition(transitionFrom, 'queued');
     if (!validation.valid) {
       throw new Error(`Cannot restart instance from state '${fromState}': ${validation.error}`);
     }
@@ -1328,7 +1340,7 @@ export class RigDockerControlApi {
     const restartEvent: RigLifecycleEvent = {
       id: `evt-${Date.now().toString(36)}-${instance.observed.events.length}`,
       timestamp: nowIso,
-      fromState,
+      fromState: transitionFrom,
       toState: 'queued',
       reason: 'Instance restarted by control plane'
     };
@@ -1342,7 +1354,7 @@ export class RigDockerControlApi {
       expiresAt,
       exitCode: undefined,
       errorMessage: undefined,
-      events: [...instance.observed.events, restartEvent]
+      events: [...restartEvents, restartEvent]
     };
 
     if (instance.spec.source === 'provider' && instance.spec.runtime.adapter === 'docker') {

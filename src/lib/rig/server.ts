@@ -14,6 +14,8 @@ export interface RigGatewayConfig {
   serviceSecret: string;
   productionEnabled: boolean;
   statePath: string;
+  maxInstancesPerOwner: number;
+  maxTotalInstances: number;
 }
 
 export function loadRigGatewayConfig(env: NodeJS.ProcessEnv = process.env): RigGatewayConfig {
@@ -22,7 +24,9 @@ export function loadRigGatewayConfig(env: NodeJS.ProcessEnv = process.env): RigG
     host: env.HOST || '0.0.0.0',
     serviceSecret: env.RIG_GATEWAY_SERVICE_SECRET || '',
     productionEnabled: env.RIG_PRODUCTION_ENABLED === 'true' || env.NODE_ENV === 'production',
-    statePath: env.RIG_STATE_PATH || './.rig-state/instances.json'
+    statePath: env.RIG_STATE_PATH || './.rig-state/instances.json',
+    maxInstancesPerOwner: Number.parseInt(env.RIG_MAX_INSTANCES_PER_OWNER || '3', 10),
+    maxTotalInstances: Number.parseInt(env.RIG_MAX_TOTAL_INSTANCES || '10', 10)
   };
 }
 
@@ -32,6 +36,15 @@ export function validateRigGatewayConfig(config: RigGatewayConfig): void {
     throw new Error('Production RIG gateway requires RIG_GATEWAY_SERVICE_SECRET of at least 32 characters.');
   }
   validateRigStatePath(config.statePath, config.productionEnabled);
+  if (!Number.isInteger(config.maxInstancesPerOwner) || config.maxInstancesPerOwner < 1 || config.maxInstancesPerOwner > 10) {
+    throw new Error('RIG_MAX_INSTANCES_PER_OWNER must be an integer between 1 and 10.');
+  }
+  if (!Number.isInteger(config.maxTotalInstances) || config.maxTotalInstances < 1 || config.maxTotalInstances > 10) {
+    throw new Error('RIG_MAX_TOTAL_INSTANCES must be an integer between 1 and 10.');
+  }
+  if (config.maxInstancesPerOwner > config.maxTotalInstances) {
+    throw new Error('RIG_MAX_INSTANCES_PER_OWNER cannot exceed RIG_MAX_TOTAL_INSTANCES.');
+  }
 }
 
 function tokenMatches(actual: string, expected: string): boolean {
@@ -101,7 +114,13 @@ export function createRigGatewayServer(
         liveContainers: ready,
         ephemeralCleanup: true,
         authRequired: true,
-        limits: { maxMemoryMb: 256, maxTtlSeconds: 3600, maxInstancesPerOwner: 3, portRange: [3001, 3010] },
+        limits: {
+          maxMemoryMb: 256,
+          maxTtlSeconds: 3600,
+          maxInstancesPerOwner: config.maxInstancesPerOwner,
+          maxTotalInstances: config.maxTotalInstances,
+          portRange: [3001, 3010]
+        },
         isolation: { nonRoot: true, readOnlyRootfs: true, noDockerSocketMount: true, capDropAll: true },
         preflight
       });
