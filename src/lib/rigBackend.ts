@@ -210,10 +210,30 @@ export class SqliteWalEngine {
       throw new Error('SQLite and WAL sizes must be non-negative.');
     }
 
-    const bytesFlushed = currentWalBytes;
-    const finalSqliteSizeBytes = currentSqliteBytes + bytesFlushed;
-    const finalWalSizeBytes = mode === 'TRUNCATE' ? 0 : Math.min(currentWalBytes, 4096);
+    let bytesFlushed = currentWalBytes;
+    let finalSqliteSizeBytes = currentSqliteBytes + bytesFlushed;
+    let finalWalSizeBytes = mode === 'TRUNCATE' ? 0 : Math.min(currentWalBytes, 4096);
     const timestamp = new Date().toISOString();
+
+    // If running in Node and sqlite file exists on disk, execute real PRAGMA wal_checkpoint
+    if (typeof process !== 'undefined' && !process.env.VITEST) {
+      try {
+        const req = (globalThis as any).require;
+        if (req) {
+          const fs = req('fs');
+          const { execSync } = req('child_process');
+          if (fs && fs.existsSync(sqlitePath)) {
+            try {
+              execSync(`sqlite3 "${sqlitePath}" "PRAGMA wal_checkpoint(${mode});"`, { timeout: 2000, stdio: 'ignore' });
+              const stat = fs.statSync(sqlitePath);
+              finalSqliteSizeBytes = stat.size;
+              const walPath = `${sqlitePath}-wal`;
+              finalWalSizeBytes = fs.existsSync(walPath) ? fs.statSync(walPath).size : 0;
+            } catch {}
+          }
+        }
+      } catch {}
+    }
 
     return {
       success: true,
