@@ -23,6 +23,43 @@ const dbFrom = (env: any): D1Database | null =>
 const failure = (error: string, status = 503) =>
   Response.json({ success: false, error }, { status });
 
+async function gatewayReadiness(env: any) {
+  const gatewayUrl = typeof env?.GITSMITH_GATEWAY_URL === 'string' ? env.GITSMITH_GATEWAY_URL.trim() : '';
+  if (!gatewayUrl) return { success: false, ready: false, configured: false, active: false, error: 'GITSMITH gateway URL is not configured.' };
+  let parsed: URL;
+  try {
+    parsed = new URL(gatewayUrl);
+    if (parsed.protocol !== 'https:') throw new Error('HTTPS is required.');
+  } catch (error: any) {
+    return { success: false, ready: false, configured: false, active: false, error: `GITSMITH gateway URL is invalid: ${error?.message || 'invalid URL'}` };
+  }
+
+  try {
+    const fetchImpl: typeof fetch = env?.GITSMITH_GATEWAY_FETCH || fetch;
+    const response = await fetchImpl(`${parsed.toString().replace(/\/$/, '')}/readyz`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(4000)
+    });
+    const payload: any = await response.json().catch(() => ({}));
+    const ready = response.ok && payload?.ready === true && payload?.configured === true && payload?.active === true;
+    return {
+      success: true,
+      ready,
+      configured: payload?.configured === true,
+      active: payload?.active === true,
+      checks: {
+        git: payload?.checks?.git?.available === true,
+        storage: payload?.checks?.storage?.writable === true,
+        controlPlane: payload?.checks?.controlPlane?.reachable === true,
+        dispatcher: payload?.checks?.dispatcher?.running === true
+      },
+      checkedAt: payload?.timestamp || new Date().toISOString()
+    };
+  } catch (error: any) {
+    return { success: false, ready: false, configured: true, active: false, error: `GITSMITH gateway readiness probe failed: ${error?.message || 'unreachable'}` };
+  }
+}
+
 async function repositoryAccess(db: D1Database, repositoryId: string, userId = '') {
   return db.prepare(`
     SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
@@ -103,6 +140,13 @@ async function verifyGatewayAuth(request: Request, env: any, db?: D1Database | n
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   const url = new URL(request.url);
+  if (url.searchParams.get('action') === 'gateway-readiness') {
+    const readiness = await gatewayReadiness(env);
+    return Response.json(readiness, {
+      status: readiness.success ? 200 : 503,
+      headers: { 'Cache-Control': 'no-store' }
+    });
+  }
   if (url.searchParams.has('service') || url.pathname.endsWith('/info/refs')) {
     return failure(
       'Git smart HTTP is not served by this control-plane endpoint. Configure the GITSMITH gateway.',

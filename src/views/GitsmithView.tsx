@@ -217,6 +217,8 @@ export const GitsmithView: React.FC = () => {
   const [canonicalRepoCount, setCanonicalRepoCount] = useState<number | null>(null);
   const [canonicalRepositories, setCanonicalRepositories] = useState<GitsmithRepo[]>([]);
   const [canonicalLoadState, setCanonicalLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [gatewayReady, setGatewayReady] = useState(false);
+  const [gatewayCheckState, setGatewayCheckState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [showCreateRepo, setShowCreateRepo] = useState(false);
   const [newRepoSlug, setNewRepoSlug] = useState('');
   const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
@@ -247,14 +249,33 @@ export const GitsmithView: React.FC = () => {
     }
   };
 
+  const refreshGatewayReadiness = async () => {
+    setGatewayCheckState('checking');
+    try {
+      const response = await fetch('/api/git?action=gateway-readiness', { credentials: 'same-origin', cache: 'no-store' });
+      const payload = await response.json();
+      const ready = response.ok && payload?.success === true && payload?.ready === true;
+      setGatewayReady(ready);
+      setGatewayCheckState(ready ? 'ready' : 'unavailable');
+    } catch {
+      setGatewayReady(false);
+      setGatewayCheckState('unavailable');
+    }
+  };
+
   useEffect(() => {
     void refreshCanonicalRepositories();
+    void refreshGatewayReadiness();
   }, [user?.id]);
 
   const handleCreateRepository = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user) {
       openAuthModal('login');
+      return;
+    }
+    if (!gatewayReady) {
+      showAlert('The GITSMITH gateway is not ready, so no provisioning request was created. Try again after gateway readiness returns.', 'GITSMITH Gateway Unavailable', 'error');
       return;
     }
     setIsCreatingRepo(true);
@@ -390,13 +411,22 @@ export const GitsmithView: React.FC = () => {
             <ShieldCheck size={14} />
             <span>{canonicalRepoCount === null ? 'Control plane' : `${canonicalRepoCount} canonical repos`}</span>
           </div>
+          <div className={`flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 ${gatewayCheckState === 'ready' ? 'text-emerald-400' : gatewayCheckState === 'checking' ? 'text-amber-400' : 'text-red-400'}`}>
+            <CircleDot size={14} />
+            <span>{gatewayCheckState === 'ready' ? 'Gateway ready' : gatewayCheckState === 'checking' ? 'Checking gateway' : 'Gateway unavailable'}</span>
+          </div>
           <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-amber-400">
             <Sparkles size={14} />
             <span>70/20/10 Lineage Pool</span>
           </div>
           <button
-            onClick={() => user ? setShowCreateRepo(true) : openAuthModal('login')}
-            className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 px-2.5 py-1 rounded border border-sky-400 text-white font-bold"
+            onClick={() => {
+              if (!user) return openAuthModal('login');
+              if (!gatewayReady) return showAlert('Repository creation is disabled until the GITSMITH gateway is ready.', 'GITSMITH Gateway Unavailable', 'error');
+              setShowCreateRepo(true);
+            }}
+            disabled={Boolean(user) && !gatewayReady}
+            className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:text-slate-400 disabled:border-slate-600 px-2.5 py-1 rounded border border-sky-400 text-white font-bold"
           >
             <Plus size={14} /> New Repository
           </button>
