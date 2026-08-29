@@ -425,6 +425,10 @@ export function buildDockerCreateArgv(params: {
     `rig.expires.at=${expiresAt}`,
     '--label',
     `rig.ttl.seconds=${spec.ttlSeconds}`,
+    '--label',
+    `rig.host.port=${hostPort}`,
+    '--label',
+    `rig.memory.cap.mb=${memoryCapMb}`,
     // Security flags: non-root, cap-drop, no new privileges, read-only rootfs
     '--user',
     '10001:10001',
@@ -945,9 +949,9 @@ export class BoundedDockerProvider {
     } else if (state.Status === 'restarting') {
       lifecycle = 'starting';
     } else if (state.ExitCode === 137) {
-      // Exit 137 triage: SIGKILL (correlate OOMKilled vs SIGKILL)
-      lifecycle = 'oom';
-      errorMessage = 'Process terminated with Exit Code 137 (SIGKILL / Memory Limit Exceeded).';
+      // Exit 137 proves SIGKILL, not its cause. Only OOMKilled=true proves cgroup OOM.
+      lifecycle = 'crashed';
+      errorMessage = 'Process terminated with Exit Code 137 (SIGKILL); Docker did not report OOMKilled, so an out-of-memory cause is not proven.';
     } else if (state.ExitCode !== 0) {
       lifecycle = 'crashed';
       errorMessage = `Process exited with non-zero code ${state.ExitCode}.`;
@@ -1027,6 +1031,74 @@ export class RigDockerControlApi {
 
   public async getPreflight(): Promise<DockerPreflightResult> {
     return this.dockerProvider.checkPreflight();
+  }
+
+  public exportInstances(): RigInstance[] {
+    return Array.from(this.instances.values());
+  }
+
+  /** Re-authorizes durable registry entries against actual Docker objects after gateway restart. */
+  public async restoreInstances(candidates: readonly RigInstance[], now: Date = new Date()): Promise<{ restored: string[]; removed: string[] }> {
+    if (this.instances.size > 0 || this.portAllocator.getAllocatedPorts().length > 0) {
+      throw new Error('RIG restore requires a fresh control API instance.');
+    }
+    const restored: string[] = [];
+    const removed: string[] = [];
+    for (const candidate of candidates) {
+      const validation = validateRigSpec(candidate.spec);
+      if (!validation.valid || candidate.spec.source !== 'provider' || candidate.spec.runtime.adapter !== 'docker' || !candidate.spec.ownerId) {
+        removed.push(candidate.spec?.id || 'invalid');
+        continue;
+      }
+      const admin: RigOwnerIdentity = { ownerId: 'rig-reconciler', role: 'admin' };
+      const inspect = await this.dockerProvider.inspectContainer(admin, candidate.spec.id);
+      if (!inspect) {
+        removed.push(candidate.spec.id);
+        continue;
+      }
+      const labels = inspect.Config?.Labels || {};
+      const port = Number(labels['rig.host.port']);
+      const labelsMatch = labels['rig.owner.id'] === candidate.spec.ownerId
+        && labels['rig.app.id'] === candidate.spec.appId
+        && inspect.Config?.Image === candidate.spec.runtime.imageDigest
+        && Number(labels['rig.memory.cap.mb']) === candidate.spec.resources.memoryCapMb
+        && Number.isInteger(port) && port >= PORT_RANGE_START && port <= PORT_RANGE_END;
+      if (!labelsMatch) throw new RigSecurityViolationError(`RIG registry/container identity mismatch for ${candidate.spec.id}.`);
+
+      const expiresAt = labels['rig.expires.at'];
+      if (!expiresAt || new Date(expiresAt).getTime() <= now.getTime()) {
+        await this.dockerProvider.removeContainer(admin, candidate.spec.id);
+        removed.push(candidate.spec.id);
+        continue;
+      }
+
+      const observed = this.dockerProvider.normalizeDockerState(inspect, candidate.spec, port);
+      if (['building', 'starting', 'healthy', 'degraded'].includes(observed.lifecycle)) {
+        const restoredPort = this.portAllocator.allocate(candidate.spec.appId, port, candidate.spec.id);
+        if (restoredPort !== port) {
+          throw new RigSecurityViolationError(`RIG restart detected duplicate authoritative host port ${port}.`);
+        }
+      }
+      const recovered: RigInstance = {
+        spec: candidate.spec,
+        observed: {
+          ...observed,
+          events: [
+            ...candidate.observed.events,
+            {
+              id: `evt-${Date.now().toString(36)}-restore-${restored.length}`,
+              timestamp: now.toISOString(),
+              fromState: candidate.observed.lifecycle,
+              toState: observed.lifecycle,
+              reason: 'Gateway restart reconciliation verified the authoritative Docker object and labels'
+            }
+          ]
+        }
+      };
+      this.instances.set(candidate.spec.id, recovered);
+      restored.push(candidate.spec.id);
+    }
+    return { restored, removed };
   }
 
   public async createInstance(
@@ -1352,6 +1424,7 @@ export class RigDockerControlApi {
         if (nowMs >= expMs) {
           const systemOwner: RigOwnerIdentity = { ownerId: inst.spec.ownerId || 'reaper', role: 'admin' };
           await this.stopInstance(systemOwner, id, `TTL expired after ${inst.spec.ttlSeconds}s`);
+          await this.deleteInstance(systemOwner, id);
           reapedIds.push(id);
         }
       }

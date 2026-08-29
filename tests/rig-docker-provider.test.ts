@@ -9,6 +9,7 @@ import {
 } from '../src/lib/rigDockerProvider';
 import {
   type RigSpec,
+  type RigInstance,
   type RigOwnerIdentity,
   RigAuthenticationError,
   RigAuthorizationError,
@@ -398,7 +399,7 @@ describe('RIG.EXE Bounded Docker Provider Adapter & Control API', () => {
       expect(state.errorMessage).toContain('OOMKilled=true');
     });
 
-    it('normalizes ExitCode=137 (SIGKILL) to oom with honest triage message', () => {
+    it('keeps ExitCode=137 as an unproven SIGKILL unless Docker reports OOMKilled', () => {
       const inspect: DockerInspectData = {
         Id: 'c123',
         Name: '/rig-box-1',
@@ -414,8 +415,9 @@ describe('RIG.EXE Bounded Docker Provider Adapter & Control API', () => {
 
       const spec = makeValidSpec();
       const state = provider.normalizeDockerState(inspect, spec, 3001);
-      expect(state.lifecycle).toBe('oom');
+      expect(state.lifecycle).toBe('crashed');
       expect(state.errorMessage).toContain('Exit Code 137');
+      expect(state.errorMessage).toContain('not proven');
     });
 
     it('normalizes non-zero exit code (e.g. exit 1) to crashed', () => {
@@ -561,6 +563,47 @@ describe('RIG.EXE Bounded Docker Provider Adapter & Control API', () => {
       });
     });
 
+    it('restores a durable registry entry only after Docker label and image reconciliation', async () => {
+      const spec = makeValidSpec();
+      const expiresAt = new Date('2026-08-29T22:00:00.000Z').toISOString();
+      mockRunner.setHandler('inspect', (_file, args) => ({
+        stdout: JSON.stringify([{
+          Id: 'container-1', Name: `/${args.at(-1)}`,
+          State: { Status: 'running', Running: true, OOMKilled: false, ExitCode: 0, Error: '', StartedAt: '2026-08-29T20:00:00.000Z', FinishedAt: '0001-01-01T00:00:00Z' },
+          Config: { Image: validPinnedDigest, Labels: {
+            'rig.managed': 'true', 'rig.instance.id': spec.id, 'rig.owner.id': sampleOwner.ownerId,
+            'rig.app.id': spec.appId, 'rig.host.port': '3004', 'rig.memory.cap.mb': '256', 'rig.expires.at': expiresAt
+          } }
+        }]), stderr: '', exitCode: 0
+      }));
+      const persisted: RigInstance = {
+        spec,
+        observed: { lifecycle: 'healthy', allocatedPort: 3004, memoryMb: 0, expiresAt, events: [] }
+      };
+
+      await expect(controlApi.restoreInstances([persisted], new Date('2026-08-29T21:00:00.000Z')))
+        .resolves.toEqual({ restored: [spec.id], removed: [] });
+      expect((await controlApi.listInstances(sampleOwner))[0].observed.allocatedPort).toBe(3004);
+      expect(controlApi.portAllocator.getAllocatedPorts().map(item => item.port)).toEqual([3004]);
+    });
+
+    it('fails startup reconciliation when durable identity disagrees with Docker labels', async () => {
+      const spec = makeValidSpec();
+      mockRunner.setHandler('inspect', () => ({
+        stdout: JSON.stringify([{
+          Id: 'container-1', Name: '/rig-box-rig-dh-9912',
+          State: { Status: 'running', Running: true, OOMKilled: false, ExitCode: 0, Error: '', StartedAt: '2026-08-29T20:00:00.000Z', FinishedAt: '0001-01-01T00:00:00Z' },
+          Config: { Image: validPinnedDigest, Labels: {
+            'rig.managed': 'true', 'rig.instance.id': spec.id, 'rig.owner.id': 'different-owner',
+            'rig.app.id': spec.appId, 'rig.host.port': '3004', 'rig.memory.cap.mb': '256',
+            'rig.expires.at': '2026-08-29T22:00:00.000Z'
+          } }
+        }]), stderr: '', exitCode: 0
+      }));
+      const persisted: RigInstance = { spec, observed: { lifecycle: 'healthy', allocatedPort: 3004, memoryMb: 0, events: [] } };
+      await expect(controlApi.restoreInstances([persisted], new Date('2026-08-29T21:00:00.000Z'))).rejects.toThrow('identity mismatch');
+    });
+
     it('requires authenticated owner identity and rejects missing/invalid identity', async () => {
       const spec = makeValidSpec();
 
@@ -665,7 +708,7 @@ describe('RIG.EXE Bounded Docker Provider Adapter & Control API', () => {
 
       expect(reaped).toContain(inst.spec.id);
       const expiredInst = await controlApi.getInstance(sampleOwner, inst.spec.id);
-      expect(expiredInst?.observed.lifecycle).toBe('stopped');
+      expect(expiredInst).toBeUndefined();
       expect(controlApi.portAllocator.isAvailable(port)).toBe(true);
     });
 

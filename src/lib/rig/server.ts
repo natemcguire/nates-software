@@ -5,12 +5,15 @@ import {
   type RigControlApiOptions
 } from '../rigDockerProvider.ts';
 import type { RigOwnerIdentity } from '../rigDomain.ts';
+import type { RigInstanceStateStore } from './stateStore.ts';
+import { validateRigStatePath } from './stateStore.ts';
 
 export interface RigGatewayConfig {
   port: number;
   host: string;
   serviceSecret: string;
   productionEnabled: boolean;
+  statePath: string;
 }
 
 export function loadRigGatewayConfig(env: NodeJS.ProcessEnv = process.env): RigGatewayConfig {
@@ -18,7 +21,8 @@ export function loadRigGatewayConfig(env: NodeJS.ProcessEnv = process.env): RigG
     port: Number.parseInt(env.PORT || env.RIG_PORT || '8790', 10),
     host: env.HOST || '0.0.0.0',
     serviceSecret: env.RIG_GATEWAY_SERVICE_SECRET || '',
-    productionEnabled: env.RIG_PRODUCTION_ENABLED === 'true' || env.NODE_ENV === 'production'
+    productionEnabled: env.RIG_PRODUCTION_ENABLED === 'true' || env.NODE_ENV === 'production',
+    statePath: env.RIG_STATE_PATH || './.rig-state/instances.json'
   };
 }
 
@@ -27,6 +31,7 @@ export function validateRigGatewayConfig(config: RigGatewayConfig): void {
   if (config.productionEnabled && config.serviceSecret.length < 32) {
     throw new Error('Production RIG gateway requires RIG_GATEWAY_SERVICE_SECRET of at least 32 characters.');
   }
+  validateRigStatePath(config.statePath, config.productionEnabled);
 }
 
 function tokenMatches(actual: string, expected: string): boolean {
@@ -74,7 +79,7 @@ function ownerFromHeaders(req: IncomingMessage): RigOwnerIdentity | null {
 
 export function createRigGatewayServer(
   config: RigGatewayConfig,
-  options?: RigControlApiOptions & { api?: RigDockerControlApi }
+  options?: RigControlApiOptions & { api?: RigDockerControlApi; stateStore?: RigInstanceStateStore }
 ): Server {
   validateRigGatewayConfig(config);
   const api = options?.api || new RigDockerControlApi(options);
@@ -131,6 +136,21 @@ export function createRigGatewayServer(
       else if (action === 'restart') result = await api.restartInstance(owner, String(body.instanceId || ''));
       else if (action === 'delete') result = await api.deleteInstance(owner, String(body.instanceId || ''));
       else result = await api.getLogs(owner, String(body.instanceId || ''), Number(body.tailLines || 200));
+      if (options?.stateStore && ['create', 'stop', 'restart', 'delete'].includes(action)) {
+        try {
+          await options.stateStore.save(api.exportInstances());
+        } catch (persistError) {
+          let rollbackError: unknown;
+          if (action === 'create' && result && typeof result === 'object' && 'spec' in result) {
+            try { await api.deleteInstance(owner, (result as any).spec.id); } catch (error) { rollbackError = error; }
+          }
+          const failure = new Error(rollbackError
+            ? `RIG registry persistence failed and created-container rollback also failed: ${(rollbackError as any)?.message || 'unknown rollback error'}`
+            : `RIG registry persistence failed: ${(persistError as any)?.message || 'unknown persistence error'}`);
+          failure.name = 'RigStatePersistenceError';
+          throw failure;
+        }
+      }
       send(res, 200, { success: true, result });
     } catch (error: any) {
       const name = error?.name || '';
@@ -138,6 +158,7 @@ export function createRigGatewayServer(
         : name === 'RigAuthorizationError' ? 403
           : name === 'RigQuotaExceededError' ? 429
             : name === 'RigPreflightError' ? 503
+              : name === 'RigStatePersistenceError' ? 503
               : name === 'RigSecurityViolationError' ? 400 : 400;
       send(res, status, { success: false, error: error?.message || 'RIG operation failed.' });
     }

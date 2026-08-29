@@ -12,7 +12,7 @@ async function start(daemonReady = true) {
     ? { stdout: JSON.stringify({ Client: { Version: '29.4.0' }, Server: { Version: '29.4.0' } }), stderr: '', exitCode: 0 }
     : { stdout: '', stderr: 'daemon unavailable', exitCode: 1 });
   const api = new RigDockerControlApi({ dockerProvider: new BoundedDockerProvider({ runner }) });
-  const server = createRigGatewayServer({ port: 8790, host: '127.0.0.1', serviceSecret: 's'.repeat(32), productionEnabled: true }, { api });
+  const server = createRigGatewayServer({ port: 8790, host: '127.0.0.1', serviceSecret: 's'.repeat(32), productionEnabled: true, statePath: '/data/rig/instances.json' }, { api });
   servers.push(server);
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -20,7 +20,7 @@ async function start(daemonReady = true) {
 
 describe('RIG Docker provider gateway server', () => {
   it('fails production startup without a strong service secret', () => {
-    expect(() => validateRigGatewayConfig({ port: 8790, host: '0.0.0.0', serviceSecret: 'short', productionEnabled: true })).toThrow('at least 32');
+    expect(() => validateRigGatewayConfig({ port: 8790, host: '0.0.0.0', serviceSecret: 'short', productionEnabled: true, statePath: '/data/rig/instances.json' })).toThrow('at least 32');
   });
 
   it('publishes capability proof only while the Docker daemon is reachable', async () => {

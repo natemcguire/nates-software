@@ -1,13 +1,33 @@
 #!/usr/bin/env node
 import { createRigGatewayServer, loadRigGatewayConfig, validateRigGatewayConfig } from '../src/lib/rig/server.ts';
+import { RigDockerControlApi } from '../src/lib/rigDockerProvider.ts';
+import { JsonRigInstanceStateStore } from '../src/lib/rig/stateStore.ts';
 
 const config = loadRigGatewayConfig();
 validateRigGatewayConfig(config);
-const server = createRigGatewayServer(config);
+const api = new RigDockerControlApi();
+const stateStore = new JsonRigInstanceStateStore(config.statePath, config.productionEnabled);
+const persisted = await stateStore.load();
+const reconciliation = await api.restoreInstances(persisted);
+await stateStore.save(api.exportInstances());
+const server = createRigGatewayServer(config, { api, stateStore });
 server.listen(config.port, config.host, () => {
-  console.log(`RIG provider gateway listening on ${config.host}:${config.port}`);
+  console.log(`RIG provider gateway listening on ${config.host}:${config.port}; restored=${reconciliation.restored.length}; removed=${reconciliation.removed.length}`);
 });
 
-const shutdown = () => server.close(() => process.exit(0));
+const reaper = setInterval(async () => {
+  try {
+    await api.reapExpired();
+    await stateStore.save(api.exportInstances());
+  } catch (error) {
+    console.error('[RIG] TTL reaper failed:', error);
+  }
+}, 30_000);
+reaper.unref();
+
+const shutdown = () => {
+  clearInterval(reaper);
+  server.close(() => process.exit(0));
+};
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
