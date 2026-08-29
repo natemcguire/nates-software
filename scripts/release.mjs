@@ -69,6 +69,10 @@ const candidateBranch = `release-${shortCommit}`;
 
 run('npm', ['test']);
 run('npm', ['run', 'build']);
+run('npx', [
+  'wrangler', 'd1', 'migrations', 'apply',
+  'nates-software-preview-db', '--env', 'preview', '--remote'
+]);
 
 console.log(`Deploying candidate ${candidateBranch} from ${commit}`);
 const candidateUrl = deploy(candidateBranch, commit, message);
