@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { mapCanonicalRepository } from '../src/views/GitsmithView';
+import React from 'react';
+import { renderToString } from 'react-dom/server';
+import { GitsmithView, mapCanonicalRepository } from '../src/views/GitsmithView';
+import { AuthProvider } from '../src/context/AuthContext';
+import { AlertProvider } from '../src/context/AlertContext';
 
 describe('GITSMITH canonical repository view model', () => {
   it('maps only persisted control-plane fields and does not invent popularity or verification', () => {
@@ -40,5 +44,20 @@ describe('GITSMITH canonical repository view model', () => {
     expect(mapped.lastCommit.sha).toBe('No projected ref');
     expect(mapped.status).toBe('provisioning');
     expect(mapped.visibility).toBe('private');
+  });
+
+  it('does not substitute bundled examples while the canonical forge is loading', () => {
+    const html = renderToString(
+      React.createElement(
+        AuthProvider,
+        null,
+        React.createElement(AlertProvider, null, React.createElement(GitsmithView))
+      )
+    );
+
+    expect(html).toContain('LOADING CANONICAL FORGE');
+    expect(html).toContain('Loading the forge');
+    expect(html).not.toContain('nate/dronehunter');
+    expect(html).not.toContain('$35.00 / $50.00');
   });
 });

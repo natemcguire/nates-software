@@ -217,6 +217,7 @@ export const GitsmithView: React.FC = () => {
   const [canonicalRepoCount, setCanonicalRepoCount] = useState<number | null>(null);
   const [canonicalRepositories, setCanonicalRepositories] = useState<GitsmithRepo[]>([]);
   const [canonicalLoadState, setCanonicalLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [showBundledExamples, setShowBundledExamples] = useState(false);
   const [gatewayReady, setGatewayReady] = useState(false);
   const [gatewayCheckState, setGatewayCheckState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [showCreateRepo, setShowCreateRepo] = useState(false);
@@ -236,9 +237,6 @@ export const GitsmithView: React.FC = () => {
         if (mapped.length > 0) {
           setSelectedRepo(current => mapped.find(repo => repo.id === current.id) || mapped[0]);
           setActiveFile(undefined);
-        } else {
-          setSelectedRepo(GITSMITH_REPOS[0]);
-          setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
         }
         return;
       }
@@ -354,8 +352,10 @@ export const GitsmithView: React.FC = () => {
     document.body.style.userSelect = 'none';
   };
 
-  const repositoryCatalog = canonicalRepositories.length > 0 ? canonicalRepositories : GITSMITH_REPOS;
-  const showingShowcases = canonicalRepositories.length === 0;
+  const showingShowcases = canonicalRepositories.length === 0 && showBundledExamples;
+  const repositoryCatalog = canonicalRepositories.length > 0
+    ? canonicalRepositories
+    : showingShowcases ? GITSMITH_REPOS : [];
   const filteredRepos = repositoryCatalog.filter(repo => {
     const q = searchQuery.toLowerCase();
     const matchName = repo.name.toLowerCase().includes(q) || repo.owner.toLowerCase().includes(q);
@@ -474,12 +474,19 @@ export const GitsmithView: React.FC = () => {
       {/* Main Forge Body Grid with Resizable Split Panes */}
       {showingShowcases ? (
         <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono">
-          {canonicalLoadState === 'loading' ? 'LOADING CANONICAL FORGE… ' : canonicalLoadState === 'error' ? 'CANONICAL FORGE UNAVAILABLE — ' : 'NO VISIBLE CANONICAL REPOSITORIES — '}
-          Showing bundled source examples only. Their files and commit labels are snapshots, not live gateway evidence.
+          BUNDLED EXAMPLES — Their files and commit labels are local UI snapshots, not repositories, gateway objects, or live forge evidence.
         </div>
-      ) : (
+      ) : canonicalRepositories.length > 0 ? (
         <div className="bg-emerald-950/80 border-b border-emerald-700 px-4 py-2 text-[11px] text-emerald-200 font-mono">
           CANONICAL CONTROL-PLANE RECORDS — Repository status, default refs, and fork totals are loaded from D1. Git objects remain authoritative at the gateway.
+        </div>
+      ) : (
+        <div className={`${canonicalLoadState === 'error' ? 'bg-red-950/80 border-red-700 text-red-200' : 'bg-slate-900 border-slate-700 text-slate-300'} border-b px-4 py-2 text-[11px] font-mono`}>
+          {canonicalLoadState === 'loading'
+            ? 'LOADING CANONICAL FORGE…'
+            : canonicalLoadState === 'error'
+              ? 'CANONICAL FORGE UNAVAILABLE — No cached or example repository has been substituted.'
+              : 'NO VISIBLE CANONICAL REPOSITORIES — Create your first repository or explicitly open the bundled examples.'}
         </div>
       )}
       <div className="flex-1 flex overflow-hidden">
@@ -508,6 +515,27 @@ export const GitsmithView: React.FC = () => {
 
           {/* Repo List Items */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-800">
+            {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
+              <div className="p-4 space-y-3 text-slate-300">
+                <p className="font-bold text-white">No canonical repositories to show.</p>
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  {canonicalLoadState === 'error'
+                    ? 'The control plane could not be reached. Retry before creating, cloning, or forking anything.'
+                    : user ? 'Create a repository to provision its authoritative bare Git storage.' : 'Sign in to create a repository, or inspect clearly labeled local examples.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBundledExamples(true);
+                    setSelectedRepo(GITSMITH_REPOS[0]);
+                    setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
+                  }}
+                  className="w-full border border-amber-700 bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 rounded px-3 py-2 text-[11px] font-bold"
+                >
+                  Open Bundled Examples
+                </button>
+              </div>
+            )}
             {filteredRepos.map(repo => {
               const isSelected = selectedRepo.id === repo.id;
               return (
@@ -560,6 +588,19 @@ export const GitsmithView: React.FC = () => {
 
         {/* Right Column: Selected Repo Detail View (GitHub IDE Style) */}
         <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3 min-w-0">
+          {repositoryCatalog.length === 0 ? (
+            <div className="m-auto max-w-xl rounded-lg border border-slate-700 bg-slate-900 p-6 text-center shadow-xl">
+              <Code size={36} className="mx-auto mb-3 text-sky-400" />
+              <h1 className="text-lg font-bold text-white">{canonicalLoadState === 'loading' ? 'Loading the forge…' : 'Start with an authoritative repository'}</h1>
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                {canonicalLoadState === 'error'
+                  ? 'GITSMITH could not load the canonical catalog. Nothing from the bundled examples is being presented as live repository state.'
+                  : canonicalLoadState === 'loading'
+                    ? 'Checking the control plane and Git gateway before enabling repository actions.'
+                    : 'Create a repository to commission bare Git storage, then push the first ref from your local checkout.'}
+              </p>
+            </div>
+          ) : (<>
           {/* Repo Title Header Banner */}
           <div className="bg-[#1e293b] border border-slate-700 rounded-lg p-4 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
@@ -818,27 +859,28 @@ export const GitsmithView: React.FC = () => {
 
               <div className="grid grid-cols-3 gap-3 font-mono text-xs">
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
-                  <div className="text-slate-400 mb-1 font-bold">70% Direct Maker</div>
-                  <div className="text-2xl font-black text-emerald-400">$35.00 / $50.00</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Directly paid to @{selectedRepo.owner}</div>
+                  <div className="text-slate-400 mb-1 font-bold">Root Release</div>
+                  <div className="text-2xl font-black text-emerald-400">90% / 10%</div>
+                  <div className="text-[11px] text-slate-400 mt-1">No ancestor claim: unused lineage allocation returns to the maker.</div>
                 </div>
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
-                  <div className="text-slate-400 mb-1 font-bold">20% Ancestor Lineage</div>
-                  <div className="text-2xl font-black text-sky-400">$10.00 / $50.00</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Distributed across upstream parent makers</div>
+                  <div className="text-slate-400 mb-1 font-bold">Downstream Release</div>
+                  <div className="text-2xl font-black text-sky-400">70% / 20% / 10%</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Immediate maker / upstream ancestors / protocol pool.</div>
                 </div>
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
-                  <div className="text-slate-400 mb-1 font-bold">10% Protocol Pool</div>
-                  <div className="text-2xl font-black text-amber-400">$5.00 / $50.00</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Platform hosting &amp; compute</div>
+                  <div className="text-slate-400 mb-1 font-bold">Selected Repository</div>
+                  <div className="text-lg font-black text-amber-400">No sale projection loaded</div>
+                  <div className="text-[11px] text-slate-400 mt-1">A purchase-time lineage snapshot is required before showing exact allocations.</div>
                 </div>
               </div>
             </div>
           )}
+          </>)}
         </div>
       </div>
       {/* 1-Click Fork & Code with AI Modal */}
-      <ForkWithAiModal
+      {repositoryCatalog.length > 0 && <ForkWithAiModal
         isOpen={showForkModal}
         onClose={() => setShowForkModal(false)}
         app={{
@@ -850,7 +892,7 @@ export const GitsmithView: React.FC = () => {
           avatar: selectedRepo.avatar,
           creatorAvatar: selectedRepo.avatar
         }}
-      />
+      />}
     </div>
   );
 };
