@@ -6,8 +6,8 @@ pages_build_output_dir = "dist"
 # Cloudflare D1 (Serverless SQLite at Edge)
 [[d1_databases]]
 binding = "DB"
-database_name = "nates-software-db"
-database_id = "3ae839e3-b677-4668-9b12-48b5c2437b5b"
+database_name = "nates-software-prod-v2"
+database_id = "32dc20dc-b97b-4ea8-a108-45694cdd6e6c"
 
 # Cloudflare R2 (Zero Egress Binary Storage for .dmg, .exe, .AppImage, .sqlite)
 [[r2_buckets]]

@@ -78,6 +78,14 @@ console.log(`Deploying candidate ${candidateBranch} from ${commit}`);
 const candidateUrl = deploy(candidateBranch, commit, message);
 await smoke(candidateUrl, 'candidate');
 
+// Production migrations run only after the isolated candidate and its canonical
+// preview schema pass. Wrangler records applied migrations and snapshots D1
+// before each new migration.
+run('npx', [
+  'wrangler', 'd1', 'migrations', 'apply',
+  'nates-software-prod-v2', '--remote'
+]);
+
 console.log(`Promoting unchanged dist/ artifact to production from ${commit}`);
 const productionDeploymentUrl = deploy('main', commit, message);
 await smoke(productionDeploymentUrl, 'production deployment');
