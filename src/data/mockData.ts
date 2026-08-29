@@ -49,6 +49,7 @@ export interface AppListing {
   };
   voters?: { name: string; avatar: string; handle: string }[];
   makerPitch?: string;
+  isDemo?: boolean;
 }
 
 export const INITIAL_APPS: AppListing[] = [
@@ -86,6 +87,7 @@ export const INITIAL_APPS: AppListing[] = [
       'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80',
       'https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80'
     ],
+    isDemo: true,
     comments: [
       {
         id: 'c-pitch',
@@ -144,6 +146,7 @@ export const INITIAL_APPS: AppListing[] = [
     screenshots: [
       'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
     ],
+    isDemo: true,
     comments: [
       {
         id: 'c-pitch-2',
@@ -195,6 +198,7 @@ export const INITIAL_APPS: AppListing[] = [
     screenshots: [
       'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80'
     ],
+    isDemo: true,
     comments: [
       {
         id: 'c-pitch-3',

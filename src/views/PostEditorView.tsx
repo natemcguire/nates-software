@@ -6,7 +6,7 @@ import { useAlert } from '../context/AlertContext';
 
 interface PostEditorViewProps {
   app: AppListing;
-  onSave: (updatedApp: AppListing) => void;
+  onSave: (updatedApp: AppListing) => Promise<void> | void;
   onCancel: () => void;
 }
 
@@ -14,6 +14,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
   const { showAlert } = useAlert();
   const [activeTab, setActiveTab] = useState<'info' | 'media' | 'binaries' | 'guide' | 'pricing'>('guide');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [name, setName] = useState(app.name);
   const [tagline, setTagline] = useState(app.tagline);
@@ -47,26 +48,45 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
     setScreenshots(screenshots.filter((_, i) => i !== idx));
   };
 
-  const handleSave = () => {
-    const updated: AppListing = {
-      ...app,
-      name,
-      tagline,
-      liveUrl: liveUrl.trim() || undefined,
-      description,
-      version,
-      price,
-      tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-      screenshots,
-      binaries: {
-        mac: macBinary,
-        win: winBinary,
-        linux: linuxBinary,
-        ios: iosBinary
-      }
-    };
-    onSave(updated);
-    showAlert("App listing and Git configuration updated successfully!", "Creator Studio", "success");
+  const handleSave = async () => {
+    if (!name || name.trim().length < 3) {
+      showAlert("Application name must be at least 3 characters.", "Validation Error", "warning");
+      return;
+    }
+    if (!version || !version.match(/^v?\d+\.\d+\.\d+$/)) {
+      showAlert("Version must follow valid semver format (e.g. v1.0.0 or 2.1.0).", "Validation Error", "warning");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const updated: AppListing = {
+        ...app,
+        name: name.trim(),
+        tagline: tagline.trim(),
+        liveUrl: liveUrl.trim() || undefined,
+        description: description.trim(),
+        version: version.trim(),
+        price,
+        tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+        screenshots,
+        binaries: {
+          mac: macBinary,
+          win: winBinary,
+          linux: linuxBinary,
+          ios: iosBinary
+        }
+      };
+      await onSave(updated);
+    } catch (err: any) {
+      showAlert(
+        `Drop persistence failed: ${err.message || 'Server rejected drop submission.'}`,
+        "Persistence Error",
+        "error"
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -443,9 +463,13 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
 
         <button
           onClick={handleSave}
-          className="btn-w95 btn-w95-primary px-6 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-md"
+          disabled={isSaving}
+          className={`btn-w95 btn-w95-primary px-6 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-md ${
+            isSaving ? 'opacity-70 cursor-wait' : ''
+          }`}
         >
-          <Save size={13} /> Save &amp; Update Live Listing
+          <Save size={13} />
+          <span>{isSaving ? 'Saving to D1...' : 'Save & Update Live Listing'}</span>
         </button>
       </div>
     </div>

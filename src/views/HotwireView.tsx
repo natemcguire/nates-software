@@ -1,6 +1,7 @@
-import { useCatalog } from '../context/CatalogContext';
 import React, { useState, useEffect } from 'react';
-import { INITIAL_APPS, MAKER_PROFILES, AppListing } from '../data/mockData';
+import { useCatalog } from '../context/CatalogContext';
+import { useAlert } from '../context/AlertContext';
+import { MAKER_PROFILES, AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
 import {
   Flame,
@@ -13,9 +14,11 @@ import {
   Users,
   Award,
   Calendar,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { getCurrentBatchWindow, getTimeToNextDrop } from '../lib/hotwireBackend';
 
 interface HotwireViewProps {
   onOpenApp?: (appId: string) => void;
@@ -23,44 +26,47 @@ interface HotwireViewProps {
 }
 
 export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor }) => {
-  const { apps: catalogApps, upvoteApp: catalogUpvote, isAuthoritativeLive } = useCatalog();
-  const [apps, setApps] = useState<AppListing[]>(catalogApps);
-  const [selectedApp, setSelectedApp] = useState<AppListing>(catalogApps[0] || INITIAL_APPS[0]);
+  const { showAlert } = useAlert();
+  const {
+    apps: catalogApps,
+    upvoteApp: catalogUpvote,
+    isAuthoritativeLive,
+    isLoading,
+    error: catalogError,
+    refreshCatalog
+  } = useCatalog();
 
-  useEffect(() => {
-    if (catalogApps.length > 0) {
-      setApps(catalogApps);
-      setSelectedApp(prev => catalogApps.find(a => a.id === prev.id) || catalogApps[0]);
-    }
-  }, [catalogApps]);
+  const [apps, setApps] = useState<AppListing[]>(catalogApps);
+  const [selectedApp, setSelectedApp] = useState<AppListing | null>(catalogApps[0] || null);
   const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks'>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(new Set());
   const [selectedBatch, setSelectedBatch] = useState<string>('today');
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
 
+  // Sync internal apps and selected app with catalog updates
+  useEffect(() => {
+    setApps(catalogApps);
+    if (catalogApps.length > 0) {
+      setSelectedApp(prev => {
+        if (!prev) return catalogApps[0];
+        const match = catalogApps.find(a => a.id === prev.id);
+        return match || catalogApps[0];
+      });
+    } else if (isAuthoritativeLive) {
+      setSelectedApp(null);
+    }
+  }, [catalogApps, isAuthoritativeLive]);
 
-  // UTC Midnight Live Ticker Countdown
+  // 12:01 AM UTC Live Ticker Countdown & Batch Window Calculation
   const [timeUntilNextDrop, setTimeUntilNextDrop] = useState<string>('00h 00m 00s');
+  const [batchInfo, setBatchInfo] = useState(() => getCurrentBatchWindow());
 
   useEffect(() => {
     const updateCountdown = () => {
-      const now = new Date();
-      const nextDrop = new Date();
-      nextDrop.setUTCHours(24, 1, 0, 0); // 12:01 AM UTC
-      const diffMs = nextDrop.getTime() - now.getTime();
-
-      if (diffMs <= 0) {
-        setTimeUntilNextDrop('00h 00m 00s');
-        return;
-      }
-
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-      setTimeUntilNextDrop(
-        `${hours.toString().padStart(2, '0')}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`
-      );
+      const dropCountdown = getTimeToNextDrop();
+      setTimeUntilNextDrop(dropCountdown.countdown);
+      setBatchInfo(getCurrentBatchWindow());
     };
 
     updateCountdown();
@@ -68,32 +74,71 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     return () => clearInterval(interval);
   }, []);
 
-  const handleUpvote = (e: React.MouseEvent, appId: string) => {
+  const handleUpvote = async (e: React.MouseEvent, appId: string) => {
     e.stopPropagation();
-    playSuccessChime();
-    catalogUpvote(appId);
+    playClickSound();
+
+    // Snapshot pre-vote state for rollback
+    const wasUpvoted = upvotedApps.has(appId);
+    const prevUpvotedSet = new Set(upvotedApps);
+    const prevApps = [...apps];
+    const prevSelectedApp = selectedApp ? { ...selectedApp } : null;
+
+    // Optimistic UI update
+    setUpvotedApps(prev => {
+      const next = new Set(prev);
+      if (wasUpvoted) next.delete(appId);
+      else next.add(appId);
+      return next;
+    });
 
     setApps(prev => prev.map(app => {
       if (app.id === appId) {
-        const isUpvoted = upvotedApps.has(appId);
-        const newUpvotes = isUpvoted ? app.upvotes - 1 : app.upvotes + 1;
+        const newUpvotes = wasUpvoted ? Math.max(0, app.upvotes - 1) : app.upvotes + 1;
         return { ...app, upvotes: newUpvotes };
       }
       return app;
     }));
 
-    setUpvotedApps(prev => {
-      const next = new Set(prev);
-      if (next.has(appId)) next.delete(appId);
-      else next.add(appId);
-      return next;
-    });
-
-    if (selectedApp.id === appId) {
+    if (selectedApp && selectedApp.id === appId) {
       setSelectedApp(prev => ({
-        ...prev,
-        upvotes: upvotedApps.has(appId) ? prev.upvotes - 1 : prev.upvotes + 1
+        ...prev!,
+        upvotes: wasUpvoted ? Math.max(0, prev!.upvotes - 1) : prev!.upvotes + 1
       }));
+    }
+
+    try {
+      await catalogUpvote(appId);
+      playSuccessChime();
+    } catch (err: any) {
+      // Rollback optimistic state immediately on rejection
+      setUpvotedApps(prevUpvotedSet);
+      setApps(prevApps);
+      if (prevSelectedApp && prevSelectedApp.id === appId) {
+        setSelectedApp(prevSelectedApp);
+      }
+
+      // Truthfully explain rejection and authenticated/network requirements
+      const errMsg = err?.message || 'Upvote rejected';
+      if (errMsg.includes('not found') || errMsg.includes('404')) {
+        showAlert(
+          `Cannot upvote demo/offline drop on the live network. Only registered live D1 drops can receive cryptographic upvotes.`,
+          "Upvote Rejected",
+          "warning"
+        );
+      } else if (errMsg.includes('auth') || errMsg.includes('401') || errMsg.includes('403')) {
+        showAlert(
+          `Authentication is required to record a verified upvote. Please sign in to vote for this drop.`,
+          "Sign In Required",
+          "warning"
+        );
+      } else {
+        showAlert(
+          `Upvote was rolled back because the server rejected the transaction: ${errMsg}`,
+          "Upvote Not Saved",
+          "error"
+        );
+      }
     }
   };
 
@@ -112,9 +157,9 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
     switch (activeFilter) {
       case 'forked':
-        return list.sort((a, b) => b.forkCount - a.forkCount);
+        return list.sort((a, b) => (b.forkCount || 0) - (a.forkCount || 0));
       case 'alltime':
-        return list.sort((a, b) => b.upvotes - a.upvotes);
+        return list.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
       case 'today':
       default:
         return list;
@@ -123,6 +168,32 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const filteredApps = getFilteredApps();
 
+  const handleOpenNewDrop = () => {
+    playClickSound();
+    if (onOpenPostEditor) {
+      const newDropTemplate: AppListing = {
+        id: '',
+        name: '',
+        tagline: '',
+        description: '',
+        author: 'guest',
+        authorAvatar: '⚡',
+        creator: 'guest',
+        creatorAvatar: '⚡',
+        version: 'v1.0.0',
+        upvotes: 0,
+        forkCount: 0,
+        forks: 0,
+        tags: ['Shareware'],
+        sqliteDatabase: '/data/app.sqlite',
+        sqliteSize: '1.4 MB',
+        screenshots: [],
+        comments: []
+      };
+      onOpenPostEditor(newDropTemplate);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-sans text-xs select-none">
       {/* 12:01 AM UTC Live Drops Header Banner */}
@@ -130,7 +201,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 font-bold tracking-wide">
             <Radio size={14} className="text-red-400 animate-pulse" />
-            <span className="font-mono text-xs">12:01 AM DAILY DROP (Batch #84)</span>
+            <span className="font-mono text-xs">12:01 AM DAILY DROP (Batch #{batchInfo.batchNumber})</span>
           </div>
           <div className="flex items-center gap-1 text-[11px] bg-blue-900/80 px-2 py-0.5 rounded border border-blue-400 font-mono">
             <Timer size={12} className="text-yellow-300" />
@@ -148,15 +219,19 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               onChange={(e) => setSelectedBatch(e.target.value)}
               className="bg-transparent text-white focus:outline-none text-[11px] cursor-pointer"
             >
-              <option value="today" className="bg-slate-900 text-white">Today (Batch #84 Demo)</option>
-              <option value="yesterday" className="bg-slate-900 text-white">Yesterday (Batch #83 Demo)</option>
-              <option value="aug24" className="bg-slate-900 text-white">Aug 24, 2026 (Batch #82 Demo)</option>
+              <option value="today" className="bg-slate-900 text-white">Today (Batch #{batchInfo.batchNumber})</option>
+              <option value="yesterday" className="bg-slate-900 text-white">Yesterday (Batch #{Math.max(1, batchInfo.batchNumber - 1)})</option>
+              <option value="archive" className="bg-slate-900 text-white">Historical Genesis Archive</option>
             </select>
           </div>
 
-          {isAuthoritativeLive ? (
-            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
-              ● D1 LIVE
+          {isLoading && apps.length === 0 ? (
+            <span className="bg-blue-800 text-blue-200 border border-blue-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold animate-pulse">
+              ⏳ CONNECTING...
+            </span>
+          ) : isAuthoritativeLive ? (
+            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Authoritative Cloudflare D1 drop registry">
+              ● D1 LIVE ({apps.length} drops)
             </span>
           ) : (
             <span className="bg-amber-900 text-amber-200 border border-amber-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Displaying seed catalog demo drops">
@@ -165,10 +240,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           )}
 
           <button
-            onClick={() => {
-              playClickSound();
-              if (onOpenPostEditor) onOpenPostEditor();
-            }}
+            onClick={handleOpenNewDrop}
             className="win95-btn px-2.5 py-1 text-black font-bold flex items-center gap-1 text-[11px] bg-[#dfdfdf] hover:bg-white"
           >
             <Plus size={13} />
@@ -176,6 +248,26 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           </button>
         </div>
       </div>
+
+      {/* Explicit Error Banner if Catalog Loading / Sync Encountered Failure */}
+      {catalogError && (
+        <div className="bg-amber-100 border-b-2 border-amber-400 px-3 py-1.5 flex items-center justify-between text-amber-900 font-mono text-[11px]">
+          <span className="flex items-center gap-1.5">
+            <span>⚠️</span>
+            <span>Live Catalog Notice: {catalogError} (Viewing offline preview dataset)</span>
+          </span>
+          <button
+            onClick={() => {
+              playClickSound();
+              refreshCatalog();
+            }}
+            className="win95-btn px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 bg-[#dfdfdf] hover:bg-white text-black"
+          >
+            <RefreshCw size={10} />
+            <span>Retry Sync</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Hotwire Body: Split Layout */}
       <div className="flex-1 flex overflow-hidden p-2 gap-2">
@@ -260,15 +352,42 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                   </div>
                 ))}
               </div>
+            ) : isLoading && apps.length === 0 ? (
+              <div className="p-8 text-center space-y-2">
+                <div className="text-2xl animate-spin">⏳</div>
+                <div className="font-bold text-xs text-slate-700">Connecting to 12:01 AM UTC Drop Registry...</div>
+                <p className="text-[11px] text-slate-500">Retrieving daily shareware queue from Cloudflare D1.</p>
+              </div>
             ) : filteredApps.length === 0 ? (
               <div className="p-8 text-center space-y-2">
-                <div className="text-2xl">🔍</div>
-                <div className="font-bold text-xs text-slate-700">No apps found</div>
-                <p className="text-[11px] text-slate-500">No drops matched "{searchQuery}". Try searching for another tag or stack.</p>
+                <div className="text-2xl">📦</div>
+                <div className="font-bold text-xs text-slate-700">
+                  {searchQuery.trim()
+                    ? 'No apps found'
+                    : isAuthoritativeLive
+                      ? 'No Live Drops in 12:01 AM Batch'
+                      : 'No drops found'}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {searchQuery.trim()
+                    ? `No drops matched "${searchQuery}". Try searching for another tag or creator.`
+                    : isAuthoritativeLive
+                      ? 'The live D1 queue is currently empty. Be the first creator to launch a drop!'
+                      : 'No drops available in this category.'}
+                </p>
+                {isAuthoritativeLive && !searchQuery.trim() && (
+                  <button
+                    onClick={handleOpenNewDrop}
+                    className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2"
+                  >
+                    <Plus size={13} />
+                    <span>Submit First Drop</span>
+                  </button>
+                )}
               </div>
             ) : (
               filteredApps.map((app, index) => {
-                const isSelected = selectedApp.id === app.id;
+                const isSelected = selectedApp?.id === app.id;
                 const isUpvoted = upvotedApps.has(app.id);
 
                 return (
@@ -290,7 +409,18 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">
                           {app.version}
                         </span>
-                        <span className="text-gray-500 text-[10px]">by @{app.author}</span>
+                        <span className="text-gray-500 text-[10px]">by @{app.author || app.creator}</span>
+
+                        {/* Distinct Demo Data vs Live Drop Badge */}
+                        {app.isDemo || !isAuthoritativeLive ? (
+                          <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Seed Demo Data">
+                            DEMO
+                          </span>
+                        ) : (
+                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Authoritative Live D1 Drop">
+                            LIVE
+                          </span>
+                        )}
 
                         {/* Product Hunt Style Award Badges */}
                         {app.badge && (
@@ -313,7 +443,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         ))}
                         <span className="text-gray-400 font-mono">|</span>
                         <span className="text-gray-500 font-mono flex items-center gap-0.5">
-                          <GitFork size={10} /> {app.forkCount} forks
+                          <GitFork size={10} /> {app.forkCount || 0} forks
                         </span>
                       </div>
                     </div>
@@ -355,10 +485,20 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
         {/* Right Column: Artifact Sandbox */}
         <div className="w-1/2 flex flex-col min-w-[320px]">
-          <ArtifactSandbox
-            app={selectedApp}
-            onOpenPostEditor={onOpenPostEditor}
-          />
+          {selectedApp ? (
+            <ArtifactSandbox
+              app={selectedApp}
+              onOpenPostEditor={onOpenPostEditor}
+            />
+          ) : (
+            <div className="h-full bg-[#ece9d8] border-2 border-gray-400 p-8 flex flex-col items-center justify-center text-center space-y-3 font-tahoma">
+              <div className="text-4xl">🚀</div>
+              <div className="font-bold text-sm text-w95-blue">No Drop Selected</div>
+              <p className="text-xs text-gray-600 max-w-xs">
+                Select any shareware drop from the 12:01 AM leaderboard on the left to inspect its live sandbox, storage, and screenshots.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

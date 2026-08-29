@@ -11,10 +11,12 @@ import {
   Network,
   Bot,
   CreditCard,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
+import { useCatalog } from '../context/CatalogContext';
 import { CheckoutModal } from './CheckoutModal';
 import { ForkWithAiModal } from './ForkWithAiModal';
 import { useAlert } from '../context/AlertContext';
@@ -34,6 +36,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 }) => {
   const { showAlert } = useAlert();
   const { user, openAuthModal } = useAuth();
+  const { isOwned } = useCatalog();
+  const isAppOwned = isOwned(app.id);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'sqlite' | 'code' | 'console'>('preview');
@@ -146,6 +150,15 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-0.5 rounded border border-green-400">
                 {app.version}
               </span>
+              {app.isDemo ? (
+                <span className="bg-amber-100 text-amber-900 border border-amber-400 text-[10px] font-bold font-mono px-1.5 py-0.2 rounded">
+                  DEMO DATA
+                </span>
+              ) : (
+                <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 text-[10px] font-bold font-mono px-1.5 py-0.2 rounded">
+                  LIVE D1 DROP
+                </span>
+              )}
               <span className="text-gray-500 text-xs font-medium">by @{app.author || app.creator}</span>
             </div>
             <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
@@ -401,16 +414,23 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              playClickSound();
-              setShowCheckoutModal(true);
-            }}
-            className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm"
-          >
-            <CreditCard size={12} />
-            <span>Register License (${app.id === 'certified-mailer' ? '25' : app.id === 'picfitai' ? '20' : '15'})</span>
-          </button>
+          {isAppOwned ? (
+            <span className="bg-emerald-100 text-emerald-800 border border-emerald-400 text-xs py-1.5 px-3 rounded font-bold font-mono flex items-center gap-1.5 shadow-sm">
+              <Check size={13} className="text-emerald-700 font-bold" />
+              <span>License Active on Shelf</span>
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                playClickSound();
+                setShowCheckoutModal(true);
+              }}
+              className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm"
+            >
+              <CreditCard size={12} />
+              <span>Register License (${app.id === 'certified-mailer' ? '25' : app.id === 'picfitai' ? '20' : '15'})</span>
+            </button>
+          )}
           <a
             href={app.liveUrl || `https://${app.id}.nates-software.com`}
             target="_blank"

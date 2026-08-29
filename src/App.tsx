@@ -89,9 +89,11 @@ import { ProfileView } from './views/ProfileView';
 import { TerminalView } from './views/TerminalView';
 import { ChatView } from './views/ChatView';
 import { playClickSound, playSuccessChime } from './lib/soundEngine';
+import { useAlert } from './context/AlertContext';
 
 function AppInner() {
-  const { getApp } = useCatalog();
+  const { getApp, submitDrop } = useCatalog();
+  const { showAlert } = useAlert();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
@@ -175,8 +177,13 @@ function AppInner() {
           <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
             <PostEditorView
               app={editingApp}
-              onSave={(_updatedApp) => {
+              onSave={async (updatedApp) => {
+                const res = await submitDrop(updatedApp);
+                if (!res.success) {
+                  throw new Error(res.error || 'Server failed to persist drop');
+                }
                 playSuccessChime();
+                showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
                 setEditingApp(null);
               }}
               onCancel={() => {
@@ -640,8 +647,13 @@ function AppInner() {
           <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
             <PostEditorView
               app={editingApp}
-              onSave={(_updatedApp) => {
+              onSave={async (updatedApp) => {
+                const res = await submitDrop(updatedApp);
+                if (!res.success) {
+                  throw new Error(res.error || 'Server failed to persist drop');
+                }
                 playSuccessChime();
+                showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
                 setEditingApp(null);
               }}
               onCancel={() => {
