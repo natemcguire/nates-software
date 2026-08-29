@@ -115,7 +115,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       // Migration 0014 Hotwire upvotes table
       expect(tables).toContain('drop_upvotes');
-      // Migration 0017 Ephemeral terminal sessions table
+      // Migration 0018 ephemeral terminal sessions table
       expect(tables).toContain('terminal_session_tickets');
     });
 
@@ -373,7 +373,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       ).rejects.toThrow(/FOREIGN KEY constraint failed/);
     });
 
-    it('should reject terminal_session_tickets (0017) referencing non-existent user_id', async () => {
+    it('should reject terminal_session_tickets (0018) referencing non-existent user_id', async () => {
       await expect(
         ctx.d1.prepare(`
           INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at)
@@ -697,7 +697,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       `).run()).rejects.toThrow(/commerce outbox requires matching fulfilled allocation/);
     });
 
-    it('should enforce CHECK constraints on terminal_session_tickets (0017)', async () => {
+    it('should enforce CHECK constraints on terminal_session_tickets (0018)', async () => {
       // expires_at <= issued_at must fail
       await expect(
         ctx.d1.prepare(`

@@ -1,4 +1,4 @@
--- Migration 0017: Forge Outbox Leasing and Dispatcher Metadata
+-- Migration 0019: Forge Outbox Leasing and Dispatcher Metadata
 -- Adds finite conditional lease tracking, dead-letter timestamps, and claim indexes for forge_outbox_events.
 
 ALTER TABLE forge_outbox_events ADD COLUMN claim_token TEXT;
