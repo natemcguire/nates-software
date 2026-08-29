@@ -16,7 +16,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
   });
 
   // ==========================================================================
-  // 1. MIGRATION CHAIN EXECUTION & SCHEMA VERIFICATION (0001, 0002, 0006, 0007)
+  // 1. MIGRATION CHAIN EXECUTION & SCHEMA VERIFICATION
   // ==========================================================================
   describe('1. Migration Chain Sequence & Schema Generation', () => {
     it('should define the complete canonical migration chain', () => {
@@ -32,13 +32,13 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0012_commerce_refunds_disputes.sql',
         '0013_commerce_refund_finalization.sql',
         '0014_hotwire_votes.sql',
-        '0015_ephemeral_terminal_sessions.sql',
         '0016_inbox_live_integrity.sql',
-        '0017_picfit_truthful_listing.sql'
+        '0017_picfit_truthful_listing.sql',
+        '0018_ephemeral_terminal_sessions.sql'
       ]);
     });
 
-    it('should create all required tables across all 4 migrations', () => {
+    it('should create all required tables across all migrations', () => {
       const tables = ctx.getTableNames();
 
       // Migration 0001 core tables
@@ -114,6 +114,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       // Migration 0014 Hotwire upvotes table
       expect(tables).toContain('drop_upvotes');
+      // Migration 0017 Ephemeral terminal sessions table
+      expect(tables).toContain('terminal_session_tickets');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -134,12 +136,17 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_refund_finalized_immutable');
     });
 
-    it('should create all unique indices from migration 0002 and 0014', () => {
+    it('should create all unique indices across the migration chain', () => {
       const indices = ctx.getIndexNames();
       expect(indices).toContain('idx_licenses_order');
       expect(indices).toContain('idx_shelf_user_app');
       expect(indices).toContain('idx_transfers_order_role');
       expect(indices).toContain('idx_drop_upvotes_voter');
+      expect(indices).toContain('idx_inbox_kind');
+      expect(indices).toContain('idx_inbox_merge_attempt');
+      expect(indices).toContain('idx_inbox_reply');
+      expect(indices).toContain('idx_terminal_tickets_user_issued');
+      expect(indices).toContain('idx_terminal_tickets_active');
     });
 
     it('should upgrade the legacy runtime-created vote table without losing valid votes', async () => {
@@ -364,6 +371,15 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .run()
       ).rejects.toThrow(/FOREIGN KEY constraint failed/);
     });
+
+    it('should reject terminal_session_tickets (0017) referencing non-existent user_id', async () => {
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at)
+          VALUES ('jti_inv', 'nonexistent_user', 1000, 2000)
+        `).run()
+      ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+    });
   });
 
   // ==========================================================================
@@ -414,6 +430,11 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES (?, 'acct_cascade_123')
       `).bind(testUserId).run();
 
+      await ctx.d1.prepare(`
+        INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at)
+        VALUES ('jti_cascade', ?, 1000, 2000)
+      `).bind(testUserId).run();
+
       // Verify all child rows exist
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_sessions WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM shelf_items WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
@@ -422,6 +443,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM chat_messages WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM inbox_messages WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM stripe_accounts WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
+      expect(await ctx.d1.prepare('SELECT count(*) AS c FROM terminal_session_tickets WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
 
       // Delete parent user
       await ctx.d1.prepare('DELETE FROM users WHERE id = ?').bind(testUserId).run();
@@ -434,6 +456,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM chat_messages WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM inbox_messages WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM stripe_accounts WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
+      expect(await ctx.d1.prepare('SELECT count(*) AS c FROM terminal_session_tickets WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
 
       // Verify foreign key integrity remains clean after cascade
       expect(ctx.runForeignKeyCheck()).toEqual([]);
@@ -671,6 +694,32 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           (id, order_id, allocation_id, destination_user_id, amount_cents, currency)
         VALUES ('cout_cancelled', 'cord_cancelled', 'calloc_cancelled', 'usr_nate', 1350, 'usd')
       `).run()).rejects.toThrow(/commerce outbox requires matching fulfilled allocation/);
+    });
+
+    it('should enforce CHECK constraints on terminal_session_tickets (0017)', async () => {
+      // expires_at <= issued_at must fail
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at)
+          VALUES ('jti_bad_exp', 'usr_nate', 2000, 1000)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // redeemed_at < issued_at must fail
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at, redeemed_at)
+          VALUES ('jti_bad_red', 'usr_nate', 2000, 3000, 1000)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // closed_at without redeemed_at must fail
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at, closed_at)
+          VALUES ('jti_bad_close', 'usr_nate', 2000, 3000, 2500)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
     });
   });
 

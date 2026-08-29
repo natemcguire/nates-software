@@ -54,18 +54,7 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins: stri
 }
 
 export function extractAuthToken(req: IncomingMessage): { token: string | null; source: 'query' | 'bearer' | 'protocol' | 'cookie' | null } {
-  // 1. Query parameter (?token=...)
-  if (req.url) {
-    try {
-      const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const queryToken = url.searchParams.get('token') || url.searchParams.get('auth_token');
-      if (queryToken && queryToken.trim()) {
-        return { token: queryToken.trim(), source: 'query' };
-      }
-    } catch {}
-  }
-
-  // 2. Authorization: Bearer <token>
+  // 1. Authorization: Bearer <token> (non-browser clients)
   const authHeader = req.headers['authorization'];
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const bearerToken = authHeader.slice(7).trim();
@@ -74,7 +63,7 @@ export function extractAuthToken(req: IncomingMessage): { token: string | null; 
     }
   }
 
-  // 3. Sec-WebSocket-Protocol (often used by browser WebSocket clients to pass auth)
+  // 2. Sec-WebSocket-Protocol (browser WebSocket clients cannot set Authorization)
   const protocolHeader = req.headers['sec-websocket-protocol'];
   if (protocolHeader) {
     const protocols = protocolHeader.split(',').map(p => p.trim());
@@ -91,15 +80,8 @@ export function extractAuthToken(req: IncomingMessage): { token: string | null; 
     }
   }
 
-  // 4. Cookie: nsw_session=<token>
-  const cookieHeader = req.headers['cookie'];
-  if (cookieHeader) {
-    const match = cookieHeader.match(/(?:^|;\s*)nsw_session=([^;]+)/);
-    if (match && match[1]) {
-      return { token: decodeURIComponent(match[1].trim()), source: 'cookie' };
-    }
-  }
-
+  // Tickets are deliberately not accepted in URLs (access-log leakage) or
+  // ambient cookies (cross-service credential confusion).
   return { token: null, source: null };
 }
 
@@ -120,9 +102,9 @@ export function validateToken(
   // Test tokens are never a production authentication mechanism.
   if (
     process.env.NODE_ENV !== 'production' &&
-    cleanToken === 'valid_test_token' ||
-    cleanToken.startsWith('test_token_') ||
-    cleanToken.startsWith('dev_token_')
+    (cleanToken === 'valid_test_token' ||
+      cleanToken.startsWith('test_token_') ||
+      cleanToken.startsWith('dev_token_'))
   ) {
     const suffix = cleanToken.replace(/^(test_token_|dev_token_)/, '');
     const username = suffix === 'valid_test_token' || !suffix ? 'nate' : suffix;

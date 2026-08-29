@@ -183,8 +183,9 @@ export const TerminalView: React.FC = () => {
       case 'cursor':
         playErrorBeep();
         newLines.push(
-          { text: `${root} runs inside the Real Ephemeral PTY Gateway.`, type: 'error' },
-          { text: "Click '[ ⚡ CONNECT REAL PTY GATEWAY ]' above or type 'gateway' to connect.", type: 'system' }
+          { text: `The browser command console cannot run '${root}'.`, type: 'error' },
+          { text: "Connect to the ephemeral VM when it is available, then use 'command -v " + root + "' to check whether that image includes it.", type: 'system' },
+          { text: "SLOP asks which engine to start only after an app finishes installing; it never auto-launches AGY.", type: 'output' }
         );
         break;
 
@@ -206,19 +207,10 @@ export const TerminalView: React.FC = () => {
         break;
 
       case 'ls':
-        const targetPath = parts[1] || '.';
-        if (targetPath.includes('/data') || targetPath.includes('data')) {
-          newLines.push(
-            { text: "total 3", type: 'output' },
-            { text: "-rw-r--r--  1 nate  staff  15518920 Aug 26 08:00 dronehunter.sqlite", type: 'output' },
-            { text: "-rw-r--r--  1 nate  staff   1468006 Aug 26 08:00 certified-mailer.sqlite", type: 'output' },
-            { text: "PicFit keeps working images only in the active browser session (no /data file).", type: 'system' }
-          );
-        } else {
-          newLines.push(
-            { text: "bin/   data/   dist/   functions/   migrations/   src/   package.json   wrangler.toml", type: 'output' }
-          );
-        }
+        newLines.push(
+          { text: 'The browser command console has no filesystem to list.', type: 'error' },
+          { text: "Use 'gateway' for a real disposable filesystem, or run ls in your native terminal.", type: 'system' }
+        );
         break;
 
       case 'date':
@@ -227,14 +219,12 @@ export const TerminalView: React.FC = () => {
 
       case 'neofetch':
         newLines.push(
-          { text: "       .---.       nate@macmini", type: 'system' },
-          { text: "      /     \\      ------------", type: 'system' },
-          { text: "     | () () |     OS: Nate's Software Web OS 95", type: 'output' },
-          { text: "      \\  -  /      Host: Apple Mac mini (M4 Max)", type: 'output' },
-          { text: "       `---'       Kernel: Runtime & Storage Independent", type: 'output' },
-          { text: "                   Uptime: 99.98% (Scale-to-Zero)", type: 'output' },
-          { text: "                   Shell: SLOP CLI v1.0.0", type: 'output' },
-          { text: "                   Memory: 48MB / 256MB Cap Enforced", type: 'success' }
+          { text: "       .---.       browser@terminal.exe", type: 'system' },
+          { text: "      /     \\      --------------------", type: 'system' },
+          { text: "     | () () |     Mode: Browser command console", type: 'output' },
+          { text: "      \\  -  /      Host access: None", type: 'output' },
+          { text: "       `---'       Filesystem: None", type: 'output' },
+          { text: "                   VM session: Disconnected", type: 'output' }
         );
         break;
 
@@ -330,9 +320,9 @@ export const TerminalView: React.FC = () => {
           <div className="flex items-center gap-2">
             <ShieldAlert size={14} className="text-yellow-400 shrink-0" />
             <div>
-              <span className="font-bold">Disposable Terminal Ready</span> — {user
-                ? 'Start a fresh isolated Linux VM. Its filesystem is destroyed when the session ends.'
-                : 'Log in to start a fresh isolated Linux VM.'}
+              <span className="font-bold">Disposable Terminal</span> — {user
+                ? 'Availability is checked before a VM is requested. Unconfigured infrastructure fails closed.'
+                : 'Log in to check whether the ephemeral VM service is available.'}
               {gateway.lastError && <span className="block text-red-300 mt-0.5">{gateway.lastError}</span>}
             </div>
           </div>
@@ -342,7 +332,7 @@ export const TerminalView: React.FC = () => {
             className="flex items-center gap-1 bg-yellow-950 hover:bg-yellow-900 text-yellow-200 border border-yellow-700 px-2 py-1 rounded text-[10px] shrink-0 font-bold"
           >
             <RefreshCw size={10} className={gateway.isConnecting ? 'animate-spin' : ''} />
-            {gateway.isConnecting ? 'Starting VM...' : user ? 'Start Ephemeral VM' : 'Log In'}
+            {gateway.isConnecting ? 'Checking service...' : user ? 'Check & Start VM' : 'Log In'}
           </button>
         </div>
       )}

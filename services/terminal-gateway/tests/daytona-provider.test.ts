@@ -52,4 +52,17 @@ describe('Daytona ephemeral VM provider', () => {
     await expect(provider.createSession({ sessionId: 'bad-session' })).rejects.toThrow(/missing required tooling/);
     expect(f.sandbox.delete).toHaveBeenCalled();
   });
+
+  it('still deletes the sandbox after the PTY has already exited', async () => {
+    const f = fixture();
+    const provider = new DaytonaSandboxProvider({ apiKey: 'key', snapshot: 'vm-snapshot', ttlMinutes: 15, vmIsolationVerified: true }, f.client as any);
+    const session = await provider.createSession({ sessionId: 'exited-session' });
+    (session as any).emitExit(0, null);
+
+    await provider.destroySession('exited-session');
+    expect(f.sandbox.delete).toHaveBeenCalledTimes(1);
+
+    await session.destroy();
+    expect(f.sandbox.delete).toHaveBeenCalledTimes(1);
+  });
 });

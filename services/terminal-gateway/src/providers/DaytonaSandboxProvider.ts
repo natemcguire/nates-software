@@ -19,6 +19,7 @@ class DaytonaTerminalSession implements TerminalSession {
   lastActivityAt = Date.now();
   readonly workspacePath = '/workspace';
   private alive = true;
+  private destroyed = false;
   private readonly outputListeners = new Set<OutputListener>();
   private readonly exitListeners = new Set<ExitListener>();
 
@@ -63,7 +64,10 @@ class DaytonaTerminalSession implements TerminalSession {
   }
 
   async destroy(): Promise<void> {
-    if (!this.alive) return;
+    // A PTY exit marks the process dead before SessionManager calls destroy().
+    // Sandbox deletion must therefore be guarded independently from liveness.
+    if (this.destroyed) return;
+    this.destroyed = true;
     this.alive = false;
     try { await this.pty.kill(); } catch {}
     try { await this.pty.disconnect(); } catch {}

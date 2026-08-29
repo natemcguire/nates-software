@@ -50,6 +50,33 @@ export interface TerminalGatewayInstance {
   close(): Promise<void>;
 }
 
+export function assertProductionConfig(config: GatewayConfig): void {
+  if (!config.tokenSecret || config.tokenSecret.length < 32) {
+    throw new Error('Production terminal gateway requires a TERMINAL_TICKET_SECRET of at least 32 characters');
+  }
+  if (!config.gatewayServiceSecret || config.gatewayServiceSecret.length < 32) {
+    throw new Error('Production terminal gateway requires a TERMINAL_GATEWAY_SERVICE_SECRET of at least 32 characters');
+  }
+  let redeemUrl: URL;
+  try {
+    redeemUrl = new URL(config.redeemUrl || '');
+  } catch {
+    throw new Error('Production terminal gateway requires a valid HTTPS TERMINAL_REDEEM_URL');
+  }
+  if (redeemUrl.protocol !== 'https:') {
+    throw new Error('Production terminal gateway requires a valid HTTPS TERMINAL_REDEEM_URL');
+  }
+  if (!config.allowedOrigins.length || config.allowedOrigins.some(origin => {
+    if (origin === 'https://*.nates-software.pages.dev') return false;
+    return origin.includes('*') || !origin.startsWith('https://');
+  })) {
+    throw new Error('Production terminal gateway requires explicit HTTPS origins (only the official Pages preview wildcard is allowed)');
+  }
+  if (config.validTokens?.length) {
+    throw new Error('Production terminal gateway does not accept static VALID_TOKENS; use signed single-use tickets');
+  }
+}
+
 export function createTerminalGateway(
   userConfig: Partial<GatewayConfig> = {},
   customProvider?: TerminalProvider
@@ -62,6 +89,8 @@ export function createTerminalGateway(
       ...(userConfig.limits || {})
     }
   };
+
+  if (process.env.NODE_ENV === 'production') assertProductionConfig(config);
 
   const provider = customProvider || (process.env.NODE_ENV === 'production'
     ? new DaytonaSandboxProvider({
@@ -82,7 +111,7 @@ export function createTerminalGateway(
     isProductionVps: provider.isProductionVps,
     truthStatement: provider.getTruthStatement(),
     authRequired: true,
-    authMethods: ['bearer_token', 'query_param', 'cookie', 'websocket_protocol'],
+    authMethods: ['bearer_token', 'websocket_protocol'],
     allowedOrigins: config.allowedOrigins,
     availableTools: ['git', 'node', 'npm', 'npx', 'slop'],
     limits: config.limits,
@@ -155,7 +184,14 @@ export function createTerminalGateway(
       return;
     }
 
-    // 2. Token extraction & validation
+    // 2. Capacity limit check before redeeming tickets
+    if (sessionManager.isAtCapacity()) {
+      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    // 3. Token extraction & validation
     const { token } = extractAuthToken(req);
     const authResult = validateToken(token, config.validTokens, config.tokenSecret);
     if (!authResult.valid) {
@@ -163,6 +199,17 @@ export function createTerminalGateway(
       socket.destroy();
       return;
     }
+
+    if (process.env.NODE_ENV === 'production' && token) {
+      // Fast in-memory replay rejection before remote redemption
+      const digest = token.slice(-43);
+      if (usedTicketDigests.has(digest)) {
+        socket.write('HTTP/1.1 409 Conflict\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    }
+
     const gatewaySessionId = randomUUID();
     if (process.env.NODE_ENV === 'production') {
       if (!config.redeemUrl || !config.gatewayServiceSecret || !authResult.ticketId || !authResult.user) {
@@ -177,7 +224,8 @@ export function createTerminalGateway(
           body: JSON.stringify({ jti: authResult.ticketId, userId: authResult.user.id, gatewaySessionId })
         });
         if (!redemption.ok) {
-          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          const status = redemption.status === 409 ? '409 Conflict' : '401 Unauthorized';
+          socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
           socket.destroy();
           return;
         }
@@ -191,20 +239,8 @@ export function createTerminalGateway(
       // Tickets are intentionally one-use. The set is bounded by the gateway's
       // short ticket lifetime and periodically cleared without affecting sessions.
       const digest = token.slice(-43);
-      if (usedTicketDigests.has(digest)) {
-        socket.write('HTTP/1.1 409 Conflict\r\n\r\n');
-        socket.destroy();
-        return;
-      }
       usedTicketDigests.add(digest);
       setTimeout(() => usedTicketDigests.delete(digest), 90_000).unref();
-    }
-
-    // 3. Capacity limit check
-    if (sessionManager.isAtCapacity()) {
-      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
-      socket.destroy();
-      return;
     }
 
     // Upgrade connection
@@ -289,6 +325,7 @@ export function createTerminalGateway(
         }
       });
     } catch (err: any) {
+      closeLifecycle();
       sendWs({
         type: 'error',
         message: err.message || 'Failed to initialize terminal session'
@@ -305,11 +342,21 @@ export function createTerminalGateway(
       try {
         const parsed = JSON.parse(raw) as WsClientMessage;
         if (parsed.type === 'input') {
+          if (typeof parsed.data !== 'string') {
+            sendWs({ type: 'error', message: 'Terminal input must be a string', code: 'INVALID_INPUT' });
+            return;
+          }
           session.write(parsed.data);
         } else if (parsed.type === 'resize') {
+          if (!Number.isInteger(parsed.cols) || !Number.isInteger(parsed.rows) || parsed.cols < 20 || parsed.cols > 500 || parsed.rows < 5 || parsed.rows > 200) {
+            sendWs({ type: 'error', message: 'Terminal dimensions are out of range', code: 'INVALID_RESIZE' });
+            return;
+          }
           session.resize(parsed.cols, parsed.rows);
         } else if (parsed.type === 'ping') {
           sendWs({ type: 'pong' });
+        } else {
+          sendWs({ type: 'error', message: 'Unknown terminal message type', code: 'INVALID_MESSAGE' });
         }
       } catch {
         // If not JSON, treat raw payload as terminal input

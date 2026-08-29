@@ -67,7 +67,7 @@ Returns truthful capabilities manifest.
   "isProductionVps": false,
   "truthStatement": "NON-PRODUCTION DEVELOPMENT PROVIDER: Sessions execute as local child processes on the host...",
   "authRequired": true,
-  "authMethods": ["bearer_token", "query_param", "cookie", "websocket_protocol"],
+  "authMethods": ["bearer_token", "websocket_protocol"],
   "allowedOrigins": ["*"],
   "availableTools": ["git", "node", "npm", "npx", "slop"],
   "limits": {

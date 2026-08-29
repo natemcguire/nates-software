@@ -19,6 +19,7 @@ export class SessionManager {
   private limits: LimitsConfig;
   private sessions = new Map<string, ManagedSession>();
   private isShuttingDown = false;
+  private pendingCreates = 0;
 
   constructor(provider: TerminalProvider, limits: LimitsConfig) {
     this.provider = provider;
@@ -30,7 +31,7 @@ export class SessionManager {
   }
 
   isAtCapacity(): boolean {
-    return this.sessions.size >= this.limits.maxConcurrentSessions;
+    return this.sessions.size + this.pendingCreates >= this.limits.maxConcurrentSessions;
   }
 
   async createSession(options: SessionOptions): Promise<TerminalSession> {
@@ -42,7 +43,15 @@ export class SessionManager {
       throw new Error(`Max concurrent sessions limit reached (${this.limits.maxConcurrentSessions})`);
     }
 
-    const session = await this.provider.createSession(options);
+    // Reserve capacity before the asynchronous provider call so concurrent
+    // upgrades cannot all pass the same preflight and exceed the fleet cap.
+    this.pendingCreates++;
+    let session: TerminalSession;
+    try {
+      session = await this.provider.createSession(options);
+    } finally {
+      this.pendingCreates--;
+    }
     const sessionId = session.id;
 
     // Set Hard TTL Timer

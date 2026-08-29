@@ -37,15 +37,15 @@ describe('Terminal Gateway Auth & Origin Validation', () => {
   });
 
   describe('extractAuthToken', () => {
-    it('extracts token from URL query string', () => {
+    it('does not extract tickets from URL query strings', () => {
       const req = {
         url: '/terminal?token=my_secret_token_123',
         headers: { host: 'localhost:4000' }
       } as unknown as IncomingMessage;
 
       const res = extractAuthToken(req);
-      expect(res.token).toBe('my_secret_token_123');
-      expect(res.source).toBe('query');
+      expect(res.token).toBeNull();
+      expect(res.source).toBeNull();
     });
 
     it('extracts token from Authorization Bearer header', () => {
@@ -76,7 +76,7 @@ describe('Terminal Gateway Auth & Origin Validation', () => {
       expect(res.source).toBe('protocol');
     });
 
-    it('extracts token from nsw_session cookie', () => {
+    it('does not confuse an ambient session cookie with a terminal ticket', () => {
       const req = {
         url: '/terminal',
         headers: {
@@ -86,8 +86,8 @@ describe('Terminal Gateway Auth & Origin Validation', () => {
       } as unknown as IncomingMessage;
 
       const res = extractAuthToken(req);
-      expect(res.token).toBe('cookie_token_789');
-      expect(res.source).toBe('cookie');
+      expect(res.token).toBeNull();
+      expect(res.source).toBeNull();
     });
 
     it('returns null when no token is present', () => {
@@ -134,6 +134,61 @@ describe('Terminal Gateway Auth & Origin Validation', () => {
       expect(res.valid).toBe(true);
       expect(res.user?.role).toBe('super_admin');
       expect(validateToken(secret, [], secret).valid).toBe(false);
+    });
+
+    it('rejects test tokens when NODE_ENV is production', () => {
+      const prevEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        expect(validateToken('valid_test_token').valid).toBe(false);
+        expect(validateToken('test_token_sam').valid).toBe(false);
+        expect(validateToken('dev_token_user').valid).toBe(false);
+      } finally {
+        process.env.NODE_ENV = prevEnv;
+      }
+    });
+
+    it('rejects expired HMAC terminal tickets', () => {
+      const secret = 'super_secret_master_key';
+      const now = Math.floor(Date.now() / 1000);
+      const encoded = Buffer.from(JSON.stringify({
+        sub: 'usr_nate', username: 'nate', role: 'super_admin', aud: 'terminal-gateway',
+        iat: now - 120, exp: now - 60, jti: 'jti-expired'
+      })).toString('base64url');
+      const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
+      const res = validateToken(`${encoded}.${signature}`, [], secret);
+      expect(res.valid).toBe(false);
+      expect(res.error).toBe('Invalid authentication token');
+    });
+
+    it('rejects tampered HMAC terminal tickets', () => {
+      const secret = 'super_secret_master_key';
+      const now = Math.floor(Date.now() / 1000);
+      const encoded = Buffer.from(JSON.stringify({
+        sub: 'usr_nate', username: 'nate', role: 'super_admin', aud: 'terminal-gateway',
+        iat: now, exp: now + 60, jti: 'jti-tampered'
+      })).toString('base64url');
+      const badSignature = createHmac('sha256', 'wrong_secret').update(encoded).digest('base64url');
+      const res = validateToken(`${encoded}.${badSignature}`, [], secret);
+      expect(res.valid).toBe(false);
+    });
+
+    it('rejects HMAC tickets with invalid audience or missing claims', () => {
+      const secret = 'super_secret_master_key';
+      const now = Math.floor(Date.now() / 1000);
+      const encodedWrongAud = Buffer.from(JSON.stringify({
+        sub: 'usr_nate', username: 'nate', aud: 'wrong-audience',
+        iat: now, exp: now + 60, jti: 'jti-1'
+      })).toString('base64url');
+      const sig1 = createHmac('sha256', secret).update(encodedWrongAud).digest('base64url');
+      expect(validateToken(`${encodedWrongAud}.${sig1}`, [], secret).valid).toBe(false);
+
+      const encodedNoJti = Buffer.from(JSON.stringify({
+        sub: 'usr_nate', username: 'nate', aud: 'terminal-gateway',
+        iat: now, exp: now + 60
+      })).toString('base64url');
+      const sig2 = createHmac('sha256', secret).update(encodedNoJti).digest('base64url');
+      expect(validateToken(`${encodedNoJti}.${sig2}`, [], secret).valid).toBe(false);
     });
 
     it('rejects invalid or missing tokens', () => {

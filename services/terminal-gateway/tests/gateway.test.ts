@@ -85,7 +85,7 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
 
   it('rejects WebSocket connection with disallowed Origin', async () => {
     await new Promise<void>((resolve) => {
-      const ws = new WebSocket(`${wsUrl}/terminal?token=valid_test_token`, {
+      const ws = new WebSocket(`${wsUrl}/terminal`, ['nsw-terminal-v1', 'nsw-ticket.valid_test_token'], {
         headers: { Origin: 'https://attacker.evil.com' }
       });
 
@@ -105,7 +105,7 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
     let workspacePath = '';
 
     await new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(`${wsUrl}/terminal?token=valid_test_token`, {
+      const ws = new WebSocket(`${wsUrl}/terminal`, ['nsw-terminal-v1', 'nsw-ticket.valid_test_token'], {
         headers: { Origin: 'http://localhost:5173' }
       });
 
@@ -163,7 +163,7 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
     let workspacePath = '';
 
     await new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(`${wsUrl}/terminal?token=valid_test_token`, {
+      const ws = new WebSocket(`${wsUrl}/terminal`, ['nsw-terminal-v1', 'nsw-ticket.valid_test_token'], {
         headers: { Origin: 'http://localhost:5173' }
       });
 
@@ -189,4 +189,48 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
     expect(workspacePath).toBeTruthy();
     expect(fs.existsSync(workspacePath)).toBe(false);
   }, 10000);
+
+  it('rejects connections with 503 when capacity limit is reached', async () => {
+    // Limits config is maxConcurrentSessions: 3
+    const sockets: WebSocket[] = [];
+    const openSocket = () =>
+      new Promise<WebSocket>((resolve, reject) => {
+        const ws = new WebSocket(`${wsUrl}/terminal`, ['nsw-terminal-v1', 'nsw-ticket.valid_test_token'], {
+          headers: { Origin: 'http://localhost:5173' }
+        });
+        ws.on('message', (raw) => {
+          const msg = JSON.parse(raw.toString());
+          if (msg.type === 'session_ready') resolve(ws);
+        });
+        ws.on('error', reject);
+      });
+
+    try {
+      // Connect up to max (3 sessions)
+      for (let i = 0; i < 3; i++) {
+        const s = await openSocket();
+        sockets.push(s);
+      }
+
+      // 4th connection must be rejected with 503
+      await new Promise<void>((resolve) => {
+        const overflowWs = new WebSocket(`${wsUrl}/terminal`, ['nsw-terminal-v1', 'nsw-ticket.valid_test_token'], {
+          headers: { Origin: 'http://localhost:5173' }
+        });
+        overflowWs.on('error', (err) => {
+          expect(err.message).toMatch(/503|Unexpected server response/i);
+          resolve();
+        });
+        overflowWs.on('open', () => {
+          overflowWs.close();
+          throw new Error('4th session should have been rejected with 503');
+        });
+      });
+    } finally {
+      for (const s of sockets) {
+        s.close();
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
 });
