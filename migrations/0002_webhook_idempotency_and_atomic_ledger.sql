@@ -8,4 +8,4 @@ CREATE TABLE IF NOT EXISTS processed_webhook_events (
 -- Unique constraints to prevent duplicate licenses or duplicate shelf items
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_order ON licenses(order_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_shelf_user_app ON shelf_items(user_id, app_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_transfers_order_type ON transfers_ledger(order_id, transfer_type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_transfers_order_role ON transfers_ledger(order_id, role);

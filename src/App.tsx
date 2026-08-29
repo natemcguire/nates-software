@@ -346,7 +346,7 @@ function AppInner() {
           onClick={() => { playClickSound(); openWindow('hotwire'); }}
         />
         <DesktopIcon
-          label="EDITORIAL (Tom's Lab)"
+          label="EDITORIAL (Nate's Lab)"
           icon="🏆"
           onClick={() => { playClickSound(); openWindow('editorial'); }}
         />
@@ -469,7 +469,7 @@ function AppInner() {
         <TerminalView />
       </RetroWindow>
 
-      {/* 2.5 Editorial Lab — Tom's Hardware & Benchmark Reviews */}
+      {/* 2.5 Editorial Lab — Nate's Software & Benchmark Reviews */}
       <RetroWindow
         windowState={windows.editorial}
         isActive={activeWindowId === 'editorial'}

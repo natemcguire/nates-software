@@ -82,7 +82,7 @@ export function useWindowManager() {
     },
     editorial: {
       id: 'editorial',
-      title: "Tom's Hardware & Editorial Lab — [BENCHMARKS & REVIEWS]",
+      title: "Nate's Software & Editorial Lab — [BENCHMARKS & REVIEWS]",
       icon: '🏆',
       isOpen: false,
       isMinimized: false,

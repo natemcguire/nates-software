@@ -17,7 +17,7 @@ Every capability in the marketplace is an independent, old-school shareware prod
 │   WebContainers   │ • AI Agent hooks  │   drops board     │   SSH port 22     │   Outlook   │
 │ • SQLite volume   │ • Modular feature │ • Upvotes &       │ • 41s Semantic AI │ • Async     │
 │   mounts & WAL    │   cherry-picker   │   maker streaks   │   Merge Queue     │   Markdown  │
-│ • OOM recovery &  │ • AST syntax      │ • Tom's Hardware  │ • Atomic CAS      │ • Action    │
+│ • OOM recovery &  │ • AST syntax      │ • Nate's Software  │ • Atomic CAS      │ • Action    │
 │   instant boot    │   patch engine    │   spec benchmarks │   update-ref      │   Proposals │
 └───────────────────┴───────────────────┴───────────────────┴───────────────────┴─────────────┘
 ```
@@ -45,7 +45,7 @@ Every capability in the marketplace is an independent, old-school shareware prod
 ### Product 3: The Daily Drops & Popularity Heat Board
 * **Product Name:** `HOTWIRE`
 * **CLI Command:** `hotwire` (`hotwire drops --today`, `hotwire upvote <id>`, `hotwire streak`)
-* **Vibe:** Product Hunt launch energy meets 1996 BBS top-warez board & Tom's Hardware benchmarks
+* **Vibe:** Product Hunt launch energy meets 1996 BBS top-warez board & Nate's Software benchmarks
 * **Tagline:** *"Today's fastest, weirdest, most forked software."*
 * **Standalone Utility:** The competitive discovery board that ranks software by actual forks, merge benchmark speed, uptime reliability, and maker shipping streaks.
 

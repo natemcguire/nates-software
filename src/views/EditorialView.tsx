@@ -44,7 +44,7 @@ const ARTICLES: EditorialArticle[] = [
     badge: 'HARDWARE BENCHMARK',
     badgeColor: 'bg-blue-600 text-white',
     title: "Apple M4 Max vs Nvidia RTX 4090: Local AI Token Velocity & TTFT Benchmark Lab",
-    author: "Tom's Hardware Lab Team",
+    author: "Nate's Software Lab Team",
     date: "Aug 28, 2026",
     summary: "Benchmarking 16-core Apple Silicon Unified Memory bandwidth against dedicated GDDR6X on local LLM prompt caching and code synthesis.",
     ratingScore: 9.6,
@@ -98,7 +98,7 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
         <div className="flex items-center space-x-3">
           <Award className="w-6 h-6 text-yellow-400" />
           <div>
-            <h1 className="font-bold text-sm tracking-wider font-mono">TOM'S HARDWARE & EDITORIAL LAB</h1>
+            <h1 className="font-bold text-sm tracking-wider font-mono">NATE'S SOFTWARE & EDITORIAL LAB</h1>
             <p className="text-[11px] text-gray-300">Independent Shareware Teardowns, Hardware Benchmarks & Editor's Choice Awards</p>
           </div>
         </div>

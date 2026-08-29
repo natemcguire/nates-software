@@ -22,13 +22,13 @@ A consumer-facing marketplace + git platform where every app is forkable:
 
 ## Aesthetic / personality direction (already decided)
 - Windows 95 chrome (bevels, title bars, system sounds) played straight but FUN.
-- Tom's Hardware information density: spec sheets, benchmark bar charts, real numbers
+- Nate's Software information density: spec sheets, benchmark bar charts, real numbers
   everywhere ("avg merge time 41s" shown off like a benchmark score).
 - Product Hunt popularity mechanics: daily drops, leaderboards, streaks, badges.
 - Nostalgic-but-functional; the audience trusts benchmark tables over gradient hero pages.
 
 ## Positioning question still open (brief should support BOTH, not decide)
-- Editorial-led ("trusted reviewer voice" à la Tom's Hardware, founder writes reviews)
+- Editorial-led ("trusted reviewer voice" à la Nate's Software, founder writes reviews)
 - vs community-led (pure Product Hunt crowd ranking)
 - vs hybrid (community platform with an editorial column inside).
 

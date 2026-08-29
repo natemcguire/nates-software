@@ -16,7 +16,7 @@ for agent-speed merging — positioned as more reliable than GitHub.
 - Economics: free / one-time / subscription; rev share down the fork ancestry chain; feature packages sellable; free apps carry an ad-slot scaffold
 - Modification: local-first via git clone; hosted browser terminal (BYOM or subscription — economics still open)
 - Architecture: own the git layer (bare repos + stateless front; merge queue is the heart; metadata DB rebuildable from repos)
-- Brand: Win95 chrome × Tom's Hardware density × PH popularity mechanics; Millennials–older Gen Z; homebrew-adjacent maker-club lineage
+- Brand: Win95 chrome × Nate's Software density × PH popularity mechanics; Millennials–older Gen Z; homebrew-adjacent maker-club lineage
 
 **Artifacts:**
 - `docs/wireframes/fork-marketplace-wireframes.html` — 37-screen Balsamiq-clone wireframe deck, 12 flows, clickable flow map (press M). Includes design-direction slide + naming A/B slide with Grok's 10 name candidates.
