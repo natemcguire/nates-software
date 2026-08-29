@@ -39,6 +39,12 @@ async function smoke(baseUrl, label) {
       status: 503,
       init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"type":"payment_intent.succeeded"}' },
       json: body => body.success === false
+    },
+    {
+      path: '/api/payments/process-transfers',
+      status: 503,
+      init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"limit":1}' },
+      json: body => body.success === false
     }
   ];
 
