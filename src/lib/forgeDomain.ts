@@ -55,6 +55,41 @@ export function isCasRefUpdateValid(input: CasRefUpdateInput): boolean {
   return input.currentOid === input.expectedOldOid && input.currentOid !== input.newOid;
 }
 
+export type RepositoryRole = 'reader' | 'triager' | 'writer' | 'maintainer' | 'owner';
+export type RepositoryAction = 'read' | 'triage' | 'push' | 'manage_refs' | 'manage_members' | 'archive';
+
+const ROLE_ACTIONS: Readonly<Record<RepositoryRole, readonly RepositoryAction[]>> = {
+  reader: ['read'],
+  triager: ['read', 'triage'],
+  writer: ['read', 'triage', 'push'],
+  maintainer: ['read', 'triage', 'push', 'manage_refs'],
+  owner: ['read', 'triage', 'push', 'manage_refs', 'manage_members', 'archive']
+};
+
+export function repositoryRoleAllows(role: RepositoryRole, action: RepositoryAction): boolean {
+  return ROLE_ACTIONS[role].includes(action);
+}
+
+export interface RefPolicy {
+  readonly refPattern: string;
+  readonly requireSignedCommits: boolean;
+  readonly requirePassingBuild: boolean;
+  readonly minimumApprovals: number;
+  readonly allowForcePush: boolean;
+  readonly allowDelete: boolean;
+}
+
+export function refPatternMatches(pattern: string, refName: string): boolean {
+  if (!pattern.endsWith('*')) return pattern === refName;
+  return refName.startsWith(pattern.slice(0, -1));
+}
+
+export function selectRefPolicy(policies: readonly RefPolicy[], refName: string): RefPolicy | null {
+  const matches = policies.filter(policy => refPatternMatches(policy.refPattern, refName));
+  if (matches.length === 0) return null;
+  return [...matches].sort((a, b) => b.refPattern.replace(/\*$/, '').length - a.refPattern.replace(/\*$/, '').length)[0];
+}
+
 export interface MergeJobRecord {
   readonly id: string;
   readonly targetRepositoryId: string;

@@ -47,7 +47,7 @@ export const WhitePapersView: React.FC = () => {
     suite: {
       id: 'suite',
       title: "Suite Index & Architectural Boundary Spec",
-      subtitle: "Decoupled Sovereign Open Source System Invariants",
+      subtitle: "Decoupled Local-First Open Source System Invariants",
       icon: <BookOpen size={16} className="text-blue-900" />,
       content: WHITEPAPERS_DATA.suite
     }

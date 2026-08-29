@@ -1,6 +1,6 @@
 import { getSessionUser } from './_auth';
 // GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking and batch rollover metadata
-// POST /api/drops - Authenticated/validated sovereign SQLite drop publishing
+// POST /api/drops - Authenticated/validated shareware drop publishing
 
 import {
   getCurrentBatchWindow,
@@ -87,7 +87,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         ...r,
         screenshots: screenshots.length > 0 ? screenshots : ["https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"],
         binaries,
-        tags: tags.length > 0 ? tags : ["Shareware", "SQLite"],
+        tags: tags.length > 0 ? tags : ["Shareware"],
         createdAt: r.createdAt || new Date().toISOString(),
         creatorStreak: streakData.currentStreak || 1,
         creatorBadge: getMakerBadgeInfo(streakData.currentStreak || 1),
@@ -155,13 +155,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     `).bind(
       dropId,
       name.trim(),
-      tagline ? tagline.trim() : 'Sovereign single-file shareware',
+      tagline ? tagline.trim() : 'Local-First single-file shareware',
       description ? description.trim() : '',
       creatorId,
       version.trim(),
       license || 'MIT',
       price || '$15',
-      storage || 'Single-file SQLite WAL (/data/app.sqlite)',
+      storage || 'App-managed storage',
       JSON.stringify(Array.isArray(tags) ? tags : []),
       JSON.stringify(Array.isArray(screenshots) ? screenshots : []),
       JSON.stringify(typeof binaries === 'object' && binaries !== null ? binaries : {})

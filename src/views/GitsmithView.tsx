@@ -95,7 +95,7 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     stars: 312,
     forks: 46,
     language: 'Python 3.12 / CLI',
-    license: 'MIT Sovereign Legal Tool',
+    license: 'MIT Local-First Legal Tool',
     sqlitePath: '/data/certified-mailer.sqlite (WAL mode)',
     branch: 'main',
     lastCommit: {

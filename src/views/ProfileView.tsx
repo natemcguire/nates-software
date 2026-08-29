@@ -216,7 +216,7 @@ export const ProfileView: React.FC = () => {
               <div>
                 <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
                   <Sparkles size={13} className="text-amber-400" />
-                  <span>Sovereign Maker Balance · 70/20/10 Protocol</span>
+                  <span>Maker Balance · 70/20/10 Protocol</span>
                 </div>
                 <div className="text-3xl font-bold font-mono text-white mt-1">$2,420.00 <span className="text-xs text-emerald-400 font-normal">USD</span></div>
                 <div className="text-xs text-slate-300 mt-0.5">$1,820 Maker Sales (70%) · $600 Ancestor Lineage (20%)</div>

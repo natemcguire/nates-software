@@ -115,7 +115,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-green-700 font-bold font-mono">@nate</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Maker identity, verified SSH keys, protocol revenue wallet, and your sovereign software shelf.
+              Maker identity, verified SSH keys, protocol revenue wallet, and your Shareware shelf.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Profile &amp; Shelf &rarr;</span>

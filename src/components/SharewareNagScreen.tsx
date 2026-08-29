@@ -64,7 +64,7 @@ export const SharewareNagScreen: React.FC<SharewareNagScreenProps> = ({
         </div>
 
         <p className="text-gray-700 leading-relaxed text-xs">
-          Thank you for trying <strong>{appName}</strong>. Shareware relies on your direct patronage. Registering your sovereign license removes this nag screen, unlocks unlimited execution, and directs <strong>70%</strong> to the maker and <strong>20%</strong> to ancestor developers.
+          Thank you for trying <strong>{appName}</strong>. Shareware relies on your direct patronage. Registering your Local-First license removes this nag screen, unlocks unlimited execution, and directs <strong>70%</strong> to the maker and <strong>20%</strong> to ancestor developers.
         </p>
 
         {/* Purchase Action Banner */}

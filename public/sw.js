@@ -1,4 +1,4 @@
-// Nate's Software Sovereign Service Worker v1.0
+// Nate's Software Offline Service Worker v1.0
 const CACHE_NAME = 'nates-software-v1';
 const CORE_ASSETS = [
   '/',

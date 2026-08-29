@@ -1,4 +1,4 @@
-// In-Browser WASM SQLite Engine for Sovereign Single-File Execution
+// In-Browser WASM SQLite Engine for Local-First Single-File Execution
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
 
 let SQL: SqlJsStatic | null = null;
@@ -11,7 +11,7 @@ export async function getSqlJsEngine(): Promise<SqlJsStatic> {
   return SQL;
 }
 
-export class SovereignSqliteDatabase {
+export class LocalSqliteDatabase {
   private db: Database | null = null;
   public readonly appName: string;
 

@@ -6,16 +6,16 @@
 
 ## 1. Executive Summary & Philosophy
 
-**Nate's Software Suite** is an autonomous sovereign developer operating system, distribution forge, and shareware marketplace designed to dismantle SaaS rental traps and restore software ownership.
+**Nate's Software Suite** is an autonomous Local-First developer operating system, distribution forge, and shareware marketplace designed to dismantle SaaS rental traps and restore software ownership.
 
 ### Core Architectural Axioms
-1. **Sovereign Single-File SQLite Databases:**
+1. **Local-First Single-File SQLite Databases:**
    - Every application stores 100% of its state inside an isolated single-file SQLite database located at `/data/<app_id>.sqlite`.
    - All databases operate in strict **Write-Ahead Logging (`PRAGMA journal_mode = WAL;`)** with auto-checkpointing to allow concurrent in-browser and micro-dyno operations with zero lock collisions.
    - Users can download, backup, inspect, or move their raw `.sqlite` files at any time with zero vendor lock-in.
 
 2. **Perpetual Ownership & License Titles:**
-   - Software is bought once and owned forever. Every purchase issues an authentic cryptographic license key (e.g. `NSW-WA-9821-4A8F`) registered on the maker's sovereign shelf.
+   - Software is bought once and owned forever. Every purchase issues an authentic cryptographic license key (e.g. `NSW-WA-9821-4A8F`) registered on the maker's Local-First shelf.
 
 3. **Autonomous Modding & AST Feature Splicing:**
    - Applications are modular feature packages (canonical refs `refs/features/<name>/<version>`).
@@ -32,7 +32,7 @@
 ## 2. Application Suite Breakdown
 
 ### 1. `HOTWIRE` — 12:01 AM Daily Drops & Shareware Board
-* **Purpose:** Curated daily batch drop board where makers submit sovereign shareware apps for daily voting.
+* **Purpose:** Curated daily batch drop board where makers submit Shareware apps for daily voting.
 * **Key Mechanisms:**
   * Strict 12:01 AM UTC rollover clock with live countdown timer.
   * Atomic, idempotent upvoting with voter deduplication.
@@ -101,7 +101,7 @@
   * 300 DPI high-resolution TIFF render queue stored in `/data/wallart.sqlite`.
 * **Backend:** `src/lib/wallartDomain.ts`, WASM SQLite Engine.
 
-### 9. `TERMINAL.EXE` — Sovereign Interactive DOS Shell
+### 9. `TERMINAL.EXE` — Local-First Interactive DOS Shell
 * **Purpose:** In-browser DOS/UNIX shell with command history and system utilities.
 * **Key Commands:**
   * `status`, `ls /data`, `sqlite3 <path> "<query>"`, `dyno`, `hotwire`, `whoami`, `motd`, `clear`.

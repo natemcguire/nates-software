@@ -289,7 +289,7 @@ export const SlopshopView: React.FC = () => {
           </div>
         </div>
 
-        {/* Local Sovereign Guarantee Pill */}
+        {/* Local Local-First Guarantee Pill */}
         <div className="flex items-center gap-2 text-xs font-mono">
           <span className="bg-slate-900 text-emerald-400 px-2.5 py-1 rounded border border-slate-700 flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>

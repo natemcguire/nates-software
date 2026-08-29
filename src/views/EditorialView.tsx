@@ -24,7 +24,7 @@ const ARTICLES: EditorialArticle[] = [
     title: "DroneHunter 95 Teardown: How 60 FPS Canvas Geometry & Web Audio Beat Electron Bloat",
     author: "Nate McGuire (Editor-in-Chief)",
     date: "Aug 29, 2026",
-    summary: "A pure retro canvas shooter that boots in under 12ms. Zero framework overhead, sovereign state persistence, and instant sound synthesis.",
+    summary: "A pure retro canvas shooter that boots in under 12ms. Zero framework overhead, Local-First state persistence, and instant sound synthesis.",
     appId: 'dronehunter',
     ratingScore: 9.8,
     specs: [
@@ -77,7 +77,7 @@ const ARTICLES: EditorialArticle[] = [
     ],
     content: [
       "Why subscribe to bloated monthly document portals when an unbundled, local-first shareware app can generate compliant postal documents directly?",
-      "Certified Mailer demonstrates the power of sovereign shareware: pay once, own forever, fork with AI whenever requirements change."
+      "Certified Mailer demonstrates the power of Shareware: pay once, own forever, fork with AI whenever requirements change."
     ]
   }
 ];

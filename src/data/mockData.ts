@@ -166,7 +166,7 @@ export const INITIAL_APPS: AppListing[] = [
     id: 'picfitai',
     name: 'PicFit.ai',
     tagline: 'AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision',
-    description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with sovereign single-file SQLite user credits ledger.',
+    description: 'AI Virtual Try-On Studio & Outfit Synthesis Engine powered by Google Gemini Vision with Local-First single-file SQLite user credits ledger.',
     author: 'nate',
     authorAvatar: '✨',
     creator: 'nate',
@@ -219,7 +219,7 @@ export const MAKER_PROFILES = [
     streakDays: 14,
     streakTier: 'Streak Champion',
     streakBadge: '🔥 14 Days',
-    bio: 'Founder at East Bay Projects. Building shareware for sovereign users.',
+    bio: 'Founder at East Bay Projects. Building shareware for Users.',
     totalDrops: 8,
     totalForks: 260
   },

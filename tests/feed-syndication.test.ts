@@ -10,7 +10,7 @@ describe('RSS 2.0 & JSON Feed v1.1 Syndication Engine (/api/feed)', () => {
     expect(res.headers.get('Content-Type')).toContain('application/rss+xml');
     const xml = await res.text();
     expect(xml).toContain('<rss version="2.0"');
-    expect(xml).toContain("<title>Nate's Software — Daily Sovereign Shareware Drops</title>");
+    expect(xml).toContain("<title>Nate's Software — Daily Shareware Drops</title>");
     expect(xml).toContain('<item>');
     expect(xml).toContain('DroneHunter 95');
   });

@@ -53,7 +53,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const repoUrl = `https://github.com/natemcguire/${app.id}.git`;
 
   const suggestedPrompts = PROMPT_PRESETS[app.id] || [
-    `Implement new sovereign features and persist data in /data/${app.id}.sqlite (WAL mode).`
+    `Implement new Local-First features and persist data in /data/${app.id}.sqlite (WAL mode).`
   ];
 
   const [selectedPrompt, setSelectedPrompt] = useState(suggestedPrompts[0]);

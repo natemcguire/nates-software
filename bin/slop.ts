@@ -49,7 +49,7 @@ export const SHELF_TITLES = [
     name: "DroneHunter 95",
     version: "v1.0.0",
     tagline: "Retro Duck Hunt-Style Arcade Drone Shooter with High Scores.",
-    licenseKey: "SOV-DRONE-9812-77F2",
+    licenseKey: "NSW-DRONE-9812-77F2",
     purchasedDate: "Aug 24, 2026",
     creatorAvatar: "🎯"
   },
@@ -59,7 +59,7 @@ export const SHELF_TITLES = [
     name: "Certified Mailer",
     version: "v1.0.0",
     tagline: "USPS Certified Mail, Electronic Return Receipt (ERR) & Dispute Tooling.",
-    licenseKey: "SOV-CERTMAIL-4401-90B1",
+    licenseKey: "NSW-CERTMAIL-4401-90B1",
     purchasedDate: "Aug 22, 2026",
     creatorAvatar: "📫"
   },
@@ -69,7 +69,7 @@ export const SHELF_TITLES = [
     name: "PicFit.ai",
     version: "v1.0.0",
     tagline: "AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision.",
-    licenseKey: "SOV-PICFIT-1109-34K9",
+    licenseKey: "NSW-PICFIT-1109-34K9",
     purchasedDate: "Aug 20, 2026",
     creatorAvatar: "✨"
   }

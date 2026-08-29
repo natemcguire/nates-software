@@ -196,19 +196,6 @@ CREATE TABLE IF NOT EXISTS git_commits (
 );
 CREATE INDEX IF NOT EXISTS idx_git_commits_repo ON git_commits(repo_id);
 
--- 12. VERIFIED DYNO BENCHMARK REPORTS
-CREATE TABLE IF NOT EXISTS dyno_reports (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    chip_architecture TEXT NOT NULL,
-    unified_memory_gb INTEGER NOT NULL,
-    tokens_per_sec REAL NOT NULL,
-    prompt_cache_hit_rate REAL NOT NULL,
-    needle_recall_rate REAL NOT NULL,
-    verified_checksum TEXT NOT NULL,
-    synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
 -- ============================================================================
 -- CANONICAL COLD-START SEED DATA
 -- ============================================================================
@@ -230,9 +217,9 @@ VALUES
 -- Seed User Shelf Items
 INSERT OR IGNORE INTO shelf_items (id, user_id, app_id, license_key)
 VALUES
-('shelf_1', 'usr_nate', 'dronehunter', 'SOV-DRONE-9812-77F2'),
-('shelf_2', 'usr_nate', 'certified-mailer', 'SOV-CERTMAIL-4401-90B1'),
-('shelf_3', 'usr_nate', 'picfitai', 'SOV-PICFIT-1109-34K9');
+('shelf_1', 'usr_nate', 'dronehunter', 'NSW-DRONE-9812-77F2'),
+('shelf_2', 'usr_nate', 'certified-mailer', 'NSW-CERTMAIL-4401-90B1'),
+('shelf_3', 'usr_nate', 'picfitai', 'NSW-PICFIT-1109-34K9');
 
 -- Seed Initial Comments
 INSERT OR IGNORE INTO comments (id, app_id, user_id, text, upvotes)

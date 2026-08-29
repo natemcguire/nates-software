@@ -83,16 +83,16 @@ export const TerminalView: React.FC = () => {
       case 'help':
         newLines.push(
           { text: "Nate's Software Terminal Help Index:", type: 'system' },
-          { text: "  slop <command>         - Execute Sovereign Local-first Operations Protocol CLI", type: 'output' },
+          { text: "  slop <command>         - Execute Local-First Local-first Operations Protocol CLI", type: 'output' },
           { text: "    slop fork <slug>     - Clone app into isolated worktree (/tmp/slop-*)", type: 'output' },
           { text: "    slop mod <feature>   - Splice AST feature package into project", type: 'output' },
           { text: "    slop dyno [--bench]  - Run Apple Silicon Metal AI token velocity benchmark", type: 'output' },
-          { text: "    slop test            - Run sovereign runtime verification test proofs", type: 'output' },
+          { text: "    slop test            - Run Local-First runtime verification test proofs", type: 'output' },
           { text: "    slop status          - Inspect micro-containers & active ports (3001..3010)", type: 'output' },
           { text: "    slop list            - Query 12:01 AM daily drops on Cloudflare D1", type: 'output' },
           { text: "    slop shelf           - Display owned software titles & license keys", type: 'output' },
           { text: "  whoami                 - Print authenticated user handle & permissions", type: 'output' },
-          { text: "  ls [/data]             - List files in current sovereign volume", type: 'output' },
+          { text: "  ls [/data]             - List files in current Local-First volume", type: 'output' },
           { text: "  neofetch               - Display system hardware & OS telemetry", type: 'output' },
           { text: "  matrix                 - Render falling code matrix stream", type: 'output' },
           { text: "  clear                  - Clear terminal buffer", type: 'output' },
@@ -145,7 +145,7 @@ export const TerminalView: React.FC = () => {
           { text: "      \  -  /      Host: Apple Mac mini (M4 Max)", type: 'output' },
           { text: "       `---'       Kernel: WebAssembly SQLite (sql.js)", type: 'output' },
           { text: "                   Uptime: 99.98% (Scale-to-Zero)", type: 'output' },
-          { text: "                   Packages: 3 Sovereign Apps (dronehunter, certified-mailer, picfitai)", type: 'output' },
+          { text: "                   Packages: 3 Shareware Apps (dronehunter, certified-mailer, picfitai)", type: 'output' },
           { text: "                   Shell: SLOP CLI v1.0.0", type: 'output' },
           { text: "                   Memory: 48MB / 256MB Cap Enforced", type: 'success' }
         );

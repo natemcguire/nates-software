@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-describe('PWA & Offline Sovereign Manifest Configuration', () => {
+describe('PWA & Offline Local-First Manifest Configuration', () => {
   it('should have valid manifest.webmanifest with retro Windows 95 theme color', () => {
     const manifestPath = path.resolve(__dirname, '../public/manifest.webmanifest');
     const content = fs.readFileSync(manifestPath, 'utf8');

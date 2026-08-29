@@ -115,7 +115,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
               <div className="text-3xl">🎉</div>
               <div className="font-bold text-green-900 text-sm">LICENSE REGISTERED &amp; MINTED!</div>
               <div className="text-xs text-gray-700">
-                Your sovereign license key for <strong>{app.name}</strong> is active and saved to your Disk Shelf.
+                Your Local-First license key for <strong>{app.name}</strong> is active and saved to your Disk Shelf.
               </div>
 
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-2 font-mono font-bold text-sm text-blue-900 flex items-center justify-between">

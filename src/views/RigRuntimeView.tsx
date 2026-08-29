@@ -16,7 +16,7 @@ export const RigRuntimeView: React.FC = () => {
   const [buildLogs, setBuildLogs] = useState<string[]>([
     "[GITSMITH] Hook post-receive initialized for repo: nate/dronehunter",
     "[RIG.EXE] Allocated isolated Linux micro-container (ID: rig-wa-9812)",
-    "[RIG.EXE] Mounted sovereign volume: /data/dronehunter.sqlite (WAL mode)",
+    "[RIG.EXE] Mounted Local-First volume: /data/dronehunter.sqlite (WAL mode)",
     "[BUILD] Running: npm run build (Vite 6 + React 19 + Tailwind)",
     "[BUILD] Transformed 1,837 modules in 0.99s -> dist/ (392 kB JS, 34 kB CSS)",
     "[PORTAL] Booted ephemeral dev server on port 3002 (dyno://nate/dronehunter:3002)",
@@ -140,7 +140,7 @@ export const RigRuntimeView: React.FC = () => {
                 <div className="border-b pb-2 mb-2">
                   <span className="font-bold text-sm text-w95-blue">Connect Your Codebase to RIG.EXE</span>
                   <p className="text-gray-600 text-xs">
-                    Push any local repository to your sovereign Git forge remote. RIG.EXE automatically allocates an isolated cloud container, mounts your single-file SQLite database, and boots your live ephemeral portal.
+                    Push any local repository to your Local-First Git forge remote. RIG.EXE automatically allocates an isolated cloud container, mounts your single-file SQLite database, and boots your live ephemeral portal.
                   </p>
                 </div>
 

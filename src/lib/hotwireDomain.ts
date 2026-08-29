@@ -9,7 +9,7 @@ export interface DropSubmission {
   version: string;
   license: string;
   price: string;
-  storage: string;
+  storage?: string;
   tags: string[];
   screenshots: string[];
   binaries: Record<string, string>;
@@ -24,10 +24,6 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
 
   if (!drop.version || !drop.version.match(/^v?\d+\.\d+\.\d+$/)) {
     errors.push('Version must follow valid semver (e.g. v1.0.0 or 2.4.0).');
-  }
-
-  if (!drop.storage || !drop.storage.includes('.sqlite')) {
-    errors.push('App must declare a sovereign single-file SQLite database volume (/data/*.sqlite).');
   }
 
   if (drop.tags !== undefined && !Array.isArray(drop.tags)) {

@@ -1,5 +1,5 @@
 /**
- * @nate/shareware — Official Sovereign Shareware SDK
+ * @nate/shareware — Official Shareware SDK
  * 1-line licensing, trial quota tracking, and cryptographic key verification.
  */
 
@@ -25,9 +25,9 @@ export function validateLicenseKey(key: string, appId: string): boolean {
   if (!key || typeof key !== 'string') return false;
   const clean = key.trim().toUpperCase();
   const prefix = `NSW-${appId.substring(0, 2).toUpperCase()}-`;
-  const legacyPrefix = `SOV-${appId.substring(0, 2).toUpperCase()}-`;
+  const legacyPrefix = `NSW-${appId.substring(0, 2).toUpperCase()}-`;
   
-  if (clean.startsWith(prefix) || clean.startsWith(legacyPrefix) || clean.startsWith('NSW-') || clean.startsWith('SOV-')) {
+  if (clean.startsWith(prefix) || clean.startsWith(legacyPrefix) || clean.startsWith('NSW-') || clean.startsWith('NSW-')) {
     return clean.length >= 16;
   }
   return false;

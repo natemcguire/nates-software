@@ -98,7 +98,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           </div>
           <div>
             <div className="font-bold text-sm">NATE'S SOFTWARE SETUP WIZARD — QUICKSTART 95</div>
-            <div className="text-[11px] text-blue-200 font-mono">1-Click Fork &amp; Sovereign Shareware Launchpad</div>
+            <div className="text-[11px] text-blue-200 font-mono">1-Click Fork &amp; Shareware Launchpad</div>
           </div>
         </div>
 
@@ -125,7 +125,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
               <div className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
                 <Sparkles size={14} className="text-amber-500" />
-                <span>Step 1: Choose a Sovereign Starter App to Fork</span>
+                <span>Step 1: Choose a Local-First Starter App to Fork</span>
               </div>
               <p className="text-gray-600 text-xs">
                 Pick one of Nate's 3 flagship shareware apps. Each comes with single-file SQLite storage (WAL mode) and automated 70/20/10 royalty lineage.
@@ -271,7 +271,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           <div className="space-y-4 max-w-2xl mx-auto w-full">
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1 text-center">
               <div className="text-3xl">🎉</div>
-              <div className="font-bold text-base text-gray-900">Your Sovereign Fork is Ready!</div>
+              <div className="font-bold text-base text-gray-900">Your Local-First Fork is Ready!</div>
               <p className="text-gray-600 text-xs">
                 You now have an isolated development worktree for <strong>{selectedStarter.name}</strong> under <strong>@{makerHandle}</strong>.
               </p>

@@ -1,5 +1,5 @@
 // HOTWIRE & Daily Drops Engine - Production Backend Logic
-// Sovereign Shareware Marketplace & Daily 12:01 AM UTC Release Protocol
+// Shareware Marketplace & Daily 12:01 AM UTC Release Protocol
 
 export type MakerBadgeTier = 'Rookie' | 'Iron Maker' | 'Hot Streak' | 'Legend';
 
@@ -43,7 +43,7 @@ export const MAKER_BADGE_TIERS: Record<MakerBadgeTier, MakerBadgeInfo> = {
   },
   'Legend': {
     tier: 'Legend',
-    title: 'Sovereign Legend',
+    title: 'Local-First Legend',
     icon: '👑',
     minStreak: 14,
     multiplier: 1.6,
@@ -535,7 +535,7 @@ export function calculateMakerStreakFromHistory(
  * Calculates the composite Hotwire ranking score for a drop.
  * Formula balances:
  * - Upvotes & Forks (weighted by fork lineage value)
- * - Lineage Depth multiplier (sovereign open-core tree depth)
+ * - Lineage Depth multiplier (Local-First open-core tree depth)
  * - Maker Streak Multiplier (boost for consistent daily creators)
  * - Velocity Multiplier (rate of incoming upvotes / interest)
  * - Hacker News style Time-decay gravity curve based on drop release age
@@ -819,7 +819,7 @@ export function generateRssFeed(
 ): string {
   const {
     title = "Nate's Software — 12:01 AM Daily Drops & Hotwire",
-    description = "Curated sovereign shareware, single-file SQLite applications, and local-first software releases dropped daily at 12:01 AM UTC.",
+    description = "Curated, ownable shareware and independent software releases dropped daily at 12:01 AM UTC.",
     homePageUrl = "https://nates.software",
     feedUrl = "https://nates.software/api/feed?format=rss",
     language = "en-us"
@@ -833,7 +833,7 @@ export function generateRssFeed(
     const creator = drop.creator || 'nate';
     const version = drop.version || 'v1.0.0';
     const price = drop.price || 'Free ($0) or Registered Copy';
-    const storage = drop.storage || 'Single-file SQLite WAL';
+    const storage = drop.storage || 'App-managed storage';
     const moddability = drop.moddabilityScore || 95;
     const upvotes = drop.upvotes || 0;
     const forks = drop.forks || 0;
@@ -904,7 +904,7 @@ export function generateJsonFeed(
 ): JsonFeedDocument {
   const {
     title = "Nate's Software — 12:01 AM Daily Drops & Hotwire",
-    description = "Curated sovereign shareware, single-file SQLite applications, and local-first software releases dropped daily at 12:01 AM UTC.",
+    description = "Curated, ownable shareware and independent software releases dropped daily at 12:01 AM UTC.",
     homePageUrl = "https://nates.software",
     feedUrl = "https://nates.software/api/feed?format=json",
     language = "en"
@@ -916,7 +916,7 @@ export function generateJsonFeed(
     const creator = drop.creator || 'nate';
     const version = drop.version || 'v1.0.0';
     const price = drop.price || 'Free ($0) or Registered Copy';
-    const storage = drop.storage || 'Single-file SQLite WAL';
+    const storage = drop.storage || 'App-managed storage';
     const moddability = drop.moddabilityScore || 95;
 
     let binariesHtml = '';

@@ -583,7 +583,7 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
         },
         {
           id: 'wallart-ultimate',
-          name: 'WallArt Ultimate Sovereign Suite (Diamond Merge)',
+          name: 'WallArt Ultimate Local-First Suite (Diamond Merge)',
           creatorId: 'usr_nate',
           parentIds: ['wallart-gpu-segment', 'wallart-print-tiff'], // Diamond merge from 2 forks
           version: 'v3.0.0',

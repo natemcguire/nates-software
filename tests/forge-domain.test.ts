@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canTransitionMergeJob, isCasRefUpdateValid, validateForkOrigin } from '../src/lib/forgeDomain';
+import {
+  canTransitionMergeJob,
+  isCasRefUpdateValid,
+  refPatternMatches,
+  repositoryRoleAllows,
+  selectRefPolicy,
+  validateForkOrigin
+} from '../src/lib/forgeDomain';
 
 const oid = 'a'.repeat(40);
 const nextOid = 'b'.repeat(40);
@@ -43,5 +50,25 @@ describe('canonical forge domain invariants', () => {
     expect(canTransitionMergeJob('landed', 'queued')).toBe(false);
     expect(canTransitionMergeJob('cancelled', 'running')).toBe(false);
   });
-});
 
+  it('enforces repository roles without giving writers policy administration', () => {
+    expect(repositoryRoleAllows('reader', 'read')).toBe(true);
+    expect(repositoryRoleAllows('writer', 'push')).toBe(true);
+    expect(repositoryRoleAllows('writer', 'manage_refs')).toBe(false);
+    expect(repositoryRoleAllows('owner', 'manage_members')).toBe(true);
+  });
+
+  it('selects the most specific matching ref policy', () => {
+    const broad = {
+      refPattern: 'refs/heads/*',
+      requireSignedCommits: false,
+      requirePassingBuild: true,
+      minimumApprovals: 0,
+      allowForcePush: false,
+      allowDelete: false
+    };
+    const main = { ...broad, refPattern: 'refs/heads/main', minimumApprovals: 2 };
+    expect(refPatternMatches(broad.refPattern, 'refs/heads/topic')).toBe(true);
+    expect(selectRefPolicy([broad, main], 'refs/heads/main')).toEqual(main);
+  });
+});

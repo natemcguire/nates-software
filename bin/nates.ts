@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * NATE'S SOFTWARE SUITE — CLI DEVELOPER TOOL
- * Manage sovereign apps, test micro-dynos, and run local AI benchmarks.
+ * Manage Shareware Apps, test micro-dynos, and run local AI benchmarks.
  */
 
 const args = process.argv.slice(2);
@@ -9,7 +9,7 @@ const command = args[0] || 'help';
 
 console.log(`
 ┌────────────────────────────────────────────────────────────┐
-│ ⚡ NATE'S SOFTWARE SUITE CLI v2.4.0 (Sovereign Dev Tools)   │
+│ ⚡ NATE'S SOFTWARE SUITE CLI v2.4.0 (Local-First Dev Tools)   │
 └────────────────────────────────────────────────────────────┘
 `);
 
@@ -21,14 +21,14 @@ Commands:
   nates status       Check active micro-containers and SQLite volumes
   nates list         Query 12:01 AM Daily Drops board on Cloudflare D1
   nates dyno         Run local workstation AI token velocity benchmark
-  nates fork <slug>  Clone a sovereign app into an isolated worktree
+  nates fork <slug>  Clone a Shareware App into an isolated worktree
   nates push         Run test assertions and push CAS ref to gitsmith.dev
   nates login        Configure maker handle and SSH public keys
 `);
     break;
 
   case 'status':
-    console.log(`[RIG.EXE] Connected to sovereign container fleet:
+    console.log(`[RIG.EXE] Connected to Local-First container fleet:
   ● nate/wallart    (Port 3002) - 48MB / 256MB [WAL Active - 14.8MB SQLite]
   ● sam/retro-calc  (Port 3001) - 24MB / 256MB [WAL Active - 1.4MB SQLite]
   ● nate/sailtrack  (Port 3003) - 38MB / 256MB [WAL Active - 4.2MB SQLite]
@@ -72,7 +72,7 @@ Commands:
   case 'login':
     console.log(`[AUTH] Authenticated as @nate (Nate McGuire)
   Public Key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY8...
-  Sovereign Title: Verified Maker #001`);
+  Local-First Title: Verified Maker #001`);
     break;
 
   default:
