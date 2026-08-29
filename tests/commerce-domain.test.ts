@@ -84,14 +84,19 @@ describe('Durable Commerce Domain Logic & Allocation Engine', () => {
       expect(() => validateAncestors({}, 'usr_seller')).toThrow(CommerceValidationError);
     });
 
-    it('rejects duplicate ancestor user IDs', () => {
-      expect(() =>
-        validateAncestors([
-          { userId: 'usr_alice' },
-          { userId: 'usr_bob' },
-          { userId: 'usr_alice' }
-        ], 'usr_seller')
-      ).toThrow(/Duplicate ancestor userId detected: usr_alice/);
+    it('rejects ancestry too large to give every repository a positive basis-point share', () => {
+      const ancestors = Array.from({ length: 2001 }, (_, index) => ({
+        userId: `usr_${index}`,
+        repositoryId: `repo_${index}`
+      }));
+      expect(() => validateAncestors(ancestors, 'usr_seller')).toThrow(/2,000-member allocation limit/);
+    });
+
+    it('allows one maker to own multiple distinct repositories in the ancestry chain', () => {
+      expect(validateAncestors([
+        { userId: 'usr_alice', repositoryId: 'repo_alice_1' },
+        { userId: 'usr_alice', repositoryId: 'repo_alice_2' }
+      ], 'usr_seller')).toHaveLength(2);
     });
 
     it('rejects duplicate ancestor repository IDs', () => {
@@ -103,13 +108,12 @@ describe('Durable Commerce Domain Logic & Allocation Engine', () => {
       ).toThrow(/Duplicate ancestor repositoryId detected: repo_parent/);
     });
 
-    it('rejects seller listed as ancestor (self-ancestry cycle)', () => {
-      expect(() =>
-        validateAncestors([
-          { userId: 'usr_alice' },
-          { userId: 'usr_seller' }
-        ], 'usr_seller')
-      ).toThrow(/Cyclic ancestry: seller \(usr_seller\) cannot be listed as an ancestor/);
+    it('allows a seller to also own a distinct upstream repository', () => {
+      expect(validateAncestors([
+        { userId: 'usr_seller', repositoryId: 'repo_parent' }
+      ], 'usr_seller', 'repo_child')).toEqual([
+        { userId: 'usr_seller', repositoryId: 'repo_parent', depth: 1 }
+      ]);
     });
 
     it('rejects source repository listed as ancestor (self-fork cycle)', () => {

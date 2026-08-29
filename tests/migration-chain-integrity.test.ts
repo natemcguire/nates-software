@@ -567,6 +567,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .bind('cord_immutable').run()
       ).rejects.toThrow(/commerce order economics are immutable/);
       await expect(
+        ctx.d1.prepare("UPDATE commerce_orders SET repository_id = 'repo_new' WHERE id = ?")
+          .bind('cord_immutable').run()
+      ).rejects.toThrow(/commerce order economics are immutable/);
+      await expect(
         ctx.d1.prepare('UPDATE commerce_order_allocations SET amount_cents = 1 WHERE id = ?')
           .bind('calloc_immutable').run()
       ).rejects.toThrow(/commerce order allocations are immutable/);

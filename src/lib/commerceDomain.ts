@@ -132,7 +132,7 @@ export function validateSellerUserId(sellerUserId: unknown): string {
  */
 export function validateAncestors(
   ancestors: unknown,
-  sellerUserId?: string,
+  _sellerUserId?: string,
   repositoryId?: string | null
 ): AncestorNode[] {
   if (ancestors === null || ancestors === undefined) {
@@ -143,13 +143,12 @@ export function validateAncestors(
     throw new CommerceValidationError('Ancestors must be an array or null/undefined');
   }
 
-  const result: AncestorNode[] = [];
-  const seenUserIds = new Set<string>();
-  const seenRepoIds = new Set<string>();
-
-  if (sellerUserId && typeof sellerUserId === 'string' && sellerUserId.trim()) {
-    seenUserIds.add(sellerUserId.trim());
+  if (ancestors.length > COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL) {
+    throw new CommerceValidationError('Ancestor chain exceeds the 2,000-member allocation limit');
   }
+
+  const result: AncestorNode[] = [];
+  const seenRepoIds = new Set<string>();
 
   if (repositoryId && typeof repositoryId === 'string' && repositoryId.trim()) {
     seenRepoIds.add(repositoryId.trim());
@@ -168,14 +167,6 @@ export function validateAncestors(
       throw new CommerceValidationError(`Ancestor at index ${i} has invalid or missing userId`);
     }
     const cleanUserId = userId.trim();
-
-    if (seenUserIds.has(cleanUserId)) {
-      if (sellerUserId && cleanUserId === sellerUserId.trim()) {
-        throw new CommerceValidationError(`Cyclic ancestry: seller (${cleanUserId}) cannot be listed as an ancestor`);
-      }
-      throw new CommerceValidationError(`Duplicate ancestor userId detected: ${cleanUserId}`);
-    }
-    seenUserIds.add(cleanUserId);
 
     let cleanRepoId: string | null = null;
     if (item.repositoryId !== undefined && item.repositoryId !== null) {

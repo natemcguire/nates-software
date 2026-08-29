@@ -24,7 +24,13 @@ CREATE INDEX IF NOT EXISTS idx_commerce_products_seller
 
 INSERT OR IGNORE INTO commerce_products
     (app_id, repository_id, seller_user_id, price_cents, currency, status)
-SELECT a.id, r.id, a.creator_id,
+SELECT a.id,
+       (SELECT r.id
+        FROM repositories r
+        WHERE r.app_id = a.id AND r.owner_user_id = a.creator_id
+        ORDER BY r.created_at ASC, r.id ASC
+        LIMIT 1),
+       a.creator_id,
        CASE a.id
          WHEN 'dronehunter' THEN 1500
          WHEN 'certified-mailer' THEN 2500
@@ -32,7 +38,6 @@ SELECT a.id, r.id, a.creator_id,
        END,
        'usd', 'active'
 FROM app_listings a
-LEFT JOIN repositories r ON r.app_id = a.id
 WHERE a.id IN ('dronehunter', 'certified-mailer', 'picfitai');
 
 CREATE TABLE IF NOT EXISTS commerce_orders (
@@ -90,17 +95,27 @@ CREATE INDEX IF NOT EXISTS idx_commerce_allocations_recipient
 
 CREATE TRIGGER IF NOT EXISTS commerce_orders_economics_immutable
 BEFORE UPDATE ON commerce_orders
-WHEN OLD.buyer_user_id <> NEW.buyer_user_id
-  OR OLD.app_id <> NEW.app_id
-  OR OLD.seller_user_id <> NEW.seller_user_id
-  OR OLD.app_version <> NEW.app_version
-  OR OLD.price_version <> NEW.price_version
-  OR OLD.gross_cents <> NEW.gross_cents
-  OR OLD.currency <> NEW.currency
-  OR OLD.lineage_policy <> NEW.lineage_policy
-  OR OLD.lineage_snapshot_json <> NEW.lineage_snapshot_json
+WHEN OLD.idempotency_key IS NOT NEW.idempotency_key
+  OR OLD.buyer_user_id IS NOT NEW.buyer_user_id
+  OR OLD.app_id IS NOT NEW.app_id
+  OR OLD.repository_id IS NOT NEW.repository_id
+  OR OLD.seller_user_id IS NOT NEW.seller_user_id
+  OR OLD.app_version IS NOT NEW.app_version
+  OR OLD.price_version IS NOT NEW.price_version
+  OR OLD.gross_cents IS NOT NEW.gross_cents
+  OR OLD.currency IS NOT NEW.currency
+  OR OLD.lineage_policy IS NOT NEW.lineage_policy
+  OR OLD.lineage_snapshot_json IS NOT NEW.lineage_snapshot_json
 BEGIN
     SELECT RAISE(ABORT, 'commerce order economics are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS commerce_orders_payment_intent_immutable
+BEFORE UPDATE ON commerce_orders
+WHEN OLD.stripe_payment_intent_id IS NOT NULL
+ AND OLD.stripe_payment_intent_id IS NOT NEW.stripe_payment_intent_id
+BEGIN
+    SELECT RAISE(ABORT, 'commerce order payment intent is immutable once assigned');
 END;
 
 CREATE TRIGGER IF NOT EXISTS commerce_order_allocations_immutable_update

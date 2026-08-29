@@ -420,6 +420,10 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       `).run();
 
       await ctx.d1.prepare(`
+        UPDATE repositories SET app_id = 'wallart-custom-3d' WHERE id = 'repo_fork'
+      `).run();
+
+      await ctx.d1.prepare(`
         INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status)
         VALUES ('wallart-custom-3d', 'repo_fork', 'usr_forker', 3000, 'usd', 'active')
       `).run();

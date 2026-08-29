@@ -35,6 +35,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
     const trimmedIdempotencyKey = idempotencyKey.trim();
+    if (trimmedIdempotencyKey.length > 128 || /[^A-Za-z0-9._:-]/.test(trimmedIdempotencyKey)) {
+      return Response.json(
+        { success: false, error: 'Idempotency-Key must be at most 128 characters using letters, numbers, dot, underscore, colon, or hyphen' },
+        { status: 400 }
+      );
+    }
 
     // Parse request body and strictly validate appId
     // All client-supplied price, buyer, maker, and ancestor fields are deliberately ignored.
@@ -93,6 +99,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           { status: 409 }
         );
       }
+
+      return Response.json(
+        { success: false, error: 'An order with this idempotency key is already being created; retry shortly' },
+        { status: 409, headers: { 'Retry-After': '2' } }
+      );
     }
 
     // Read authoritative product definition from D1 commerce_products
@@ -133,6 +144,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       `).bind(appId).first();
       if (repoRow?.id) {
         repositoryId = repoRow.id;
+      }
+    }
+
+    if (repositoryId) {
+      const repository: any = await env.DB.prepare(`
+        SELECT app_id AS appId, owner_user_id AS ownerUserId, status
+        FROM repositories WHERE id = ?
+      `).bind(repositoryId).first();
+      if (!repository || repository.appId !== appId || repository.ownerUserId !== product.sellerUserId || repository.status !== 'active') {
+        return Response.json(
+          { success: false, error: 'Product repository ownership or listing linkage is invalid' },
+          { status: 409 }
+        );
       }
     }
 
