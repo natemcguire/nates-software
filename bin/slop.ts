@@ -12,7 +12,6 @@ import {
 import type { DynoAgentHarness, DynoNetworkPolicy } from "../src/lib/dyno/types.ts";
 import { isCasRefUpdateValid } from "../src/lib/forgeDomain.ts";
 import { RigRuntimeBackend, MEMORY_CAP_MB, MicroDynoPortAllocator } from "../src/lib/rigBackend.ts";
-import { INITIAL_APPS as APPS_DATA } from "../src/data/mockData.ts";
 
 const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
 
@@ -120,39 +119,6 @@ export async function promptToStartEngines(result: SlopCommandResult): Promise<S
   }
 }
 
-export const SHELF_TITLES = [
-  {
-    id: "shelf-dh-01",
-    appId: "dronehunter",
-    name: "DroneHunter 95",
-    version: "v1.0.0",
-    tagline: "Retro Duck Hunt-Style Arcade Drone Shooter with High Scores.",
-    licenseKey: "NSW-DRONE-9812-77F2",
-    purchasedDate: "Aug 24, 2026",
-    creatorAvatar: "🎯"
-  },
-  {
-    id: "shelf-cm-02",
-    appId: "certified-mailer",
-    name: "Certified Mailer",
-    version: "v1.0.0",
-    tagline: "Private letter preparation and user-recorded mailing evidence journal.",
-    licenseKey: "NSW-CERTMAIL-4401-90B1",
-    purchasedDate: "Aug 22, 2026",
-    creatorAvatar: "📫"
-  },
-  {
-    id: "shelf-pf-03",
-    appId: "picfitai",
-    name: "PicFit",
-    version: "v1.0.0",
-    tagline: "Private in-browser crop, resize, compression, and image export studio.",
-    licenseKey: "NSW-PICFIT-1109-34K9",
-    purchasedDate: "Aug 20, 2026",
-    creatorAvatar: "✨"
-  }
-];
-
 export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandResult {
   const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/dronehunter";
   const appId = (slug.replace(/\/+$/, '').split('/').pop() || slug).replace(/\.git$/i, '');
@@ -185,7 +151,7 @@ export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandR
       if (foundLocal) {
         source = `file://${foundLocal}`;
       } else {
-        source = `https://nates-software.com/api/git?repo=${appId}`;
+        throw new Error(`No canonical Git clone URL is registered for ${slug}. The control-plane API is not a Git remote.`);
       }
     }
 
@@ -231,12 +197,14 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   let title = "";
   let price = "15";
   let tagline = "";
+  let requestedRemote = "";
 
   for (const arg of args) {
     if (arg.startsWith("--handle=")) handle = arg.split("=")[1];
     if (arg.startsWith("--title=")) title = arg.split("=")[1];
     if (arg.startsWith("--price=")) price = arg.split("=")[1];
     if (arg.startsWith("--tagline=")) tagline = arg.split("=")[1];
+    if (arg.startsWith("--remote=")) requestedRemote = arg.slice("--remote=".length).trim();
   }
 
   const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
@@ -259,16 +227,23 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   const appId = projectName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
   const formattedTitle = title || appId.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const formattedTagline = tagline || `${formattedTitle} — Built to share and multiply.`;
-  const remoteUrl = `ssh://git@gitsmith.nates-software.com:2222/${handle}/${appId}.git`;
-
-  if (isNode) {
+  let remoteConfigured = false;
+  let remoteError: string | null = null;
+  if (requestedRemote && isNode) {
     try {
-      try {
-        runCommandSync(`git remote add slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
-      } catch {
-        runCommandSync(`git remote set-url slop ${remoteUrl}`, { stdio: "ignore", timeout: 1000 });
-      }
-    } catch {}
+      const cp = getChildProcess();
+      if (!cp?.execFileSync) throw new Error('child_process is unavailable');
+      const remotes = String(cp.execFileSync('git', ['remote'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
+        .split(/\s+/).filter(Boolean);
+      cp.execFileSync('git', remotes.includes('slop')
+        ? ['remote', 'set-url', 'slop', requestedRemote]
+        : ['remote', 'add', 'slop', requestedRemote], { cwd, stdio: 'pipe' });
+      const actual = String(cp.execFileSync('git', ['remote', 'get-url', 'slop'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
+      if (actual !== requestedRemote) throw new Error('Git did not preserve the requested remote URL.');
+      remoteConfigured = true;
+    } catch (error: any) {
+      remoteError = error?.stderr?.toString().trim() || error?.message || 'Unable to configure publication remote.';
+    }
   }
 
   // Create or update local slop.json if not present
@@ -286,14 +261,17 @@ export function handleInit(args: string[] = []): SlopCommandResult {
     }
   } catch {}
 
-  const projectUrl = `https://${appId}.nates-software.com`;
   const output = [
     `[SLOP INIT] Initialized Shareware Project: ${formattedTitle}`,
-    `  ✔ Remote configured: slop -> ${remoteUrl}`,
-    `  ✔ Configure your project at ${projectUrl}. Set shareware prices, screenshots, and more!`,
+    remoteConfigured
+      ? `  ✔ Explicit publication remote configured: slop -> ${requestedRemote}`
+      : `  ℹ No publication remote configured. GITSMITH must provision one before slop push can publish.`,
+    remoteError ? `  ✖ Requested remote was not configured: ${remoteError}` : '',
     `  ✔ Project settings are configured in ${configFile}`,
-    `🚀 Ready! Run "slop push" or "git push slop main" to launch onto Hotwire.`
-  ].join("\n");
+    remoteConfigured
+      ? `Ready for local work. Run "slop push" when you intentionally want to publish.`
+      : `Ready for local work. Add a confirmed remote later with "slop init ${appId} --remote=<git-url>".`
+  ].filter(Boolean).join("\n");
 
   console.log(output);
 
@@ -307,7 +285,9 @@ export function handleInit(args: string[] = []): SlopCommandResult {
       tagline: formattedTagline,
       price: parseInt(price, 10) || 15,
       handle,
-      remoteUrl
+      remoteUrl: remoteConfigured ? requestedRemote : null,
+      remoteConfigured,
+      remoteError
     }
   };
 }
@@ -574,25 +554,27 @@ export function handleDrop(args: string[] = []): SlopCommandResult {
   const priceArg = args.find(a => a.startsWith("--price="))?.split("=")[1] || "15";
   const priceCents = parseInt(priceArg, 10) * 100 || 1500;
 
-  const lines = [
-    `[HOTWIRE PUBLISHER] Packaging ${nameArg} for 12:01 AM UTC Daily Drop...`,
-    `  ✔ Shareware License terms: $${(priceCents / 100).toFixed(2)} with 70/20/10 lineage royalty split`,
-    `  ✔ Queued for Batch #85 rollover at 00:01:00 UTC`,
-    `🚀 Published! Live preview active at: https://${appId}.nates-software.com`
-  ];
-
-  console.log(lines.join("\n"));
+  const error = 'HOTWIRE CLI publication transport is not configured. No drop was queued and no deployment was created.';
+  console.error([
+    `[HOTWIRE PUBLISHER] Prepared local release metadata for ${nameArg}.`,
+    `  ℹ Requested price: $${(priceCents / 100).toFixed(2)}`,
+    `  ✖ ${error}`,
+    `  Open https://nates-software.com to submit through the authenticated drop form.`
+  ].join("\n"));
 
   return {
-    success: true,
+    success: false,
     command: "drop",
-    message: `Published ${nameArg} for 12:01 AM UTC Daily Drop`,
+    message: error,
     data: {
       appId,
       name: nameArg,
       priceCents,
-      batch: 85,
-      liveUrl: `https://${appId}.nates-software.com`
+      queued: false,
+      published: false,
+      deployed: false,
+      batch: null,
+      liveUrl: null
     }
   };
 }
@@ -955,82 +937,35 @@ export function handleStatus(): SlopCommandResult {
 }
 
 export function handleList(): SlopCommandResult {
-  const drops = [
-    { rank: 1, name: "DroneHunter 95", version: "v1.0.0", creator: "@nate", upvotes: 420, forks: 88 },
-    { rank: 2, name: "Certified Mailer", version: "v1.0.0", creator: "@nate", upvotes: 312, forks: 46 },
-    { rank: 3, name: "PicFit", version: "v1.0.0", creator: "@nate", upvotes: 284, forks: 62 }
-  ];
-
-  const lines = [
-    `[HOTWIRE] Daily Drops (Batch #84):`,
-    ...drops.map(d =>
-      `  ${d.rank}. ${d.name} (${d.version}) by ${d.creator} - ${d.upvotes} upvotes · ${d.forks} forks`
-    )
-  ];
-
-  console.log(lines.join("\n"));
-
+  const error = 'HOTWIRE CLI transport is not configured. Open https://nates-software.com for the canonical daily board.';
+  console.error(`[HOTWIRE] ${error}`);
   return {
-    success: true,
+    success: false,
     command: "list",
-    message: `Retrieved ${drops.length} daily drops (Batch #84)`,
-    data: {
-      batch: 84,
-      drops,
-      apps: APPS_DATA
-    }
+    message: error,
+    data: { drops: [], source: null }
   };
 }
 
 export function handleShelf(): SlopCommandResult {
-  const lines = [
-    `[SHELF] Owned Software Titles & Licenses:`,
-    ...SHELF_TITLES.flatMap(item => [
-      `  ● ${item.name} (${item.version})`,
-      `    License Key: ${item.licenseKey}`,
-      `    Purchased: ${item.purchasedDate}`
-    ]),
-    `✔ All licenses verified.`
-  ];
-
-  console.log(lines.join("\n"));
-
+  const error = 'No authenticated CLI session is configured. SLOP will not display fabricated licenses; use MY SHELF on nates-software.com.';
+  console.error(`[SHELF] ${error}`);
   return {
-    success: true,
+    success: false,
     command: "shelf",
-    message: `Displaying ${SHELF_TITLES.length} owned software titles`,
-    data: {
-      titles: SHELF_TITLES,
-      totalOwned: SHELF_TITLES.length
-    }
+    message: error,
+    data: { titles: [], totalOwned: 0, authenticated: false }
   };
 }
 
 export function handleLogin(): SlopCommandResult {
-  const profile = {
-    username: "nate",
-    handle: "@nate",
-    displayName: "Nate McGuire",
-    sshKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187",
-    title: "Maker #001",
-    identity: "Founder at East Bay Projects",
-    isVerified: true
-  };
-
-  const lines = [
-    `[AUTH] Authenticated as ${profile.handle} (${profile.displayName})`,
-    `  Public Key: ${profile.sshKey.slice(0, 38)}...`,
-    `  Title: ${profile.title}`,
-    `✔ SSH key authenticated & active for GITSMITH forge.`
-  ];
-
-  console.log(lines.join("\n"));
-
+  const error = 'CLI device authentication is not commissioned. No identity or SSH key was authenticated.';
+  console.error(`[AUTH] ${error}`);
   return {
-    success: true,
+    success: false,
     command: "login",
-    message: `Authenticated as ${profile.handle}`,
-    data: profile
+    message: error,
+    data: { authenticated: false, profile: null }
   };
 }
 

@@ -20,14 +20,15 @@ import {
 describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
 
   describe('slop init [name]', () => {
-    it('should initialize project with zero prompts and configure git remote slop', () => {
+    it('should initialize locally without inventing a hosted publication remote', () => {
       const res = handleInit(['my-awesome-game', '--title=My Awesome Game', '--price=20']);
       expect(res.success).toBe(true);
       expect(res.command).toBe('init');
       expect(res.data.appId).toBe('my-awesome-game');
       expect(res.data.name).toBe('My Awesome Game');
       expect(res.data.price).toBe(20);
-      expect(res.data.remoteUrl).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/my-awesome-game.git');
+      expect(res.data.remoteUrl).toBeNull();
+      expect(res.data.remoteConfigured).toBe(false);
     });
 
     it('should default cleanly without arguments', () => {
@@ -35,7 +36,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.success).toBe(true);
       expect(res.command).toBe('init');
       expect(res.data.price).toBe(15);
-      expect(res.data.remoteUrl).toBeDefined();
+      expect(res.data.remoteUrl).toBeNull();
     });
   });
 
@@ -98,13 +99,14 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop drop / slop publish', () => {
-    it('should package app and queue for 12:01 AM UTC daily drop', () => {
+    it('should never claim a queued drop without configured HOTWIRE transport', () => {
       const res = handleDrop(['dronehunter', '--name=DroneHunter 95', '--price=15']);
-      expect(res.success).toBe(true);
+      expect(res.success).toBe(false);
       expect(res.command).toBe('drop');
       expect(res.data.appId).toBe('dronehunter');
       expect(res.data.priceCents).toBe(1500);
-      expect(res.data.batch).toBe(85);
+      expect(res.data.queued).toBe(false);
+      expect(res.data.liveUrl).toBeNull();
     });
   });
 
@@ -154,32 +156,30 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop list', () => {
-    it('should query 12:01 AM daily drops board', () => {
+    it('should fail closed until canonical HOTWIRE transport is configured', () => {
       const res = handleList();
-      expect(res.success).toBe(true);
+      expect(res.success).toBe(false);
       expect(res.command).toBe('list');
-      expect(res.data.drops.length).toBe(3);
-      expect(res.data.batch).toBe(84);
+      expect(res.data.drops).toEqual([]);
     });
   });
 
   describe('slop shelf', () => {
-    it('should display owned software titles and cryptographic license keys', () => {
+    it('should never fabricate owned titles without an authenticated session', () => {
       const res = handleShelf();
-      expect(res.success).toBe(true);
+      expect(res.success).toBe(false);
       expect(res.command).toBe('shelf');
-      expect(res.data.totalOwned).toBe(3);
+      expect(res.data.totalOwned).toBe(0);
     });
   });
 
   describe('slop login', () => {
-    it('should authenticate maker handle and SSH public key', () => {
+    it('should fail closed while CLI device authentication is unavailable', () => {
       const res = handleLogin();
-      expect(res.success).toBe(true);
+      expect(res.success).toBe(false);
       expect(res.command).toBe('login');
-      expect(res.data.handle).toBe('@nate');
-      expect(res.data.username).toBe('nate');
-      expect(res.data.isVerified).toBe(true);
+      expect(res.data.authenticated).toBe(false);
+      expect(res.data.profile).toBeNull();
     });
   });
 
@@ -219,14 +219,14 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect((await runSlopCli(['mod'])).command).toBe('mod');
       expect((await runSlopCli(['test'])).success).toBe(true);
       expect((await runSlopCli(['push'])).command).toBe('push');
-      expect((await runSlopCli(['drop', 'dronehunter'])).success).toBe(true);
-      expect((await runSlopCli(['publish', 'dronehunter'])).success).toBe(true);
+      expect((await runSlopCli(['drop', 'dronehunter'])).success).toBe(false);
+      expect((await runSlopCli(['publish', 'dronehunter'])).success).toBe(false);
       const dynoRes = await runSlopCli(['dyno', '--task=neutral_cli_arg_parser', '--solve', '--quiet']);
       expect(dynoRes.success).toBe(true);
       expect((await runSlopCli(['status'])).success).toBe(true);
-      expect((await runSlopCli(['list'])).success).toBe(true);
-      expect((await runSlopCli(['shelf'])).success).toBe(true);
-      expect((await runSlopCli(['login'])).success).toBe(true);
+      expect((await runSlopCli(['list'])).success).toBe(false);
+      expect((await runSlopCli(['shelf'])).success).toBe(false);
+      expect((await runSlopCli(['login'])).success).toBe(false);
       expect((await runSlopCli(['help'])).success).toBe(true);
     });
 
