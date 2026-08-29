@@ -22,6 +22,7 @@ export interface FileModification {
   readonly path: string;
   readonly content: string;
   readonly previousContent?: string;
+  readonly previousDigest?: string;
   readonly action: 'create' | 'modify' | 'delete';
 }
 
@@ -95,6 +96,7 @@ export interface ValidationError {
     | 'ROUTE_COLLISION'
     | 'EXPORT_COLLISION'
     | 'SCHEMA_COLLISION'
+    | 'SYNTAX_ERROR'
     | 'MISSING_BEFORE_CONTENT'
     | 'LIMIT_EXCEEDED'
     | 'MISSING_REQUIRED_FIELD';

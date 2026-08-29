@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import {
   handleInit,
   handleFork,
+  handleMod,
   handlePush,
   handleDrop,
   handleDyno,
@@ -175,6 +176,22 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
     });
   });
 
+  describe('slop mod <package-or-manifest>', () => {
+    it('should show error and usage when invoked without arguments', async () => {
+      const res = await handleMod([]);
+      expect(res.success).toBe(false);
+      expect(res.command).toBe('mod');
+      expect(res.message).toContain('Usage: slop mod');
+    });
+
+    it('should fail cleanly when manifest is not found', async () => {
+      const res = await handleMod(['non-existent-manifest-path.json']);
+      expect(res.success).toBe(false);
+      expect(res.command).toBe('mod');
+      expect(res.message).toContain('Failed to resolve feature package manifest');
+    });
+  });
+
   describe('slop help', () => {
     it('should output help manual and command index', () => {
       const res = printHelp();
@@ -182,6 +199,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.message).toContain('Go Fork, and Multiply');
       expect(res.message).toContain('slop init');
       expect(res.message).toContain('slop fork');
+      expect(res.message).toContain('slop mod');
       expect(res.message).toContain('slop push');
       expect(res.message).toContain('slop dyno');
     });
@@ -191,6 +209,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
     it('should route all commands cleanly', async () => {
       expect((await runSlopCli(['init', 'test-app'])).success).toBe(true);
       expect((await runSlopCli(['fork', 'nate/dronehunter'])).success).toBe(true);
+      expect((await runSlopCli(['mod'])).command).toBe('mod');
       expect((await runSlopCli(['test'])).success).toBe(true);
       expect((await runSlopCli(['push'])).command).toBe('push');
       expect((await runSlopCli(['drop', 'dronehunter'])).success).toBe(true);

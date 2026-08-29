@@ -1038,6 +1038,58 @@ export function handleLogin(): SlopCommandResult {
   };
 }
 
+export async function handleMod(args: string[] = []): Promise<SlopCommandResult> {
+  const manifestArg = args.find(a => !a.startsWith("-"));
+  const worktreeArg = args.find(a => a.startsWith("--worktree="))?.slice(11);
+  const skipTests = args.includes("--skip-tests") || args.includes("--no-tests");
+  const isJson = args.includes("--json");
+  const noRollback = args.includes("--no-rollback");
+
+  if (!manifestArg) {
+    const errorMsg = 'Usage: slop mod <package-or-manifest> [--worktree=<path>] [--skip-tests] [--json]';
+    if (!isJson) console.error(`[SLOP MOD ERROR] Missing required argument.\n${errorMsg}`);
+    return {
+      success: false,
+      command: "mod",
+      message: errorMsg
+    };
+  }
+
+  const cwd = worktreeArg || (typeof process !== "undefined" ? process.cwd() : "/tmp");
+
+  if (!isNode) {
+    return {
+      success: false,
+      command: "mod",
+      message: "slop mod requires the installed local CLI and cannot mutate files from the browser terminal."
+    };
+  }
+
+  const localRunnerModule = "../src/lib/slopshopModEngine.ts";
+  const { executeSlopMod } = await import(/* @vite-ignore */ localRunnerModule);
+  const modResult = await executeSlopMod({
+    manifestOrRef: manifestArg,
+    worktreePath: cwd,
+    runTests: !skipTests,
+    rollbackOnTestFailure: !noRollback
+  });
+
+  if (isJson) {
+    console.log(JSON.stringify(modResult, null, 2));
+  } else if (modResult.success) {
+    console.log(modResult.message);
+  } else {
+    console.error(modResult.message);
+  }
+
+  return {
+    success: modResult.success,
+    command: "mod",
+    message: modResult.message,
+    data: modResult
+  };
+}
+
 export function printHelp(): SlopCommandResult {
   const helpText = `
 Usage: slop <command> [options]
@@ -1048,6 +1100,8 @@ Developer Loop: FORK -> AI CODES IN WORKTREE -> PUSH
 Commands:
   slop init [name]     Initialize project and set git remote "slop" (zero prompts)
   slop fork <slug>     Clone app into isolated worktree with micro-dyno
+  slop mod <package>   Weld AST feature package/manifest into worktree with test verification
+                       Options: --worktree=<path>, --skip-tests, --no-rollback, --json
   slop push            Push project to GITSMITH and deploy to Hotwire
   slop test            Run shareware verification checks
   slop drop [slug]     Package and queue app for 12:01 AM UTC Daily Drop
@@ -1088,6 +1142,9 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
 
     case "fork":
       return handleFork(rawArgs[1]);
+
+    case "mod":
+      return handleMod(rawArgs.slice(1));
 
     case "push":
       return handlePush(rawArgs.slice(1));
