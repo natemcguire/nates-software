@@ -1,4 +1,6 @@
 import { CatalogProvider, useCatalog } from './context/CatalogContext';
+import { AuthProvider } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
 export interface ResolvedRoute {
   readonly type: 'standalone_app' | 'standalone_view' | 'desktop';
   readonly id?: string;
@@ -681,8 +683,11 @@ export default App;
 
 export function App() {
   return (
-    <CatalogProvider>
-      <AppInner />
-    </CatalogProvider>
+    <AuthProvider>
+      <CatalogProvider>
+        <AppInner />
+        <AuthModal />
+      </CatalogProvider>
+    </AuthProvider>
   );
 }
