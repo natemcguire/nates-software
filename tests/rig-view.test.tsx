@@ -11,9 +11,11 @@ describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
     expect(html).toContain('RUNTIME &amp; STORAGE AGNOSTIC');
 
     // Truthful provider boundary notice
-    expect(html).toContain('PROVIDER STATUS: DISCONNECTED (SIMULATION ONLY)');
+    expect(html).toContain('PROVIDER STATUS:');
+    expect(html).toContain('CHECKING');
     expect(html).toContain('Deterministic State Machine Preview');
-    expect(html).toContain('No external cloud provider or live container daemon is attached');
+    expect(html).toContain('never represents simulated lifecycle events as provider observations');
+    expect(html).toContain('Checking the production provider gateway');
 
     // First-run empty state
     expect(html).toContain('No Active RIG Instances');

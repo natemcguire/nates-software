@@ -48,6 +48,8 @@ export const RigRuntimeView: React.FC = () => {
   const [ttlSeconds, setTtlSeconds] = useState<number>(900); // 15m default
   const [autoProgress, setAutoProgress] = useState<boolean>(true);
   const [formError, setFormError] = useState<string | null>(null);
+  const [providerState, setProviderState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
+  const [providerMessage, setProviderMessage] = useState('Checking the production provider gateway…');
 
   const timersRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -63,7 +65,26 @@ export const RigRuntimeView: React.FC = () => {
 
   useEffect(() => {
     refreshState();
+    const controller = new AbortController();
+    fetch('/api/rig?action=readiness', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
+      .then(async response => ({ response, body: await response.json().catch(() => null) }))
+      .then(({ response, body }) => {
+        if (response.ok && body?.ready === true) {
+          setProviderState('ready');
+          setProviderMessage('Production Docker gateway proved its isolation, resource-cap, and cleanup contract.');
+        } else {
+          setProviderState('unavailable');
+          setProviderMessage(body?.error || 'No production provider gateway is available.');
+        }
+      })
+      .catch(error => {
+        if (error?.name !== 'AbortError') {
+          setProviderState('unavailable');
+          setProviderMessage('The production provider readiness check failed.');
+        }
+      });
     return () => {
+      controller.abort();
       timersRef.current.forEach(t => clearTimeout(t));
       timersRef.current = [];
     };
@@ -310,9 +331,9 @@ export const RigRuntimeView: React.FC = () => {
 
         {/* Boundary Indicator */}
         <div className="flex items-center gap-2">
-          <span className="bg-amber-950/80 text-amber-300 border border-amber-500/80 px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1">
-            <AlertTriangle size={11} className="text-amber-400" />
-            PROVIDER STATUS: DISCONNECTED (SIMULATION ONLY)
+          <span className={`${providerState === 'ready' ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/80' : providerState === 'checking' ? 'bg-blue-950/80 text-blue-300 border-blue-500/80' : 'bg-amber-950/80 text-amber-300 border-amber-500/80'} border px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1`}>
+            {providerState === 'ready' ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
+            PROVIDER STATUS: {providerState === 'ready' ? 'GATEWAY READY' : providerState === 'checking' ? 'CHECKING' : 'UNAVAILABLE'}
           </span>
         </div>
       </div>
@@ -322,7 +343,7 @@ export const RigRuntimeView: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <Info size={13} className="text-amber-700 shrink-0" />
           <span>
-            <strong>Deterministic State Machine Preview:</strong> No external cloud provider or live container daemon is attached. Specs, state transitions, port allocations, and resource limits run in local simulation.
+            <strong>Deterministic State Machine Preview:</strong> This manifest builder remains a local simulation and never represents simulated lifecycle events as provider observations. {providerMessage}
           </span>
         </div>
         <div className="text-[10px] text-amber-800 font-mono">
