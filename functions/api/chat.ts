@@ -1,118 +1,71 @@
 import { requireAuth } from './_auth';
-// GET /api/chat?channel=#lounge
-// POST /api/chat
-// Ephemeral 24-Hour Sliding Window Auto-Purge
 
-const TTL_24_HOURS_MS = 24 * 60 * 60 * 1000;
+const CHANNEL = /^#[a-z0-9_-]{1,40}$/i;
+const ALLOWED_TYPES = new Set(['PRIVMSG', 'ACTION']);
+const MAX_TEXT = 2000;
+
+function response(body: unknown, status = 200): Response {
+  return Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+}
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
+  if (!env?.DB) return response({ success: false, error: 'Chat storage is unavailable.' }, 503);
+  const channel = new URL(request.url).searchParams.get('channel') || '#lounge';
+  if (!CHANNEL.test(channel)) return response({ success: false, error: 'Invalid channel.' }, 400);
+
   try {
-    const url = new URL(request.url);
-    const channel = url.searchParams.get('channel') || '#lounge';
-    const cutoff = Date.now() - TTL_24_HOURS_MS;
-
-    if (env && env.DB) {
-      try {
-        await env.DB.prepare(`
-          CREATE TABLE IF NOT EXISTS chat_messages (
-            id TEXT PRIMARY KEY,
-            channel TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            type TEXT NOT NULL,
-            text TEXT NOT NULL,
-            is_op INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL
-          );
-        `).run();
-
-        // 1. Auto-purge records older than 24 hours
-        await env.DB.prepare(`
-          DELETE FROM chat_messages WHERE created_at < ?
-        `).bind(cutoff).run();
-
-        // 2. Fetch only unexpired messages within the 24-hour window
-        const { results } = await env.DB.prepare(`
-          SELECT id, channel, sender, type, text, is_op AS isOp, created_at AS timestamp
-          FROM chat_messages
-          WHERE channel = ? AND created_at >= ?
-          ORDER BY created_at ASC
-          LIMIT 100
-        `).bind(channel, cutoff).all();
-
-        return Response.json({
-          success: true,
-          channel,
-          messages: results || [],
-          ttlHours: 24,
-          server: 'irc.nates-software.com',
-          port: 6667
-        });
-      } catch (dbErr) {
-        // Fall back gracefully
-      }
-    }
-
-    return Response.json({
-      success: true,
-      channel,
-      messages: [],
-      ttlHours: 24,
-      server: 'irc.nates-software.com',
-      port: 6667
-    });
-  } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    await env.DB.prepare(`DELETE FROM chat_messages WHERE created_at < datetime('now', '-24 hours')`).run();
+    const { results } = await env.DB.prepare(`
+      SELECT m.id, m.channel, u.username AS sender, 'PRIVMSG' AS type, m.text,
+             CASE WHEN u.role IN ('admin', 'super_admin') THEN 1 ELSE 0 END AS isOp,
+             m.created_at AS timestamp
+        FROM chat_messages m
+        JOIN users u ON u.id = m.user_id
+       WHERE m.channel = ? AND m.created_at >= datetime('now', '-24 hours')
+       ORDER BY m.created_at ASC, m.id ASC
+       LIMIT 100
+    `).bind(channel).all();
+    return response({ success: true, channel, messages: results || [], ttlHours: 24, transport: 'web' });
+  } catch (error: any) {
+    return response({ success: false, error: `Chat query failed: ${error.message}` }, 503);
   }
 };
-
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
+  const auth = await requireAuth(request, env);
+  if (auth.errorResponse || !auth.user) return auth.errorResponse || response({ success: false, error: 'Unauthorized' }, 401);
+  if (!env?.DB) return response({ success: false, error: 'Chat storage is unavailable.' }, 503);
+
+  let body: any;
   try {
-    const auth = await requireAuth(request, env);
-    if (auth.errorResponse) return auth.errorResponse;
-    const sessionUser = auth.user!;
+    body = await request.json();
+  } catch {
+    return response({ success: false, error: 'Request body must be valid JSON.' }, 400);
+  }
 
-    const body = await request.json() as any;
-    const { channel = '#lounge', type = 'PRIVMSG', text } = body;
-    const sender = sessionUser.username;
-    const isOp = sessionUser.role === 'super_admin' ? 1 : 0;
+  const channel = String(body?.channel || '#lounge');
+  const type = String(body?.type || 'PRIVMSG').toUpperCase();
+  const text = String(body?.text || '').trim();
+  if (!CHANNEL.test(channel)) return response({ success: false, error: 'Invalid channel.' }, 400);
+  if (!ALLOWED_TYPES.has(type)) return response({ success: false, error: 'Unsupported message type.' }, 400);
+  if (!text) return response({ success: false, error: 'text is required' }, 400);
+  if (text.length > MAX_TEXT) return response({ success: false, error: `text must be ${MAX_TEXT} characters or fewer` }, 400);
 
-    if (!text || !text.trim()) {
-      return Response.json({ success: false, error: 'text is required' }, { status: 400 });
-    }
-
-    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const timestamp = Date.now();
-    const cutoff = timestamp - TTL_24_HOURS_MS;
-
-    if (env && env.DB) {
-      try {
-        // Auto-purge old logs before insert
-        await env.DB.prepare(`
-          DELETE FROM chat_messages WHERE created_at < ?
-        `).bind(cutoff).run();
-
-        await env.DB.prepare(`
-          INSERT INTO chat_messages (id, channel, sender, type, text, is_op, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).bind(messageId, channel, sender, type, text.trim(), isOp ? 1 : 0, timestamp).run();
-      } catch (dbErr) {
-        // Continue if DB unavailable
-      }
-    }
-
-    return Response.json({
-      success: true,
-      message: {
-        id: messageId,
-        channel,
-        sender,
-        type,
-        text: text.trim(),
-        isOp: !!isOp,
-        timestamp: new Date(timestamp).toISOString()
-      }
-    });
-  } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+  const messageId = `msg_${crypto.randomUUID().replaceAll('-', '')}`;
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM chat_messages WHERE created_at < datetime('now', '-24 hours')`),
+      env.DB.prepare(`INSERT INTO chat_messages (id, channel, user_id, text, created_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).bind(messageId, channel, auth.user.id, text)
+    ]);
+    const stored = await env.DB.prepare(`
+      SELECT m.id, m.channel, u.username AS sender, ? AS type, m.text,
+             CASE WHEN u.role IN ('admin', 'super_admin') THEN 1 ELSE 0 END AS isOp,
+             m.created_at AS timestamp
+        FROM chat_messages m JOIN users u ON u.id = m.user_id WHERE m.id = ?
+    `).bind(type, messageId).first();
+    if (!stored) return response({ success: false, error: 'Stored chat message could not be confirmed.' }, 503);
+    return response({ success: true, message: stored }, 201);
+  } catch (error: any) {
+    return response({ success: false, error: `Chat persistence failed: ${error.message}` }, 503);
   }
 };

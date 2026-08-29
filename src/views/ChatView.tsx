@@ -28,7 +28,7 @@ export const ChatView: React.FC = () => {
   const [inputVal, setInputVal] = useState<string>('');
   const [topic, setTopic] = useState<string>("Welcome to Nate's Software Global Lounge · 12:01 AM UTC Daily Releases & Indie Modding");
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
-  const [serverStatus] = useState<string>('CONNECTED');
+  const [serverStatus] = useState<string>('WEB LOUNGE LIVE');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -177,7 +177,7 @@ export const ChatView: React.FC = () => {
     playSuccessChime();
 
     try {
-      await fetch('/api/chat', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -188,7 +188,31 @@ export const ChatView: React.FC = () => {
           isOp: 1
         })
       });
-    } catch {}
+      const data = await response.json();
+      if (!response.ok || !data?.success || !data.message) {
+        throw new Error(data?.error || 'Message was not stored.');
+      }
+      setMessages(prev => prev.map(message => message.id === newMsg.id ? {
+        ...message,
+        id: data.message.id,
+        sender: data.message.sender,
+        timestamp: data.message.timestamp,
+        timeFormatted: formatIrcTime(new Date(data.message.timestamp))
+      } : message));
+    } catch (error: any) {
+      setMessages(prev => [
+        ...prev.filter(message => message.id !== newMsg.id),
+        {
+          id: `error-${Date.now()}`,
+          channel: DEFAULT_CHANNEL,
+          sender: 'System',
+          type: 'SYSTEM',
+          text: `*** Message not sent: ${error.message}`,
+          timestamp: new Date().toISOString(),
+          timeFormatted: formatIrcTime()
+        }
+      ]);
+    }
   };
 
   return (
@@ -206,7 +230,7 @@ export const ChatView: React.FC = () => {
         <div className="flex items-center gap-2 font-mono text-[11px]">
           <span className="bg-emerald-950 text-emerald-300 border border-emerald-500 px-2 py-0.5 rounded font-bold flex items-center gap-1">
             <Radio size={11} className="text-emerald-400 animate-pulse" />
-            <span>{serverStatus} (irc.nates-software.com:6667)</span>
+            <span>{serverStatus}</span>
             <span className="bg-blue-900 text-cyan-300 px-1.5 py-0.2 rounded text-[10px]">24h Ephemeral Buffer</span>
           </span>
 

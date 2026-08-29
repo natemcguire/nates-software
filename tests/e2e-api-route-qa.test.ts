@@ -85,16 +85,15 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
   // 3. Chat & IRC API (/api/chat)
   describe('3. IRC Chat API (/api/chat)', () => {
-    it('should query channel messages with 24h retention metadata', async () => {
+    it('should fail closed when chat storage is unavailable', async () => {
       const mockEnv = {};
       const req = new Request('http://localhost/api/chat?channel=%23lounge', { method: 'GET' });
       const res = await chatApi.onRequestGet({ request: req, env: mockEnv });
       const data = await res.json();
 
-      expect(data.success).toBe(true);
-      expect(data.channel).toBe('#lounge');
-      expect(data.ttlHours).toBe(24);
-      expect(data.server).toBe('irc.nates-software.com');
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('storage is unavailable');
     });
 
     it('should reject chat posting with empty text', async () => {
