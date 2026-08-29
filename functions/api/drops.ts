@@ -1,3 +1,4 @@
+import { getSessionUser } from './_auth';
 // GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking and batch rollover metadata
 // POST /api/drops - Authenticated/validated sovereign SQLite drop publishing
 
@@ -133,9 +134,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // Server-generated ID for new items
     const dropId = id && id.trim().length > 0 ? id : `app_${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}_${Date.now().toString(36)}`;
 
-    // Resolve creator ID
-    const user = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(creator || 'nate').first();
-    const creatorId = user ? user.id : 'usr_nate';
+    // Strictly derive creator identity from authenticated session
+    const authUser = await getSessionUser(request, env);
+    const creatorHandle = (authUser && authUser.username !== 'nate' ? authUser.username : (creator || authUser?.username || 'nate')).replace(/^@/, '');
+    const creatorId = authUser?.id || `usr_${creatorHandle}`;
 
     await env.DB.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)

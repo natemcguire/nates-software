@@ -1,3 +1,4 @@
+import { requireAuth } from './_auth';
 // GET /api/chat?channel=#lounge
 // POST /api/chat
 // Ephemeral 24-Hour Sliding Window Auto-Purge
@@ -66,8 +67,14 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse) return auth.errorResponse;
+    const sessionUser = auth.user!;
+
     const body = await request.json() as any;
-    const { channel = '#lounge', sender = 'nate', type = 'PRIVMSG', text, isOp = 0 } = body;
+    const { channel = '#lounge', type = 'PRIVMSG', text } = body;
+    const sender = sessionUser.username;
+    const isOp = sessionUser.role === 'super_admin' ? 1 : 0;
 
     if (!text || !text.trim()) {
       return Response.json({ success: false, error: 'text is required' }, { status: 400 });

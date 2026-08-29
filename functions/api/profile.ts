@@ -1,3 +1,4 @@
+import { requireAuth } from './_auth';
 // GET /api/profile?username=nate
 // POST /api/profile
 
@@ -42,21 +43,30 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    const { username, displayName, avatar, bio, sshKey } = await request.json();
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse) return auth.errorResponse;
+    const sessionUser = auth.user!;
 
-    await env.DB.prepare(`
-      INSERT INTO users (id, username, display_name, avatar_url, bio, ssh_public_key, is_verified_maker)
-      VALUES (?, ?, ?, ?, ?, ?, 1)
-      ON CONFLICT(username) DO UPDATE SET
-        display_name = excluded.display_name,
-        avatar_url = excluded.avatar_url,
-        bio = excluded.bio,
-        ssh_public_key = excluded.ssh_public_key
-    `).bind(
-      `usr_${username}`, username, displayName, avatar, bio, sshKey
-    ).run();
+    const { displayName, avatar, bio, sshKey } = await request.json();
 
-    return Response.json({ success: true, message: 'Profile saved to Cloudflare D1' });
+    if (env && env.DB) {
+      await env.DB.prepare(`
+        UPDATE users SET
+          display_name = COALESCE(?, display_name),
+          avatar_url = COALESCE(?, avatar_url),
+          bio = COALESCE(?, bio),
+          ssh_public_key = COALESCE(?, ssh_public_key)
+        WHERE id = ?
+      `).bind(
+        displayName || sessionUser.displayName,
+        avatar || sessionUser.avatar,
+        bio || '',
+        sshKey || null,
+        sessionUser.id
+      ).run();
+    }
+
+    return Response.json({ success: true, message: 'Profile updated securely from authenticated session' });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }
