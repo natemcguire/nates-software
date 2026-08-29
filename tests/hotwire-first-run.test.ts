@@ -61,6 +61,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
 
     it('should never merge unpersisted seed apps into an authoritative response with new items', async () => {
       // Clear seeded apps from D1 to simulate a freshly purged D1 with only 1 custom app
+      await ctx.d1.prepare('DELETE FROM commerce_products').run();
       await ctx.d1.prepare('DELETE FROM app_listings').run();
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
@@ -82,6 +83,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should return empty list when live D1 has zero drops, preserving empty authoritative state', async () => {
+      await ctx.d1.prepare('DELETE FROM commerce_products').run();
       await ctx.d1.prepare('DELETE FROM app_listings').run();
 
       const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
