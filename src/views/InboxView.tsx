@@ -77,6 +77,13 @@ export const InboxView: React.FC = () => {
     fetchInbox();
   }, [fetchInbox, user]);
 
+  useEffect(() => {
+    const awaitingLanding = threads.some(thread => thread.approvalStatus === 'approved' && !thread.isMerged);
+    if (!awaitingLanding) return;
+    const timer = window.setInterval(() => fetchInbox(), 3_000);
+    return () => window.clearInterval(timer);
+  }, [fetchInbox, threads]);
+
   const selectedThread = threads.find(t => t.id === selectedThreadId) || null;
   const filtered = filterThreadsByCategory(threads, activeFolder);
   const counts = calculateFolderCounts(threads);
@@ -106,6 +113,7 @@ export const InboxView: React.FC = () => {
         } : t)));
         setActionSuccess(data.message || 'Proposal approval recorded.');
         setReviewComment('');
+        if (decision === 'approve') window.setTimeout(() => fetchInbox(), 750);
         setTimeout(() => setActionSuccess(null), 4000);
       } else {
         setActionError(data.error || `Failed to record proposal ${decision}`);
@@ -477,7 +485,7 @@ export const InboxView: React.FC = () => {
                               className="w-full min-h-16 p-1.5 border border-gray-400 bg-white text-xs"
                             />
                             <div className="text-[10px] text-gray-600">
-                              Approval records this exact result OID for GITSMITH. Requesting changes rejects it. Neither action moves a Git ref.
+                              Approval irreversibly queues this exact result OID for authoritative GITSMITH CAS landing. Request changes before approving.
                             </div>
                             <div className="flex justify-end gap-2">
                               {status.canReject && <button

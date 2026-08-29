@@ -84,11 +84,11 @@ export function formatProposalStatus(thread: InboxThread): {
   }
 
   if (thread.approvalStatus === 'approved') return {
-    badgeLabel: 'Approved · Awaiting landing',
+    badgeLabel: 'Approved · GITSMITH landing',
     badgeStyle: 'bg-blue-700 text-white',
-    description: 'The immutable attempt is approved. GITSMITH has not reported the ref landed.',
+    description: 'The immutable attempt is approved and queued. GITSMITH is performing the authoritative compare-and-swap.',
     canApprove: false,
-    canReject: true
+    canReject: false
   };
 
   if (thread.approvalStatus === 'rejected') return {
@@ -110,7 +110,7 @@ export function formatProposalStatus(thread: InboxThread): {
   return {
     badgeLabel: 'Pending Approval',
     badgeStyle: 'bg-amber-100 text-amber-800 border border-amber-300',
-    description: 'Approve this exact result commit. Landing remains a separate GITSMITH operation.',
+    description: 'Approve this exact result commit to queue an authoritative GITSMITH compare-and-swap.',
     canApprove: true,
     canReject: true
   };

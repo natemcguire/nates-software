@@ -58,7 +58,10 @@ describe('INBOX.EXE live-mode integrity', () => {
     const base = { id: 'p', category: 'proposals', from: 'Sam', fromAvatar: '', subject: 'P', time: '', body: '', unread: false, featureRef: 'x' } as InboxThread;
     expect(formatProposalStatus(base).canApprove).toBe(false);
     expect(formatProposalStatus({ ...base, mergeAttemptId: 'a', mergeStatus: 'preview_ready' }).canApprove).toBe(true);
-    expect(formatProposalStatus({ ...base, mergeAttemptId: 'a', mergeStatus: 'approved', approvalStatus: 'approved' }).badgeLabel).toContain('Awaiting');
+    expect(formatProposalStatus({ ...base, mergeAttemptId: 'a', mergeStatus: 'approved', approvalStatus: 'approved' })).toMatchObject({
+      canApprove: false, canReject: false, badgeLabel: 'Approved · GITSMITH landing'
+    });
+    expect(formatProposalStatus({ ...base, mergeAttemptId: 'a', mergeStatus: 'approved', approvalStatus: 'approved' }).badgeLabel).toContain('GITSMITH');
     expect(formatProposalStatus({ ...base, mergeAttemptId: 'a', mergeStatus: 'landed', isMerged: true }).badgeLabel).toContain('Landed');
   });
 
