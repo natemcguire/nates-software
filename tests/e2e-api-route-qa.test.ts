@@ -108,7 +108,8 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       const res = await chatApi.onRequestPost({ request: req, env: mockEnv });
       const data = await res.json();
       expect(data.success).toBe(false);
-      expect(data.error).toBe('text is required');
+      expect(res.status).toBe(401);
+      expect(data.error).toContain('authenticated session');
     });
   });
 

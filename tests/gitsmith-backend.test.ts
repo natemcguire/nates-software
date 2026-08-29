@@ -740,7 +740,7 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
 
       const request = new Request('https://nates.software/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify(payload)
       });
 
@@ -754,7 +754,7 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
     it('POST /api/git should return 400 Bad Request if required parameters are missing', async () => {
       const request = new Request('https://nates.software/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ appId: 'wallart' }) // Missing ref and newSha
       });
 
@@ -776,7 +776,7 @@ describe('GITSMITH Bare Forge & Lineage Ledger Backend Engine', () => {
 
       const request = new Request('https://nates.software/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'ref-update',
           repositoryId: 'retro-calc',

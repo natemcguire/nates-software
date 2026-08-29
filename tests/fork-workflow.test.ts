@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, rmSync } from 'node:fs';
 import {
   validateForkOrigin,
   createMergeJob,
@@ -7,7 +6,7 @@ import {
   canTransitionMergeJob,
   isCasRefUpdateValid
 } from '../src/lib/forgeDomain';
-import { handleClone, handleFork, handlePush } from '../bin/slop.ts';
+import { handleFork } from '../bin/slop.ts';
 import * as gitApi from '../functions/api/git';
 
 const oid1 = 'a'.repeat(40);
@@ -60,23 +59,11 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
   });
 
   // Step 3: slop clone, fork, and push with truthful failure handling
-  it('Step 3: should execute slop clone, fork, and push with structured responses', () => {
-    if (existsSync('/tmp/test-drone-clone')) {
-      rmSync('/tmp/test-drone-clone', { recursive: true, force: true });
-    }
-    const cloneRes = handleClone('nate/dronehunter', '/tmp/test-drone-clone');
-    expect(cloneRes.success).toBe(true);
-    expect(cloneRes.command).toBe('clone');
-
+  it('Step 3: should create a structured local fork without contacting the remote gateway', () => {
     const forkRes = handleFork('nate/dronehunter');
     expect(forkRes.success).toBe(true);
     expect(forkRes.command).toBe('fork');
     expect(forkRes.data.worktreePath).toContain('/tmp/slop-dronehunter-');
-
-    const pushRes = handlePush();
-    expect(pushRes.command).toBe('push');
-    expect(pushRes.success).toBe(false);
-    expect(pushRes.data.casVerified).toBe(false);
   });
 
   // Step 5: Merge-job state machine transitions

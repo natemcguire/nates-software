@@ -426,9 +426,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       } else if (remotes.includes("origin")) {
         targetRemote = "origin";
       } else {
-        const remoteUrl = `ssh://git@gitsmith.nates-software.com:2222/nate/${appId}.git`;
-        runCommandSync(`git remote add slop ${remoteUrl}`, { stdio: "pipe", throwError: true });
-        targetRemote = "slop";
+        throw new Error('No Git remote is configured. Add a reachable repository remote before pushing.');
       }
 
       // 5. Execute git push with strict connect timeout
@@ -442,10 +440,8 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       success = false;
     }
   } else {
-    // Browser fallback
-    success = true;
-    pushedGit = true;
-    sha = "5c030af";
+    gitError = 'Git push requires the local SLOP CLI; browser execution is unavailable.';
+    success = false;
   }
 
   if (success) {

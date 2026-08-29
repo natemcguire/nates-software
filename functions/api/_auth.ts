@@ -2,6 +2,8 @@
 // Strictly validates active sessions against Cloudflare D1 user_sessions.
 // Zero backdoor tokens or hardcoded bypasses in production.
 
+import { extractSessionToken, hashSessionToken, isSameOriginMutation } from './_session';
+
 export interface AuthenticatedUser {
   id: string;
   username: string;
@@ -12,33 +14,12 @@ export interface AuthenticatedUser {
 }
 
 export async function getSessionUser(request: Request, env: any): Promise<AuthenticatedUser | null> {
-  const authHeader = request.headers.get('Authorization');
-  const cookieHeader = request.headers.get('Cookie');
-
-  let token = '';
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.substring(7).trim();
-  } else if (cookieHeader) {
-    const match = cookieHeader.match(/nsw_session=([^;]+)/);
-    if (match) token = match[1];
-  }
+  const { token } = extractSessionToken(request);
 
   // Strictly enforce test-only scope for mock runner
   const isTestEnvironment = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST);
 
-  if (!token) {
-    if (isTestEnvironment) {
-      return {
-        id: 'usr_nate',
-        username: 'nate',
-        displayName: 'Nate McGuire',
-        avatar: '⚡',
-        role: 'super_admin',
-        isVerifiedMaker: true
-      };
-    }
-    return null;
-  }
+  if (!token) return null;
 
   if (env && env.DB) {
     try {
@@ -47,8 +28,8 @@ export async function getSessionUser(request: Request, env: any): Promise<Authen
                u.avatar_url AS avatar, u.role, u.is_verified_maker AS isVerifiedMaker
         FROM user_sessions s
         JOIN users u ON s.user_id = u.id
-        WHERE s.token = ? AND s.expires_at > ?
-      `).bind(token, Date.now()).first();
+        WHERE s.token_hash = ? AND s.expires_at > ? AND s.revoked_at IS NULL
+      `).bind(await hashSessionToken(token), Date.now()).first();
 
       if (session) {
         return {
@@ -79,6 +60,15 @@ export async function getSessionUser(request: Request, env: any): Promise<Authen
 }
 
 export async function requireAuth(request: Request, env: any): Promise<{ user: AuthenticatedUser | null; errorResponse: Response | null }> {
+  if (!isSameOriginMutation(request)) {
+    return {
+      user: null,
+      errorResponse: Response.json(
+        { success: false, error: 'Forbidden: cookie-authenticated mutations require a same-origin request' },
+        { status: 403 }
+      )
+    };
+  }
   const user = await getSessionUser(request, env);
   if (!user) {
     return {

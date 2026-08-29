@@ -3,6 +3,8 @@
 // POST /api/auth?action=logout
 // GET  /api/auth?action=me
 
+import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
+
 // Web Crypto PBKDF2 Password Hashing (100,000 rounds)
 async function hashPassword(password: string, saltHex: string): Promise<string> {
   const enc = new TextEncoder();
@@ -55,16 +57,7 @@ function generateSessionToken(): string {
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    const authHeader = request.headers.get('Authorization');
-    const cookieHeader = request.headers.get('Cookie');
-
-    let token = '';
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7).trim();
-    } else if (cookieHeader) {
-      const match = cookieHeader.match(/nsw_session=([^;]+)/);
-      if (match) token = match[1];
-    }
+    const { token } = extractSessionToken(request);
 
     if (!token) {
       return Response.json({ success: true, user: null, authenticated: false });
@@ -76,8 +69,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                u.avatar_url AS avatar, u.bio, u.role, u.is_verified_maker AS isVerified
         FROM user_sessions s
         JOIN users u ON s.user_id = u.id
-        WHERE s.token = ? AND s.expires_at > ?
-      `).bind(token, Date.now()).first();
+        WHERE s.token_hash = ? AND s.expires_at > ? AND s.revoked_at IS NULL
+      `).bind(await hashSessionToken(token), Date.now()).first();
 
       if (session) {
         return Response.json({
@@ -146,16 +139,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
         await env.DB.prepare(`
           INSERT INTO users (id, username, display_name, avatar_url, bio, password_hash, salt, role, is_verified_maker)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
         `).bind(userId, cleanUser, displayName || cleanUser, avatar, bio, hash, salt, role).run();
 
         const token = generateSessionToken();
         const expiresAt = Date.now() + 30 * 24 * 3600 * 1000;
 
         await env.DB.prepare(`
-          INSERT INTO user_sessions (token, user_id, expires_at)
+          INSERT INTO user_sessions (token_hash, user_id, expires_at)
           VALUES (?, ?, ?)
-        `).bind(token, userId, expiresAt).run();
+        `).bind(await hashSessionToken(token), userId, expiresAt).run();
 
         return Response.json({
           success: true,
@@ -172,12 +165,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }
         }, {
           headers: {
-            'Set-Cookie': `nsw_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`
+            'Set-Cookie': sessionCookie(request, token)
           }
         });
       }
 
-      return Response.json({ success: true, message: 'User registered in memory mode' });
+      return Response.json({ success: false, error: 'Authentication database unavailable' }, { status: 503 });
     }
 
     if (action === 'login') {
@@ -218,9 +211,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const expiresAt = Date.now() + 30 * 24 * 3600 * 1000;
 
         await env.DB.prepare(`
-          INSERT INTO user_sessions (token, user_id, expires_at)
+          INSERT INTO user_sessions (token_hash, user_id, expires_at)
           VALUES (?, ?, ?)
-        `).bind(token, user.id, expiresAt).run();
+        `).bind(await hashSessionToken(token), user.id, expiresAt).run();
 
         await env.DB.prepare(`
           UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -241,32 +234,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }
         }, {
           headers: {
-            'Set-Cookie': `nsw_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`
+            'Set-Cookie': sessionCookie(request, token)
           }
         });
       }
 
-      return Response.json({ success: true, message: 'Logged in' });
+      return Response.json({ success: false, error: 'Authentication database unavailable' }, { status: 503 });
     }
 
     if (action === 'logout') {
-      const authHeader = request.headers.get('Authorization');
-      const cookieHeader = request.headers.get('Cookie');
-      let token = '';
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7).trim();
-      } else if (cookieHeader) {
-        const match = cookieHeader.match(/nsw_session=([^;]+)/);
-        if (match) token = match[1];
-      }
+      const { token } = extractSessionToken(request);
 
       if (token && env && env.DB) {
-        await env.DB.prepare('DELETE FROM user_sessions WHERE token = ?').bind(token).run();
+        await env.DB.prepare('DELETE FROM user_sessions WHERE token_hash = ?').bind(await hashSessionToken(token)).run();
       }
 
       return Response.json({ success: true, message: 'Logged out' }, {
         headers: {
-          'Set-Cookie': 'nsw_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
+          'Set-Cookie': sessionCookie(request, '', 0)
         }
       });
     }

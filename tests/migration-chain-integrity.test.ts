@@ -21,7 +21,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0001_production_schema.sql',
         '0002_webhook_idempotency_and_atomic_ledger.sql',
         '0006_canonical_forge_lineage.sql',
-        '0007_dyno_real_world_benchmarks.sql'
+        '0007_dyno_real_world_benchmarks.sql',
+        '0008_session_security.sql'
       ]);
     });
 
@@ -158,8 +159,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
   describe('3. Foreign Key Enforcement (PRAGMA foreign_keys = ON)', () => {
     it('should reject user_sessions with non-existent user_id', async () => {
       await expect(
-        ctx.d1.prepare('INSERT INTO user_sessions (token, user_id, expires_at) VALUES (?, ?, ?)')
-          .bind('tok_test_invalid', 'nonexistent_user', Date.now() + 10000)
+        ctx.d1.prepare('INSERT INTO user_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
+          .bind('a'.repeat(64), 'nonexistent_user', Date.now() + 10000)
           .run()
       ).rejects.toThrow(/FOREIGN KEY constraint failed/);
     });
@@ -303,9 +304,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       // Add related records
       await ctx.d1.prepare(`
-        INSERT INTO user_sessions (token, user_id, expires_at)
-        VALUES ('tok_cascade', ?, ?)
-      `).bind(testUserId, Date.now() + 10000).run();
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, ?, ?)
+      `).bind('b'.repeat(64), testUserId, Date.now() + 10000).run();
 
       await ctx.d1.prepare(`
         INSERT INTO shelf_items (id, user_id, app_id, license_key)

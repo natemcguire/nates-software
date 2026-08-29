@@ -13,6 +13,7 @@ import * as upvoteApi from '../functions/api/upvote';
 import * as createIntentApi from '../functions/api/payments/create-intent';
 import * as onboardApi from '../functions/api/payments/onboard';
 import * as webhookApi from '../functions/api/payments/webhook';
+import { hashSessionToken } from '../functions/api/_session';
 
 describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () => {
   let ctx: TestD1Context;
@@ -111,9 +112,10 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect((userInDb as any)?.password_hash).toBeTruthy();
 
       // Verify session exists in real D1 user_sessions table
-      const sessionInDb = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token = ?').bind(data.token).first();
+      const sessionInDb = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token_hash = ?').bind(await hashSessionToken(data.token)).first();
       expect(sessionInDb).not.toBeNull();
       expect((sessionInDb as any)?.user_id).toBe((userInDb as any)?.id);
+      expect((sessionInDb as any)?.token_hash).not.toBe(data.token);
     });
 
     it('should reject login with 401 for non-existent user or invalid password', async () => {
@@ -191,7 +193,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const regData = await regRes.json();
 
       // Verify session exists
-      const sessionBefore = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token = ?').bind(regData.token).first();
+      const tokenHash = await hashSessionToken(regData.token);
+      const sessionBefore = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token_hash = ?').bind(tokenHash).first();
       expect(sessionBefore).not.toBeNull();
 
       // Logout
@@ -204,7 +207,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(logoutData.success).toBe(true);
 
       // Verify session purged from D1
-      const sessionAfter = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token = ?').bind(regData.token).first();
+      const sessionAfter = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token_hash = ?').bind(tokenHash).first();
       expect(sessionAfter).toBeNull();
     });
   });
@@ -295,7 +298,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject unsupported control-plane actions', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ appId: 'dronehunter' }) // missing ref and newSha
       });
 
@@ -309,7 +312,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject direct ref mutation without the Git gateway', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'ref-update',
           repositoryId: 'dronehunter',
@@ -327,7 +330,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject caller-selected commit validation policy at this boundary', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'ref-update',
           repositoryId: 'dronehunter',
@@ -346,7 +349,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should not let a caller turn signature policy on or off', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'ref-update',
           repositoryId: 'dronehunter',
@@ -367,7 +370,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       // Seeded SHA for dronehunter refs/heads/main is '5c030af'
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'cas',
           repositoryId: 'dronehunter',
@@ -389,7 +392,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const newSha = '4444444444444444444444444444444444444444';
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'cas',
           repositoryId: 'dronehunter',
@@ -447,7 +450,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should reject shelf claim with 400 when appId is missing', async () => {
       const req = new Request('http://localhost/api/shelf', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({})
       });
 
@@ -465,9 +468,9 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
         VALUES ('usr_buyer1', 'buyer1', 'Buyer One', 'user')
       `).run();
       await ctx.d1.prepare(`
-        INSERT INTO user_sessions (token, user_id, expires_at)
-        VALUES ('tok_buyer1', 'usr_buyer1', ?)
-      `).bind(Date.now() + 100000).run();
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_buyer1', ?)
+      `).bind(await hashSessionToken('tok_buyer1'), Date.now() + 100000).run();
 
       const req1 = new Request('http://localhost/api/shelf', {
         method: 'POST',
@@ -545,7 +548,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should persist valid comment into D1 comments table', async () => {
       const req = new Request('http://localhost/api/comments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           appId: 'dronehunter',
           text: 'Incredible phosphor radar sweep animation!',
@@ -587,7 +590,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     it('should update profile fields in D1 for authenticated user', async () => {
       const req = new Request('http://localhost/api/profile', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           displayName: 'Nate McGuire (Updated)',
           bio: 'Founder at East Bay Projects. High token velocity.'
@@ -613,7 +616,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
 
       const req = new Request('http://localhost/api/inbox', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({ action: 'merge', messageId: msgId })
       });
 
@@ -648,7 +651,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const dropId = 'wallart-builder';
       const req = new Request('http://localhost/api/drops', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           id: dropId,
           name: 'WallArt 95',
@@ -952,7 +955,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
 
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
         body: JSON.stringify({
           action: 'cas',
           repositoryId: unknownAppId,

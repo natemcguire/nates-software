@@ -69,7 +69,8 @@ describe('Security Hardening & Zero-Bypass Invariants', () => {
     const data = await res.json();
 
     expect(data.success).toBe(false);
-    expect(data.error).toBe('appId is required');
+    expect(res.status).toBe(401);
+    expect(data.error).toContain('authenticated session');
   });
 
   it('should reject invalid inbox actions', async () => {
@@ -83,7 +84,7 @@ describe('Security Hardening & Zero-Bypass Invariants', () => {
     const res = await inboxApi.onRequestPost({ request: req, env: mockEnv });
     const data = await res.json();
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(data.success).toBe(false);
   });
 });
