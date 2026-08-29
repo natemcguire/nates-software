@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Wrench,
   Folder,
@@ -53,6 +53,16 @@ export const SlopshopView: React.FC = () => {
   const [copiedForkCmd, setCopiedForkCmd] = useState(false);
   const [copiedManifest, setCopiedManifest] = useState(false);
   const [copiedStepIndex, setCopiedStepIndex] = useState<number | null>(null);
+  const [gatewayState, setGatewayState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/git?action=gateway-readiness', { cache: 'no-store', signal: controller.signal })
+      .then(async response => ({ response, body: await response.json() }))
+      .then(({ response, body }) => setGatewayState(response.ok && body?.ready === true ? 'ready' : 'unavailable'))
+      .catch(error => { if (error?.name !== 'AbortError') setGatewayState('unavailable'); });
+    return () => controller.abort();
+  }, []);
 
   // Generate the deterministic local agent execution plan
   const plan = generateLocalAgentPlan({
@@ -141,8 +151,8 @@ export const SlopshopView: React.FC = () => {
   const handleTruthfulLandAttempt = () => {
     playClickSound();
     showAlert(
-      `[CAS GATEWAY OFFLINE / STANDALONE BROWSER]\n\n` +
-      `Direct in-browser CAS merges into refs/heads/main are disabled because this Web OS operates client-side.\n\n` +
+      `[VERIFIED LANDING STEPS]\n\n` +
+      `Gateway status: ${gatewayState === 'ready' ? 'ready for authenticated Git operations' : gatewayState}. Direct in-browser CAS merges remain disabled because no local feature ref or execution proof has been supplied.\n\n` +
       `To land this feature truthfully:\n` +
       `1. Run the local agent command in your workstation terminal.\n` +
       `2. Verify that npm test and tsc -b pass locally.\n` +
@@ -731,13 +741,13 @@ export const SlopshopView: React.FC = () => {
               <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-4 space-y-2 shadow-lg">
                 <div className="flex items-center gap-2 text-amber-400 font-mono font-bold text-xs">
                   <AlertTriangle size={16} />
-                  <span>STANDALONE WEB SANDBOX · REMOTE CAS GATEWAY AWAITING LOCAL AGENT REF</span>
+                  <span>STANDALONE WEB SANDBOX · {gatewayState === 'ready' ? 'CAS GATEWAY READY · AWAITING LOCAL AGENT REF' : gatewayState === 'checking' ? 'CHECKING CAS GATEWAY' : 'CAS GATEWAY UNAVAILABLE'}</span>
                 </div>
                 <p className="text-slate-300 text-xs leading-relaxed">
                   Because Nate's Software Web OS runs client-side in the browser, it <strong>does not invoke local host shells</strong> or fabricate fake git commits. Feature code generation, test assertions, and git commits must take place locally on your workstation.
                 </p>
                 <div className="text-[11px] text-amber-300/80 font-mono pt-1">
-                  Status: <code className="bg-slate-950 px-2 py-0.5 rounded border border-amber-900/50">Awaiting Local Execution Proof</code>
+                  Status: <code className="bg-slate-950 px-2 py-0.5 rounded border border-amber-900/50">{gatewayState === 'ready' ? 'Gateway Ready · Awaiting Local Execution Proof' : gatewayState === 'checking' ? 'Checking Gateway Readiness' : 'Gateway Unavailable'}</code>
                 </div>
               </div>
 
@@ -796,7 +806,7 @@ export const SlopshopView: React.FC = () => {
                     className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono px-4 py-2 rounded-lg flex items-center gap-2 shadow transition-colors"
                   >
                     <GitBranch size={14} />
-                    <span>⚡ Land Feature (CAS Merge)</span>
+                    <span>Review Verified Landing Steps</span>
                   </button>
 
                   <button
