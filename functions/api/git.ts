@@ -264,6 +264,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   const db = dbFrom(env);
   if (!db) return failure('Forge database binding is unavailable.');
 
+  const contentLength = request.headers.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > 1048576) {
+    return failure('Payload Too Large: Maximum allowed body size is 1MB.', 413);
+  }
+
   let body: any;
   try { body = await request.json(); }
   catch { return failure('Request body must be valid JSON.', 400); }
@@ -754,6 +759,444 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
+  if (action === 'gateway-confirm-provisioning') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const repositoryId = String(body.repositoryId || '').trim();
+    const idempotencyKey = String(body.idempotencyKey || '').trim();
+    if (!repositoryId) return failure('repositoryId is required.', 400);
+    if (!idempotencyKey) return failure('idempotencyKey is required.', 400);
+
+    try {
+      const repo = await db.prepare(`
+        SELECT id, status, slug, owner_user_id AS ownerUserId, storage_key AS storageKey,
+               object_format AS objectFormat, default_ref AS defaultRef
+        FROM repositories WHERE id = ?
+      `).bind(repositoryId).first();
+      if (!repo) return failure('Repository not found.', 404);
+
+      if ((repo as any).status === 'archived' || (repo as any).status === 'quarantined') {
+        return failure(`Cannot confirm provisioning for ${(repo as any).status} repository.`, 409);
+      }
+
+      if ((repo as any).status === 'active') {
+        const provisionedEvt = await db.prepare(`
+          SELECT payload FROM forge_outbox_events
+          WHERE aggregate_id = ? AND aggregate_type = 'repository' AND event_type = 'repository.provisioned'
+          ORDER BY created_at DESC LIMIT 1
+        `).bind(repositoryId).first();
+
+        if (provisionedEvt) {
+          let parsed: any;
+          try { parsed = JSON.parse((provisionedEvt as any).payload); } catch {}
+          if (parsed && parsed.idempotencyKey && parsed.idempotencyKey !== idempotencyKey) {
+            return failure('Repository is already active with a different provisioning idempotency key.', 409);
+          }
+        }
+
+        return Response.json({
+          success: true,
+          repositoryId,
+          status: 'active',
+          idempotent: true
+        }, { status: 200 });
+      }
+
+      if ((repo as any).status !== 'provisioning') {
+        return failure(`Repository must be in provisioning status to confirm (current: ${(repo as any).status}).`, 409);
+      }
+
+      // Validate pinned provisioning request event
+      const pendingOutbox = await db.prepare(`
+        SELECT payload FROM forge_outbox_events
+        WHERE aggregate_id = ? AND aggregate_type = 'repository' AND event_type = 'repository.provisioning_requested'
+        ORDER BY created_at DESC LIMIT 1
+      `).bind(repositoryId).first();
+
+      if (!pendingOutbox) {
+        return failure('Pending provisioning request outbox event not found.', 404);
+      }
+
+      let pinnedPayload: any;
+      try {
+        pinnedPayload = JSON.parse((pendingOutbox as any).payload);
+      } catch {
+        return failure('Malformed pinned provisioning request payload.', 500);
+      }
+
+      if (pinnedPayload.repositoryId !== repositoryId || pinnedPayload.storageKey !== (repo as any).storageKey) {
+        return failure('Provisioning confirmation does not match pinned provisioning request.', 409);
+      }
+
+      if (body.storageKey && String(body.storageKey).trim() !== (repo as any).storageKey) {
+        return failure('Confirmation storage key does not match pinned provisioning request.', 409);
+      }
+
+      const outboxEventId = `evt_${crypto.randomUUID()}`;
+      await db.batch([
+        db.prepare(`
+          UPDATE repositories SET status = 'active', updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND status = 'provisioning'
+        `).bind(repositoryId),
+        db.prepare(`
+          INSERT INTO forge_outbox_events (id, aggregate_type, aggregate_id, event_type, payload, attempts, created_at)
+          VALUES (?, 'repository', ?, 'repository.provisioned', ?, 0, CURRENT_TIMESTAMP)
+        `).bind(
+          outboxEventId, repositoryId,
+          JSON.stringify({ repositoryId, storageKey: (repo as any).storageKey, status: 'active', idempotencyKey })
+        )
+      ]);
+
+      return Response.json({
+        success: true,
+        repositoryId,
+        status: 'active',
+        outboxEventId
+      }, { status: 200 });
+    } catch (error: any) {
+      return failure(`Provisioning confirmation failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
+  if (action === 'gateway-status') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+    return Response.json({ success: true, service: 'GITSMITH control plane', gatewayApiVersion: 1 });
+  }
+
+  if (action === 'gateway-claim-outbox') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const limit = Math.max(1, Math.min(Number(body.limit) || 10, 50));
+    const leaseSeconds = Math.max(5, Math.min(Number(body.leaseSeconds) || 60, 3600));
+    const maxAttempts = Math.max(1, Math.min(Number(body.maxAttempts) || 5, 20));
+
+    try {
+      const candidatesRes = await db.prepare(`
+        SELECT id, aggregate_type, aggregate_id, event_type, payload,
+               attempts, available_at, delivered_at, last_error,
+               claim_token, lease_expires_at, dead_lettered_at, created_at
+        FROM forge_outbox_events
+        WHERE delivered_at IS NULL
+          AND dead_lettered_at IS NULL
+          AND (available_at IS NULL OR available_at <= CURRENT_TIMESTAMP)
+          AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+          AND attempts < ?
+          AND event_type IN ('repository.provisioning_requested', 'repository.fork_requested')
+        ORDER BY created_at ASC
+        LIMIT ?
+      `).bind(maxAttempts, limit).all();
+
+      const candidates = candidatesRes.results || [];
+      const claimedEvents: any[] = [];
+
+      for (const event of candidates) {
+        const claimToken = `clm_${crypto.randomUUID().replace(/-/g, '')}`;
+        const updateRes = await db.prepare(`
+          UPDATE forge_outbox_events
+          SET claim_token = ?,
+              lease_expires_at = datetime('now', '+' || ? || ' seconds'),
+              available_at = datetime('now', '+' || ? || ' seconds'),
+              attempts = attempts + 1
+          WHERE id = ?
+            AND delivered_at IS NULL
+            AND dead_lettered_at IS NULL
+            AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+        `).bind(claimToken, leaseSeconds, leaseSeconds, (event as any).id).run();
+
+        const changes = (updateRes as any)?.meta?.changes ?? 0;
+        if (changes > 0) {
+          claimedEvents.push({
+            ...event,
+            claim_token: claimToken,
+            attempts: Number((event as any).attempts) + 1
+          });
+        }
+      }
+
+      return Response.json({
+        success: true,
+        claimed: claimedEvents
+      }, { status: 200 });
+    } catch (error: any) {
+      return failure(`Outbox claim failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
+  if (action === 'gateway-complete-outbox') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const eventId = String(body.eventId || body.id || '').trim();
+    const claimToken = String(body.claimToken || '').trim();
+    if (!eventId) return failure('eventId is required.', 400);
+    if (!claimToken) return failure('claimToken is required.', 400);
+
+    try {
+      const updateRes = await db.prepare(`
+        UPDATE forge_outbox_events
+        SET delivered_at = CURRENT_TIMESTAMP,
+            claim_token = NULL,
+            lease_expires_at = NULL,
+            last_error = NULL
+        WHERE id = ? AND claim_token = ? AND delivered_at IS NULL
+      `).bind(eventId, claimToken).run();
+
+      const changes = (updateRes as any)?.meta?.changes ?? 0;
+      if (changes > 0) {
+        return Response.json({ success: true, eventId, delivered: true }, { status: 200 });
+      }
+
+      const existing = await db.prepare(`
+        SELECT id, delivered_at AS deliveredAt, claim_token AS claimToken
+        FROM forge_outbox_events WHERE id = ?
+      `).bind(eventId).first();
+
+      if (existing && (existing as any).deliveredAt) {
+        return Response.json({ success: true, eventId, idempotent: true }, { status: 200 });
+      }
+
+      return failure('Invalid or expired claim token for outbox event.', 409);
+    } catch (error: any) {
+      return failure(`Outbox complete failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
+  if (action === 'gateway-fail-outbox') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const eventId = String(body.eventId || body.id || '').trim();
+    const claimToken = String(body.claimToken || '').trim();
+    const errorMessage = String(body.error || 'Unknown error').trim();
+    const maxAttempts = Math.max(1, Math.min(Number(body.maxAttempts) || 5, 20));
+    const isTerminal = Boolean(body.terminal);
+    const baseBackoffSeconds = Math.max(1, Math.min(Number(body.baseBackoffSeconds) || 2, 3600));
+    const maxBackoffSeconds = Math.max(baseBackoffSeconds, Math.min(Number(body.maxBackoffSeconds) || 300, 86400));
+
+    if (!eventId) return failure('eventId is required.', 400);
+    if (!claimToken) return failure('claimToken is required.', 400);
+
+    try {
+      const event = await db.prepare(`
+        SELECT id, aggregate_id AS aggregateId, aggregate_type AS aggregateType,
+               event_type AS eventType, attempts, claim_token AS claimToken
+        FROM forge_outbox_events WHERE id = ?
+      `).bind(eventId).first();
+
+      if (!event) return failure('Outbox event not found.', 404);
+      if ((event as any).claimToken !== claimToken) {
+        return failure('Claim token mismatch or lease expired.', 409);
+      }
+
+      const attempts = Number((event as any).attempts);
+      if (attempts >= maxAttempts || isTerminal) {
+        await db.prepare(`
+          UPDATE forge_outbox_events
+          SET claim_token = NULL,
+              lease_expires_at = NULL,
+              dead_lettered_at = CURRENT_TIMESTAMP,
+              available_at = '9999-12-31 23:59:59',
+              last_error = ?
+          WHERE id = ? AND claim_token = ?
+        `).bind(`Dead-letter: Max attempts reached (${attempts}). Last error: ${errorMessage}`, eventId, claimToken).run();
+
+        if ((event as any).aggregateId) {
+          try {
+            const issueId = `recon_dead_${crypto.randomUUID()}`;
+            await db.prepare(`
+              INSERT INTO forge_reconciliation_issues (
+                id, repository_id, issue_type, status, detail, detected_at
+              ) VALUES (?, ?, 'git_missing_in_d1', 'open', ?, CURRENT_TIMESTAMP)
+            `).bind(
+              issueId,
+              (event as any).aggregateId,
+              `Outbox event ${eventId} (${(event as any).eventType}) dead-lettered after ${attempts} attempts: ${errorMessage}`
+            ).run();
+          } catch {}
+        }
+
+        return Response.json({
+          success: true,
+          eventId,
+          deadLettered: true,
+          attempts
+        }, { status: 200 });
+      }
+
+      const backoffSec = Math.min(
+        Math.max(baseBackoffSeconds * Math.pow(2, attempts - 1), baseBackoffSeconds),
+        maxBackoffSeconds
+      );
+
+      await db.prepare(`
+        UPDATE forge_outbox_events
+        SET claim_token = NULL,
+            lease_expires_at = NULL,
+            available_at = datetime('now', '+' || ? || ' seconds'),
+            last_error = ?
+        WHERE id = ? AND claim_token = ?
+      `).bind(backoffSec, errorMessage, eventId, claimToken).run();
+
+      return Response.json({
+        success: true,
+        eventId,
+        retryable: true,
+        backoffSeconds: backoffSec,
+        attempts
+      }, { status: 200 });
+    } catch (error: any) {
+      return failure(`Outbox fail transition failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
+  if (action === 'gateway-reconcile') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const repoSnapshots = Array.isArray(body.repositories) ? body.repositories : [];
+
+    try {
+      const openIssues: any[] = [];
+
+      for (const repoSnap of repoSnapshots) {
+        const repoId = String(repoSnap.repositoryId || '').trim();
+        if (!repoId) continue;
+
+        const repo = await db.prepare(`
+          SELECT id, status FROM repositories WHERE id = ?
+        `).bind(repoId).first();
+        if (!repo) continue;
+
+        const diskRefs = Array.isArray(repoSnap.diskRefs) ? repoSnap.diskRefs : [];
+        const diskRefMap = new Map<string, string>();
+        for (const dr of diskRefs) {
+          if (dr.refName && dr.commitOid) {
+            diskRefMap.set(dr.refName, dr.commitOid);
+          }
+        }
+
+        const d1RefsRes = await db.prepare(`
+          SELECT ref_name AS refName, commit_oid AS commitOid
+          FROM repository_refs WHERE repository_id = ?
+        `).bind(repoId).all();
+        const d1Refs = d1RefsRes.results || [];
+        const d1RefMap = new Map<string, string>();
+        for (const d1r of d1Refs) {
+          d1RefMap.set((d1r as any).refName, (d1r as any).commitOid);
+        }
+
+        for (const [refName, diskOid] of diskRefMap.entries()) {
+          const d1Oid = d1RefMap.get(refName);
+          if (!d1Oid) {
+            const existingIssue = await db.prepare(`
+              SELECT id FROM forge_reconciliation_issues
+              WHERE repository_id = ? AND issue_type = 'git_missing_in_d1' AND ref_name = ? AND status = 'open'
+            `).bind(repoId, refName).first();
+
+            let issueId = (existingIssue as any)?.id;
+            if (!issueId) {
+              issueId = `recon_gmid_${crypto.randomUUID()}`;
+              await db.prepare(`
+                INSERT INTO forge_reconciliation_issues (
+                  id, repository_id, ref_name, issue_type, git_oid, d1_oid, status, detail, detected_at
+                ) VALUES (?, ?, ?, 'git_missing_in_d1', ?, NULL, 'open', ?, CURRENT_TIMESTAMP)
+              `).bind(
+                issueId, repoId, refName, diskOid,
+                `Authoritative Git ref '${refName}' (${diskOid}) is missing in D1 projection.`
+              ).run();
+            }
+
+            openIssues.push({
+              id: issueId,
+              repository_id: repoId,
+              ref_name: refName,
+              issue_type: 'git_missing_in_d1',
+              git_oid: diskOid,
+              d1_oid: null,
+              status: 'open',
+              detail: `Authoritative Git ref '${refName}' (${diskOid}) is missing in D1 projection.`
+            });
+          } else if (d1Oid !== diskOid) {
+            const existingIssue = await db.prepare(`
+              SELECT id FROM forge_reconciliation_issues
+              WHERE repository_id = ? AND issue_type = 'oid_mismatch' AND ref_name = ? AND status = 'open'
+            `).bind(repoId, refName).first();
+
+            let issueId = (existingIssue as any)?.id;
+            if (!issueId) {
+              issueId = `recon_mismatch_${crypto.randomUUID()}`;
+              await db.prepare(`
+                INSERT INTO forge_reconciliation_issues (
+                  id, repository_id, ref_name, issue_type, git_oid, d1_oid, status, detail, detected_at
+                ) VALUES (?, ?, ?, 'oid_mismatch', ?, ?, 'open', ?, CURRENT_TIMESTAMP)
+              `).bind(
+                issueId, repoId, refName, diskOid, d1Oid,
+                `Authoritative Git OID (${diskOid}) differs from D1 projection OID (${d1Oid}) on ref '${refName}'.`
+              ).run();
+            }
+
+            openIssues.push({
+              id: issueId,
+              repository_id: repoId,
+              ref_name: refName,
+              issue_type: 'oid_mismatch',
+              git_oid: diskOid,
+              d1_oid: d1Oid,
+              status: 'open',
+              detail: `Authoritative Git OID (${diskOid}) differs from D1 projection OID (${d1Oid}) on ref '${refName}'.`
+            });
+          }
+        }
+
+        for (const [refName, d1Oid] of d1RefMap.entries()) {
+          if (!diskRefMap.has(refName)) {
+            const existingIssue = await db.prepare(`
+              SELECT id FROM forge_reconciliation_issues
+              WHERE repository_id = ? AND issue_type = 'd1_missing_in_git' AND ref_name = ? AND status = 'open'
+            `).bind(repoId, refName).first();
+
+            let issueId = (existingIssue as any)?.id;
+            if (!issueId) {
+              issueId = `recon_dmig_${crypto.randomUUID()}`;
+              await db.prepare(`
+                INSERT INTO forge_reconciliation_issues (
+                  id, repository_id, ref_name, issue_type, git_oid, d1_oid, status, detail, detected_at
+                ) VALUES (?, ?, ?, 'd1_missing_in_git', NULL, ?, 'open', ?, CURRENT_TIMESTAMP)
+              `).bind(
+                issueId, repoId, refName, d1Oid,
+                `D1 ref '${refName}' (${d1Oid}) is missing from authoritative Git repository.`
+              ).run();
+            }
+
+            openIssues.push({
+              id: issueId,
+              repository_id: repoId,
+              ref_name: refName,
+              issue_type: 'd1_missing_in_git',
+              git_oid: null,
+              d1_oid: d1Oid,
+              status: 'open',
+              detail: `D1 ref '${refName}' (${d1Oid}) is missing from authoritative Git repository.`
+            });
+          }
+        }
+      }
+
+      return Response.json({
+        success: true,
+        scannedRepositories: repoSnapshots.length,
+        openIssuesFound: openIssues.length,
+        resolvedCount: 0,
+        issues: openIssues
+      }, { status: 200 });
+    } catch (error: any) {
+      return failure(`Reconciliation failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
   // =========================================================================
   // USER SESSION-AUTHENTICATED ACTIONS
   // =========================================================================
@@ -1028,5 +1471,5 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  return failure('Supported control-plane actions: create-repository, fork, gateway-record-ref, gateway-confirm-fork.', 400);
+  return failure('Supported control-plane actions: create-repository, fork, gateway-record-ref, gateway-confirm-fork, gateway-confirm-provisioning, gateway-status, gateway-claim-outbox, gateway-complete-outbox, gateway-fail-outbox, gateway-reconcile.', 400);
 };

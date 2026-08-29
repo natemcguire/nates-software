@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+/**
+ * GITSMITH Git Gateway & Outbox Dispatcher CLI
+ * Usage:
+ *   $ gitsmith-gateway start [--port 8789]
+ *   $ gitsmith-gateway check
+ *   $ gitsmith-gateway dispatch
+ */
+
+import {
+  loadGatewayConfigFromEnv,
+  createGatewayServer,
+  GatewayHealthChecker,
+  ForgeOutboxDispatcher,
+  GitsmithGatewayService,
+  validateProductionStartup,
+  validateGatewayConfig
+} from '../src/lib/gitsmith/index.ts';
+import * as fs from 'node:fs';
+
+const args = process.argv.slice(2);
+const command = args[0] || 'start';
+
+const config = loadGatewayConfigFromEnv();
+
+async function main() {
+  const healthChecker = new GatewayHealthChecker();
+
+  if (command === 'check' || command === 'status') {
+    const readiness = await healthChecker.getReadiness(config, null, true);
+    console.log('\n--- GITSMITH GATEWAY READINESS ---');
+    console.log(`Ready:      ${readiness.ready ? 'YES' : 'NO'}`);
+    console.log(`Configured: ${readiness.configured ? 'YES' : 'NO'}`);
+    console.log(`Active:     ${readiness.active ? 'YES' : 'NO'}`);
+    console.log(`Git:        ${readiness.checks.git.available ? `v${readiness.checks.git.version}` : 'NOT AVAILABLE'}`);
+    console.log(`Storage:    ${readiness.checks.storage.root} (writable: ${readiness.checks.storage.writable})`);
+    console.log(`Control:    ${readiness.checks.controlPlane.url} (configured: ${readiness.checks.controlPlane.configured})`);
+    console.log('-----------------------------------\n');
+    process.exit(readiness.ready ? 0 : 1);
+  }
+
+  if (command === 'start' || command === 'dev') {
+    try {
+      validateProductionStartup(config);
+      const validation = validateGatewayConfig(config);
+      if (!validation.valid) throw new Error(validation.errors.join(' '));
+    } catch (err) {
+      console.error(`[FATAL] Startup validation failed: ${err.message}`);
+      process.exit(1);
+    }
+
+    const service = new GitsmithGatewayService(config);
+    const dispatcher = new ForgeOutboxDispatcher(config);
+    fs.mkdirSync(config.reposRoot, { recursive: true });
+    await service.replayPendingCallbacks();
+    dispatcher.startPolling();
+    const server = createGatewayServer(config, { service, dispatcher, healthChecker });
+
+    const port = config.port || 8789;
+    server.listen(port, () => {
+      console.log(`\n======================================================`);
+      console.log(`GITSMITH Bare Git Gateway & Outbox Dispatcher Started`);
+      console.log(`   Port:          ${port}`);
+      console.log(`   Repos Root:    ${config.reposRoot}`);
+      console.log(`   Control Plane: ${config.controlPlaneUrl}`);
+      console.log(`   Health:        http://localhost:${port}/healthz`);
+      console.log(`   Readiness:     http://localhost:${port}/readyz`);
+      console.log(`   State:         readiness pending authenticated probe`);
+      console.log(`======================================================\n`);
+    });
+
+    const shutdown = () => {
+      console.log('\nStopping GITSMITH Gateway...');
+      dispatcher.stopPolling();
+      server.close(() => {
+        console.log('GITSMITH Gateway stopped.');
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    return;
+  }
+
+  if (command === 'dispatch') {
+    const validation = validateGatewayConfig(config);
+    if (!validation.valid) throw new Error(validation.errors.join(' '));
+    fs.mkdirSync(config.reposRoot, { recursive: true });
+    const service = new GitsmithGatewayService(config);
+    const dispatcher = new ForgeOutboxDispatcher(config);
+    const receipts = await service.replayPendingCallbacks();
+    const batch = await dispatcher.dispatchBatch(20);
+    console.log(JSON.stringify({ success: true, receipts, ...batch }, null, 2));
+    return;
+  }
+
+  throw new Error(`Unknown command '${command}'. Use check, start, or dispatch.`);
+}
+
+main().catch(err => {
+  console.error('[FATAL] Unhandled error:', err);
+  process.exit(1);
+});
