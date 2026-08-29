@@ -37,6 +37,7 @@ export const DynoView: React.FC = () => {
   const [leaderboardRuns, setLeaderboardRuns] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [leaderboardSuite, setLeaderboardSuite] = useState<any | null>(null);
 
   // Selected run for deep inspection / export
   const [selectedRun, setSelectedRun] = useState<any | null>(null);
@@ -71,6 +72,7 @@ export const DynoView: React.FC = () => {
       const data = await res.json();
       if (data.success) {
         setLeaderboardRuns(data.leaderboard || []);
+        setLeaderboardSuite(data.suite || null);
       } else {
         setLeaderboardError(data.error || 'Failed to query canonical leaderboard');
       }
@@ -737,6 +739,11 @@ export const DynoView: React.FC = () => {
                 </h3>
                 <p className="text-[11px] text-gray-600">
                   Reproduced Street measurements and Nate-run Certified evaluations. Self-reported Street uploads remain outside ranked comparisons.
+                </p>
+                <p className="text-[10px] font-mono text-blue-800 mt-0.5">
+                  {leaderboardSuite
+                    ? `Comparison cohort: ${leaderboardSuite.name} ${leaderboardSuite.version} (${leaderboardSuite.status})`
+                    : 'No active comparison suite is currently published.'}
                 </p>
               </div>
 

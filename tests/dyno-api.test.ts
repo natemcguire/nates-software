@@ -184,6 +184,45 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(data.success).toBe(false);
       expect(data.error).toContain('not found');
     });
+
+    it('ranks only within one explicit suite version and keeps historical suites queryable', async () => {
+      const payload = generateValidRunPayload();
+      const post = await dynoApi.onRequestPost({
+        request: new Request('http://localhost/api/dyno', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+          body: JSON.stringify(payload)
+        }),
+        env: { DB: ctx.d1 }
+      });
+      expect(post.status).toBe(200);
+      await ctx.d1.prepare("UPDATE dyno_runs SET verification_status = 'reproducible' WHERE id = ?")
+        .bind(payload.run.id).run();
+      await ctx.d1.batch([
+        ctx.d1.prepare(`INSERT INTO dyno_suites
+          (id, slug, version, name, methodology_markdown, task_manifest_digest, grader_version, status, published_at)
+          VALUES ('suite_dyno_older', 'dyno-standard-dev', '2025.9', 'Older DYNO Course', 'old', ?, ?, 'retired', '2025-09-01')`)
+          .bind('a'.repeat(64), CANONICAL_DYNO_GRADER_VERSION),
+        ctx.d1.prepare(`INSERT INTO dyno_runs
+          (id, suite_id, subject_id, environment_id, submitted_by_user_id, repetition, randomization_seed,
+           status, verification_status, evaluation_class, overall_score, runner_attestation_digest, raw_trace_sha256)
+          SELECT 'run_older_course', 'suite_dyno_older', subject_id, environment_id, submitted_by_user_id,
+            1, 'old-seed', 'completed', 'reproducible', 'reproduced', 1000, runner_attestation_digest, raw_trace_sha256
+          FROM dyno_runs WHERE id = ?`).bind(payload.run.id)
+      ]);
+
+      const current: any = await (await dynoApi.onRequestGet({
+        request: new Request('http://localhost/api/dyno'), env: { DB: ctx.d1 }
+      })).json();
+      expect(current.suite.id).toBe(payload.suite.id);
+      expect(current.leaderboard.map((run: any) => run.id)).toEqual([payload.run.id]);
+
+      const historical: any = await (await dynoApi.onRequestGet({
+        request: new Request('http://localhost/api/dyno?suiteId=suite_dyno_older'), env: { DB: ctx.d1 }
+      })).json();
+      expect(historical.suite.version).toBe('2025.9');
+      expect(historical.leaderboard.map((run: any) => run.id)).toEqual(['run_older_course']);
+    });
   });
 
   describe('POST /api/dyno Ingestion & Deterministic Validation Contracts', () => {

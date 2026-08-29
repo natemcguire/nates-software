@@ -147,6 +147,22 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     // Default: Query leaderboard with comparison-safe aggregate provenance ONLY
     if (env && env.DB) {
+      const requestedSuiteId = url.searchParams.get('suiteId')?.trim() || '';
+      if (requestedSuiteId && !ID_REGEX.test(requestedSuiteId)) {
+        return Response.json({ success: false, error: 'Invalid suite ID format' }, { status: 400 });
+      }
+      const suite = requestedSuiteId
+        ? await env.DB.prepare(`SELECT id, slug, version, name, status, published_at
+            FROM dyno_suites WHERE id = ? AND status IN ('active', 'retired')`).bind(requestedSuiteId).first()
+        : await env.DB.prepare(`SELECT id, slug, version, name, status, published_at
+            FROM dyno_suites WHERE status = 'active'
+            ORDER BY published_at DESC, created_at DESC, id DESC LIMIT 1`).first();
+      if (requestedSuiteId && !suite) {
+        return Response.json({ success: false, error: 'Published DYNO suite not found' }, { status: 404 });
+      }
+      if (!suite) {
+        return Response.json({ success: true, leaderboard: [], count: 0, suite: null });
+      }
       const { results } = await env.DB.prepare(`
         SELECT r.id, r.suite_id, r.repetition, r.status, r.verification_status,
                r.evaluation_class, r.official_evaluator, r.official_published_at,
@@ -164,15 +180,17 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         JOIN dyno_suites su ON r.suite_id = su.id
         LEFT JOIN users u ON r.submitted_by_user_id = u.id
         WHERE r.status = 'completed'
+          AND r.suite_id = ?
           AND r.verification_status IN ('reproducible', 'verified')
         ORDER BY r.overall_score DESC, r.created_at DESC
         LIMIT 50
-      `).all();
+      `).bind(suite.id).all();
 
       return Response.json({
         success: true,
         leaderboard: results || [],
-        count: (results || []).length
+        count: (results || []).length,
+        suite
       });
     }
 

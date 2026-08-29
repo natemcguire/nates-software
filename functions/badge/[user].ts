@@ -19,6 +19,10 @@ export const onRequestGet = async ({ params, env }: { params: { user: string }; 
         JOIN dyno_subjects s ON r.subject_id = s.id
         WHERE u.username = ?
           AND r.status = 'completed'
+          AND r.suite_id = (
+            SELECT id FROM dyno_suites WHERE status = 'active'
+            ORDER BY published_at DESC, created_at DESC, id DESC LIMIT 1
+          )
           AND r.verification_status IN ('reproducible', 'verified')
         ORDER BY r.overall_score DESC, r.created_at DESC
         LIMIT 1
