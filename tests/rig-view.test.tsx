@@ -1,10 +1,13 @@
 import { renderToString } from 'react-dom/server';
 import { describe, it, expect } from 'vitest';
 import { RigRuntimeView } from '../src/views/RigRuntimeView';
+import { AuthProvider } from '../src/context/AuthContext';
+
+const renderRig = () => renderToString(<AuthProvider><RigRuntimeView /></AuthProvider>);
 
 describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
   it('renders initial first-run empty state without hardcoded fleet containers', () => {
-    const html = renderToString(<RigRuntimeView />);
+    const html = renderRig();
 
     // Header and title
     expect(html).toContain('RIG.EXE CONTROL-PLANE PREVIEW');
@@ -19,7 +22,7 @@ describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
 
     // First-run empty state
     expect(html).toContain('No Active RIG Instances');
-    expect(html).toContain('The control plane is currently empty');
+    expect(html).toContain('The offline simulator is empty');
     expect(html).toContain('Zero hardcoded or fabricated initial fleet containers');
 
     // Configuration builder form
@@ -37,10 +40,13 @@ describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
     expect(html).not.toContain('512 MB');
     expect(html).toContain('TTL / Auto-Expiry');
     expect(html).toContain('Launch Demo Plan (Simulation)');
+    expect(html).toContain('Live Provider');
+    expect(html).toContain('Unavailable');
+    expect(html).toContain('Offline Manifest Simulator');
   });
 
   it('contains zero fabricated URLs, git pushes, test evidence scores, or HOTWIRE drop submissions', () => {
-    const html = renderToString(<RigRuntimeView />);
+    const html = renderRig();
 
     // No fake URLs
     expect(html).not.toContain('https://picfit.ai');

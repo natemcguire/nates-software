@@ -26,8 +26,11 @@ import {
   formatDuration
 } from '../lib/rigDomain';
 import { RigControlPlane } from '../lib/rigBackend';
+import { createRigInstance, deleteRigInstance, getRigInstanceLogs, listRigInstances, mutateRigInstance } from '../lib/rigClient';
+import { useAuth } from '../context/AuthContext';
 
 export const RigRuntimeView: React.FC = () => {
+  const { user, openAuthModal } = useAuth();
   // Deterministic control-plane instance
   const controlPlaneRef = useRef<RigControlPlane>(new RigControlPlane());
   const [instances, setInstances] = useState<RigInstance[]>([]);
@@ -50,6 +53,10 @@ export const RigRuntimeView: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [providerState, setProviderState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [providerMessage, setProviderMessage] = useState('Checking the production provider gateway…');
+  const [fleetMode, setFleetMode] = useState<'provider' | 'simulation'>('simulation');
+  const [imageDigest, setImageDigest] = useState('');
+  const [isWorking, setIsWorking] = useState(false);
+  const [liveLogs, setLiveLogs] = useState<string | null>(null);
 
   const timersRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -63,6 +70,16 @@ export const RigRuntimeView: React.FC = () => {
     }
   };
 
+  const applyProviderFleet = (list: RigInstance[]) => {
+    setInstances(list);
+    setSelectedInstanceId(current => list.some(instance => instance.spec.id === current) ? current : list[0]?.spec.id || null);
+  };
+
+  const refreshProviderFleet = async () => {
+    const list = await listRigInstances();
+    applyProviderFleet(list);
+  };
+
   useEffect(() => {
     refreshState();
     const controller = new AbortController();
@@ -71,7 +88,9 @@ export const RigRuntimeView: React.FC = () => {
       .then(({ response, body }) => {
         if (response.ok && body?.ready === true) {
           setProviderState('ready');
+          setFleetMode('provider');
           setProviderMessage('Production Docker gateway proved its isolation, resource-cap, and cleanup contract.');
+          if (user) void refreshProviderFleet().catch(error => setFormError(error.message));
         } else {
           setProviderState('unavailable');
           setProviderMessage(body?.error || 'No production provider gateway is available.');
@@ -88,9 +107,9 @@ export const RigRuntimeView: React.FC = () => {
       timersRef.current.forEach(t => clearTimeout(t));
       timersRef.current = [];
     };
-  }, []);
+  }, [user?.id]);
 
-  const handleLaunchPlan = (e: React.FormEvent) => {
+  const handleLaunchPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -120,6 +139,20 @@ export const RigRuntimeView: React.FC = () => {
             ]
           : undefined;
 
+      if (fleetMode === 'provider' && !user) {
+        openAuthModal('login');
+        setFormError('Sign in before launching a live RIG instance.');
+        return;
+      }
+      if (fleetMode === 'provider' && adapter !== 'docker') {
+        setFormError('The commissioned live provider currently accepts only the Docker adapter.');
+        return;
+      }
+      if (fleetMode === 'provider' && !imageDigest.trim()) {
+        setFormError('A content-addressed OCI image digest is required for a live launch.');
+        return;
+      }
+
       const newSpec: RigSpec = {
         id: specId,
         appId: cleanAppId,
@@ -128,7 +161,9 @@ export const RigRuntimeView: React.FC = () => {
           adapter,
           buildCommand: buildCommand.trim() || undefined,
           startCommand: startCommand.trim(),
-          healthEndpoint: healthEndpoint.trim() || undefined
+          healthEndpoint: healthEndpoint.trim() || undefined,
+          imageDigest: fleetMode === 'provider' ? imageDigest.trim() : undefined,
+          networkPolicy: 'none'
         },
         resources: {
           memoryCapMb,
@@ -136,9 +171,17 @@ export const RigRuntimeView: React.FC = () => {
         },
         storage: storageMounts,
         ttlSeconds,
-        source: 'demo',
+        source: fleetMode === 'provider' ? 'provider' : 'demo',
         createdAt: new Date().toISOString()
       };
+
+      if (fleetMode === 'provider') {
+        setIsWorking(true);
+        const instance = await createRigInstance(newSpec);
+        await refreshProviderFleet();
+        setSelectedInstanceId(instance.spec.id);
+        return;
+      }
 
       const instance = controlPlaneRef.current.createInstance(newSpec);
       refreshState();
@@ -190,6 +233,8 @@ export const RigRuntimeView: React.FC = () => {
       }
     } catch (err: any) {
       setFormError(err.message || 'Failed to create instance.');
+    } finally {
+      setIsWorking(false);
     }
   };
 
@@ -202,7 +247,15 @@ export const RigRuntimeView: React.FC = () => {
     }
   };
 
-  const handleStop = (id: string) => {
+  const handleStop = async (id: string) => {
+    if (fleetMode === 'provider') {
+      setIsWorking(true);
+      setFormError(null);
+      try { await mutateRigInstance('stop', id); await refreshProviderFleet(); }
+      catch (error: any) { setFormError(error.message); }
+      finally { setIsWorking(false); }
+      return;
+    }
     try {
       controlPlaneRef.current.stopInstance(id, 'Simulated stop by operator');
       refreshState();
@@ -211,7 +264,15 @@ export const RigRuntimeView: React.FC = () => {
     }
   };
 
-  const handleRestart = (id: string) => {
+  const handleRestart = async (id: string) => {
+    if (fleetMode === 'provider') {
+      setIsWorking(true);
+      setFormError(null);
+      try { await mutateRigInstance('restart', id); await refreshProviderFleet(); }
+      catch (error: any) { setFormError(error.message); }
+      finally { setIsWorking(false); }
+      return;
+    }
     try {
       controlPlaneRef.current.restartInstance(id);
       refreshState();
@@ -284,12 +345,30 @@ export const RigRuntimeView: React.FC = () => {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    if (fleetMode === 'provider') {
+      setIsWorking(true);
+      setFormError(null);
+      try { await deleteRigInstance(id); await refreshProviderFleet(); setLiveLogs(null); }
+      catch (error: any) { setFormError(error.message); }
+      finally { setIsWorking(false); }
+      return;
+    }
     controlPlaneRef.current.deleteInstance(id);
     refreshState();
   };
 
-  const summary = controlPlaneRef.current.getStatusSummary();
+  const localSummary = controlPlaneRef.current.getStatusSummary();
+  const providerPorts = instances.flatMap(instance => instance.observed.allocatedPort ? [instance.observed.allocatedPort] : []);
+  const summary = fleetMode === 'provider' ? {
+    totalInstances: instances.length,
+    activePorts: providerPorts,
+    availablePorts: Array.from({ length: 10 }, (_, index) => 3001 + index).filter(port => !providerPorts.includes(port)),
+    fleetStats: {
+      totalUsedMb: instances.reduce((sum, instance) => sum + instance.observed.memoryMb, 0),
+      totalCapMb: instances.reduce((sum, instance) => sum + instance.spec.resources.memoryCapMb, 0)
+    }
+  } : localSummary;
   const selectedInstance = instances.find(i => i.spec.id === selectedInstanceId);
 
   const getStatusBadge = (state: RigLifecycleState) => {
@@ -361,7 +440,7 @@ export const RigRuntimeView: React.FC = () => {
                 <Layers size={13} /> Runtime Manifest Builder
               </span>
               <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded border border-gray-300 font-mono">
-                source: demo
+                source: {fleetMode === 'provider' ? 'provider' : 'simulation'}
               </span>
             </div>
 
@@ -371,6 +450,32 @@ export const RigRuntimeView: React.FC = () => {
                   {formError}
                 </div>
               )}
+
+              <div className="grid grid-cols-2 gap-1 rounded border border-gray-400 bg-gray-100 p-1" aria-label="Fleet source">
+                <button
+                  type="button"
+                  disabled={providerState !== 'ready'}
+                  onClick={() => {
+                    setFleetMode('provider');
+                    setLiveLogs(null);
+                    if (user) void refreshProviderFleet().catch(error => setFormError(error.message));
+                  }}
+                  className={`${fleetMode === 'provider' ? 'btn-w95-primary' : 'btn-w95'} py-1 text-[10px] font-bold disabled:opacity-50`}
+                >
+                  Live Provider {providerState === 'ready' ? 'Ready' : 'Unavailable'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFleetMode('simulation');
+                    setLiveLogs(null);
+                    refreshState();
+                  }}
+                  className={`${fleetMode === 'simulation' ? 'btn-w95-primary' : 'btn-w95'} py-1 text-[10px] font-bold`}
+                >
+                  Offline Manifest Simulator
+                </button>
+              </div>
 
               {/* App ID and Display Name */}
               <div className="grid grid-cols-2 gap-2">
@@ -406,24 +511,43 @@ export const RigRuntimeView: React.FC = () => {
                   className="w-full p-1.5 border border-gray-400 text-xs rounded bg-white font-mono"
                 >
                   <option value="docker">Docker Container (docker)</option>
-                  <option value="process">Direct Process (process)</option>
-                  <option value="wasm">WebAssembly Sandbox (wasm)</option>
-                  <option value="custom">Custom Adapter (custom)</option>
-                  <option value="simulation">Local Simulation (simulation)</option>
+                  <option value="process" disabled={fleetMode === 'provider'}>Direct Process (process)</option>
+                  <option value="wasm" disabled={fleetMode === 'provider'}>WebAssembly Sandbox (wasm)</option>
+                  <option value="custom" disabled={fleetMode === 'provider'}>Custom Adapter (custom)</option>
+                  <option value="simulation" disabled={fleetMode === 'provider'}>Local Simulation (simulation)</option>
                 </select>
               </div>
+
+              {fleetMode === 'provider' && (
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Immutable OCI Image Digest</label>
+                  <input
+                    type="text"
+                    value={imageDigest}
+                    onChange={event => setImageDigest(event.target.value)}
+                    className="w-full p-1.5 border border-gray-400 font-mono text-[10px] rounded bg-white"
+                    placeholder="registry.example/app@sha256:64-hex-digest"
+                    required
+                  />
+                  <p className="mt-0.5 text-[10px] text-gray-500">Floating tags such as latest are rejected by the gateway.</p>
+                </div>
+              )}
 
               {/* Build and Start Commands */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Build Command (Optional)</label>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-0.5">
+                    {fleetMode === 'provider' ? 'Build Command (Not run by provider)' : 'Build Command (Simulation Plan)'}
+                  </label>
                   <input
                     type="text"
                     value={buildCommand}
                     onChange={e => setBuildCommand(e.target.value)}
-                    className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white"
+                    disabled={fleetMode === 'provider'}
+                    className="w-full p-1.5 border border-gray-400 font-mono text-xs rounded bg-white disabled:bg-gray-100 disabled:text-gray-500"
                     placeholder="e.g. npm run build"
                   />
+                  {fleetMode === 'provider' && <p className="mt-0.5 text-[10px] text-gray-500">Build and verify before publishing the image digest.</p>}
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-gray-700 mb-0.5">Start Command</label>
@@ -546,7 +670,7 @@ export const RigRuntimeView: React.FC = () => {
               </div>
 
               {/* Options */}
-              <div className="flex items-center gap-2 pt-1">
+              {fleetMode === 'simulation' && <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
                   id="autoProgress"
@@ -557,14 +681,15 @@ export const RigRuntimeView: React.FC = () => {
                 <label htmlFor="autoProgress" className="text-[11px] text-gray-700 cursor-pointer">
                   Auto-step lifecycle: <span className="font-mono text-[10px] text-gray-500">queued &rarr; building &rarr; starting &rarr; healthy</span>
                 </label>
-              </div>
+              </div>}
 
               {/* Launch Action */}
               <button
                 type="submit"
+                disabled={isWorking || (fleetMode === 'provider' && providerState === 'checking')}
                 className="btn-w95 btn-w95-primary w-full py-2 text-xs flex items-center justify-center gap-1.5 font-bold shadow"
               >
-                <Play size={13} /> Launch Demo Plan (Simulation)
+                <Play size={13} /> {isWorking ? 'Working…' : fleetMode === 'provider' ? 'Launch Isolated Provider Instance' : 'Launch Demo Plan (Simulation)'}
               </button>
             </form>
           </div>
@@ -606,7 +731,11 @@ export const RigRuntimeView: React.FC = () => {
               </div>
               <h3 className="font-bold text-sm text-gray-900 mb-1">No Active RIG Instances</h3>
               <p className="text-gray-600 text-xs max-w-md mb-4">
-                The control plane is currently empty. Configure a runtime manifest on the left and click <strong>Launch Demo Plan</strong> to observe lifecycle transitions, port allocation, and resource governance in a deterministic simulation.
+                {fleetMode === 'provider'
+                  ? user
+                    ? 'Your live provider fleet is empty. Supply an immutable image digest and launch an isolated instance; the gateway owns its real lifecycle and cleanup.'
+                    : 'The production provider is ready. Sign in, then supply an immutable image digest to launch your first isolated instance.'
+                  : 'The offline simulator is empty. Configure a manifest and launch a demo plan to inspect lifecycle rules without executing commands or creating a container.'}
               </p>
               <div className="bg-gray-50 border border-gray-300 p-3 rounded text-left text-xs max-w-md space-y-1.5">
                 <div className="font-bold text-gray-800 flex items-center gap-1">
@@ -616,7 +745,7 @@ export const RigRuntimeView: React.FC = () => {
                   <li>Zero hardcoded or fabricated initial fleet containers</li>
                   <li>Runtime &amp; storage agnostic (stateless, SQLite, or generic volumes)</li>
                   <li>Deterministic 9-state lifecycle machine with legal transitions</li>
-                  <li>Safe port allocation &amp; automatic release on stop/expiry</li>
+                  <li>{fleetMode === 'provider' ? 'Gateway observations only; no browser-fabricated health state' : 'Simulation events stay explicitly separate from provider evidence'}</li>
                 </ul>
               </div>
             </div>
@@ -704,11 +833,11 @@ export const RigRuntimeView: React.FC = () => {
                     {/* Interactive Control-Plane Actions */}
                     <div className="space-y-1 mb-3">
                       <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block">
-                        Deterministic Control Actions
+                        {fleetMode === 'provider' ? 'Authenticated Provider Actions' : 'Deterministic Simulation Actions'}
                       </span>
                       <div className="flex flex-wrap gap-1.5">
                         {/* Progressive State Advancers */}
-                        {selectedInstance.observed.lifecycle === 'queued' && (
+                        {fleetMode === 'simulation' && selectedInstance.observed.lifecycle === 'queued' && (
                           <button
                             onClick={() => handleStepTransition(selectedInstance.spec.id, 'building', 'Simulated build phase; no command executed')}
                             className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold"
@@ -716,7 +845,7 @@ export const RigRuntimeView: React.FC = () => {
                             <Play size={11} /> Step &rarr; Building
                           </button>
                         )}
-                        {selectedInstance.observed.lifecycle === 'building' && (
+                        {fleetMode === 'simulation' && selectedInstance.observed.lifecycle === 'building' && (
                           <button
                             onClick={() => handleStepTransition(selectedInstance.spec.id, 'starting', 'Simulated start phase; no process started')}
                             className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold"
@@ -724,7 +853,7 @@ export const RigRuntimeView: React.FC = () => {
                             <Play size={11} /> Step &rarr; Starting
                           </button>
                         )}
-                        {selectedInstance.observed.lifecycle === 'starting' && (
+                        {fleetMode === 'simulation' && selectedInstance.observed.lifecycle === 'starting' && (
                           <button
                             onClick={() => handleStepTransition(selectedInstance.spec.id, 'healthy', 'Simulated healthy observation; no probe executed')}
                             className="btn-w95 text-xs py-1 px-2.5 flex items-center gap-1 font-bold text-green-700"
@@ -736,19 +865,21 @@ export const RigRuntimeView: React.FC = () => {
                         {/* Standard Lifecycle Actions */}
                         <button
                           onClick={() => handleRestart(selectedInstance.spec.id)}
+                          disabled={isWorking}
                           className="btn-w95 text-xs py-1 px-2 flex items-center gap-1"
                         >
                           <RotateCcw size={11} /> Restart
                         </button>
                         <button
                           onClick={() => handleStop(selectedInstance.spec.id)}
-                          disabled={selectedInstance.observed.lifecycle === 'stopped'}
+                          disabled={isWorking || selectedInstance.observed.lifecycle === 'stopped'}
                           className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 disabled:opacity-50"
                         >
                           <Square size={11} /> Stop
                         </button>
 
                         {/* Fault Injection Simulation Controls */}
+                        {fleetMode === 'simulation' && <>
                         <button
                           onClick={() => handleSimulateOOM(selectedInstance.spec.id)}
                           disabled={selectedInstance.observed.lifecycle === 'stopped' || selectedInstance.observed.lifecycle === 'oom'}
@@ -773,14 +904,38 @@ export const RigRuntimeView: React.FC = () => {
                         >
                           <Clock size={11} /> Simulate Expiry
                         </button>
+                        </>}
+                        {fleetMode === 'provider' && (
+                          <button
+                            onClick={async () => {
+                              setIsWorking(true);
+                              setFormError(null);
+                              try { setLiveLogs(await getRigInstanceLogs(selectedInstance.spec.id)); }
+                              catch (error: any) { setFormError(error.message); }
+                              finally { setIsWorking(false); }
+                            }}
+                            disabled={isWorking}
+                            className="btn-w95 text-xs py-1 px-2 flex items-center gap-1"
+                          >
+                            <Activity size={11} /> Fetch Bounded Logs
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDelete(selectedInstance.spec.id)}
+                          disabled={isWorking}
                           className="btn-w95 text-xs py-1 px-2 flex items-center gap-1 text-red-800 ml-auto"
                         >
                           <Trash2 size={11} /> Destroy
                         </button>
                       </div>
                     </div>
+
+                    {fleetMode === 'provider' && liveLogs !== null && (
+                      <div className="mb-3 rounded border border-gray-700 bg-black p-2.5 font-mono text-[11px] text-green-300 max-h-[180px] overflow-auto whitespace-pre-wrap select-text">
+                        <div className="text-gray-400 border-b border-gray-800 pb-1 mb-1 text-[10px]">BOUNDED PROVIDER LOGS · MAX 200 LINES</div>
+                        {liveLogs || '[No log output returned]'}
+                      </div>
+                    )}
 
                     {/* Chronological Event Timeline */}
                     <div className="bg-black text-green-400 p-2.5 rounded border border-gray-700 font-mono text-[11px] space-y-1 max-h-[220px] overflow-y-auto">
