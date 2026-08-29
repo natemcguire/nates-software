@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   NEUTRAL_DEV_FIXTURES,
+  NON_SUBMITTABLE_SCHEMA_EXAMPLE,
   calculateDynoScore,
   generateBadgeMarkdown,
-  DynoFixture,
-  DynoRunExecutionResult,
-  DynoAttemptStatus,
-  sha256Json
+  DynoFixture
 } from '../lib/dynoDomain';
 import {
   Gauge,
@@ -22,7 +20,9 @@ import {
   Upload,
   Search,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Code,
+  Info
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 
@@ -31,6 +31,7 @@ export const DynoView: React.FC = () => {
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedBadge, setCopiedBadge] = useState(false);
+  const [showSchemaExample, setShowSchemaExample] = useState(false);
 
   // Leaderboard data
   const [leaderboardRuns, setLeaderboardRuns] = useState<any[]>([]);
@@ -86,185 +87,10 @@ export const DynoView: React.FC = () => {
     }
   }, [activeTab]);
 
-  // Generate Sample Deterministic Bundle for testing import & inspection
-  const handleLoadSampleBundle = () => {
+  // Toggle Non-Submittable Schema Reference Example
+  const handleToggleSchemaExample = () => {
     playClickSound();
-    const mockRunId = `run_sample_claude_${Date.now()}`;
-    const timestamp = new Date().toISOString();
-
-    const sampleAttempts = NEUTRAL_DEV_FIXTURES.map((fixture, idx) => {
-      const isPassed = idx !== 5; // 6 passed, 1 failed
-      const durationMs = 12000 + idx * 3500;
-      const attemptId = `attempt_${fixture.key}_rep1_att1_${Date.now()}`;
-      const status: DynoAttemptStatus = isPassed ? 'passed' : 'failed';
-
-      return {
-        attempt: {
-          id: attemptId,
-          run_id: mockRunId,
-          task_id: fixture.key,
-          attempt_number: 1,
-          status,
-          first_attempt_success: isPassed ? (1 as const) : (0 as const),
-          hidden_tests_passed: isPassed ? fixture.hiddenTests.length : 0,
-          hidden_tests_total: fixture.hiddenTests.length,
-          duration_ms: durationMs,
-          input_tokens: 1800 + idx * 400,
-          output_tokens: 350 + idx * 80,
-          cached_input_tokens: 1200 + idx * 300,
-          cost_micros: 6500 + idx * 1200,
-          tool_calls: 5 + idx,
-          human_interventions: 0,
-          unnecessary_files_changed: 0,
-          safety_violations: 0,
-          instruction_score: isPassed ? 100 : 0,
-          result_digest: sha256Json({ fixture: fixture.key, isPassed, durationMs }),
-          started_at: timestamp,
-          completed_at: timestamp
-        },
-        fileChanges: {
-          modified: fixture.expectedModifiedFiles,
-          created: [],
-          deleted: [],
-          unnecessaryChanges: []
-        },
-        toolEvents: [
-          {
-            id: `te_${attemptId}_0`,
-            task_attempt_id: attemptId,
-            sequence_number: 0,
-            tool_name: 'read_file',
-            command_class: 'fs_read',
-            started_offset_ms: 100,
-            input_digest: sha256Json({ path: 'src/file.js' }),
-            safety_classification: 'allowed' as const
-          },
-          {
-            id: `te_${attemptId}_1`,
-            task_attempt_id: attemptId,
-            sequence_number: 1,
-            tool_name: 'write_file',
-            command_class: 'fs_write',
-            started_offset_ms: 4500,
-            input_digest: sha256Json({ content: 'fixed implementation' }),
-            safety_classification: 'allowed' as const
-          }
-        ],
-        graderResults: fixture.graders.map(g => ({
-          id: `grader_${attemptId}_${g.key}`,
-          task_attempt_id: attemptId,
-          grader_key: g.key,
-          grader_version: g.version,
-          passed: (isPassed ? 1 : 0) as 0 | 1,
-          score: isPassed ? 1 : 0,
-          max_score: 1,
-          evidence_digest: sha256Json({ grader: g.key, isPassed }),
-          detail: isPassed ? `[PASS] Grader ${g.key} verified all invariants.` : `[FAIL] Grader ${g.key} failed.`
-        }))
-      };
-    });
-
-    const passedCount = sampleAttempts.filter(a => a.attempt.status === 'passed').length;
-    const totalCount = sampleAttempts.length;
-    const firstAttemptCount = sampleAttempts.filter(a => a.attempt.first_attempt_success === 1).length;
-    const hiddenPassed = sampleAttempts.reduce((acc, a) => acc + a.attempt.hidden_tests_passed, 0);
-    const hiddenTotal = sampleAttempts.reduce((acc, a) => acc + a.attempt.hidden_tests_total, 0);
-
-    const scoreResult = calculateDynoScore({
-      tasksCompleted: passedCount,
-      totalTasks: totalCount,
-      firstAttemptSuccessRate: passedCount / totalCount,
-      hiddenTestsPassedRate: hiddenPassed / hiddenTotal,
-      medianCompletionSeconds: 22,
-      humanInterventions: 0,
-      safetyViolations: 0,
-      unnecessaryFilesChanged: 0
-    });
-
-    const rawTraceSha256 = sha256Json(sampleAttempts.map(a => a.attempt.result_digest));
-    const attestationDigest = sha256Json({
-      runId: mockRunId,
-      score: scoreResult.score,
-      rawTraceSha256,
-      timestamp
-    });
-
-    const bundle: DynoRunExecutionResult = {
-      run: {
-        id: mockRunId,
-        suite_id: 'suite_dyno_neutral_2026',
-        subject_id: 'subj_claude37_agy_local',
-        environment_id: 'env_macos_m4max_local',
-        submitted_by_user_id: null,
-        repetition: 2,
-        randomization_seed: 'seed_sample_verified_42',
-        status: 'completed',
-        verification_status: 'reproducible',
-        overall_score: scoreResult.score,
-        total_cost_micros: sampleAttempts.reduce((acc, a) => acc + a.attempt.cost_micros, 0),
-        total_tokens: sampleAttempts.reduce((acc, a) => acc + a.attempt.input_tokens + a.attempt.output_tokens, 0),
-        runner_attestation_digest: attestationDigest,
-        raw_trace_r2_key: null,
-        raw_trace_sha256: rawTraceSha256,
-        started_at: timestamp,
-        completed_at: timestamp,
-        created_at: timestamp
-      },
-      subject: {
-        id: 'subj_claude37_agy_local',
-        model_provider: 'anthropic',
-        model_id: 'claude-3-7-sonnet',
-        model_version: '20260228',
-        model_config: JSON.stringify({ temperature: 0.2, thinkingBudget: 16000 }),
-        agent_harness: 'Antigravity CLI (agy v2.4)',
-        harness_version: '2.4.0',
-        tool_manifest: JSON.stringify(['view_file', 'replace_file_content', 'run_command', 'grep_search'])
-      },
-      environment: {
-        id: 'env_macos_m4max_local',
-        os_name: 'macOS',
-        os_version: '15.3.1',
-        architecture: 'arm64',
-        cpu_model: 'Apple M4 Max',
-        accelerator_model: '40-Core GPU',
-        memory_bytes: 68719476736,
-        container_image_digest: sha256Json({ base: 'darwin-local-runner' }),
-        runtime_manifest: JSON.stringify({ nodeVersion: 'v25.9.0' }),
-        network_policy: 'none'
-      },
-      suite: {
-        id: 'suite_dyno_neutral_2026',
-        slug: 'dyno-standard-dev',
-        version: '2026.1',
-        name: 'DYNO Real-World Developer Tasks Benchmark',
-        methodology_markdown: '# DYNO Standard Suite\nDeterministic task completion across model + harness.',
-        task_manifest_digest: sha256Json({ suite: 'dyno-2026.1' }),
-        grader_version: '1.0.0',
-        status: 'active',
-        created_at: timestamp
-      },
-      attempts: sampleAttempts,
-      summary: {
-        totalTasks: totalCount,
-        tasksPassed: passedCount,
-        completionRate: Math.round((passedCount / totalCount) * 100),
-        firstAttemptSuccessRate: Math.round((firstAttemptCount / totalCount) * 100),
-        hiddenTestsPassedRate: Math.round((hiddenPassed / hiddenTotal) * 100),
-        medianDurationMs: 22000,
-        medianToolCalls: 8,
-        totalTokens: 24500,
-        totalCostMicros: 68500,
-        totalSafetyViolations: 0,
-        totalUnnecessaryFilesChanged: 0,
-        totalHumanInterventions: 0,
-        dynoScore: scoreResult.score,
-        grade: scoreResult.grade
-      }
-    };
-
-    setImportJsonText(JSON.stringify(bundle, null, 2));
-    setImportValidation(null);
-    setSubmitFeedback(null);
+    setShowSchemaExample(prev => !prev);
   };
 
   // Validate Imported JSON Bundle
@@ -298,6 +124,10 @@ export const DynoView: React.FC = () => {
     if (!suite) errors.push('Missing top-level "suite" record.');
     if (!Array.isArray(attempts) || attempts.length === 0) {
       errors.push('Missing or empty "attempts" array.');
+    }
+
+    if (run?.id === 'run_example_non_submittable_doc_only' || parsed.is_example === true) {
+      errors.push('Cannot submit non-submittable schema reference example. Execute a real local benchmark via ./bin/slop dyno.');
     }
 
     const sha256Regex = /^[0-9a-f]{64}$/i;
@@ -491,8 +321,10 @@ export const DynoView: React.FC = () => {
   };
 
   const copyBadge = () => {
-    const score = selectedRun?.run?.overall_score ?? selectedRun?.overall_score ?? 850;
-    navigator.clipboard.writeText(generateBadgeMarkdown('nate', score));
+    const score = selectedRun?.run?.overall_score ?? selectedRun?.overall_score;
+    const username = selectedRun?.run?.username ?? selectedRun?.username;
+    if (typeof score !== 'number' || !username) return;
+    navigator.clipboard.writeText(generateBadgeMarkdown(username, score));
     setCopiedBadge(true);
     setTimeout(() => setCopiedBadge(false), 2000);
   };
@@ -514,6 +346,7 @@ export const DynoView: React.FC = () => {
         </div>
 
         {/* Tab Controls */}
+        {/* Tab Controls */}
         <div className="flex gap-1 font-sans flex-wrap">
           <button
             onClick={() => { playClickSound(); setActiveTab('setup'); }}
@@ -531,7 +364,7 @@ export const DynoView: React.FC = () => {
             onClick={() => { playClickSound(); setActiveTab('leaderboard'); }}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'leaderboard' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            🏆 Verified Leaderboard
+            🏆 Leaderboard
           </button>
           <button
             onClick={() => { playClickSound(); setActiveTab('inspector'); }}
@@ -553,8 +386,13 @@ export const DynoView: React.FC = () => {
         {/* Host Execution Boundary Notice */}
         <div className="bg-blue-50 border border-blue-300 p-2.5 rounded text-[11px] text-blue-950 flex items-start gap-2">
           <ShieldCheck size={16} className="text-blue-700 shrink-0 mt-0.5" />
-          <div>
-            <strong>Host Execution Boundary:</strong> The browser environment cannot execute host shell processes or mount isolated filesystem sandboxes. DYNO benchmarks must run locally on your workstation via the CLI runner. Completed runs generate cryptographic attestation digests which can be imported, inspected, and verified here.
+          <div className="space-y-0.5">
+            <div>
+              <strong>Standalone Developer Benchmark:</strong> DYNO is a standalone street-race-realistic benchmark of Model + Harness + Tools against common developer commands, completely unrelated to marketplace app runtimes.
+            </div>
+            <div className="text-[10px] text-blue-900">
+              Benchmarks run locally on your workstation via <code>./bin/slop dyno</code>. Reports remain strictly local (<code>~/.dyno/report.json</code>) until explicit signed-in submission. Submitted client runs are recorded as <strong>Unverified (Self-Reported)</strong>.
+            </div>
           </div>
         </div>
 
@@ -568,7 +406,7 @@ export const DynoView: React.FC = () => {
               <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                 <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
                   <Terminal size={14} className="text-blue-700" />
-                  Local Benchmark Execution Configuration
+                  Local Workstation Benchmark Configuration
                 </span>
                 <span className="text-gray-500 text-[10px] font-mono">DYNO Dev Suite v2026.1</span>
               </div>
@@ -648,6 +486,34 @@ export const DynoView: React.FC = () => {
                   <span>{copiedCommand ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
+
+              {/* Local Storage & Non-Submittable Schema Notice */}
+              <div className="flex items-center justify-between pt-1 border-t border-gray-200 flex-wrap gap-2 text-[11px]">
+                <div className="text-gray-600 flex items-center gap-1.5">
+                  <Info size={14} className="text-blue-700 shrink-0" />
+                  <span>Output saved to <code>~/.dyno/report.json</code>. Remains strictly local until submitted.</span>
+                </div>
+                <button
+                  onClick={handleToggleSchemaExample}
+                  className="btn-w95 text-[11px] py-0.5 px-2.5 bg-gray-100 flex items-center gap-1"
+                >
+                  <Code size={12} />
+                  <span>{showSchemaExample ? 'Hide Schema Example' : 'View Non-Submittable Schema Example'}</span>
+                </button>
+              </div>
+
+              {/* Schema Example Box */}
+              {showSchemaExample && (
+                <div className="p-2.5 bg-gray-900 text-gray-200 rounded font-mono text-[10px] space-y-1.5 border border-yellow-500/50">
+                  <div className="flex items-center justify-between text-yellow-400 font-bold border-b border-gray-700 pb-1">
+                    <span>[NON-SUBMITTABLE SCHEMA EXAMPLE — Reference Format Only]</span>
+                    <span className="text-[9px] text-gray-400">Do not submit: rejected by server</span>
+                  </div>
+                  <pre className="max-h-56 overflow-auto text-green-300">
+                    {JSON.stringify(NON_SUBMITTABLE_SCHEMA_EXAMPLE, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
 
             {/* Neutral Dev Tasks Matrix */}
@@ -655,7 +521,7 @@ export const DynoView: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
                   <Layers size={14} className="text-purple-700" />
-                  {NEUTRAL_DEV_FIXTURES.length} Neutral Developer Tasks Under Test
+                  {NEUTRAL_DEV_FIXTURES.length} Canonical Neutral Developer Tasks Under Test
                 </span>
                 <span className="text-gray-500 text-[11px]">Click task to inspect fixture specs</span>
               </div>
@@ -730,33 +596,47 @@ export const DynoView: React.FC = () => {
         {/* ========================================================================= */}
         {activeTab === 'import' && (
           <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
-            <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-2 flex-wrap gap-2">
               <div>
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
                   <Upload size={16} className="text-blue-700" />
                   Import Local Benchmark Execution Bundle
                 </h3>
                 <p className="text-[11px] text-gray-600">
-                  Paste the JSON output generated by your local DYNO runner. The server validates attestation digests and deterministically computes scores.
+                  Paste the JSON report generated by <code>./bin/slop dyno</code> (saved at <code>~/.dyno/report.json</code>). Submissions require sign-in and are recorded as <strong>Unverified (Self-Reported)</strong>.
                 </p>
               </div>
               <button
-                onClick={handleLoadSampleBundle}
-                className="btn-w95 text-xs py-1 px-3 bg-yellow-50 text-yellow-900 hover:bg-yellow-100 border-yellow-400 font-bold"
+                onClick={handleToggleSchemaExample}
+                className="btn-w95 text-xs py-1 px-3 bg-gray-100 text-gray-800 hover:bg-white border-gray-400 flex items-center gap-1"
               >
-                ⚡ Load Sample Valid Bundle
+                <Code size={13} />
+                <span>{showSchemaExample ? 'Hide Schema Example' : '📖 View Schema Format'}</span>
               </button>
             </div>
+
+            {/* Schema Example Box */}
+            {showSchemaExample && (
+              <div className="p-2.5 bg-gray-900 text-gray-200 rounded font-mono text-[10px] space-y-1 border border-yellow-500/50">
+                <div className="flex items-center justify-between text-yellow-400 font-bold border-b border-gray-700 pb-1">
+                  <span>[NON-SUBMITTABLE SCHEMA EXAMPLE — Documentation Reference Only]</span>
+                  <span className="text-[9px] text-gray-400">Do not submit: rejected by server</span>
+                </div>
+                <pre className="max-h-48 overflow-auto text-green-300">
+                  {JSON.stringify(NON_SUBMITTABLE_SCHEMA_EXAMPLE, null, 2)}
+                </pre>
+              </div>
+            )}
 
             {/* Textarea for JSON payload */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-gray-700">
-                Run Execution JSON Payload (`DynoRunExecutionResult`):
+                Run Execution JSON Payload (`DynoRunExecutionResult` from `~/.dyno/report.json`):
               </label>
               <textarea
                 value={importJsonText}
                 onChange={e => { setImportJsonText(e.target.value); setImportValidation(null); setSubmitFeedback(null); }}
-                placeholder="Paste { run: {...}, subject: {...}, environment: {...}, attempts: [...] } here..."
+                placeholder="Paste contents of ~/.dyno/report.json here..."
                 rows={10}
                 className="w-full border border-gray-400 p-2 rounded font-mono text-[11px] bg-gray-50 focus:bg-white"
               />
@@ -770,7 +650,7 @@ export const DynoView: React.FC = () => {
                 className="btn-w95 btn-w95-primary py-1.5 px-4 font-bold flex items-center gap-1.5 text-xs"
               >
                 <CheckCircle2 size={14} />
-                <span>Validate Execution Bundle</span>
+                <span>Validate Local Bundle</span>
               </button>
 
               {importValidation?.valid && (
@@ -780,7 +660,7 @@ export const DynoView: React.FC = () => {
                   className="btn-w95 py-1.5 px-4 font-bold flex items-center gap-1.5 text-xs bg-green-100 text-green-900 border-green-500 hover:bg-green-200"
                 >
                   {isSubmitting ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
-                  <span>{isSubmitting ? 'Ingesting to D1...' : 'Submit to Canonical Leaderboard'}</span>
+                  <span>{isSubmitting ? 'Recording self-report...' : 'Submit Self-Reported Run'}</span>
                 </button>
               )}
             </div>
@@ -788,19 +668,22 @@ export const DynoView: React.FC = () => {
             {/* Validation Outcome Report */}
             {importValidation && (
               <div className={`p-3 rounded border text-xs ${
-                importValidation.valid ? 'bg-green-50 border-green-300 text-green-950' : 'bg-red-50 border-red-300 text-red-950'
+                importValidation.valid ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-red-50 border-red-300 text-red-950'
               }`}>
                 {importValidation.valid ? (
                   <div className="space-y-1.5">
-                    <div className="font-bold flex items-center gap-1.5 text-green-800">
-                      <CheckCircle2 size={16} />
-                      Execution Bundle Verified Successfully!
+                    <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                      <CheckCircle2 size={16} className="text-amber-700" />
+                      Local Execution Bundle Format Valid (Unverified Client Evidence)
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 font-mono text-[11px] pt-1">
+                    <p className="text-[11px] text-amber-800">
+                      Bundle structure and deterministic digests are valid. Submitting will record this run under your account with <code>unverified</code> status. Client evidence is never self-promoted to verified.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 font-mono text-[11px] pt-1 border-t border-amber-200">
                       <div><span className="text-gray-600">Deterministic Score:</span> <strong>{importValidation.calculatedScore} / 1000</strong></div>
                       <div><span className="text-gray-600">Grade:</span> <strong>{importValidation.calculatedGrade}</strong></div>
                       <div><span className="text-gray-600">Attestation SHA:</span> <span className="text-[10px] truncate block">{importValidation.parsedPayload?.run?.runner_attestation_digest?.substring(0, 16)}...</span></div>
-                      <div><span className="text-gray-600">Trace SHA:</span> <span className="text-[10px] truncate block">{importValidation.parsedPayload?.run?.raw_trace_sha256?.substring(0, 16)}...</span></div>
+                      <div><span className="text-gray-600">Verification Level:</span> <strong className="text-amber-800">UNVERIFIED (SELF-REPORTED)</strong></div>
                     </div>
                   </div>
                 ) : (
@@ -850,10 +733,10 @@ export const DynoView: React.FC = () => {
               <div>
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
                   <Trophy size={16} className="text-yellow-500" />
-                  DYNO Canonical AI Developer Leaderboard
+                  DYNO Reproducible &amp; Verified Leaderboard
                 </h3>
                 <p className="text-[11px] text-gray-600">
-                  Real verified benchmark runs queried from canonical D1 database (`dyno_runs`). Zero hardcoded mock presets.
+                  Only independently reproducible or verified runs appear here. Self-reported uploads remain outside ranked comparisons.
                 </p>
               </div>
 
@@ -876,9 +759,9 @@ export const DynoView: React.FC = () => {
             {leaderboardRuns.length === 0 && !loadingLeaderboard ? (
               <div className="p-8 text-center bg-gray-50 border border-dashed border-gray-300 rounded space-y-2">
                 <Gauge size={28} className="mx-auto text-gray-400" />
-                <div className="font-bold text-gray-700 text-sm">No Verified Benchmark Runs Recorded Yet</div>
+                <div className="font-bold text-gray-700 text-sm">No Reproducible Benchmark Runs Yet</div>
                 <p className="text-[11px] text-gray-500 max-w-md mx-auto">
-                  The canonical database is empty. Execute the benchmark locally on your host machine via the CLI runner, then import your completed bundle in the Import tab.
+                  Run DYNO locally and submit a self-report for future independent replay. Self-reported uploads do not appear in ranked comparisons.
                 </p>
                 <button
                   onClick={() => { playClickSound(); setActiveTab('import'); }}
@@ -1023,7 +906,7 @@ export const DynoView: React.FC = () => {
                       <div className="text-lg font-bold font-mono text-blue-950">
                         {selectedRun.run?.overall_score ?? selectedRun.overall_score} <span className="text-xs font-normal text-gray-500">/ 1000</span>
                       </div>
-                      <div className="text-[9px] font-bold text-green-700">{selectedRun.summary?.grade || 'Grade A+'}</div>
+                      <div className="text-[9px] font-bold text-green-700">{selectedRun.summary?.grade || 'Server-scored'}</div>
                     </div>
 
                     <div className="bg-green-50 border border-green-200 p-2 rounded">
@@ -1031,13 +914,13 @@ export const DynoView: React.FC = () => {
                       <div className="text-lg font-bold font-mono text-green-800">
                         {selectedRun.summary?.tasksPassed ?? (selectedRun.attempts?.filter((a: any) => (a.attempt?.status || a.status) === 'passed').length)} / {selectedRun.summary?.totalTasks ?? selectedRun.attempts?.length}
                       </div>
-                      <div className="text-[9px] text-gray-500">{selectedRun.summary?.completionRate ?? 100}% Completion</div>
+                      <div className="text-[9px] text-gray-500">{selectedRun.summary?.completionRate != null ? `${selectedRun.summary.completionRate}% Completion` : 'Open full run details'}</div>
                     </div>
 
                     <div className="bg-purple-50 border border-purple-200 p-2 rounded">
                       <div className="text-[10px] text-gray-600 font-bold">HIDDEN TESTS</div>
                       <div className="text-lg font-bold font-mono text-purple-800">
-                        {selectedRun.summary?.hiddenTestsPassedRate ?? 100}%
+                        {selectedRun.summary?.hiddenTestsPassedRate != null ? `${selectedRun.summary.hiddenTestsPassedRate}%` : '—'}
                       </div>
                       <div className="text-[9px] text-gray-500">Deterministic Checks</div>
                     </div>
@@ -1045,7 +928,7 @@ export const DynoView: React.FC = () => {
                     <div className="bg-amber-50 border border-amber-200 p-2 rounded">
                       <div className="text-[10px] text-gray-600 font-bold">FIRST ATTEMPT</div>
                       <div className="text-lg font-bold font-mono text-amber-800">
-                        {selectedRun.summary?.firstAttemptSuccessRate ?? 100}%
+                        {selectedRun.summary?.firstAttemptSuccessRate != null ? `${selectedRun.summary.firstAttemptSuccessRate}%` : '—'}
                       </div>
                       <div className="text-[9px] text-gray-500">One-Shot Accuracy</div>
                     </div>
@@ -1053,15 +936,15 @@ export const DynoView: React.FC = () => {
                     <div className="bg-gray-50 border border-gray-200 p-2 rounded">
                       <div className="text-[10px] text-gray-600 font-bold">MEDIAN SPEED</div>
                       <div className="text-lg font-bold font-mono text-gray-800">
-                        {Math.round((selectedRun.summary?.medianDurationMs || 22000) / 1000)}s
+                        {selectedRun.summary?.medianDurationMs != null ? `${Math.round(selectedRun.summary.medianDurationMs / 1000)}s` : '—'}
                       </div>
-                      <div className="text-[9px] text-gray-500">{selectedRun.summary?.medianToolCalls || 6} Tools / Task</div>
+                      <div className="text-[9px] text-gray-500">{selectedRun.summary?.medianToolCalls != null ? `${selectedRun.summary.medianToolCalls} Tools / Task` : 'Not in public aggregate'}</div>
                     </div>
 
                     <div className="bg-emerald-50 border border-emerald-200 p-2 rounded">
                       <div className="text-[10px] text-gray-600 font-bold">TOTAL TOKENS</div>
                       <div className="text-lg font-bold font-mono text-emerald-800">
-                        {selectedRun.summary?.totalTokens?.toLocaleString() ?? '24,500'}
+                        {selectedRun.summary?.totalTokens?.toLocaleString() ?? '—'}
                       </div>
                       <div className="text-[9px] text-gray-500">Input + Output</div>
                     </div>
@@ -1125,7 +1008,7 @@ export const DynoView: React.FC = () => {
                               <span className="font-mono text-gray-400 font-bold w-5">{(idx + 1).toString().padStart(2, '0')}</span>
                               <span className="font-bold text-gray-900 font-mono">{att.task_id}</span>
                               <span className="bg-gray-200 text-gray-700 px-1 py-0.2 rounded text-[9px] font-mono">
-                                Attempt #{att.attempt_number}
+                                Execution #{att.attempt_number}
                               </span>
                             </div>
 
@@ -1210,7 +1093,7 @@ export const DynoView: React.FC = () => {
               <div className="p-3 bg-gray-100 rounded border border-gray-300 flex items-center gap-3 flex-wrap">
                 <div className="bg-[#000080] text-white px-3 py-1.5 rounded font-mono text-xs font-bold flex items-center gap-2 shadow">
                   <Gauge size={14} className="text-yellow-400" />
-                  <span>DYNO Dev Benchmark: {selectedRun?.run?.overall_score ?? selectedRun?.overall_score ?? 850} / 1000</span>
+                  <span>DYNO Dev Benchmark: {selectedRun?.run?.overall_score ?? selectedRun?.overall_score ?? 'UNSCORED'} / 1000</span>
                 </div>
                 <span className="text-xs text-gray-600 font-mono">
                   Markdown: `[![DYNO Real-World AI Benchmark](...)]`

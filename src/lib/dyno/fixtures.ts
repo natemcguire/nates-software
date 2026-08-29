@@ -2,7 +2,7 @@
 // Covers common real-world software engineering tasks across standard categories.
 // Strictly independent of this repository's domain and marketplace apps.
 
-import { DynoFixture, DynoTaskCategory } from './types';
+import { DynoFixture, DynoTaskCategory, DynoSuiteRecord, DynoRunExecutionResult } from './types';
 import { digestFileManifest, sha256, sha256Json } from './crypto';
 
 export const NEUTRAL_DEV_FIXTURES: readonly DynoFixture[] = [
@@ -742,7 +742,6 @@ const orig = {
   map: new Map([['k1', { v: 1 }]]),
   set: new Set([1, 2, 3])
 };
-
 const cloned = deepClone(orig);
 assert.deepStrictEqual(cloned, orig);
 assert.notStrictEqual(cloned, orig);
@@ -1154,3 +1153,167 @@ module.exports = { deepClone };
 export function getReferenceSolution(taskKey: string): Readonly<Record<string, string>> | undefined {
   return REFERENCE_SOLUTIONS[taskKey];
 }
+
+// ============================================================================
+// CANONICAL SUITE & MANIFEST METADATA
+// ============================================================================
+
+export const CANONICAL_DYNO_SUITE_ID = 'suite_dyno_neutral_2026';
+export const CANONICAL_DYNO_SUITE_SLUG = 'dyno-standard-dev';
+export const CANONICAL_DYNO_SUITE_VERSION = '2026.1';
+export const CANONICAL_DYNO_SUITE_NAME = 'DYNO Real-World Developer Tasks Benchmark';
+export const CANONICAL_DYNO_SUITE_METHODOLOGY = '# DYNO Standard Suite\nDeterministic task completion across model + harness.';
+export const CANONICAL_DYNO_GRADER_VERSION = '1.0.0';
+
+export function computeTaskManifestDigest(fixtures: readonly DynoFixture[] = NEUTRAL_DEV_FIXTURES): string {
+  return sha256Json(fixtures.map(f => ({
+    key: f.key,
+    category: f.category,
+    fixtureDigest: computeFixtureDigest(f),
+    promptDigest: computePromptDigest(f.prompt),
+    graderDigest: computeGraderManifestDigest(f.graders)
+  })));
+}
+
+export const CANONICAL_DYNO_TASK_MANIFEST_DIGEST = computeTaskManifestDigest(NEUTRAL_DEV_FIXTURES);
+
+export const CANONICAL_DYNO_SUITE: Readonly<DynoSuiteRecord> = {
+  id: CANONICAL_DYNO_SUITE_ID,
+  slug: CANONICAL_DYNO_SUITE_SLUG,
+  version: CANONICAL_DYNO_SUITE_VERSION,
+  name: CANONICAL_DYNO_SUITE_NAME,
+  methodology_markdown: CANONICAL_DYNO_SUITE_METHODOLOGY,
+  task_manifest_digest: CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
+  grader_version: CANONICAL_DYNO_GRADER_VERSION,
+  status: 'active',
+  created_at: '2026-01-01T00:00:00.000Z'
+};
+
+export const CANONICAL_TASK_MAP: ReadonlyMap<string, DynoFixture> = new Map(
+  NEUTRAL_DEV_FIXTURES.map(f => [f.key, f])
+);
+
+/**
+ * Non-submittable schema/documentation reference example.
+ * Intentionally contains invalid dummy digests and an explicit non-submittable ID
+ * so it cannot be mistakenly submitted as real evidence.
+ */
+export const NON_SUBMITTABLE_SCHEMA_EXAMPLE: Readonly<DynoRunExecutionResult> = {
+  run: {
+    id: 'run_example_non_submittable_doc_only',
+    suite_id: CANONICAL_DYNO_SUITE_ID,
+    subject_id: 'subj_example_model_harness',
+    environment_id: 'env_example_workstation',
+    submitted_by_user_id: null,
+    repetition: 1,
+    randomization_seed: 'seed_example_doc_only',
+    status: 'completed',
+    verification_status: 'unverified',
+    overall_score: 850,
+    total_cost_micros: 25000,
+    total_tokens: 12000,
+    runner_attestation_digest: '0000000000000000000000000000000000000000000000000000000000000000',
+    raw_trace_r2_key: null,
+    raw_trace_sha256: '0000000000000000000000000000000000000000000000000000000000000000',
+    started_at: '2026-08-29T12:00:00.000Z',
+    completed_at: '2026-08-29T12:05:00.000Z',
+    created_at: '2026-08-29T12:05:00.000Z'
+  },
+  subject: {
+    id: 'subj_example_model_harness',
+    model_provider: 'example-provider',
+    model_id: 'example-model-v1',
+    model_version: '2026.1',
+    model_config: JSON.stringify({ temperature: 0.2 }),
+    agent_harness: 'example-harness',
+    harness_version: '1.0.0',
+    tool_manifest: JSON.stringify(['view_file', 'replace_file_content', 'run_command'])
+  },
+  environment: {
+    id: 'env_example_workstation',
+    os_name: 'macOS',
+    os_version: '15.3.1',
+    architecture: 'arm64',
+    cpu_model: 'Apple M-Series',
+    accelerator_model: 'Metal GPU',
+    memory_bytes: 34359738368,
+    container_image_digest: '0000000000000000000000000000000000000000000000000000000000000000',
+    runtime_manifest: JSON.stringify({ nodeVersion: 'v25.9.0' }),
+    network_policy: 'none'
+  },
+  suite: CANONICAL_DYNO_SUITE,
+  attempts: [
+    {
+      attempt: {
+        id: 'attempt_example_cli_parser_rep1_att1',
+        run_id: 'run_example_non_submittable_doc_only',
+        task_id: 'neutral_cli_arg_parser',
+        attempt_number: 1,
+        status: 'passed',
+        first_attempt_success: 1,
+        hidden_tests_passed: 1,
+        hidden_tests_total: 1,
+        duration_ms: 12500,
+        input_tokens: 1500,
+        output_tokens: 300,
+        cached_input_tokens: 800,
+        cost_micros: 3500,
+        tool_calls: 4,
+        human_interventions: 0,
+        unnecessary_files_changed: 0,
+        safety_violations: 0,
+        instruction_score: 100,
+        result_digest: '0000000000000000000000000000000000000000000000000000000000000000',
+        started_at: '2026-08-29T12:00:00.000Z',
+        completed_at: '2026-08-29T12:00:13.000Z'
+      },
+      fileChanges: {
+        modified: ['src/parser.js'],
+        created: [],
+        deleted: [],
+        unnecessaryChanges: []
+      },
+      toolEvents: [
+        {
+          id: 'te_example_0',
+          task_attempt_id: 'attempt_example_cli_parser_rep1_att1',
+          sequence_number: 0,
+          tool_name: 'read_file',
+          command_class: 'fs_read',
+          started_offset_ms: 100,
+          input_digest: '0000000000000000000000000000000000000000000000000000000000000000',
+          safety_classification: 'allowed'
+        }
+      ],
+      graderResults: [
+        {
+          id: 'grader_example_cli_parser_unit_tests',
+          task_attempt_id: 'attempt_example_cli_parser_rep1_att1',
+          grader_key: 'cli_parser_unit_tests',
+          grader_version: '1.0.0',
+          passed: 1,
+          score: 1,
+          max_score: 1,
+          evidence_digest: '0000000000000000000000000000000000000000000000000000000000000000',
+          detail: '[PASS] Grader cli_parser_unit_tests verified all invariants.'
+        }
+      ]
+    }
+  ],
+  summary: {
+    totalTasks: 1,
+    tasksPassed: 1,
+    completionRate: 100,
+    firstAttemptSuccessRate: 100,
+    hiddenTestsPassedRate: 100,
+    medianDurationMs: 12500,
+    medianToolCalls: 4,
+    totalTokens: 1800,
+    totalCostMicros: 3500,
+    totalSafetyViolations: 0,
+    totalUnnecessaryFilesChanged: 0,
+    totalHumanInterventions: 0,
+    dynoScore: 850,
+    grade: 'Grade A+ (Pro Engineer)'
+  }
+};

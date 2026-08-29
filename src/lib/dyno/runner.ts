@@ -22,7 +22,16 @@ import { DynoTracer } from './trace';
 import { gradeTaskAttempt, GradingOutcome } from './grader';
 import { detectLocalEnvironment } from './environment';
 import { calculateDynoScore, calculateMedian, calculateScoreVariance } from './scoring';
-import { NEUTRAL_DEV_FIXTURES, REFERENCE_SOLUTIONS, computeFixtureDigest, computePromptDigest, computeGraderManifestDigest } from './fixtures';
+import {
+  NEUTRAL_DEV_FIXTURES,
+  REFERENCE_SOLUTIONS,
+  CANONICAL_DYNO_SUITE,
+  CANONICAL_DYNO_SUITE_ID,
+  CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
+  computeFixtureDigest,
+  computePromptDigest,
+  computeGraderManifestDigest
+} from './fixtures';
 import { sha256Json } from './crypto';
 
 export interface DynoRunnerOptions {
@@ -61,13 +70,13 @@ export class DynoRunner {
     })));
 
     this.suite = {
-      id: options.suite?.id || `suite_dyno_neutral_${Date.now()}`,
-      slug: options.suite?.slug || 'dyno-standard-dev',
-      version: options.suite?.version || '2026.1',
-      name: options.suite?.name || 'DYNO Real-World Developer Tasks Benchmark',
-      methodology_markdown: options.suite?.methodology_markdown || '# DYNO Standard Suite\nDeterministic task completion across model + harness.',
-      task_manifest_digest: taskManifestDigest,
-      grader_version: '1.0.0',
+      id: options.suite?.id || CANONICAL_DYNO_SUITE_ID,
+      slug: options.suite?.slug || CANONICAL_DYNO_SUITE.slug,
+      version: options.suite?.version || CANONICAL_DYNO_SUITE.version,
+      name: options.suite?.name || CANONICAL_DYNO_SUITE.name,
+      methodology_markdown: options.suite?.methodology_markdown || CANONICAL_DYNO_SUITE.methodology_markdown,
+      task_manifest_digest: options.fixtures ? taskManifestDigest : (options.suite?.task_manifest_digest || CANONICAL_DYNO_TASK_MANIFEST_DIGEST),
+      grader_version: options.suite?.grader_version || CANONICAL_DYNO_SUITE.grader_version,
       status: options.suite?.status || 'active',
       published_at: options.suite?.published_at || new Date().toISOString(),
       created_at: options.suite?.created_at || new Date().toISOString()
@@ -210,7 +219,10 @@ export class DynoRunner {
       task_id: task.key,
       attempt_number: attemptNumber,
       status: attemptStatus,
-      first_attempt_success: attemptNumber === 1 && attemptStatus === 'passed' ? 1 : 0,
+      // Each repetition currently contains exactly one agent execution. The
+      // persisted attempt ordinal identifies that repetition, while this flag
+      // records whether its sole (first) execution succeeded.
+      first_attempt_success: attemptStatus === 'passed' ? 1 : 0,
       hidden_tests_passed: gradingOutcome.hiddenTestsPassed,
       hidden_tests_total: gradingOutcome.hiddenTestsTotal,
       duration_ms: durationMs,
@@ -250,7 +262,10 @@ export class DynoRunner {
       const repAttempts: DynoTaskAttemptExecutionResult[] = [];
 
       for (const task of this.fixtures) {
-        const attemptResult = await this.runTaskAttempt(task, harness, 1, rep, runId);
+        // The persisted schema uses attempt_number as the ordinal execution of
+        // a task within a run. DYNO currently performs one execution per task
+        // per repetition, so the repetition ordinal is the attempt ordinal.
+        const attemptResult = await this.runTaskAttempt(task, harness, rep, rep, runId);
         repAttempts.push(attemptResult);
         allAttemptResults.push(attemptResult);
       }

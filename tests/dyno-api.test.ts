@@ -4,6 +4,8 @@ import * as dynoApi from '../functions/api/dyno';
 import { onRequestGet as badgeGet } from '../functions/badge/[user]';
 import {
   NEUTRAL_DEV_FIXTURES,
+  CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
+  CANONICAL_DYNO_GRADER_VERSION,
   calculateDynoScore,
   sha256Json
 } from '../src/lib/dyno';
@@ -20,8 +22,8 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
     const runId = `run_test_${Date.now()}`;
     const timestamp = new Date().toISOString();
 
-    const attempts = NEUTRAL_DEV_FIXTURES.slice(0, 3).map((f, idx) => {
-      const isPassed = idx === 0 || idx === 1; // 2 passed, 1 failed
+    const attempts = NEUTRAL_DEV_FIXTURES.map((f) => {
+      const isPassed = true;
       const attemptId = `att_${runId}_${f.key}_1`;
       const durationMs = 15000;
 
@@ -33,8 +35,8 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
           attempt_number: 1,
           status: isPassed ? 'passed' : 'failed',
           first_attempt_success: isPassed ? 1 : 0,
-          hidden_tests_passed: isPassed ? 1 : 0,
-          hidden_tests_total: 1,
+          hidden_tests_passed: f.hiddenTests.length,
+          hidden_tests_total: f.hiddenTests.length,
           duration_ms: durationMs,
           input_tokens: 1500,
           output_tokens: 250,
@@ -49,18 +51,16 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
           started_at: timestamp,
           completed_at: timestamp
         },
-        graderResults: [
-          {
-            id: `grader_${attemptId}_check`,
-            grader_key: 'unit_test_check',
-            grader_version: '1.0.0',
+        graderResults: f.graders.map(grader => ({
+            id: `grader_${attemptId}_${grader.key}`,
+            grader_key: grader.key,
+            grader_version: grader.version,
             passed: isPassed ? 1 : 0,
             score: isPassed ? 1 : 0,
             max_score: 1,
             evidence_digest: sha256Json({ task: f.key, passed: isPassed }),
             detail: isPassed ? '[PASS] Invariant verified' : '[FAIL] Verification failed'
-          }
-        ],
+          })),
         toolEvents: [
           {
             id: `te_${attemptId}_0`,
@@ -107,8 +107,8 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
         status: 'completed',
         verification_status: 'unverified',
         overall_score: overrideScore !== undefined ? overrideScore : scoreCalc.score,
-        total_cost_micros: 13500,
-        total_tokens: 5250,
+        total_cost_micros: attempts.length * 4500,
+        total_tokens: attempts.length * 1750,
         runner_attestation_digest: attestationDigest,
         raw_trace_sha256: rawTraceSha256,
         started_at: timestamp,
@@ -139,7 +139,9 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
         id: 'suite_dyno_neutral_2026',
         slug: 'dyno-standard-dev',
         version: '2026.1',
-        name: 'DYNO Real-World Developer Tasks Benchmark'
+        name: 'DYNO Real-World Developer Tasks Benchmark',
+        task_manifest_digest: CANONICAL_DYNO_TASK_MANIFEST_DIGEST,
+        grader_version: CANONICAL_DYNO_GRADER_VERSION
       },
       attempts,
       expectedScore: scoreCalc.score
@@ -263,6 +265,23 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(data.error).toContain('runner_attestation_digest must be a valid 64-character SHA-256');
     });
 
+    it('should reject caller-defined suites and incomplete canonical provenance', async () => {
+      const payload = generateValidRunPayload();
+      payload.suite.slug = 'caller-controlled-suite';
+
+      const req = new Request('http://localhost/api/dyno', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer test_token_nate'
+        },
+        body: JSON.stringify(payload)
+      });
+      const res = await dynoApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain('only accepts canonical suite');
+    });
+
     it('should reject fabricated/tampered scores where overall_score does not match attempt evidence', async () => {
       // Fabricate score of 995 when attempts evidence only achieves ~600 pts
       const payload = generateValidRunPayload(995);
@@ -310,7 +329,7 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect((runInDb as any).status).toBe('completed');
 
       const attemptsInDb = await ctx.d1.prepare('SELECT * FROM dyno_task_attempts WHERE run_id = ?').bind(payload.run.id).all();
-      expect(attemptsInDb.results?.length).toBe(3);
+      expect(attemptsInDb.results?.length).toBe(NEUTRAL_DEV_FIXTURES.length);
 
       const gradersInDb = await ctx.d1.prepare('SELECT * FROM dyno_grader_results WHERE task_attempt_id = ?').bind(payload.attempts[0].attempt.id).all();
       expect(gradersInDb.results?.length).toBeGreaterThan(0);
@@ -325,14 +344,20 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(lbData.count).toBe(0);
       expect(lbData.leaderboard).toEqual([]);
 
-      // Verify Detail query returns complete run with attempts and grader results
-      const detailReq = new Request(`http://localhost/api/dyno?runId=${payload.run.id}`, { method: 'GET' });
+      const publicDetailReq = new Request(`http://localhost/api/dyno?runId=${payload.run.id}`);
+      const publicDetailRes = await dynoApi.onRequestGet({ request: publicDetailReq, env: { DB: ctx.d1 } });
+      expect(publicDetailRes.status).toBe(404);
+
+      // The authenticated owner can inspect the complete self-reported bundle.
+      const detailReq = new Request(`http://localhost/api/dyno?runId=${payload.run.id}`, {
+        headers: { Authorization: 'Bearer test_token_nate' }
+      });
       const detailRes = await dynoApi.onRequestGet({ request: detailReq, env: { DB: ctx.d1 } });
       const detailData = await detailRes.json();
 
       expect(detailData.success).toBe(true);
       expect(detailData.run.id).toBe(payload.run.id);
-      expect(detailData.run.attempts.length).toBe(3);
+      expect(detailData.run.attempts.length).toBe(NEUTRAL_DEV_FIXTURES.length);
       expect(detailData.run.attempts[0].grader_results.length).toBeGreaterThan(0);
     });
   });
@@ -348,7 +373,7 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(svgText).toContain('UNSCORED');
     });
 
-    it('should return rendered SVG badge with true score after valid completed run ingestion', async () => {
+    it('should keep badge unscored for self-reported runs', async () => {
       const payload = generateValidRunPayload();
 
       // Submit run to populate D1
@@ -370,12 +395,12 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       const svgText1 = await res1.text();
 
       expect(svgText1).toContain('DYNO DEV SCORE');
-      expect(svgText1).toContain(`${payload.expectedScore} / 1000`);
+      expect(svgText1).toContain('UNSCORED');
 
       const res2 = await badgeGet({ params: { user: '@nate' }, env: { DB: ctx.d1 } });
       expect(res2.status).toBe(200);
       const svgText2 = await res2.text();
-      expect(svgText2).toContain(`${payload.expectedScore} / 1000`);
+      expect(svgText2).toContain('UNSCORED');
     });
   });
 });
