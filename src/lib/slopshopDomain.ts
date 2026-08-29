@@ -1,4 +1,507 @@
 // Production Domain Logic for SLOPSHOP AI Agent Worktree & Prompt Forge
+// Local-First Agentic Architecture & Truthful Feature Manifest Engine
+
+export interface RepoCoordinate {
+  readonly appId: string;
+  readonly name: string;
+  readonly author: string;
+  readonly slug: string;
+  readonly repoUrl: string;
+  readonly sshRemote: string;
+  readonly defaultPort: number;
+  readonly sqliteDatabase: string;
+  readonly localPathHint: string;
+  readonly techStack: readonly string[];
+  readonly tagline: string;
+  readonly version: string;
+  readonly price: string;
+  readonly icon: string;
+}
+
+export interface FeaturePreset {
+  readonly id: string;
+  readonly name: string;
+  readonly category: string;
+  readonly description: string;
+  readonly prompt: string;
+  readonly targetFiles: readonly string[];
+  readonly migrationSql?: string;
+  readonly verificationCriteria: readonly string[];
+  readonly blueprintDiffPreview: string;
+}
+
+export type AgentToolId = 'agy' | 'claude' | 'slop' | 'aider' | 'cursor';
+
+export interface AgentToolMeta {
+  readonly id: AgentToolId;
+  readonly name: string;
+  readonly shortName: string;
+  readonly badge: string;
+  readonly icon: string;
+  readonly description: string;
+  readonly cliBinary: string;
+  readonly recommendedModel: string;
+  readonly installInstruction: string;
+}
+
+export interface LocalWorkflowStep {
+  readonly stepNumber: number;
+  readonly title: string;
+  readonly command: string;
+  readonly description: string;
+  readonly requiredEvidence?: string;
+}
+
+export interface SlopFeatureManifest {
+  readonly $schema: string;
+  readonly version: string;
+  readonly targetRepository: {
+    readonly appId: string;
+    readonly slug: string;
+    readonly repoUrl: string;
+    readonly defaultPort: number;
+    readonly sqliteDatabase: string;
+  };
+  readonly feature: {
+    readonly id: string;
+    readonly name: string;
+    readonly category: string;
+    readonly prompt: string;
+    readonly targetFiles: readonly string[];
+    readonly migrationSql?: string;
+    readonly verificationCriteria: readonly string[];
+  };
+  readonly localAgent: {
+    readonly tool: AgentToolId;
+    readonly command: string;
+    readonly recommendedModel: string;
+  };
+  readonly lineageContract: {
+    readonly makerHandle: string;
+    readonly royaltySplit: {
+      readonly maker: string;
+      readonly ancestor: string;
+      readonly protocolPool: string;
+    };
+  };
+  readonly evidenceRequirements: {
+    readonly typecheckRequired: boolean;
+    readonly testsRequired: boolean;
+    readonly migrationValidationRequired: boolean;
+    readonly sha256DigestRequired: boolean;
+  };
+  readonly generatedAt: string;
+}
+
+export interface GeneratedAgentPlan {
+  readonly agent: AgentToolMeta;
+  readonly coordinate: RepoCoordinate;
+  readonly feature: FeaturePreset;
+  readonly singleLineCommand: string;
+  readonly steps: readonly LocalWorkflowStep[];
+  readonly worktreeDir: string;
+  readonly branchName: string;
+  readonly featureManifest: SlopFeatureManifest;
+  readonly manifestJson: string;
+}
+
+export interface GatewayLandingPrerequisites {
+  readonly canLandDirectlyFromBrowser: false;
+  readonly reason: string;
+  readonly status: 'browser_sandbox_offline' | 'awaiting_local_execution';
+  readonly requiredArtifacts: readonly string[];
+  readonly landingContract: {
+    readonly targetBranch: string;
+    readonly casValidationRequired: boolean;
+    readonly evidenceDigestHeader: string;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Canonical Repository Coordinates
+// ---------------------------------------------------------------------------
+
+export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
+  dronehunter: {
+    appId: 'dronehunter',
+    name: 'DroneHunter 95',
+    author: 'nate',
+    slug: 'nate/dronehunter',
+    repoUrl: 'https://github.com/natemcguire/dronehunter.git',
+    sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/dronehunter.git',
+    defaultPort: 3004,
+    sqliteDatabase: '/data/dronehunter.sqlite',
+    localPathHint: '~/Projects/dronehunter',
+    techStack: ['TypeScript', 'Vite', 'SQLite (WASM/WAL)', 'Web Audio API', 'HTML5 Canvas'],
+    tagline: 'Retro Duck Hunt Arcade Shooter with WebAssembly SQLite High Scores & Audio Synthesis.',
+    version: 'v1.0.0',
+    price: '$15.00',
+    icon: '🎯'
+  },
+  'certified-mailer': {
+    appId: 'certified-mailer',
+    name: 'Certified Mailer',
+    author: 'nate',
+    slug: 'nate/certified-mailer',
+    repoUrl: 'https://github.com/natemcguire/certified-mailer.git',
+    sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/certified-mailer.git',
+    defaultPort: 3005,
+    sqliteDatabase: '/data/certified-mailer.sqlite',
+    localPathHint: '~/Projects/certified-mailer',
+    techStack: ['TypeScript', 'PyMuPDF / PDF Engine', 'SQLite (WAL)', 'USPS ERR API', 'Tailwind CSS'],
+    tagline: 'USPS Certified Mail, Electronic Return Receipt (ERR) & 300 DPI Legal Dispute Engine.',
+    version: 'v1.1.0',
+    price: '$25.00',
+    icon: '📫'
+  },
+  picfitai: {
+    appId: 'picfitai',
+    name: 'PicFit.ai',
+    author: 'nate',
+    slug: 'nate/picfitai',
+    repoUrl: 'https://github.com/natemcguire/picfitai.git',
+    sshRemote: 'ssh://git@gitsmith.nates-software.com:2222/nate/picfitai.git',
+    defaultPort: 3006,
+    sqliteDatabase: '/data/picfitai.sqlite',
+    localPathHint: '~/Projects/picfitai',
+    techStack: ['TypeScript', 'Gemini Vision 2.5', 'SQLite Ledger', 'Stripe Webhooks', 'React 19'],
+    tagline: 'AI Virtual Try-On Studio & Outfit Synthesis Engine with Gemini Vision 2.5.',
+    version: 'v2.0.0',
+    price: '$20.00',
+    icon: '✨'
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Canonical Feature Mod Presets
+// ---------------------------------------------------------------------------
+
+export const FEATURE_MOD_PRESETS: Record<string, FeaturePreset[]> = {
+  dronehunter: [
+    {
+      id: 'dh-radar',
+      name: '🎯 AN/MPQ-64 Sentinel Radar Sweep HUD',
+      category: 'Combat & Graphics',
+      description: 'Add a 360-degree rotating phosphor radar sweep in the corner with tactical target intercepts.',
+      prompt: 'Implement an AN/MPQ-64 Sentinel 360-degree rotating phosphor radar sweep HUD in the top-right corner of the canvas. Detect incoming drone vectors and render blinking target blips with azimuth and range telemetry.',
+      targetFiles: ['src/hud/SentinelRadar.ts', 'src/game/GameEngine.ts', 'src/types/radar.ts'],
+      migrationSql: 'CREATE TABLE IF NOT EXISTS radar_targets (id TEXT PRIMARY KEY, azimuth REAL NOT NULL, elevation REAL NOT NULL, range_meters REAL NOT NULL, detected_at DATETIME DEFAULT CURRENT_TIMESTAMP);',
+      verificationCriteria: [
+        'Canvas radar overlay renders at 60 FPS without DOM frame drops',
+        'radar_targets SQLite table is provisioned with non-blocking schema',
+        'TypeScript build (tsc -b) passes with 0 errors'
+      ],
+      blueprintDiffPreview: `diff --git a/src/hud/SentinelRadar.ts b/src/hud/SentinelRadar.ts
+new file mode 100644
+--- /dev/null
++++ b/src/hud/SentinelRadar.ts
+@@ -0,0 +1,28 @@
++export interface RadarBlip {
++  readonly id: string;
++  readonly azimuth: number;
++  readonly elevation: number;
++  readonly rangeMeters: number;
++}
++
++export class SentinelRadarHUD {
++  private sweepAngle = 0;
++  constructor(private readonly ctx: CanvasRenderingContext2D) {}
++
++  public updateAndDraw(dt: number, blips: readonly RadarBlip[]): void {
++    this.sweepAngle = (this.sweepAngle + dt * 1.8) % (2 * Math.PI);
++    this.renderPhosphorGrid();
++    this.renderBlips(blips);
++  }
++}`
+    },
+    {
+      id: 'dh-multiplayer',
+      name: '🏆 Multi-Player SQLite High Scores (WAL)',
+      category: 'Database & Backend',
+      description: 'Add persistent high scores with player initials, streak multipliers, and leaderboard queries in WAL mode.',
+      prompt: 'Weld a high score leaderboard into the game. Add player name input on game over, persist top 10 scores with accuracy percentages, and prevent lock contention in SQLite WAL mode.',
+      targetFiles: ['src/db/leaderboard.ts', 'src/components/ScoreModal.tsx'],
+      migrationSql: 'CREATE TABLE IF NOT EXISTS player_leaderboard (id TEXT PRIMARY KEY, initials TEXT NOT NULL, score INTEGER NOT NULL, accuracy REAL NOT NULL, streak_multiplier INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);',
+      verificationCriteria: [
+        'player_leaderboard table supports concurrent WAL reads/writes',
+        'Accuracy percentage is bounded between 0.0 and 100.0',
+        'Zero schema migration conflicts with existing game tables'
+      ],
+      blueprintDiffPreview: `diff --git a/src/db/leaderboard.ts b/src/db/leaderboard.ts
+new file mode 100644
+--- /dev/null
++++ b/src/db/leaderboard.ts
+@@ -0,0 +1,22 @@
++export interface LeaderboardEntry {
++  readonly id: string;
++  readonly initials: string;
++  readonly score: number;
++  readonly accuracy: number;
++}
++
++export async function recordHighScore(db: any, entry: LeaderboardEntry): Promise<void> {
++  await db.exec(
++    'INSERT INTO player_leaderboard (id, initials, score, accuracy) VALUES (?, ?, ?, ?)',
++    [entry.id, entry.initials, entry.score, entry.accuracy]
++  );
++}`
+    },
+    {
+      id: 'dh-dog',
+      name: '🐶 Retro Duck Hunt Dog & Web Audio Synthesizer',
+      category: 'Sound FX & Sprites',
+      description: 'Add retro pixel art dog animations on misses, celebration jumps on round clear, and synthesized 8-bit audio.',
+      prompt: 'Inject retro 8-bit Duck Hunt laughing dog animations when missing shots, and triumphant celebration animations with synthesized 8-bit shotgun blast and reload audio using the native Web Audio API.',
+      targetFiles: ['src/audio/SynthSoundEngine.ts', 'src/sprites/RetroDog.ts'],
+      verificationCriteria: [
+        'AudioContext synthesized sound triggers cleanly without user-gesture autoplay blocking errors',
+        'Sprite animations match 8-bit palette constraints',
+        'Clean unit tests for sound synthesizer frequency envelope'
+      ],
+      blueprintDiffPreview: `diff --git a/src/audio/SynthSoundEngine.ts b/src/audio/SynthSoundEngine.ts
+new file mode 100644
+--- /dev/null
++++ b/src/audio/SynthSoundEngine.ts
+@@ -0,0 +1,24 @@
++export class RetroSynthAudio {
++  private audioCtx: AudioContext | null = null;
++
++  public playShotgunBlast(): void {
++    if (!this.audioCtx) this.audioCtx = new AudioContext();
++    const osc = this.audioCtx.createOscillator();
++    const gain = this.audioCtx.createGain();
++    osc.type = 'sawtooth';
++    osc.frequency.setValueAtTime(140, this.audioCtx.currentTime);
++    osc.frequency.exponentialRampToValueAtTime(30, this.audioCtx.currentTime + 0.15);
++    gain.gain.setValueAtTime(0.8, this.audioCtx.currentTime);
++    gain.gain.linearRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.2);
++    osc.connect(gain).connect(this.audioCtx.destination);
++    osc.start();
++    osc.stop(this.audioCtx.currentTime + 0.2);
++  }
++}`
+    }
+  ],
+  'certified-mailer': [
+    {
+      id: 'cm-pdf',
+      name: '📄 300 DPI High-Res PDF Flattener & Rasterizer',
+      category: 'Document Engine',
+      description: 'Rasterize and flatten DOCX/PDF dispute letters into 300 DPI pixel-perfect pages to prevent postal distortions.',
+      prompt: 'Add a PyMuPDF / Canvas 300 DPI pixel flattening pipeline to rasterize generated DOCX and PDF dispute letters before dispatching to postal print queues.',
+      targetFiles: ['src/pdf/PdfFlattener.ts', 'src/services/PrintQueue.ts'],
+      migrationSql: 'CREATE TABLE IF NOT EXISTS rendered_pages (id TEXT PRIMARY KEY, letter_id TEXT NOT NULL, page_number INTEGER NOT NULL, dpi INTEGER DEFAULT 300, raster_hash TEXT NOT NULL);',
+      verificationCriteria: [
+        'Rendered PDF outputs exact 300 DPI bitmap bounding boxes',
+        'Flattening strips script tags and active PDF form annotations',
+        'sqlite schema rendered_pages stores unique SHA-256 raster hash'
+      ],
+      blueprintDiffPreview: `diff --git a/src/pdf/PdfFlattener.ts b/src/pdf/PdfFlattener.ts
+new file mode 100644
+--- /dev/null
++++ b/src/pdf/PdfFlattener.ts
+@@ -0,0 +1,20 @@
++export interface FlattenedPageResult {
++  readonly pageNumber: number;
++  readonly dpi: number;
++  readonly rasterHash: string;
++  readonly buffer: ArrayBuffer;
++}
++
++export async function flattenDocumentPages(pdfBuffer: ArrayBuffer, dpi = 300): Promise<FlattenedPageResult[]> {
++  // High-fidelity rasterization logic
++  return [];
++}`
+    },
+    {
+      id: 'cm-err',
+      name: '📫 USPS Electronic Return Receipt (ERR)',
+      category: 'Postal Integration',
+      description: 'Generate authentic 20-digit USPS Certified Mail barcodes and digital signature capture hooks.',
+      prompt: 'Integrate official 20-digit USPS Certified Mail barcode generation and Electronic Return Receipt (ERR) digital signature tracking hooks.',
+      targetFiles: ['src/usps/BarcodeGenerator.ts', 'src/services/ErrTracker.ts'],
+      migrationSql: 'CREATE TABLE IF NOT EXISTS postal_err_tracking (tracking_num TEXT PRIMARY KEY, signed_by TEXT, signature_date DATETIME, delivery_status TEXT NOT NULL);',
+      verificationCriteria: [
+        'USPS 20-digit barcode generates valid Code 128 / GS1-128 checksums',
+        'postal_err_tracking table records signature timestamps with timezone isolation',
+        'Unit tests verify malformed tracking numbers are rejected gracefully'
+      ],
+      blueprintDiffPreview: `diff --git a/src/usps/BarcodeGenerator.ts b/src/usps/BarcodeGenerator.ts
+new file mode 100644
+--- /dev/null
++++ b/src/usps/BarcodeGenerator.ts
+@@ -0,0 +1,18 @@
++export function generateUspsCertifiedBarcode(articleNumber: string): { svg: string; checksum: string } {
++  if (!/^\d{20}$/.test(articleNumber)) {
++    throw new Error('USPS Certified Mail tracking requires a 20-digit numeric string.');
++  }
++  return { svg: '<svg>...</svg>', checksum: '9' };
++}`
+    },
+    {
+      id: 'cm-templates',
+      name: '⚖️ Statutory Tenant Dispute Demand Templates',
+      category: 'Legal Engine',
+      description: 'Add California Civil Code § 1950.5 and Texas Property Code § 92.109 security deposit return demand templates.',
+      prompt: 'Add California and Texas security deposit return demand templates with statutory penalty calculations, dispute itemization tables, and CSV batch export.',
+      targetFiles: ['src/templates/StatutoryDemand.ts', 'src/export/CsvExporter.ts'],
+      verificationCriteria: [
+        'California § 1950.5 formula correctly applies 2x statutory bad-faith penalty',
+        'Texas § 92.109 formula correctly computes $100 + 3x withheld amount',
+        'CSV batch export sanitizes formulas against injection vulnerabilities'
+      ],
+      blueprintDiffPreview: `diff --git a/src/templates/StatutoryDemand.ts b/src/templates/StatutoryDemand.ts
+new file mode 100644
+--- /dev/null
++++ b/src/templates/StatutoryDemand.ts
+@@ -0,0 +1,16 @@
++export interface SecurityDepositDemandOptions {
++  readonly state: 'CA' | 'TX';
++  readonly depositAmount: number;
++  readonly withheldAmount: number;
++  readonly landlordName: string;
++}`
+    }
+  ],
+  picfitai: [
+    {
+      id: 'pf-gemini',
+      name: '✨ Google Gemini Vision 2.5 Outfit Drape',
+      category: 'AI Pipeline',
+      description: 'Generate high-fidelity virtual try-on renders with boundary mask warping and fabric texture realism.',
+      prompt: 'Refactor the outfit synthesis pipeline to call Google Gemini Vision API with realistic fabric drape, lighting matching, and boundary mask warping.',
+      targetFiles: ['src/services/GeminiVisionPipeline.ts', 'src/image/MaskWarping.ts'],
+      verificationCriteria: [
+        'Boundary mask warping conforms to silhouette contours',
+        'Gemini Vision client handles rate limits with exponential backoff',
+        'Unit tests mock network payload and assert JSON safety'
+      ],
+      blueprintDiffPreview: `diff --git a/src/services/GeminiVisionPipeline.ts b/src/services/GeminiVisionPipeline.ts
+new file mode 100644
+--- /dev/null
++++ b/src/services/GeminiVisionPipeline.ts
+@@ -0,0 +1,20 @@
++export interface OutfitDrapeRequest {
++  readonly userImageBase64: string;
++  readonly garmentImageBase64: string;
++  readonly promptEnhancement?: string;
++}`
+    },
+    {
+      id: 'pf-credits',
+      name: '💳 Local SQLite User Credit Ledger',
+      category: 'Monetization',
+      description: 'Deduct generation credits in local database with webhook signature verification.',
+      prompt: 'Weld a single-file user credit ledger with Stripe webhook signature validation and transactional credit deduction on generation in SQLite.',
+      targetFiles: ['src/db/creditLedger.ts', 'src/services/StripeWebhookHandler.ts'],
+      migrationSql: 'CREATE TABLE IF NOT EXISTS user_credit_ledger (user_id TEXT PRIMARY KEY, credits_remaining INTEGER NOT NULL DEFAULT 10, last_refill DATETIME DEFAULT CURRENT_TIMESTAMP);',
+      verificationCriteria: [
+        'Transactional credit decrement prevents negative balances',
+        'Stripe webhook signature validation rejects invalid HMAC tokens',
+        'SQLite ledger persists across session restarts'
+      ],
+      blueprintDiffPreview: `diff --git a/src/db/creditLedger.ts b/src/db/creditLedger.ts
+new file mode 100644
+--- /dev/null
++++ b/src/db/creditLedger.ts
+@@ -0,0 +1,18 @@
++export async function deductCredit(db: any, userId: string, amount: number = 1): Promise<boolean> {
++  // Atomic balance check and deduction
++  return true;
++}`
+    },
+    {
+      id: 'pf-wardrobe',
+      name: '👗 Streetwear Wardrobe Rack & Lookbook',
+      category: 'Wardrobe UI',
+      description: 'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.',
+      prompt: 'Add custom streetwear wardrobe racks, tag-based categorization, and high-resolution lookbook PDF exports.',
+      targetFiles: ['src/components/WardrobeRack.tsx', 'src/export/LookbookPdf.ts'],
+      verificationCriteria: [
+        'Wardrobe grid renders responsive thumbnail previews',
+        'PDF export generates multi-page lookbook layout',
+        'Zero DOM layout jitter during image drag-and-drop'
+      ],
+      blueprintDiffPreview: `diff --git a/src/components/WardrobeRack.tsx b/src/components/WardrobeRack.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/WardrobeRack.tsx
+@@ -0,0 +1,16 @@
++export interface GarmentItem {
++  readonly id: string;
++  readonly name: string;
++  readonly category: 'streetwear' | 'formal' | 'casual';
++  readonly imageUrl: string;
++}`
+    }
+  ]
+};
+
+// ---------------------------------------------------------------------------
+// Agent Tools Configuration
+// ---------------------------------------------------------------------------
+
+export const AGENT_TOOLS: Record<AgentToolId, AgentToolMeta> = {
+  agy: {
+    id: 'agy',
+    name: 'Antigravity CLI (AGY)',
+    shortName: 'AGY',
+    badge: 'DeepMind Agent',
+    icon: '⚡',
+    description: 'Autonomous multi-agent CLI by Google DeepMind with architectural planning, subagents, and test verification.',
+    cliBinary: 'agy',
+    recommendedModel: 'gemini-2.0-flash-thinking',
+    installInstruction: 'Built into Antigravity CLI environment'
+  },
+  claude: {
+    id: 'claude',
+    name: 'Claude Code',
+    shortName: 'Claude',
+    badge: 'Terminal Agent',
+    icon: '🟣',
+    description: 'Agentic terminal coding assistant from Anthropic with tool use, codebase search, and file edits.',
+    cliBinary: 'claude',
+    recommendedModel: 'claude-3-7-sonnet',
+    installInstruction: 'npm i -g @anthropic-ai/claude-code'
+  },
+  slop: {
+    id: 'slop',
+    name: 'SLOP CLI',
+    shortName: 'SLOP',
+    badge: 'Native Shareware Tool',
+    icon: '💻',
+    description: "Nate's Software native developer CLI for isolated worktree forks, micro-dyno benchmarks, and 12:01 AM daily drops.",
+    cliBinary: 'slop',
+    recommendedModel: 'local-native',
+    installInstruction: 'npm link ./bin/slop'
+  },
+  aider: {
+    id: 'aider',
+    name: 'Aider',
+    shortName: 'Aider',
+    badge: 'Pair Programmer',
+    icon: '🤖',
+    description: 'Terminal-based AI pair programming tool with automatic git commit history and repository-wide tree-sitter map.',
+    cliBinary: 'aider',
+    recommendedModel: 'claude-3-7-sonnet',
+    installInstruction: 'pip install aider-chat'
+  },
+  cursor: {
+    id: 'cursor',
+    name: 'Cursor / VS Code',
+    shortName: 'Cursor',
+    badge: 'IDE Workspace',
+    icon: '🧠',
+    description: 'AI-first code editor with inline codebase context and multi-file composer diff review.',
+    cliBinary: 'cursor',
+    recommendedModel: 'composer-claude-3.7',
+    installInstruction: 'Install Cursor IDE from cursor.com'
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Backward Compatibility Exports
+// ---------------------------------------------------------------------------
 
 export interface AgentPromptPreset {
   readonly id: string;
@@ -20,49 +523,334 @@ export const WORKTREE_CONFIGS: Record<string, AppWorktreeConfig> = {
     appId: 'dronehunter',
     repoUrl: 'https://github.com/natemcguire/dronehunter.git',
     defaultPort: 3004,
-    suggestedPrompts: [
-      {
-        id: 'dh-weapons',
-        name: 'Dual-Wield Laser Shotgun',
-        category: 'Game Weapons',
-        description: 'Add rapid-fire dual laser shotguns with Web Audio reload synthesis.',
-        prompt: 'Add dual-wield laser shotguns and a new boss wave telemetry table in SQLite.'
-      },
-      {
-        id: 'dh-leaderboard',
-        name: 'Persistent High Scores (WAL)',
-        category: 'Backend Telemetry',
-        description: 'Add persistent player high scores and accuracy metrics in /data/dronehunter.sqlite.',
-        prompt: 'Implement top 10 player high scores with accuracy percentages in local SQLite WAL mode.'
-      }
-    ]
+    suggestedPrompts: FEATURE_MOD_PRESETS.dronehunter.map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      description: p.description,
+      prompt: p.prompt
+    }))
   },
   'certified-mailer': {
     appId: 'certified-mailer',
     repoUrl: 'https://github.com/natemcguire/certified-mailer.git',
     defaultPort: 3005,
-    suggestedPrompts: [
-      {
-        id: 'cm-templates',
-        name: 'Statutory Tenant Demand Letters',
-        category: 'Legal Notice Engine',
-        description: 'Add California and Texas security deposit return demand templates.',
-        prompt: 'Add California Tenant Security Deposit statutory demand templates and CSV batch export.'
-      }
-    ]
+    suggestedPrompts: FEATURE_MOD_PRESETS['certified-mailer'].map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      description: p.description,
+      prompt: p.prompt
+    }))
   },
   picfitai: {
     appId: 'picfitai',
     repoUrl: 'https://github.com/natemcguire/picfitai.git',
     defaultPort: 3006,
-    suggestedPrompts: [
-      {
-        id: 'pf-wardrobe',
-        name: 'Streetwear Wardrobe Rack',
-        category: 'AI Try-On',
-        description: 'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.',
-        prompt: 'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.'
-      }
-    ]
+    suggestedPrompts: FEATURE_MOD_PRESETS.picfitai.map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      description: p.description,
+      prompt: p.prompt
+    }))
   }
 };
+
+// ---------------------------------------------------------------------------
+// Domain Helper Functions
+// ---------------------------------------------------------------------------
+
+export function getAppCoordinates(): RepoCoordinate[] {
+  return Object.values(REPO_COORDINATES);
+}
+
+export function getAppCoordinate(appId: string): RepoCoordinate {
+  if (REPO_COORDINATES[appId]) {
+    return REPO_COORDINATES[appId];
+  }
+  // Safe dynamic fallback for custom coordinates
+  const cleanId = appId.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+  return {
+    appId: cleanId,
+    name: cleanId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    author: 'custom',
+    slug: `custom/${cleanId}`,
+    repoUrl: `https://github.com/custom/${cleanId}.git`,
+    sshRemote: `ssh://git@gitsmith.nates-software.com:2222/custom/${cleanId}.git`,
+    defaultPort: 3010,
+    sqliteDatabase: `/data/${cleanId}.sqlite`,
+    localPathHint: `~/Projects/${cleanId}`,
+    techStack: ['TypeScript', 'SQLite (WASM)', 'Vite'],
+    tagline: `Custom software application repository (${cleanId}).`,
+    version: 'v1.0.0',
+    price: '$15.00',
+    icon: '📦'
+  };
+}
+
+export function getFeaturePresets(appId: string): FeaturePreset[] {
+  return FEATURE_MOD_PRESETS[appId] || FEATURE_MOD_PRESETS.dronehunter;
+}
+
+export function getAgentTools(): AgentToolMeta[] {
+  return Object.values(AGENT_TOOLS);
+}
+
+export function getAgentTool(toolId: AgentToolId): AgentToolMeta {
+  return AGENT_TOOLS[toolId] || AGENT_TOOLS.agy;
+}
+
+/**
+ * Escapes strings safely for POSIX shell double quotes
+ */
+export function escapeShellDoubleQuotes(str: string): string {
+  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
+}
+
+/**
+ * Generates structured feature manifest document (slop-feature.json)
+ */
+export function generateFeatureManifest(params: {
+  coordinate: RepoCoordinate;
+  feature: FeaturePreset;
+  agent: AgentToolId;
+  makerHandle?: string;
+  customPrompt?: string;
+}): SlopFeatureManifest {
+  const prompt = params.customPrompt || params.feature.prompt;
+  const toolMeta = getAgentTool(params.agent);
+  const handle = params.makerHandle || '@nate';
+
+  let agentCmd = '';
+  const escaped = escapeShellDoubleQuotes(prompt);
+  switch (params.agent) {
+    case 'agy':
+      agentCmd = `agy "${escaped}"`;
+      break;
+    case 'claude':
+      agentCmd = `claude "${escaped}"`;
+      break;
+    case 'slop':
+      agentCmd = `slop fork ${params.coordinate.slug}`;
+      break;
+    case 'aider':
+      agentCmd = `aider --message "${escaped}"`;
+      break;
+    case 'cursor':
+      agentCmd = `cursor .`;
+      break;
+  }
+
+  return {
+    $schema: 'https://nates-software.com/schemas/slop-feature-manifest-v1.json',
+    version: '1.0.0',
+    targetRepository: {
+      appId: params.coordinate.appId,
+      slug: params.coordinate.slug,
+      repoUrl: params.coordinate.repoUrl,
+      defaultPort: params.coordinate.defaultPort,
+      sqliteDatabase: params.coordinate.sqliteDatabase
+    },
+    feature: {
+      id: params.feature.id,
+      name: params.feature.name,
+      category: params.feature.category,
+      prompt,
+      targetFiles: params.feature.targetFiles,
+      migrationSql: params.feature.migrationSql,
+      verificationCriteria: params.feature.verificationCriteria
+    },
+    localAgent: {
+      tool: params.agent,
+      command: agentCmd,
+      recommendedModel: toolMeta.recommendedModel
+    },
+    lineageContract: {
+      makerHandle: handle,
+      royaltySplit: {
+        maker: '70%',
+        ancestor: '20%',
+        protocolPool: '10%'
+      }
+    },
+    evidenceRequirements: {
+      typecheckRequired: true,
+      testsRequired: true,
+      migrationValidationRequired: Boolean(params.feature.migrationSql),
+      sha256DigestRequired: true
+    },
+    generatedAt: new Date().toISOString()
+  };
+}
+
+/**
+ * Generates the complete, concrete local agent plan with executable shell commands,
+ * step-by-step instructions, and manifest JSON.
+ */
+export function generateLocalAgentPlan(params: {
+  coordinate: RepoCoordinate;
+  feature: FeaturePreset;
+  agent: AgentToolId;
+  makerHandle?: string;
+  customPrompt?: string;
+  customWorktreeDir?: string;
+}): GeneratedAgentPlan {
+  const prompt = params.customPrompt || params.feature.prompt;
+  const toolMeta = getAgentTool(params.agent);
+  const sanitizedFeatureId = params.feature.id.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+  const worktreeDir = params.customWorktreeDir || `/tmp/slop-${params.coordinate.appId}-${sanitizedFeatureId}`;
+  const branchName = `feature/${sanitizedFeatureId}`;
+  const escapedPrompt = escapeShellDoubleQuotes(prompt);
+
+  let agentInvokeCmd = '';
+  switch (params.agent) {
+    case 'agy':
+      agentInvokeCmd = `agy "${escapedPrompt}"`;
+      break;
+    case 'claude':
+      agentInvokeCmd = `claude "${escapedPrompt}"`;
+      break;
+    case 'slop':
+      agentInvokeCmd = `slop dyno --bench`;
+      break;
+    case 'aider':
+      agentInvokeCmd = `aider --message "${escapedPrompt}"`;
+      break;
+    case 'cursor':
+      agentInvokeCmd = `cursor .`;
+      break;
+  }
+
+  // Complete one-line terminal command
+  const singleLineCommand = `git clone ${params.coordinate.repoUrl} "${worktreeDir}" && cd "${worktreeDir}" && git checkout -b ${branchName} && ${agentInvokeCmd}`;
+
+  // 4 Concrete Local Workflow Steps
+  const steps: LocalWorkflowStep[] = [
+    {
+      stepNumber: 1,
+      title: 'Clone into Isolated Local Worktree',
+      command: `git clone ${params.coordinate.repoUrl} "${worktreeDir}" && cd "${worktreeDir}" && git checkout -b ${branchName}`,
+      description: `Clones ${params.coordinate.name} into an isolated development folder to protect master branch stability and isolate SQLite database WAL locks.`,
+      requiredEvidence: 'Clean working directory created with git status OK'
+    },
+    {
+      stepNumber: 2,
+      title: `Synthesize Feature with ${toolMeta.shortName}`,
+      command: agentInvokeCmd,
+      description: `Launches ${toolMeta.name} locally inside the isolated directory to modify ${params.feature.targetFiles.join(', ')}.`,
+      requiredEvidence: 'Synthesized file changes matching specification prompt'
+    },
+    {
+      stepNumber: 3,
+      title: 'Execute Local Test Suite & Build Verification',
+      command: params.feature.migrationSql
+        ? `npm test && npm run build && sqlite3 ${params.coordinate.sqliteDatabase.replace('/data/', './data/')} "${escapeShellDoubleQuotes(params.feature.migrationSql)}"`
+        : `npm test && npm run build`,
+      description: 'Executes the local test suite and TypeScript compiler to produce verified cryptographic evidence.',
+      requiredEvidence: '100% passing test assertions, 0 type errors, validated SQLite schema'
+    },
+    {
+      stepNumber: 4,
+      title: 'Inspect Diff & Prepare CAS Feature Ref',
+      command: `git diff HEAD && git add -A && git commit -m "feat(${sanitizedFeatureId}): ${escapeShellDoubleQuotes(params.feature.name)}"`,
+      description: 'Generates an atomic Git commit with unified diff ready for CAS landing or push to remote repository.',
+      requiredEvidence: 'Valid git commit SHA with parent reference intact'
+    }
+  ];
+
+  const manifest = generateFeatureManifest({
+    coordinate: params.coordinate,
+    feature: params.feature,
+    agent: params.agent,
+    makerHandle: params.makerHandle,
+    customPrompt: prompt
+  });
+
+  return {
+    agent: toolMeta,
+    coordinate: params.coordinate,
+    feature: params.feature,
+    singleLineCommand,
+    steps,
+    worktreeDir,
+    branchName,
+    featureManifest: manifest,
+    manifestJson: JSON.stringify(manifest, null, 2)
+  };
+}
+
+/**
+ * Returns the 5-point evidence verification checklist explaining local proof requirements.
+ */
+export function getEvidenceChecklist(feature: FeaturePreset): {
+  id: string;
+  title: string;
+  command: string;
+  description: string;
+  evidenceProduced: string;
+}[] {
+  return [
+    {
+      id: 'typecheck',
+      title: '1. TypeScript AST & Typecheck Validation',
+      command: 'npm run build (tsc -b)',
+      description: 'Verifies zero syntax errors, valid imports, and strict TypeScript compliance.',
+      evidenceProduced: 'Clean build exit code 0 with 0 compilation diagnostics'
+    },
+    {
+      id: 'tests',
+      title: '2. Sandboxed Unit & Integration Tests',
+      command: 'npm test (vitest run)',
+      description: 'Runs project test suites to verify feature behaviors without regressions.',
+      evidenceProduced: 'Vitest assertion results log and pass count'
+    },
+    {
+      id: 'migrations',
+      title: '3. SQLite Schema Migration Proof',
+      command: feature.migrationSql ? `sqlite3 <db> "${feature.migrationSql.slice(0, 45)}..."` : 'No DDL migration needed',
+      description: 'Ensures database table schema modifies idempotently without WAL database lock contention.',
+      evidenceProduced: feature.migrationSql ? 'Applied SQL migration log & pragma integrity_check' : 'Zero schema delta verified'
+    },
+    {
+      id: 'diff',
+      title: '4. Git Unified Diff Verification',
+      command: 'git diff HEAD',
+      description: 'Generates clean, reviewable unified diff isolating additions and removals.',
+      evidenceProduced: 'Unified diff patch with filenames and line offsets'
+    },
+    {
+      id: 'evidence-digest',
+      title: '5. Cryptographic Evidence Digest (SHA-256)',
+      command: 'shasum -a 256 test-output.log git-diff.patch',
+      description: 'Combines test logs and git diff into an immutable SHA-256 evidence digest.',
+      evidenceProduced: 'sha256:8f4a21... tamper-proof signature'
+    }
+  ];
+}
+
+/**
+ * Evaluates the truthful gateway status and explains why in-browser execution / landing
+ * is offline without a host agent daemon.
+ */
+export function evaluateGatewayLandingStatus(_params?: {
+  coordinate?: RepoCoordinate;
+  feature?: FeaturePreset;
+}): GatewayLandingPrerequisites {
+  return {
+    canLandDirectlyFromBrowser: false,
+    reason: 'Browser Sandbox Mode: In-browser Web OS cannot invoke local host shells, compile native binaries, or manipulate local git working trees without a running local daemon or manual terminal execution.',
+    status: 'browser_sandbox_offline',
+    requiredArtifacts: [
+      'Local Git worktree with clean working tree',
+      'Passing test suite logs from local npm test run',
+      'Verified local commit SHA (with known parent commit OID)',
+      'SHA-256 cryptographic evidence digest'
+    ],
+    landingContract: {
+      targetBranch: 'refs/heads/main',
+      casValidationRequired: true,
+      evidenceDigestHeader: 'X-Slop-Evidence-Digest'
+    }
+  };
+}

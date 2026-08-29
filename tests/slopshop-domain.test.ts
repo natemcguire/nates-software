@@ -1,0 +1,225 @@
+import { describe, it, expect } from 'vitest';
+import {
+  REPO_COORDINATES,
+  FEATURE_MOD_PRESETS,
+  AGENT_TOOLS,
+  WORKTREE_CONFIGS,
+  getAppCoordinates,
+  getAppCoordinate,
+  getFeaturePresets,
+  getAgentTools,
+  getAgentTool,
+  escapeShellDoubleQuotes,
+  generateFeatureManifest,
+  generateLocalAgentPlan,
+  getEvidenceChecklist,
+  evaluateGatewayLandingStatus
+} from '../src/lib/slopshopDomain';
+
+describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
+  describe('Repository Coordinates & Metadata', () => {
+    it('should expose canonical repository coordinates for flagship apps', () => {
+      expect(Object.keys(REPO_COORDINATES)).toContain('dronehunter');
+      expect(Object.keys(FEATURE_MOD_PRESETS)).toContain('dronehunter');
+      expect(Object.keys(AGENT_TOOLS)).toContain('agy');
+
+      const coords = getAppCoordinates();
+      expect(coords.length).toBeGreaterThanOrEqual(3);
+
+      const drone = getAppCoordinate('dronehunter');
+      expect(drone.appId).toBe('dronehunter');
+      expect(drone.name).toBe('DroneHunter 95');
+      expect(drone.slug).toBe('nate/dronehunter');
+      expect(drone.repoUrl).toContain('github.com/natemcguire/dronehunter.git');
+      expect(drone.sshRemote).toContain('ssh://git@gitsmith.nates-software.com:2222/nate/dronehunter.git');
+      expect(drone.defaultPort).toBe(3004);
+      expect(drone.sqliteDatabase).toBe('/data/dronehunter.sqlite');
+
+      const mailer = getAppCoordinate('certified-mailer');
+      expect(mailer.appId).toBe('certified-mailer');
+      expect(mailer.slug).toBe('nate/certified-mailer');
+
+      const picfit = getAppCoordinate('picfitai');
+      expect(picfit.appId).toBe('picfitai');
+      expect(picfit.slug).toBe('nate/picfitai');
+    });
+
+    it('should handle custom repository coordinates cleanly', () => {
+      const custom = getAppCoordinate('my-custom-tool');
+      expect(custom.appId).toBe('my-custom-tool');
+      expect(custom.slug).toBe('custom/my-custom-tool');
+      expect(custom.repoUrl).toContain('my-custom-tool.git');
+      expect(custom.defaultPort).toBe(3010);
+    });
+
+    it('should preserve backward-compatible WORKTREE_CONFIGS', () => {
+      expect(WORKTREE_CONFIGS.dronehunter.defaultPort).toBe(3004);
+      expect(WORKTREE_CONFIGS['certified-mailer'].defaultPort).toBe(3005);
+      expect(WORKTREE_CONFIGS.picfitai.defaultPort).toBe(3006);
+    });
+  });
+
+  describe('Feature Mod Presets', () => {
+    it('should provide rich presets with prompts, target files, and verification criteria for each app', () => {
+      const dronePresets = getFeaturePresets('dronehunter');
+      expect(dronePresets.length).toBeGreaterThanOrEqual(3);
+      const radar = dronePresets.find(p => p.id === 'dh-radar');
+      expect(radar).toBeDefined();
+      expect(radar?.prompt).toContain('AN/MPQ-64 Sentinel');
+      expect(radar?.targetFiles.length).toBeGreaterThan(0);
+      expect(radar?.migrationSql).toContain('CREATE TABLE IF NOT EXISTS radar_targets');
+      expect(radar?.verificationCriteria.length).toBeGreaterThan(0);
+      expect(radar?.blueprintDiffPreview).toContain('diff --git');
+
+      const mailerPresets = getFeaturePresets('certified-mailer');
+      expect(mailerPresets.length).toBeGreaterThanOrEqual(3);
+
+      const picfitPresets = getFeaturePresets('picfitai');
+      expect(picfitPresets.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('Agent Tools Configuration', () => {
+    it('should configure supported agents: AGY, Claude Code, SLOP CLI, Aider, and Cursor', () => {
+      const tools = getAgentTools();
+      expect(tools.map(t => t.id)).toEqual(['agy', 'claude', 'slop', 'aider', 'cursor']);
+
+      const agy = getAgentTool('agy');
+      expect(agy.name).toContain('Antigravity');
+      expect(agy.cliBinary).toBe('agy');
+
+      const claude = getAgentTool('claude');
+      expect(claude.name).toBe('Claude Code');
+      expect(claude.cliBinary).toBe('claude');
+
+      const slop = getAgentTool('slop');
+      expect(slop.name).toBe('SLOP CLI');
+      expect(slop.cliBinary).toBe('slop');
+    });
+  });
+
+  describe('Shell Escaping and Security Helpers', () => {
+    it('should safely escape shell special characters for double-quoted arguments', () => {
+      const raw = 'Fix "bug" in $HOME with `echo hack` and \\ backslash';
+      const escaped = escapeShellDoubleQuotes(raw);
+      expect(escaped).toBe('Fix \\"bug\\" in \\$HOME with \\`echo hack\\` and \\\\ backslash');
+    });
+  });
+
+  describe('Feature Manifest Generation (slop-feature.json)', () => {
+    it('should generate concrete feature manifest matching schema contract', () => {
+      const coord = getAppCoordinate('dronehunter');
+      const feature = getFeaturePresets('dronehunter')[0];
+      const manifest = generateFeatureManifest({
+        coordinate: coord,
+        feature,
+        agent: 'agy',
+        makerHandle: '@josh'
+      });
+
+      expect(manifest.$schema).toBe('https://nates-software.com/schemas/slop-feature-manifest-v1.json');
+      expect(manifest.version).toBe('1.0.0');
+      expect(manifest.targetRepository.appId).toBe('dronehunter');
+      expect(manifest.targetRepository.slug).toBe('nate/dronehunter');
+      expect(manifest.feature.id).toBe(feature.id);
+      expect(manifest.feature.prompt).toBe(feature.prompt);
+      expect(manifest.feature.targetFiles).toEqual(feature.targetFiles);
+      expect(manifest.feature.migrationSql).toBe(feature.migrationSql);
+      expect(manifest.localAgent.tool).toBe('agy');
+      expect(manifest.localAgent.command).toContain('agy "');
+      expect(manifest.lineageContract.makerHandle).toBe('@josh');
+      expect(manifest.lineageContract.royaltySplit.maker).toBe('70%');
+      expect(manifest.lineageContract.royaltySplit.ancestor).toBe('20%');
+      expect(manifest.evidenceRequirements.typecheckRequired).toBe(true);
+      expect(manifest.evidenceRequirements.testsRequired).toBe(true);
+      expect(manifest.evidenceRequirements.sha256DigestRequired).toBe(true);
+    });
+
+    it('should support custom prompts in manifest generation', () => {
+      const coord = getAppCoordinate('certified-mailer');
+      const feature = getFeaturePresets('certified-mailer')[0];
+      const customPrompt = 'Custom localized demand letter for Washington State';
+      const manifest = generateFeatureManifest({
+        coordinate: coord,
+        feature,
+        agent: 'claude',
+        customPrompt
+      });
+
+      expect(manifest.feature.prompt).toBe(customPrompt);
+      expect(manifest.localAgent.command).toContain(customPrompt);
+    });
+  });
+
+  describe('Local Agent Plan & Command Generation', () => {
+    it('should generate concrete single-line terminal command for AGY', () => {
+      const coord = getAppCoordinate('dronehunter');
+      const feature = getFeaturePresets('dronehunter')[0];
+      const plan = generateLocalAgentPlan({
+        coordinate: coord,
+        feature,
+        agent: 'agy'
+      });
+
+      expect(plan.singleLineCommand).toContain('git clone https://github.com/natemcguire/dronehunter.git');
+      expect(plan.singleLineCommand).toContain('/tmp/slop-dronehunter-dh-radar');
+      expect(plan.singleLineCommand).toContain('git checkout -b feature/dh-radar');
+      expect(plan.singleLineCommand).toContain('agy "');
+      expect(plan.steps.length).toBe(4);
+      expect(plan.manifestJson).toContain('"appId": "dronehunter"');
+    });
+
+    it('should generate concrete local workflow steps with descriptions and required evidence', () => {
+      const coord = getAppCoordinate('certified-mailer');
+      const feature = getFeaturePresets('certified-mailer')[0];
+      const plan = generateLocalAgentPlan({
+        coordinate: coord,
+        feature,
+        agent: 'claude'
+      });
+
+      expect(plan.steps[0].title).toContain('Clone into Isolated Local Worktree');
+      expect(plan.steps[0].command).toContain('git clone');
+      expect(plan.steps[0].requiredEvidence).toBeDefined();
+
+      expect(plan.steps[1].title).toContain('Claude');
+      expect(plan.steps[1].command).toContain('claude "');
+
+      expect(plan.steps[2].title).toContain('Execute Local Test Suite');
+      expect(plan.steps[2].command).toContain('npm test');
+
+      expect(plan.steps[3].title).toContain('Inspect Diff & Prepare CAS Feature Ref');
+      expect(plan.steps[3].command).toContain('git diff');
+    });
+  });
+
+  describe('Evidence Checklist & Contracts', () => {
+    it('should generate 5-point evidence verification checklist', () => {
+      const feature = getFeaturePresets('dronehunter')[0];
+      const checklist = getEvidenceChecklist(feature);
+      expect(checklist.length).toBe(5);
+      expect(checklist[0].id).toBe('typecheck');
+      expect(checklist[1].id).toBe('tests');
+      expect(checklist[2].id).toBe('migrations');
+      expect(checklist[3].id).toBe('diff');
+      expect(checklist[4].id).toBe('evidence-digest');
+      expect(checklist[4].evidenceProduced).toContain('sha256');
+    });
+  });
+
+  describe('Truthful Gateway & CAS Landing State Evaluation', () => {
+    it('should truthfully indicate in-browser landing is offline and requires local execution', () => {
+      const coord = getAppCoordinate('dronehunter');
+      const feature = getFeaturePresets('dronehunter')[0];
+      const status = evaluateGatewayLandingStatus({ coordinate: coord, feature });
+
+      expect(status.canLandDirectlyFromBrowser).toBe(false);
+      expect(status.status).toBe('browser_sandbox_offline');
+      expect(status.reason).toContain('Browser Sandbox Mode');
+      expect(status.reason).toContain('cannot invoke local host shells');
+      expect(status.requiredArtifacts.length).toBeGreaterThan(0);
+      expect(status.landingContract.casValidationRequired).toBe(true);
+      expect(status.landingContract.targetBranch).toBe('refs/heads/main');
+    });
+  });
+});

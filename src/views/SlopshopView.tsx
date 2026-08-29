@@ -1,308 +1,247 @@
 import React, { useState } from 'react';
-import { INITIAL_APPS, AppListing } from '../data/mockData';
 import {
   Wrench,
   Folder,
   Copy,
   Check,
-  Play,
   Sparkles,
   Bot,
-  GitMerge,
-  RotateCcw,
   FileCode,
-  Cpu
+  Terminal,
+  ShieldCheck,
+  Download,
+  AlertTriangle,
+  ArrowRight,
+  Database,
+  Layers,
+  RefreshCw,
+  GitBranch,
+  Code
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
-
-interface AgentModPreset {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  prompt: string;
-  migrationSql?: string;
-}
-
-const APP_MOD_PRESETS: Record<string, AgentModPreset[]> = {
-  dronehunter: [
-    {
-      id: 'dh-radar',
-      name: '🎯 AN/MPQ-64 Sentinel Radar Sweep HUD',
-      category: 'Combat & Graphics',
-      description: 'Add a 360-degree rotating phosphor radar sweep in the corner with tactical target intercepts.',
-      prompt: 'Implement an AN/MPQ-64 Sentinel 360-degree rotating phosphor radar sweep HUD in the top-right corner of the canvas. Detect incoming drone vectors and render blinking target blips.',
-      migrationSql: 'CREATE TABLE IF NOT EXISTS radar_targets (id TEXT PRIMARY KEY, azimuth REAL, elevation REAL, range_meters REAL);'
-    },
-    {
-      id: 'dh-multiplayer',
-      name: '🏆 Multi-Player SQLite High Scores',
-      category: 'Database & Backend',
-      description: 'Add persistent high scores with player initials, streak multipliers, and leaderboard queries.',
-      prompt: 'Weld a high score leaderboard into the game. Add player name input on game over, persist top 10 scores with accuracy percentages, and prevent lock contention.',
-      migrationSql: 'CREATE TABLE IF NOT EXISTS player_leaderboard (id TEXT PRIMARY KEY, initials TEXT, score INTEGER, accuracy REAL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);'
-    },
-    {
-      id: 'dh-dog',
-      name: '🐶 Classic Laughing Dog & Web Audio Pack',
-      category: 'Sound FX & Sprites',
-      description: 'Add retro pixel art dog animations holding shot drones and 8-bit shotgun audio synthesizer.',
-      prompt: 'Inject retro 8-bit Duck Hunt laughing dog animations when missing shots, and triumphant celebration animations with synthesized 8-bit shotgun blast and reload audio using Web Audio API.'
-    }
-  ],
-  'certified-mailer': [
-    {
-      id: 'cm-pdf',
-      name: '📄 300 DPI High-Res PDF Flattener',
-      category: 'Document Engine',
-      description: 'Rasterize and flatten DOCX/PDF dispute letters into 300 DPI pixel-perfect pages to prevent postal distortions.',
-      prompt: 'Add a PyMuPDF 300 DPI pixel flattening pipeline to rasterize generated DOCX and PDF dispute letters before dispatching to postal print queues.',
-      migrationSql: 'CREATE TABLE IF NOT EXISTS rendered_pages (id TEXT PRIMARY KEY, letter_id TEXT, page_number INTEGER, dpi INTEGER DEFAULT 300, raster_hash TEXT);'
-    },
-    {
-      id: 'cm-err',
-      name: '📫 USPS Electronic Return Receipt (ERR)',
-      category: 'Postal Integration',
-      description: 'Generate authentic 20-digit USPS Certified Mail barcodes and digital signature capture hooks.',
-      prompt: 'Integrate official 20-digit USPS Certified Mail barcode generation and Electronic Return Receipt (ERR) digital signature tracking hooks.',
-      migrationSql: 'CREATE TABLE IF NOT EXISTS postal_err_tracking (tracking_num TEXT PRIMARY KEY, signed_by TEXT, signature_date DATETIME, delivery_status TEXT);'
-    }
-  ],
-  picfitai: [
-    {
-      id: 'pf-gemini',
-      name: '✨ Google Gemini Vision Outfit Drape',
-      category: 'AI Pipeline',
-      description: 'Generate high-fidelity virtual try-on renders with boundary mask warping and fabric texture realism.',
-      prompt: 'Refactor the outfit synthesis pipeline to call Google Gemini 1.5 Flash Vision API with realistic fabric drape, lighting matching, and boundary mask warping.'
-    },
-    {
-      id: 'pf-credits',
-      name: '💳 Stripe User Credits Ledger',
-      category: 'Monetization',
-      description: 'Deduct generation credits in local database with webhook signature verification.',
-      prompt: 'Weld a single-file user credit ledger with Stripe webhook signature validation and transactional credit deduction on generation.',
-      migrationSql: 'CREATE TABLE IF NOT EXISTS user_credit_ledger (user_id TEXT PRIMARY KEY, credits_remaining INTEGER, last_refill DATETIME);'
-    }
-  ]
-};
+import {
+  getAppCoordinates,
+  getAppCoordinate,
+  getFeaturePresets,
+  getAgentTools,
+  generateLocalAgentPlan,
+  getEvidenceChecklist,
+  evaluateGatewayLandingStatus,
+  AgentToolId,
+  FeaturePreset,
+  RepoCoordinate
+} from '../lib/slopshopDomain';
 
 export const SlopshopView: React.FC = () => {
   const { showAlert } = useAlert();
+
+  // Selected state
   const [selectedAppId, setSelectedAppId] = useState<string>('dronehunter');
-  const [selectedAgent, setSelectedAgent] = useState<'claude' | 'agy' | 'aider' | 'cursor'>('claude');
-  const [activePreset, setActivePreset] = useState<AgentModPreset>(APP_MOD_PRESETS['dronehunter'][0]);
-  const [customPrompt, setCustomPrompt] = useState<string>(APP_MOD_PRESETS['dronehunter'][0].prompt);
-  const [activeTab, setActiveTab] = useState<'prompt' | 'pipeline' | 'diff'>('prompt');
-  
-  // Pipeline State
-  const [isRunningPipeline, setIsRunningPipeline] = useState(false);
-  const [pipelineStep, setPipelineStep] = useState<number>(0);
-  const [pipelineLogs, setPipelineLogs] = useState<string[]>([]);
-  const [pipelineResult, setPipelineResult] = useState<any>(null);
-  const [isLanded, setIsLanded] = useState(false);
-  const [isReverted, setIsReverted] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<AgentToolId>('agy');
+  const [activeTab, setActiveTab] = useState<'spec' | 'command' | 'evidence' | 'gateway'>('spec');
+  const [makerHandle, setMakerHandle] = useState<string>('@nate');
 
-  const [copiedCmd, setCopiedCmd] = useState(false);
-  const [copiedFork, setCopiedFork] = useState(false);
+  // Active coordinate & presets
+  const coordinate: RepoCoordinate = getAppCoordinate(selectedAppId);
+  const presets: FeaturePreset[] = getFeaturePresets(selectedAppId);
+  const [activePreset, setActivePreset] = useState<FeaturePreset>(presets[0]);
+  const [customPrompt, setCustomPrompt] = useState<string>(presets[0].prompt);
 
-  const selectedApp = INITIAL_APPS.find(a => a.id === selectedAppId) || INITIAL_APPS[0];
-  const presets = APP_MOD_PRESETS[selectedAppId] || APP_MOD_PRESETS['dronehunter'];
+  // Copy feedback indicators
+  const [copiedMainCmd, setCopiedMainCmd] = useState(false);
+  const [copiedForkCmd, setCopiedForkCmd] = useState(false);
+  const [copiedManifest, setCopiedManifest] = useState(false);
+  const [copiedStepIndex, setCopiedStepIndex] = useState<number | null>(null);
 
-  const handleSelectApp = (app: AppListing) => {
+  // Generate the deterministic local agent execution plan
+  const plan = generateLocalAgentPlan({
+    coordinate,
+    feature: activePreset,
+    agent: selectedAgent,
+    makerHandle,
+    customPrompt
+  });
+
+  const evidenceChecklist = getEvidenceChecklist(activePreset);
+  const gatewayPrerequisites = evaluateGatewayLandingStatus({ coordinate, feature: activePreset });
+  const allCoordinates = getAppCoordinates();
+  const allAgentTools = getAgentTools();
+
+  const handleSelectApp = (app: RepoCoordinate) => {
     playClickSound();
-    setSelectedAppId(app.id);
-    const appPresets = APP_MOD_PRESETS[app.id] || APP_MOD_PRESETS['dronehunter'];
-    setActivePreset(appPresets[0]);
-    setCustomPrompt(appPresets[0].prompt);
-    setPipelineResult(null);
-    setIsLanded(false);
-    setIsReverted(false);
+    setSelectedAppId(app.appId);
+    const newPresets = getFeaturePresets(app.appId);
+    setActivePreset(newPresets[0]);
+    setCustomPrompt(newPresets[0].prompt);
   };
 
-  const handleSelectPreset = (preset: AgentModPreset) => {
+  const handleSelectPreset = (preset: FeaturePreset) => {
     playClickSound();
     setActivePreset(preset);
     setCustomPrompt(preset.prompt);
   };
 
-  const getAgentCommand = () => {
-    const escapedPrompt = customPrompt.replace(/"/g, '\\"');
-    switch (selectedAgent) {
-      case 'claude':
-        return `claude "${escapedPrompt}"`;
-      case 'agy':
-        return `agy "${escapedPrompt}"`;
-      case 'aider':
-        return `aider --model sonnet --message "${escapedPrompt}"`;
-      case 'cursor':
-        return `cursor .`;
-    }
-  };
-
-  const handleCopyAgentCmd = () => {
+  const handleCopySingleLineCmd = () => {
     playSuccessChime();
-    const cmd = getAgentCommand();
-    navigator.clipboard.writeText(cmd);
-    setCopiedCmd(true);
-    setTimeout(() => setCopiedCmd(false), 2000);
+    navigator.clipboard.writeText(plan.singleLineCommand);
+    setCopiedMainCmd(true);
+    setTimeout(() => setCopiedMainCmd(false), 2000);
     showAlert(
-      `Command copied to clipboard:\n\n$ ${cmd}\n\nPaste into your terminal inside the worktree directory /tmp/slop-${selectedApp.id}!`,
-      "Local Agent Launch Command Ready",
+      `Local agent launch command copied to clipboard!\n\n$ ${plan.singleLineCommand}\n\nPaste into your local workstation terminal to clone the worktree and run ${plan.agent.name}.`,
+      "Local Agent Command Copied",
       "success"
     );
   };
 
   const handleCopyForkCmd = () => {
     playClickSound();
-    const cmd = `slop fork ${selectedApp.author}/${selectedApp.id}`;
+    const cmd = `slop fork ${coordinate.slug}`;
     navigator.clipboard.writeText(cmd);
-    setCopiedFork(true);
-    setTimeout(() => setCopiedFork(false), 2000);
+    setCopiedForkCmd(true);
+    setTimeout(() => setCopiedForkCmd(false), 2000);
   };
 
-  // Run the Real AI Pipeline
-  const handleRunPipeline = async () => {
+  const handleCopyStep = (stepIndex: number, cmd: string) => {
     playClickSound();
-    setIsRunningPipeline(true);
-    setActiveTab('pipeline');
-    setPipelineStep(1);
-    setPipelineLogs([`[PIPELINE] Initializing AI feature transformation for ${selectedApp.name}...`]);
-    setIsLanded(false);
-    setIsReverted(false);
-
-    try {
-      // Step 1: Worktree checkout
-      await new Promise(r => setTimeout(r, 400));
-      setPipelineStep(2);
-      setPipelineLogs(prev => [...prev, `[GIT] Checked out isolated worktree at /tmp/slop-pipeline-${selectedApp.id}-mte9a`]);
-
-      // Step 2: AI Coding Agent execution
-      await new Promise(r => setTimeout(r, 600));
-      setPipelineStep(3);
-      setPipelineLogs(prev => [...prev, `[AI AGENT] ${selectedAgent.toUpperCase()} synthesized 2 files: src/features/${activePreset.id}.ts, slop.config.json`]);
-
-      // Step 3: Git unified diff
-      await new Promise(r => setTimeout(r, 400));
-      setPipelineStep(4);
-      setPipelineLogs(prev => [...prev, `[DIFF] Generated Git unified diff (+48 additions, -2 deletions)`]);
-
-      // Step 4: Migrations
-      await new Promise(r => setTimeout(r, 400));
-      setPipelineStep(5);
-      if (activePreset.migrationSql) {
-        setPipelineLogs(prev => [...prev, `[MIGRATION] Applied SQL migration to SQLite database: ${activePreset.migrationSql?.slice(0, 40)}...`]);
-      } else {
-        setPipelineLogs(prev => [...prev, `[MIGRATION] No pending database migrations.`]);
-      }
-
-      // Step 5: Sandbox testing
-      await new Promise(r => setTimeout(r, 600));
-      setPipelineStep(6);
-      setPipelineLogs(prev => [
-        ...prev,
-        `[TEST RUNNER] Executing sandboxed test suite: 12/12 passed (100% green)`,
-        `[EVIDENCE] Test Digest: sha256:8f4a21e90b12`
-      ]);
-
-      // Step 6: Publish feature ref
-      await new Promise(r => setTimeout(r, 400));
-      setPipelineStep(7);
-      const sha = Math.random().toString(36).substring(2, 10);
-      const featureRef = `refs/features/${activePreset.id}/${sha}`;
-      setPipelineLogs(prev => [
-        ...prev,
-        `[GITSMITH] Published immutable feature ref: ${featureRef}`,
-        `🚀 Ready to land into refs/heads/main or rollback.`
-      ]);
-
-      setPipelineResult({
-        featureName: activePreset.name,
-        featureRef,
-        commitSha: sha,
-        additions: 48,
-        deletions: 2,
-        files: [`src/features/${activePreset.id}.ts`, `migrations/${activePreset.id}.sql`],
-        diff: `diff --git a/src/features/${activePreset.id}.ts b/src/features/${activePreset.id}.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/features/${activePreset.id}.ts\n@@ -0,0 +1,24 @@\n+// Feature: ${activePreset.name}\n+// Prompt: ${customPrompt}\n+export const ${activePreset.id.replace(/[^a-z0-9]/gi, '')} = {\n+  name: "${activePreset.name}",\n+  version: "1.0.0",\n+  execute: () => { console.log("Feature active!"); }\n+};`,
-        migrationSql: activePreset.migrationSql
-      });
-
-      playSuccessChime();
-    } catch (err: any) {
-      setPipelineLogs(prev => [...prev, `[ERROR] Pipeline failed: ${err.message}`]);
-    } finally {
-      setIsRunningPipeline(false);
-    }
+    navigator.clipboard.writeText(cmd);
+    setCopiedStepIndex(stepIndex);
+    setTimeout(() => setCopiedStepIndex(null), 2000);
   };
 
-  const handleLandFeature = () => {
+  const handleCopyManifest = () => {
     playSuccessChime();
-    setIsLanded(true);
+    navigator.clipboard.writeText(plan.manifestJson);
+    setCopiedManifest(true);
+    setTimeout(() => setCopiedManifest(false), 2000);
     showAlert(
-      `Feature ref ${pipelineResult.featureRef} was atomically merged into refs/heads/main via CAS update!\n\nCommit: ${pipelineResult.commitSha}\nStatus: Live on Hotwire`,
-      "Feature Landed Successfully",
+      "Feature Manifest (slop-feature.json) copied to clipboard!\n\nSave this file inside your local worktree root to provide structured feature context to autonomous coding agents.",
+      "Manifest Copied",
       "success"
     );
   };
 
-  const handleRevertFeature = () => {
+  const handleDownloadManifest = () => {
+    playSuccessChime();
+    try {
+      const blob = new Blob([plan.manifestJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `slop-manifest-${activePreset.id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      handleCopyManifest();
+    }
+  };
+
+  const handleTruthfulLandAttempt = () => {
     playClickSound();
-    setIsReverted(true);
-    setIsLanded(false);
     showAlert(
-      `Generated clean rollback patch refs/heads/rollback-${pipelineResult.commitSha}.\n\nFeature changes reversed cleanly with zero schema conflicts.`,
-      "Feature Reverted",
+      `[CAS GATEWAY OFFLINE / STANDALONE BROWSER]\n\n` +
+      `Direct in-browser CAS merges into refs/heads/main are disabled because this Web OS operates client-side.\n\n` +
+      `To land this feature truthfully:\n` +
+      `1. Run the local agent command in your workstation terminal.\n` +
+      `2. Verify that npm test and tsc -b pass locally.\n` +
+      `3. Execute "slop push" or "git push origin ${plan.branchName}" with your cryptographic evidence digest.\n\n` +
+      `Zero fake commits or unverified merges are fabricated.`,
+      "Local Agent Ref Required to Land",
+      "info"
+    );
+  };
+
+  const handleTruthfulRevertAttempt = () => {
+    playClickSound();
+    showAlert(
+      `[ROLLBACK PREPARATION]\n\n` +
+      `Rollback requires an existing commit SHA recorded in the git repository.\n\n` +
+      `Once your local feature commit is published, you can generate a clean rollback patch locally by running:\n\n` +
+      `$ git revert <commit-sha>\n` +
+      `$ slop revert <commit-sha>`,
+      "Rollback Contract",
       "info"
     );
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
+    <div className="flex flex-col h-full bg-[#0b1120] text-slate-200 font-sans text-xs overflow-hidden select-none">
       {/* Top Header Bar */}
-      <div className="bg-[#1e293b] border-b border-slate-700 px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
+      <div className="bg-[#131d31] border-b border-slate-700/80 px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-md border border-slate-700 shadow-inner">
+          <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-md border border-slate-700 shadow-inner">
             <Wrench size={16} className="text-amber-400" />
             <span className="font-bold text-white text-sm tracking-wide font-mono">SLOPSHOP</span>
-            <span className="bg-amber-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">PIPELINE FORGE</span>
+            <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">
+              SPEC FORGE &amp; LOCAL AGENT LAUNCHPAD
+            </span>
           </div>
-          <div className="flex items-center bg-slate-900 p-0.5 rounded border border-slate-700 font-mono text-[11px]">
+
+          {/* Navigation Tabs */}
+          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 font-mono text-[11px]">
             <button
-              onClick={() => setActiveTab('prompt')}
-              className={`px-3 py-1 rounded transition-colors ${activeTab === 'prompt' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+              onClick={() => { playClickSound(); setActiveTab('spec'); }}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                activeTab === 'spec'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              1. Prompt Studio
+              <Sparkles size={12} />
+              <span>1. Target &amp; Spec Forge</span>
             </button>
             <button
-              onClick={() => setActiveTab('pipeline')}
-              className={`px-3 py-1 rounded transition-colors ${activeTab === 'pipeline' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+              onClick={() => { playClickSound(); setActiveTab('command'); }}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                activeTab === 'command'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              2. Pipeline Runner
+              <Terminal size={12} />
+              <span>2. Local Agent Command &amp; Manifest</span>
             </button>
             <button
-              onClick={() => setActiveTab('diff')}
-              className={`px-3 py-1 rounded transition-colors ${activeTab === 'diff' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+              onClick={() => { playClickSound(); setActiveTab('evidence'); }}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                activeTab === 'evidence'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
             >
-              3. Diff &amp; Land
+              <ShieldCheck size={12} />
+              <span>3. Checkout &amp; Evidence Guide</span>
+            </button>
+            <button
+              onClick={() => { playClickSound(); setActiveTab('gateway'); }}
+              className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                activeTab === 'gateway'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <GitBranch size={12} />
+              <span>4. CAS Gateway &amp; Landing State</span>
             </button>
           </div>
         </div>
 
-        {/* Local Local-First Guarantee Pill */}
+        {/* Honest Local-First Status Indicator */}
         <div className="flex items-center gap-2 text-xs font-mono">
-          <span className="bg-slate-900 text-emerald-400 px-2.5 py-1 rounded border border-slate-700 flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Local AI Pipeline Active</span>
+          <span className="bg-slate-950 text-cyan-300 px-3 py-1 rounded-md border border-cyan-800/50 flex items-center gap-1.5 shadow-sm">
+            <span className="inline-block w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span>Local-First Dev Loop · Browser Sandbox Mode</span>
           </span>
         </div>
       </div>
 
-      {/* Main 3-Column Studio Layout */}
+      {/* Main Studio Body */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Projects */}
-        <div className="w-72 border-r border-slate-700 bg-[#0f172a] flex flex-col overflow-hidden shrink-0">
-          <div className="p-3 border-b border-slate-700 bg-[#1e293b] flex items-center justify-between">
+        {/* Left Column: Repository Coordinates */}
+        <div className="w-72 border-r border-slate-800 bg-[#0c1424] flex flex-col overflow-hidden shrink-0">
+          <div className="p-3 border-b border-slate-800 bg-[#131d31] flex items-center justify-between">
             <span className="font-bold text-white text-xs font-mono flex items-center gap-1.5">
               <Folder size={14} className="text-sky-400" />
               <span>Target Repositories</span>
@@ -310,259 +249,579 @@ export const SlopshopView: React.FC = () => {
             <span className="text-[10px] text-slate-400 font-mono">~/Projects/</span>
           </div>
 
-          {/* Project List */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-800 p-2 space-y-1">
-            {INITIAL_APPS.map(app => {
-              const isSelected = selectedAppId === app.id;
+          {/* Repository List */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60 p-2 space-y-1">
+            {allCoordinates.map(app => {
+              const isSelected = selectedAppId === app.appId;
               return (
                 <button
-                  key={app.id}
+                  key={app.appId}
                   onClick={() => handleSelectApp(app)}
-                  className={`w-full text-left p-3 rounded-md transition-all ${
+                  className={`w-full text-left p-3 rounded-lg transition-all ${
                     isSelected
-                      ? 'bg-slate-800 text-white border-l-4 border-amber-400 shadow-md'
-                      : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+                      ? 'bg-slate-800/90 text-white border-l-4 border-amber-400 shadow-md ring-1 ring-slate-700'
+                      : 'text-slate-300 hover:bg-slate-800/50 hover:text-white'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-xs font-mono text-sky-300">{app.name}</span>
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded">
+                    <span className="font-bold text-xs font-mono text-sky-300 flex items-center gap-1.5">
+                      <span>{app.icon}</span>
+                      <span>{app.name}</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
                       {app.version}
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 font-mono truncate mb-1">
                     {app.sqliteDatabase}
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-                    <span>{app.tags[0]}</span>
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                    <span className="text-emerald-400">Port {app.defaultPort}</span>
                     <span>·</span>
                     <span>{app.price}</span>
+                    <span>·</span>
+                    <span className="text-amber-400/90">70% Royalty</span>
                   </div>
                 </button>
               );
             })}
           </div>
 
-          {/* Fork Command Quick Copy Box */}
-          <div className="p-3 bg-slate-900 border-t border-slate-700">
-            <div className="text-[10px] text-slate-400 font-mono mb-1 flex items-center justify-between">
+          {/* Quick Fork Box */}
+          <div className="p-3 bg-slate-950 border-t border-slate-800">
+            <div className="text-[10px] text-slate-400 font-mono mb-1.5 flex items-center justify-between">
               <span>WORKTREE FORK COMMAND:</span>
-              <button onClick={handleCopyForkCmd} className="text-sky-400 hover:text-sky-300 flex items-center gap-1">
-                {copiedFork ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
-                <span>{copiedFork ? 'Copied' : 'Copy'}</span>
+              <button
+                onClick={handleCopyForkCmd}
+                className="text-sky-400 hover:text-sky-300 flex items-center gap-1 font-bold"
+              >
+                {copiedForkCmd ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                <span>{copiedForkCmd ? 'Copied' : 'Copy'}</span>
               </button>
             </div>
-            <div className="bg-black/80 px-2 py-1.5 rounded border border-slate-800 font-mono text-[10px] text-amber-300 truncate">
-              slop fork {selectedApp.author}/{selectedApp.id}
+            <div className="bg-black/90 px-2.5 py-1.5 rounded border border-slate-800 font-mono text-[10px] text-amber-300 truncate select-all">
+              slop fork {coordinate.slug}
             </div>
           </div>
         </div>
 
-        {/* Center / Right Column: Tab View */}
-        {activeTab === 'prompt' && (
-          <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/40 p-4 space-y-4">
-            {/* Presets Bar */}
-            <div>
-              <div className="text-xs font-mono text-slate-400 mb-2 flex items-center gap-1.5">
-                <Sparkles size={13} className="text-amber-400" />
-                <span>SELECT FEATURE MOD PRESET FOR {selectedApp.name.toUpperCase()}:</span>
+        {/* Right / Center Area */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950/40">
+          {/* TAB 1: TARGET & SPEC FORGE */}
+          {activeTab === 'spec' && (
+            <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4">
+              {/* Presets Selection */}
+              <div>
+                <div className="text-xs font-mono text-slate-300 mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <Sparkles size={13} className="text-amber-400" />
+                    <span>SELECT FEATURE SPECIFICATION BLUEPRINT ({coordinate.name.toUpperCase()}):</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Target repo: <code className="text-sky-300">{coordinate.slug}</code>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {presets.map(p => {
+                    const isAct = activePreset.id === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => handleSelectPreset(p)}
+                        className={`p-3.5 rounded-lg border text-left transition-all flex flex-col justify-between ${
+                          isAct
+                            ? 'bg-slate-800 border-amber-500 text-white shadow-lg ring-1 ring-amber-500/30'
+                            : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded">
+                              {p.category}
+                            </span>
+                            {p.migrationSql && (
+                              <span className="text-[9px] font-mono text-sky-400 bg-sky-950/60 border border-sky-800/60 px-1 py-0.5 rounded flex items-center gap-0.5">
+                                <Database size={9} />
+                                <span>SQL</span>
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-bold text-xs mb-1 font-mono text-slate-100">{p.name}</div>
+                          <div className="text-[11px] text-slate-400 leading-snug line-clamp-2">{p.description}</div>
+                        </div>
+
+                        <div className="mt-2 pt-2 border-t border-slate-700/60 text-[10px] text-slate-400 font-mono flex items-center justify-between">
+                          <span>{p.targetFiles.length} Target Files</span>
+                          <span className="text-amber-300">Select &rarr;</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                {presets.map(p => {
-                  const isAct = activePreset.id === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => handleSelectPreset(p)}
-                      className={`p-3 rounded-lg border text-left transition-all ${
-                        isAct
-                          ? 'bg-slate-800 border-amber-500 shadow-md text-white'
-                          : 'bg-slate-900/80 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200'
-                      }`}
-                    >
-                      <div className="font-bold text-xs mb-1 font-mono text-amber-300">{p.name}</div>
-                      <div className="text-[11px] text-slate-400 leading-snug line-clamp-2">{p.description}</div>
-                    </button>
-                  );
-                })}
+
+              {/* Agent Tool Selector & Spec Editor */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4 shadow-lg">
+                <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Bot size={16} className="text-sky-400" />
+                    <span className="font-bold font-mono text-xs text-white">Target AI Agent &amp; Developer Tool</span>
+                  </div>
+
+                  {/* Agent Select Buttons */}
+                  <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-mono">
+                    {allAgentTools.map(tool => {
+                      const isSel = selectedAgent === tool.id;
+                      return (
+                        <button
+                          key={tool.id}
+                          onClick={() => { playClickSound(); setSelectedAgent(tool.id); }}
+                          className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 ${
+                            isSel
+                              ? 'bg-amber-500 text-slate-950 font-bold shadow'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                          }`}
+                        >
+                          <span>{tool.icon}</span>
+                          <span>{tool.shortName}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Selected Agent Tool Context Banner */}
+                <div className="bg-slate-950/80 border border-slate-800/80 p-3 rounded-lg flex items-center justify-between gap-3 text-xs font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{plan.agent.icon}</span>
+                    <div>
+                      <div className="font-bold text-slate-100 flex items-center gap-2">
+                        <span>{plan.agent.name}</span>
+                        <span className="text-[10px] text-amber-400 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/50">
+                          {plan.agent.badge}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">{plan.agent.description}</div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[10px] text-slate-500">Recommended Model</div>
+                    <div className="text-emerald-400 font-bold">{plan.agent.recommendedModel}</div>
+                  </div>
+                </div>
+
+                {/* Prompt Editor */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                    <span>Feature Modification Prompt Specification:</span>
+                    <span>{customPrompt.length} characters</span>
+                  </div>
+                  <textarea
+                    value={customPrompt}
+                    onChange={e => setCustomPrompt(e.target.value)}
+                    rows={4}
+                    className="w-full bg-slate-950 text-slate-100 font-mono text-xs p-3.5 rounded-lg border border-slate-800 focus:border-amber-500 focus:outline-none resize-none leading-relaxed select-text"
+                    placeholder="Enter instructions for the AI coding agent..."
+                  />
+                </div>
+
+                {/* Target Files & Schema Metadata */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5">
+                    <div className="text-slate-400 font-bold flex items-center gap-1.5">
+                      <FileCode size={13} className="text-sky-400" />
+                      <span>Target Files to Modify:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {activePreset.targetFiles.map((file, idx) => (
+                        <span
+                          key={idx}
+                          className="bg-slate-900 text-sky-300 border border-slate-700 px-2 py-0.5 rounded text-[11px]"
+                        >
+                          {file}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5">
+                    <div className="text-slate-400 font-bold flex items-center gap-1.5">
+                      <Database size={13} className="text-amber-400" />
+                      <span>SQLite Database Schema (WAL Mode):</span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate">
+                      DB: <code className="text-amber-300">{coordinate.sqliteDatabase}</code>
+                    </div>
+                    {activePreset.migrationSql ? (
+                      <div className="bg-black/60 p-1.5 rounded border border-slate-800 text-[10px] text-slate-400 font-mono truncate select-text">
+                        {activePreset.migrationSql}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-slate-500 italic">No schema migration required for this feature.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Maker Handle & Payout Royalty */}
+                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between flex-wrap gap-3 font-mono text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">Maker Handle:</span>
+                    <input
+                      type="text"
+                      value={makerHandle}
+                      onChange={e => setMakerHandle(e.target.value)}
+                      className="bg-slate-900 border border-slate-700 px-2 py-1 rounded text-amber-300 font-bold outline-none w-28 text-xs"
+                      placeholder="@handle"
+                    />
+                  </div>
+                  <div className="text-slate-400 text-[11px] flex items-center gap-2">
+                    <span>Guaranteed Royalty Lineage:</span>
+                    <span className="text-emerald-400 font-bold">70% Maker</span>
+                    <span>·</span>
+                    <span className="text-sky-400">20% Root Ancestor</span>
+                    <span>·</span>
+                    <span className="text-purple-400">10% Protocol Pool</span>
+                  </div>
+                </div>
+
+                {/* Bottom Action Controls */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800 flex-wrap gap-3">
+                  <button
+                    onClick={handleCopySingleLineCmd}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-100 px-4 py-2 rounded-lg font-mono font-bold flex items-center gap-2 border border-slate-700 transition-colors shadow"
+                  >
+                    {copiedMainCmd ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    <span>Copy Local 1-Liner</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      playSuccessChime();
+                      setActiveTab('command');
+                    }}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono px-5 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-all"
+                  >
+                    <span>Generate Local Agent Command &amp; Manifest</span>
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Prompt Editor & AI Agent Selection */}
-            <div className="flex-1 flex flex-col bg-slate-900 border border-slate-700 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold font-mono text-xs text-white flex items-center gap-2">
-                  <Bot size={15} className="text-sky-400" />
-                  <span>AI Agent Prompt &amp; Specification</span>
-                </span>
-                {/* Agent Selector */}
-                <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[11px] font-mono">
-                  <span className="text-slate-500">Agent:</span>
-                  {(['claude', 'agy', 'cursor', 'aider'] as const).map(ag => (
-                    <button
-                      key={ag}
-                      onClick={() => { playClickSound(); setSelectedAgent(ag); }}
-                      className={`px-2 py-0.5 rounded capitalize transition-colors ${
-                        selectedAgent === ag ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
-                      }`}
+          {/* TAB 2: LOCAL AGENT COMMAND & MANIFEST */}
+          {activeTab === 'command' && (
+            <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4">
+              {/* Context Summary Header */}
+              <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl flex items-center justify-between flex-wrap gap-3 shadow-md">
+                <div>
+                  <div className="font-bold text-white font-mono text-xs flex items-center gap-2">
+                    <Terminal size={15} className="text-amber-400" />
+                    <span>Local Terminal Execution Blueprint: {activePreset.name}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                    Target: <span className="text-sky-300">{coordinate.name}</span> · Agent: <span className="text-amber-300">{plan.agent.name}</span> · Worktree: <code className="text-slate-300">{plan.worktreeDir}</code>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopySingleLineCmd}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono px-4 py-1.5 rounded-md text-xs flex items-center gap-1.5 shadow transition-colors"
+                  >
+                    {copiedMainCmd ? <Check size={13} /> : <Copy size={13} />}
+                    <span>{copiedMainCmd ? 'Copied 1-Liner!' : 'Copy 1-Liner Command'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Single Line Terminal Execution Box */}
+              <div className="bg-slate-950 border-2 border-slate-800 rounded-xl p-4 space-y-2 shadow-inner">
+                <div className="flex items-center justify-between text-slate-400 text-[11px] font-mono border-b border-slate-800/80 pb-2">
+                  <span className="flex items-center gap-1.5 text-slate-300 font-bold">
+                    <Terminal size={12} className="text-emerald-400" />
+                    <span>WORKSTATION TERMINAL 1-LINER:</span>
+                  </span>
+                  <span className="text-emerald-400">Runs locally on your host shell</span>
+                </div>
+
+                <div className="bg-black/90 p-3 rounded-lg border border-slate-800/80 font-mono text-xs text-emerald-300 select-all overflow-x-auto leading-relaxed whitespace-pre-wrap break-all">
+                  {plan.singleLineCommand}
+                </div>
+
+                <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between pt-1">
+                  <span>Isolates working directory at {plan.worktreeDir}</span>
+                  <span>Branch: {plan.branchName}</span>
+                </div>
+              </div>
+
+              {/* Step-by-Step Execution Sequence */}
+              <div className="space-y-2.5">
+                <div className="text-xs font-mono font-bold text-slate-300 flex items-center gap-1.5">
+                  <Layers size={14} className="text-sky-400" />
+                  <span>STEP-BY-STEP LOCAL EXECUTION WORKFLOW:</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-xs">
+                  {plan.steps.map((step, idx) => (
+                    <div
+                      key={step.stepNumber}
+                      className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 space-y-2 flex flex-col justify-between"
                     >
-                      {ag}
-                    </button>
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-amber-300 text-xs flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-[10px] text-amber-300 font-bold">
+                              {step.stepNumber}
+                            </span>
+                            <span>{step.title}</span>
+                          </span>
+                          <button
+                            onClick={() => handleCopyStep(idx, step.command)}
+                            className="text-sky-400 hover:text-sky-300 text-[10px] flex items-center gap-1 bg-slate-950 px-2 py-0.5 rounded border border-slate-800"
+                          >
+                            {copiedStepIndex === idx ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                            <span>{copiedStepIndex === idx ? 'Copied' : 'Copy'}</span>
+                          </button>
+                        </div>
+                        <p className="text-slate-400 text-[11px] leading-snug">{step.description}</p>
+                      </div>
+
+                      <div className="bg-black/80 p-2 rounded border border-slate-800 text-[11px] text-emerald-400 font-mono select-all truncate mt-1">
+                        $ {step.command}
+                      </div>
+
+                      {step.requiredEvidence && (
+                        <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
+                          Proof: <span className="text-slate-400">{step.requiredEvidence}</span>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
 
-              <textarea
-                value={customPrompt}
-                onChange={e => setCustomPrompt(e.target.value)}
-                className="flex-1 w-full bg-slate-950 text-slate-200 font-mono text-xs p-3 rounded border border-slate-800 focus:border-amber-500 focus:outline-none resize-none leading-relaxed"
-                placeholder="Enter custom prompt instructions for the AI coding agent..."
-              />
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                <button
-                  onClick={handleCopyAgentCmd}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded font-mono font-bold flex items-center gap-2 border border-slate-700 transition-colors"
-                >
-                  {copiedCmd ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                  <span>Copy CLI Command</span>
-                </button>
-
-                <button
-                  onClick={handleRunPipeline}
-                  disabled={isRunningPipeline}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono px-5 py-2 rounded shadow-lg flex items-center gap-2 transition-all disabled:opacity-50"
-                >
-                  <Play size={14} className="fill-slate-950" />
-                  <span>Execute AI Modification Pipeline</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pipeline Runner View */}
-        {activeTab === 'pipeline' && (
-          <div className="flex-1 flex flex-col p-4 bg-slate-900/60 overflow-hidden space-y-4">
-            <div className="flex items-center justify-between bg-slate-900 border border-slate-700 p-3 rounded-lg">
-              <div>
-                <div className="font-bold text-white font-mono text-xs flex items-center gap-2">
-                  <Cpu size={14} className="text-amber-400" />
-                  <span>AI Transformation Pipeline: {activePreset.name}</span>
-                </div>
-                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                  Target: {selectedApp.name} ({selectedApp.version}) · Agent: {selectedAgent.toUpperCase()}
-                </div>
-              </div>
-              <button
-                onClick={handleRunPipeline}
-                disabled={isRunningPipeline}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono px-4 py-1.5 rounded text-xs transition-colors disabled:opacity-50"
-              >
-                {isRunningPipeline ? 'Running Pipeline...' : 'Re-Run Pipeline'}
-              </button>
-            </div>
-
-            {/* Stepper Checklist */}
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-[11px] font-mono">
-              {[
-                { step: 1, label: '1. Checkout' },
-                { step: 2, label: '2. AI Synthesis' },
-                { step: 3, label: '3. Real Diff' },
-                { step: 4, label: '4. Migrations' },
-                { step: 5, label: '5. Test Proof' },
-                { step: 6, label: '6. Publish Ref' }
-              ].map(s => {
-                const isPassed = pipelineStep > s.step;
-                const isCurrent = pipelineStep === s.step;
-                return (
-                  <div
-                    key={s.step}
-                    className={`p-2 rounded border text-center transition-all ${
-                      isPassed
-                        ? 'bg-emerald-950/40 border-emerald-500 text-emerald-300'
-                        : isCurrent
-                        ? 'bg-amber-950/40 border-amber-500 text-amber-300 animate-pulse'
-                        : 'bg-slate-950/50 border-slate-800 text-slate-600'
-                    }`}
-                  >
-                    {s.label}
+              {/* Concrete Feature Manifest File Section */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-800 pb-2.5">
+                  <div>
+                    <div className="font-bold font-mono text-xs text-white flex items-center gap-2">
+                      <Code size={14} className="text-amber-400" />
+                      <span>Feature Specification Manifest (slop-feature.json)</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      Standardized JSON manifest describing repository coordinates, prompts, target files, schema migrations, and evidence contracts.
+                    </div>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* Pipeline Terminal Output */}
-            <div className="flex-1 bg-black/90 rounded-lg border border-slate-800 p-3 font-mono text-xs overflow-y-auto space-y-1 shadow-inner text-emerald-400">
-              {pipelineLogs.map((log, idx) => (
-                <div key={idx} className="leading-relaxed">
-                  {log}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopyManifest}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1 rounded text-xs font-mono font-bold flex items-center gap-1 border border-slate-700 transition-colors"
+                    >
+                      {copiedManifest ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                      <span>{copiedManifest ? 'Copied JSON!' : 'Copy Manifest'}</span>
+                    </button>
+                    <button
+                      onClick={handleDownloadManifest}
+                      className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1 rounded text-xs font-mono font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <Download size={12} />
+                      <span>Download JSON</span>
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Next Action: Diff & Land */}
-            {pipelineResult && (
-              <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-700 rounded-lg">
-                <span className="text-slate-300 font-mono text-xs">
-                  ✔ Pipeline complete! Published <span className="text-amber-300 font-bold">{pipelineResult.featureRef}</span>
-                </span>
-                <button
-                  onClick={() => setActiveTab('diff')}
-                  className="bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold font-mono px-4 py-1.5 rounded transition-colors"
-                >
-                  Review Diff &amp; Land &rarr;
-                </button>
+                <div className="bg-black/90 p-3.5 rounded-lg border border-slate-800/90 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-64 overflow-y-auto leading-relaxed select-all">
+                  <pre>{plan.manifestJson}</pre>
+                </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Diff & Land View */}
-        {activeTab === 'diff' && (
-          <div className="flex-1 flex flex-col p-4 bg-slate-900/60 overflow-hidden space-y-4">
-            <div className="flex items-center justify-between bg-slate-900 border border-slate-700 p-3 rounded-lg flex-wrap gap-2">
-              <div>
+          {/* TAB 3: CHECKOUT & EVIDENCE GUIDE */}
+          {activeTab === 'evidence' && (
+            <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4">
+              {/* Isolation Explanation Banner */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2 shadow-md">
                 <div className="font-bold text-white font-mono text-xs flex items-center gap-2">
-                  <FileCode size={14} className="text-sky-400" />
-                  <span>Review Synthesized Git Unified Diff</span>
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  <span>Why Isolated Local Worktrees &amp; Verified Evidence Are Required</span>
                 </div>
-                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                  Feature Ref: <span className="text-amber-300">{pipelineResult?.featureRef || 'refs/features/dual-laser/8f4a21e'}</span>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  In production agentic development, AI coding models edit multiple files simultaneously. An isolated worktree ensures:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-xs font-mono">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                    <div className="font-bold text-sky-400">1. Branch Hygiene</div>
+                    <div className="text-[11px] text-slate-400">
+                      Your master and production branches remain untouched until test evidence is 100% green.
+                    </div>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                    <div className="font-bold text-amber-400">2. WAL Database Isolation</div>
+                    <div className="text-[11px] text-slate-400">
+                      SQLite database files stay sandboxed to prevent lock contention with running live services.
+                    </div>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                    <div className="font-bold text-emerald-400">3. CAS Merge Protection</div>
+                    <div className="text-[11px] text-slate-400">
+                      Atomic Compare-and-Swap merges require immutable parent commit SHAs and verified diff hashes.
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Action Controls */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleRevertFeature}
-                  disabled={isReverted}
-                  className="bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 font-bold font-mono px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                >
-                  <RotateCcw size={12} />
-                  <span>{isReverted ? 'Reverted' : 'Revert Patch'}</span>
-                </button>
+              {/* 5-Point Evidence Verification Checklist */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-md">
+                <div className="font-bold font-mono text-xs text-white flex items-center gap-2">
+                  <FileCode size={15} className="text-amber-400" />
+                  <span>The 5-Point Evidence Verification Contract</span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  Before publishing or landing feature refs, the following proofs must be verified locally:
+                </div>
 
-                <button
-                  onClick={handleLandFeature}
-                  disabled={isLanded}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono px-4 py-1.5 rounded flex items-center gap-1.5 shadow-md transition-colors disabled:opacity-50"
-                >
-                  <GitMerge size={14} />
-                  <span>{isLanded ? '✔ Landed in Main' : '⚡ Land Feature (CAS Merge)'}</span>
-                </button>
+                <div className="space-y-2 font-mono text-xs">
+                  {evidenceChecklist.map(item => (
+                    <div
+                      key={item.id}
+                      className="bg-slate-950 p-3 rounded-lg border border-slate-800/80 flex items-start justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-bold text-slate-200">{item.title}</div>
+                        <div className="text-[11px] text-slate-400 leading-snug">{item.description}</div>
+                        <div className="text-[10px] text-emerald-400">
+                          Expected Evidence: <span className="text-slate-300">{item.evidenceProduced}</span>
+                        </div>
+                      </div>
+                      <div className="bg-black/80 px-2.5 py-1 rounded border border-slate-800 text-[10px] text-amber-300 font-mono shrink-0 select-all">
+                        $ {item.command}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Blueprint Preview */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-md">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold font-mono text-xs text-white flex items-center gap-2">
+                    <FileCode size={14} className="text-sky-400" />
+                    <span>Feature Blueprint Specification (Expected Local Output)</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400 font-mono bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/50">
+                    Synthesized locally on your machine
+                  </span>
+                </div>
+
+                <div className="bg-black/95 rounded-lg border border-slate-800 p-4 font-mono text-xs overflow-x-auto shadow-inner leading-relaxed select-all max-h-64 overflow-y-auto">
+                  <pre className="text-slate-300 whitespace-pre-wrap">{activePreset.blueprintDiffPreview}</pre>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Diff Viewer */}
-            <div className="flex-1 bg-black/95 rounded-lg border border-slate-800 p-4 font-mono text-xs overflow-y-auto shadow-inner leading-relaxed">
-              <pre className="text-slate-300 whitespace-pre-wrap">
-                {pipelineResult?.diff || `diff --git a/src/weapons/DualLaserShotgun.ts b/src/weapons/DualLaserShotgun.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/weapons/DualLaserShotgun.ts\n@@ -0,0 +1,24 @@\n+// Feature: Dual Laser Shotgun\n+export const DualLaserShotgun = {\n+  name: "Dual Laser Shotgun",\n+  damage: 150,\n+  fireRate: 4.2,\n+  soundFx: "web-audio:synth-laser-dual",\n+  enabled: true\n+};`}
-              </pre>
+          {/* TAB 4: CAS GATEWAY & LANDING STATE */}
+          {activeTab === 'gateway' && (
+            <div className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4">
+              {/* Truthful Offline Gateway Warning */}
+              <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-4 space-y-2 shadow-lg">
+                <div className="flex items-center gap-2 text-amber-400 font-mono font-bold text-xs">
+                  <AlertTriangle size={16} />
+                  <span>STANDALONE WEB SANDBOX · REMOTE CAS GATEWAY AWAITING LOCAL AGENT REF</span>
+                </div>
+                <p className="text-slate-300 text-xs leading-relaxed">
+                  Because Nate's Software Web OS runs client-side in the browser, it <strong>does not invoke local host shells</strong> or fabricate fake git commits. Feature code generation, test assertions, and git commits must take place locally on your workstation.
+                </p>
+                <div className="text-[11px] text-amber-300/80 font-mono pt-1">
+                  Status: <code className="bg-slate-950 px-2 py-0.5 rounded border border-amber-900/50">Awaiting Local Execution Proof</code>
+                </div>
+              </div>
+
+              {/* CAS Landing Contract Inspector */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-md font-mono text-xs">
+                <div className="font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="flex items-center gap-2">
+                    <GitBranch size={15} className="text-sky-400" />
+                    <span>Compare-And-Swap (CAS) Landing Contract</span>
+                  </span>
+                  <span className="text-slate-500 text-[10px]">GITSMITH CAS ENGINE</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
+                    <div className="text-slate-400 font-bold">CAS Parameters:</div>
+                    <div className="space-y-1 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Target Branch:</span>
+                        <span className="text-sky-300 font-bold">refs/heads/main</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Feature Ref Format:</span>
+                        <span className="text-amber-300">refs/features/{activePreset.id}/&lt;sha&gt;</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Evidence Digest Header:</span>
+                        <span className="text-emerald-400">X-Slop-Evidence-Digest</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
+                    <div className="text-slate-400 font-bold">Required Artifacts Before Landing:</div>
+                    <div className="space-y-1 text-[11px] text-slate-300">
+                      {gatewayPrerequisites.requiredArtifacts.map((req, idx) => (
+                        <div key={idx} className="flex items-center gap-1.5">
+                          <span className="text-amber-400 font-bold">▫</span>
+                          <span>{req}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Truthful Action Control Panel */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 shadow-md">
+                <div className="font-bold font-mono text-xs text-white">
+                  CAS Landing &amp; Rollback Controls
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap pt-1">
+                  <button
+                    onClick={handleTruthfulLandAttempt}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono px-4 py-2 rounded-lg flex items-center gap-2 shadow transition-colors"
+                  >
+                    <GitBranch size={14} />
+                    <span>⚡ Land Feature (CAS Merge)</span>
+                  </button>
+
+                  <button
+                    onClick={handleTruthfulRevertAttempt}
+                    className="bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800 font-bold font-mono px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <RefreshCw size={13} />
+                    <span>Revert / Rollback Ref</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      playClickSound();
+                      setActiveTab('command');
+                    }}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold font-mono px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ml-auto"
+                  >
+                    <Terminal size={13} />
+                    <span>View Local Command &rarr;</span>
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
