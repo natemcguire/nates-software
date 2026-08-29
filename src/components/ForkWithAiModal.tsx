@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Terminal, Copy, Check, Sparkles } from 'lucide-react';
+import { Bot, Copy, Check, Sparkles } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
@@ -49,14 +49,10 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const { showAlert } = useAlert();
 
   const makerHandle = user?.username || 'josh';
-  const worktreeId = `slop-${app.id}-${makerHandle}`;
-  const repoUrl = `https://github.com/natemcguire/${app.id}.git`;
-
   const suggestedPrompts = PROMPT_PRESETS[app.id] || [
     `Implement new Local-First features and persist data in /data/${app.id}.sqlite (WAL mode).`
   ];
 
-  const [selectedPrompt, setSelectedPrompt] = useState(suggestedPrompts[0]);
   const [customPrompt, setCustomPrompt] = useState(suggestedPrompts[0]);
   const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
   const [copiedCmd, setCopiedCmd] = useState(false);
@@ -64,17 +60,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   if (!isOpen) return null;
 
   const getCommandForTool = () => {
-    const finalPrompt = customPrompt.trim() || selectedPrompt;
-    switch (activeTool) {
-      case 'claude':
-        return `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && claude "${finalPrompt}"`;
-      case 'agy':
-        return `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && agy "${finalPrompt}"`;
-      case 'cursor':
-        return `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && cursor .`;
-      case 'terminal':
-        return `slop fork nate/${app.id}`;
-    }
+    return `slop fork nate/${app.id}`;
   };
 
   const handleCopyCommand = () => {
@@ -82,7 +68,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
     navigator.clipboard.writeText(getCommandForTool());
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
-    showAlert("Agent 1-Liner command copied to clipboard! Paste into your terminal to start coding immediately.", "Command Copied", "success");
+    showAlert("Install command copied. When the fork is ready, SLOP will ask which LLM or IDE to start—nothing launches automatically.", "Install Command Copied", "success");
   };
 
   return (
@@ -132,7 +118,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                   key={idx}
                   onClick={() => {
                     playClickSound();
-                    setSelectedPrompt(p);
                     setCustomPrompt(p);
                   }}
                   className={`w-full text-left p-2 border flex items-center gap-2 text-xs transition-colors ${
@@ -180,14 +165,14 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-slate-500 text-[10px]">
-                  Clones to: <code className="text-slate-400">/tmp/{worktreeId}</code>
+                  Installs first, then prompts to start {activeTool === 'terminal' ? 'an engine later' : activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : 'Cursor'}.
                 </span>
                 <button
                   onClick={handleCopyCommand}
                   className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
                 >
                   {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copiedCmd ? 'Copied 1-Liner!' : 'Copy 1-Liner'}</span>
+                  <span>{copiedCmd ? 'Copied!' : 'Copy Install Command'}</span>
                 </button>
               </div>
             </div>
@@ -203,26 +188,14 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
             </button>
 
             <div className="flex items-center gap-2">
-              {onLaunchTerminal && (
-                <button
-                  onClick={() => {
-                    playSuccessChime();
-                    onClose();
-                    onLaunchTerminal(`slop fork nate/${app.id}`);
-                  }}
-                  className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow"
-                >
-                  <Terminal size={13} />
-                  <span>Launch in Web Terminal</span>
-                </button>
-              )}
+              {onLaunchTerminal && <span className="text-[10px] text-gray-600 max-w-48">Use a native terminal with Git and Node installed. TERMINAL.EXE is a browser command console, not a host shell.</span>}
 
               <button
                 onClick={handleCopyCommand}
                 className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow"
               >
                 <Bot size={13} />
-                <span>Launch in {activeTool === 'claude' ? 'Claude Code' : activeTool === 'agy' ? 'AGY' : 'Cursor'}</span>
+                <span>Install, Then Choose Engine</span>
               </button>
             </div>
           </div>

@@ -12,8 +12,8 @@ interface TerminalLine {
 export const TerminalView: React.FC = () => {
   const { user } = useAuth();
   const [history, setHistory] = useState<TerminalLine[]>([
-    { text: "Nate's Software Suite DOS/UNIX Shell v2.4.0 (x86_64-apple-darwin)", type: 'system' },
-    { text: "Type 'help' or 'slop help' for a list of available commands. Runtime & storage independent.", type: 'system' },
+    { text: "Nate's Software Browser Command Console v2.5.0", type: 'system' },
+    { text: "This is not a host shell: Git, npm, and local LLM CLIs run in your native terminal.", type: 'system' },
     { text: "", type: 'output' }
   ]);
 
@@ -61,6 +61,17 @@ export const TerminalView: React.FC = () => {
     // 1. SLOP CLI Direct Command Bridge
     if (root === 'slop') {
       const slopArgs = parts.slice(1);
+      if (slopArgs[0]?.toLowerCase() === 'fork') {
+        playErrorBeep();
+        newLines.push(
+          { text: 'A real fork needs a host filesystem, Git, Node/npm, and your local LLM credentials.', type: 'error' },
+          { text: `Run this in your native terminal: slop fork ${slopArgs[1] || 'nate/dronehunter'}`, type: 'system' },
+          { text: 'After installation completes, SLOP will ask: Start your engines?', type: 'output' }
+        );
+        setHistory(prev => [...prev, ...newLines]);
+        setInputVal('');
+        return;
+      }
       const resOrPromise = runSlopCli(slopArgs);
       const res = resOrPromise instanceof Promise ? await resOrPromise : resOrPromise;
       
@@ -84,8 +95,8 @@ export const TerminalView: React.FC = () => {
       case 'help':
         newLines.push(
           { text: "Nate's Software Terminal Help Index:", type: 'system' },
-          { text: "  slop <command>         - Execute Local-First Local-first Operations Protocol CLI", type: 'output' },
-          { text: "    slop fork <slug>     - Clone app into isolated worktree (/tmp/slop-*)", type: 'output' },
+          { text: "  slop <command>         - Preview browser-safe SLOP commands", type: 'output' },
+          { text: "    slop fork <slug>     - Requires the native CLI; this browser cannot create a host worktree", type: 'output' },
           { text: "    slop mod <feature>   - Splice AST feature package into project", type: 'output' },
           { text: "    slop dyno [--bench]  - Benchmark model + harness + tools on common dev tasks (independent suite)", type: 'output' },
           { text: "    slop test            - Run Local-First runtime verification test proofs", type: 'output' },
@@ -98,6 +109,22 @@ export const TerminalView: React.FC = () => {
           { text: "  matrix                 - Render falling code matrix stream", type: 'output' },
           { text: "  clear                  - Clear terminal buffer", type: 'output' },
           { text: "  date                   - Output current ISO timestamp", type: 'output' }
+        );
+        break;
+
+      case 'git':
+      case 'npm':
+      case 'npx':
+      case 'node':
+      case 'agy':
+      case 'claude':
+      case 'aider':
+      case 'cursor':
+        playErrorBeep();
+        newLines.push(
+          { text: `${root} is not available in this browser command console.`, type: 'error' },
+          { text: `Open your native terminal, verify '${root} --version', then run: slop fork nate/dronehunter`, type: 'system' },
+          { text: "SLOP will install the fork first and ask which LLM/IDE to start at the end.", type: 'output' }
         );
         break;
 
@@ -180,11 +207,11 @@ export const TerminalView: React.FC = () => {
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-green-900/60 text-[11px] text-green-600 select-none">
         <div className="flex items-center gap-1.5">
           <TerminalIcon size={13} className="text-green-500" />
-          <span>TERMINAL.EXE (SLOP CLI ENGINE)</span>
+          <span>TERMINAL.EXE (BROWSER COMMAND CONSOLE)</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="bg-green-950 text-green-300 px-2 py-0.5 rounded text-[10px] border border-green-800">
-            RUNTIME INDEPENDENT
+            BROWSER SANDBOX
           </span>
           <span className="text-green-700">80x25 ANSI</span>
         </div>

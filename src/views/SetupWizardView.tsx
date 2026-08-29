@@ -65,19 +65,9 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   const [copiedCmd, setCopiedCmd] = useState(false);
 
   const worktreeId = `slop-${selectedStarter.id}-${makerHandle}`;
-  const repoUrl = `https://github.com/natemcguire/${selectedStarter.id}.git`;
 
   const getCommandForTool = () => {
-    switch (activeTool) {
-      case 'claude':
-        return `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && claude "${selectedStarter.suggestedPrompt}"`;
-      case 'agy':
-        return `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && agy "${selectedStarter.suggestedPrompt}"`;
-      case 'cursor':
-        return `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && cursor .`;
-      case 'terminal':
-        return `slop fork nate/${selectedStarter.id}`;
-    }
+    return `slop fork nate/${selectedStarter.id}`;
   };
 
   const handleCopyCommand = () => {
@@ -85,7 +75,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
     navigator.clipboard.writeText(getCommandForTool());
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
-    showAlert("Agent 1-Liner command copied to clipboard! Paste into your terminal to start coding immediately.", "Command Copied", "success");
+    showAlert("Install command copied. SLOP installs the fork first, then asks which LLM or IDE to start.", "Install Command Copied", "success");
   };
 
   return (
@@ -190,10 +180,10 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
               <div className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
                 <Bot size={15} className="text-purple-600" />
-                <span>Step 2: Launch Your AI Agent or IDE</span>
+                <span>Step 2: Install, Then Start Your Engines</span>
               </div>
               <p className="text-gray-600 text-xs">
-                Select your preferred developer tool. Copy the 1-liner to clone <strong>{selectedStarter.name}</strong> into an isolated worktree and start building with your AI agent immediately.
+                Copy the install command into a native terminal. After <strong>{selectedStarter.name}</strong> is fully installed, SLOP asks which LLM or IDE to launch. Choosing nothing leaves the ready fork untouched.
               </p>
             </div>
 
@@ -223,7 +213,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             {/* Command Box */}
             <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
               <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
-                <span>Terminal 1-Liner ({worktreeId})</span>
+                  <span>Native Terminal Install ({worktreeId})</span>
                 <span className="text-emerald-400">Runtime &amp; Storage Independent</span>
               </div>
 
@@ -233,34 +223,34 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-slate-500 text-[10px]">
-                  Suggested goal: "{selectedStarter.suggestedPrompt}"
+                  Preferred engine: {activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : activeTool === 'cursor' ? 'Cursor' : 'choose later'} — selected only after install
                 </span>
                 <button
                   onClick={handleCopyCommand}
                   className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
                 >
                   {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copiedCmd ? 'Copied!' : 'Copy 1-Liner'}</span>
+                  <span>{copiedCmd ? 'Copied!' : 'Copy Install Command'}</span>
                 </button>
               </div>
             </div>
 
-            {/* In-Browser Web Terminal Direct Button */}
+            {/* Browser terminal boundary */}
             {onOpenTerminal && (
-              <div className="bg-green-50 border border-green-300 p-3 rounded flex items-center justify-between">
+              <div className="bg-amber-50 border border-amber-300 p-3 rounded flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-green-950 text-xs">Run inside Web OS right now?</div>
-                  <div className="text-gray-600 text-[11px]">Open TERMINAL.EXE and run <code className="text-blue-900 font-bold">slop fork nate/{selectedStarter.id}</code> automatically.</div>
+                  <div className="font-bold text-amber-950 text-xs">Why not TERMINAL.EXE?</div>
+                  <div className="text-gray-600 text-[11px]">The browser console has no host filesystem, Git, Node package manager, or local LLM credentials. Use the native install command above for a real working fork.</div>
                 </div>
                 <button
                   onClick={() => {
-                    playSuccessChime();
-                    onOpenTerminal(`slop fork nate/${selectedStarter.id}`);
+                    playClickSound();
+                    onOpenTerminal();
                   }}
-                  className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5"
+                  className="btn-w95 px-4 py-1.5 font-bold text-xs flex items-center gap-1.5"
                 >
                   <Terminal size={13} />
-                  <span>Launch in Web Terminal</span>
+                  <span>View Command Console</span>
                 </button>
               </div>
             )}

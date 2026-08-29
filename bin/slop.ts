@@ -70,6 +70,56 @@ export interface SlopCommandResult {
   readonly data?: any;
 }
 
+export const ENGINE_CHOICES = [
+  { key: "1", id: "claude", label: "Claude Code", binary: "claude", args: [] as string[] },
+  { key: "2", id: "agy", label: "Antigravity (AGY)", binary: "agy", args: [] as string[] },
+  { key: "3", id: "aider", label: "Aider", binary: "aider", args: [] as string[] },
+  { key: "4", id: "cursor", label: "Cursor / VS Code", binary: "cursor", args: ["."] },
+] as const;
+
+export function getEngineStartInstructions(worktreePath: string): string[] {
+  return ENGINE_CHOICES.map(engine =>
+    `  ${engine.key}. ${engine.label.padEnd(20)} cd "${worktreePath}" && ${engine.binary}${engine.args.length ? ` ${engine.args.join(" ")}` : ""}`
+  );
+}
+
+export async function promptToStartEngines(result: SlopCommandResult): Promise<SlopCommandResult> {
+  if (!result.success || result.command !== "fork" || !isNode || !process.stdin?.isTTY || !process.stdout?.isTTY) {
+    return result;
+  }
+
+  const readline = getNodeModule("node:readline/promises") || getNodeModule("readline/promises");
+  if (!readline?.createInterface) return result;
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log("\nSTART YOUR ENGINES — choose an LLM/IDE only after the install is complete:");
+    getEngineStartInstructions(result.data.worktreePath).forEach(line => console.log(line));
+    console.log("  0. Not now (default)");
+    const answer = (await rl.question("Start your engines? [0-4]: ")).trim() || "0";
+    const engine = ENGINE_CHOICES.find(choice => choice.key === answer);
+    if (!engine) {
+      console.log(answer === "0" ? "Engine launch skipped. Your fork is ready." : "Unknown choice; no engine was launched. Your fork is ready.");
+      return result;
+    }
+
+    const cp = getChildProcess();
+    if (!cp?.spawnSync) {
+      console.error(`Could not launch ${engine.label}: child_process is unavailable.`);
+      return result;
+    }
+    const launched = cp.spawnSync(engine.binary, [...engine.args], {
+      cwd: result.data.worktreePath,
+      stdio: "inherit"
+    });
+    if (launched.error) {
+      console.error(`Could not launch ${engine.label}. Install '${engine.binary}' or choose another engine.`);
+    }
+    return result;
+  } finally {
+    rl.close();
+  }
+}
+
 export const SHELF_TITLES = [
   {
     id: "shelf-dh-01",
@@ -343,7 +393,10 @@ export function handleFork(slugArg?: string): SlopCommandResult {
     success ? `  ✔ Git remote "slop" configured` : ``,
     success ? `  ✔ Bound micro-dyno on port ${port}` : ``,
     success ? `  ✔ Memory cap: ${MEMORY_CAP_MB}MB` : ``,
-    success ? `  ✔ Ready to code with Claude Code, AGY, Cursor, or Aider.` : ``,
+    success ? `  ✔ Installation complete. No LLM or IDE was launched.` : ``,
+    success ? `\nSTART YOUR ENGINES (optional — you choose after install):` : ``,
+    ...(success ? getEngineStartInstructions(worktreePath) : []),
+    success ? `  0. Not now (default)` : ``,
     success ? `🚀 Go Fork, and Multiply!` : ``
   ].filter(Boolean).join("\n");
 
@@ -1054,5 +1107,7 @@ if (typeof process !== "undefined" && process.argv && (process.argv[1]?.endsWith
     });
   } else if (!result.success) {
     process.exit(1);
+  } else if (result.command === "fork") {
+    promptToStartEngines(result).catch((err) => console.error(`Engine prompt failed: ${err.message}`));
   }
 }

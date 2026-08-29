@@ -7,14 +7,11 @@ describe('First-Time User Onboarding & Setup Wizard Flow', () => {
     expect(route.type).toBe('desktop');
   });
 
-  it('should construct valid 1-liner clone commands for AI coding agents', () => {
+  it('should install first and leave the LLM launch to the post-install prompt', () => {
     const appId = 'dronehunter';
-    const makerHandle = 'josh';
-    const worktreeId = `slop-${appId}-${makerHandle}`;
-    const repoUrl = `https://github.com/natemcguire/${appId}.git`;
-    
-    const claudeCmd = `git clone ${repoUrl} /tmp/${worktreeId} && cd /tmp/${worktreeId} && claude "Add new game modes"`;
-    expect(claudeCmd).toContain('/tmp/slop-dronehunter-josh');
-    expect(claudeCmd).toContain('claude');
+    const installCmd = `slop fork nate/${appId}`;
+    expect(installCmd).toBe('slop fork nate/dronehunter');
+    expect(installCmd).not.toContain('agy');
+    expect(installCmd).not.toContain('claude');
   });
 });

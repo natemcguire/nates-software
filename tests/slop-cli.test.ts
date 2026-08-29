@@ -11,7 +11,8 @@ import {
   handleShelf,
   handleLogin,
   printHelp,
-  runSlopCli
+  runSlopCli,
+  getEngineStartInstructions
 } from '../bin/slop.ts';
 
 describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
@@ -46,6 +47,12 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.port).toBeGreaterThanOrEqual(3001);
       expect(res.data.memoryCapMb).toBe(256);
       expect(res.data.worktreePath).toContain('/tmp/slop-dronehunter-');
+      expect(res.message).not.toContain('agy');
+      const engineInstructions = getEngineStartInstructions(res.data.worktreePath);
+      expect(engineInstructions).toContainEqual(expect.stringContaining('Antigravity (AGY)'));
+      expect(engineInstructions).toContainEqual(expect.stringContaining('Claude Code'));
+      expect(engineInstructions).toContainEqual(expect.stringContaining('Aider'));
+      expect(engineInstructions).toContainEqual(expect.stringContaining('Cursor / VS Code'));
     });
 
     it('should fork custom app slug into isolated worktree', () => {
