@@ -87,7 +87,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         lineageCents,
         platformCents
       },
-      publishableKey: env?.STRIPE_PUBLISHABLE_KEY || 'pk_live_51S46TOAfNMTQ8RYHYlPRusThMpgwxtmXJL38bQwJpZYsSTGAO76SqyNs1b9K9c0ejkpvsJ0f50GUStW0p5xx0d3V00p5sOzOZR'
+      publishableKey: env?.STRIPE_PUBLISHABLE_KEY || 'pk_live_51S46TOAfNMTQ8RYHf8lJtpCtsLFqSj6Uo6qkqpRGLrtKUYFVEhMqNMkvHaCzKuj0P1g36OxHnA6K7sFg4djbyc1800W2v7I4tF'
     });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
