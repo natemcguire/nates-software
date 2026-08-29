@@ -8,6 +8,7 @@ export const InboxView: React.FC = () => {
   const [activeFolder, setActiveFolder] = useState<string>('all');
   const [replyText, setReplyText] = useState('');
   const [replySent, setReplySent] = useState(false);
+  const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
     fetch('/api/inbox?username=nate')
@@ -16,6 +17,7 @@ export const InboxView: React.FC = () => {
         if (data.success && Array.isArray(data.threads) && data.threads.length > 0) {
           setThreads(data.threads);
           setSelectedThread(data.threads[0]);
+          setIsLive(true);
         }
       })
       .catch(() => {});
@@ -39,10 +41,11 @@ export const InboxView: React.FC = () => {
   const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim()) return;
-    setReplySent(true);
+
     const text = replyText.trim();
     setReplyText('');
-    setTimeout(() => setReplySent(false), 2500);
+    setReplySent(true);
+    setTimeout(() => setReplySent(false), 2000);
 
     try {
       await fetch('/api/inbox', {
@@ -68,9 +71,16 @@ export const InboxView: React.FC = () => {
         <div className="space-y-1">
           <div className="font-bold text-w95-blue border-b pb-1 mb-2 flex items-center justify-between">
             <span className="flex items-center gap-1"><Mail size={13} /> INBOX.EXE</span>
-            <span className="bg-w95-blue text-white text-[10px] px-1.5 py-0.2 rounded font-mono font-bold">
-              {unreadCount} UNREAD
-            </span>
+            <div className="flex items-center gap-1">
+              <span className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${
+                isLive ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900 border border-amber-300'
+              }`}>
+                {isLive ? 'LIVE' : 'DEMO'}
+              </span>
+              <span className="bg-w95-blue text-white text-[10px] px-1.5 py-0.2 rounded font-mono font-bold">
+                {unreadCount}
+              </span>
+            </div>
           </div>
 
           <div

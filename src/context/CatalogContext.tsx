@@ -5,6 +5,7 @@ export interface CatalogContextType {
   apps: AppListing[];
   shelfAppIds: Set<string>;
   isLoading: boolean;
+  isAuthoritativeLive: boolean;
   error: string | null;
   getApp: (id: string) => AppListing | undefined;
   isOwned: (appId: string) => boolean;
@@ -19,6 +20,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [apps, setApps] = useState<AppListing[]>(INITIAL_APPS);
   const [shelfAppIds, setShelfAppIds] = useState<Set<string>>(new Set(['dronehunter', 'certified-mailer', 'picfitai']));
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isAuthoritativeLive, setIsAuthoritativeLive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAuthoritativeCatalog = useCallback(async () => {
@@ -70,7 +72,12 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           });
 
           setApps(Array.from(liveAppMap.values()));
+          setIsAuthoritativeLive(true);
+        } else {
+          setIsAuthoritativeLive(false);
         }
+      } else {
+        setIsAuthoritativeLive(false);
       }
 
       // 2. Fetch authoritative shelf ownership
@@ -87,6 +94,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
     } catch (err: any) {
+      setIsAuthoritativeLive(false);
       setError(err.message || 'Failed to fetch authoritative catalog');
     } finally {
       setIsLoading(false);
@@ -136,6 +144,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         apps,
         shelfAppIds,
         isLoading,
+        isAuthoritativeLive,
         error,
         getApp,
         isOwned,

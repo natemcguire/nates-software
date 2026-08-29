@@ -67,5 +67,8 @@ describe('DYNO Real-World AI Developer Benchmark Suite', () => {
     const topEntry = LEADERBOARD_PRESETS[0];
     expect(topEntry.subject.agentHarness).toContain('Antigravity CLI');
     expect(topEntry.overallDynoScore).toBeGreaterThan(800);
+    // Explicitly verify benchmark evaluates model + harness + environment on 50 tasks
+    expect(topEntry.totalTasks).toBe(50);
+    expect(topEntry.subject.suiteVersion).toContain('DYNO Real-World Dev Suite');
   });
 });

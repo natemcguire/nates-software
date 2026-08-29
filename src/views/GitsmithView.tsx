@@ -583,7 +583,7 @@ export const GitsmithView: React.FC = () => {
 
                 <div className="bg-[#0f172a] p-3.5 rounded-lg border border-slate-700 flex items-center justify-between opacity-80">
                   <div>
-                    <div className="text-white font-semibold">chore(genesis): initial commit and single-file SQLite schema initialization</div>
+                    <div className="text-white font-semibold">chore(genesis): initial commit &amp; application scaffolding</div>
                     <div className="text-slate-400 text-xs mt-1">
                       Authored by <strong className="text-sky-300">@{selectedRepo.owner}</strong> (Aug 24, 2026)
                     </div>

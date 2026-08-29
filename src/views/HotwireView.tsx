@@ -23,7 +23,7 @@ interface HotwireViewProps {
 }
 
 export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor }) => {
-  const { apps: catalogApps, upvoteApp: catalogUpvote } = useCatalog();
+  const { apps: catalogApps, upvoteApp: catalogUpvote, isAuthoritativeLive } = useCatalog();
   const [apps, setApps] = useState<AppListing[]>(catalogApps);
   const [selectedApp, setSelectedApp] = useState<AppListing>(catalogApps[0] || INITIAL_APPS[0]);
 
@@ -123,8 +123,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const filteredApps = getFilteredApps();
 
-
-
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-sans text-xs select-none">
       {/* 12:01 AM UTC Live Drops Header Banner */}
@@ -150,15 +148,21 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               onChange={(e) => setSelectedBatch(e.target.value)}
               className="bg-transparent text-white focus:outline-none text-[11px] cursor-pointer"
             >
-              <option value="today" className="bg-slate-900 text-white">Today (Batch #84)</option>
-              <option value="yesterday" className="bg-slate-900 text-white">Yesterday (Batch #83)</option>
-              <option value="aug24" className="bg-slate-900 text-white">Aug 24, 2026 (Batch #82)</option>
+              <option value="today" className="bg-slate-900 text-white">Today (Batch #84 Demo)</option>
+              <option value="yesterday" className="bg-slate-900 text-white">Yesterday (Batch #83 Demo)</option>
+              <option value="aug24" className="bg-slate-900 text-white">Aug 24, 2026 (Batch #82 Demo)</option>
             </select>
           </div>
 
-          <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
-            ● D1 LIVE
-          </span>
+          {isAuthoritativeLive ? (
+            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+              ● D1 LIVE
+            </span>
+          ) : (
+            <span className="bg-amber-900 text-amber-200 border border-amber-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Displaying seed catalog demo drops">
+              ● SEED / DEMO DATA
+            </span>
+          )}
 
           <button
             onClick={() => {
@@ -229,9 +233,14 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           <div className="flex-1 win95-field p-1 bg-white overflow-y-auto divide-y divide-gray-200">
             {activeFilter === 'streaks' ? (
               <div className="p-2 space-y-2">
-                <div className="font-bold text-xs text-blue-900 mb-2 flex items-center gap-1">
-                  <Award size={14} className="text-purple-600" />
-                  <span>Verified Maker Streak Leaderboard</span>
+                <div className="font-bold text-xs text-blue-900 mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <Award size={14} className="text-purple-600" />
+                    <span>Verified Maker Streak Leaderboard</span>
+                  </div>
+                  <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 font-mono">
+                    Demo / Seed Profiles
+                  </span>
                 </div>
                 {MAKER_PROFILES.map((maker, idx) => (
                   <div key={maker.id} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
@@ -358,7 +367,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="win95-window max-w-sm w-full bg-[#c0c0c0] p-3 text-xs space-y-3">
             <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold">
-              <span>Verified Voters · {activeVoterApp.name}</span>
+              <span>Verified Voters · {activeVoterApp.name} <span className="text-yellow-300 text-[10px] font-normal font-mono">(Demo Data)</span></span>
               <button onClick={() => setActiveVoterApp(null)} className="text-white hover:text-red-300">
                 <X size={14} />
               </button>

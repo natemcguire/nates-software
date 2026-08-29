@@ -88,7 +88,7 @@ export const CertifiedMailerStudio: React.FC = () => {
             <Mail size={13} className="text-amber-300" />
             <span>DISPUTE TEMPLATES</span>
           </div>
-          <span className="text-[10px] font-mono bg-blue-900 px-1.5 py-0.5 rounded">SQLite WAL</span>
+          <span className="text-[10px] font-mono bg-blue-900 px-1.5 py-0.5 rounded">Client Studio</span>
         </div>
 
         {/* Template Buttons */}

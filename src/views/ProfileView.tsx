@@ -173,8 +173,8 @@ export const ProfileView: React.FC = () => {
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
               <div>
-                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; Local Database Volume</span>
-                <p className="text-gray-600 text-xs">All software titles in your library with live URLs, Git repository links, and SQLite database backup options.</p>
+                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; App Data</span>
+                <p className="text-gray-600 text-xs">All software titles in your library with live URLs, Git repository links, and storage/export options.</p>
               </div>
               <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
                 {shelfApps.length} Owned Applications
@@ -206,7 +206,7 @@ export const ProfileView: React.FC = () => {
                       <div className="text-[11px] text-gray-500 font-mono mt-1 flex items-center gap-2">
                         <span>Acquired: {app.purchasedDate}</span>
                         <span>&middot;</span>
-                        <span>Database: {app.sqliteDatabase} (WAL Mode)</span>
+                        <span>Storage: {app.sqliteDatabase || 'Runtime Independent'}</span>
                       </div>
                     </div>
                   </div>

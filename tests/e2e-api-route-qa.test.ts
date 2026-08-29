@@ -221,17 +221,20 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' });
       expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'gitsmith', title: 'GITSMITH FORGE' });
       expect(resolveAppRoute('hotwire.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' });
+      expect(resolveAppRoute('editorial.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" });
       expect(resolveAppRoute('slopshop.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' });
-      expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & SQLITE HUD' });
+      expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' });
       expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
       expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
       expect(resolveAppRoute('picfitai.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'picfitai', title: 'PicFit.ai' });
     });
 
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {
+      expect(resolveAppRoute('nates-software.com', '/editorial')).toEqual({ type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" });
+      expect(resolveAppRoute('nates-software.com', '/lab')).toEqual({ type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" });
       expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'INBOX PROPOSALS' });
       expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });
-      expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO WORKSTATION SPEEDOMETER' });
+      expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO AI DEVELOPER BENCHMARK (Model + Harness + Tools)' });
       expect(resolveAppRoute('nates-software.com', '/profile')).toEqual({ type: 'standalone_view', id: 'profile', title: 'MAKER PROFILE & DISK SHELF' });
       expect(resolveAppRoute('nates-software.com', '/terminal')).toEqual({ type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' });
       expect(resolveAppRoute('nates-software.com', '/')).toEqual({ type: 'desktop' });

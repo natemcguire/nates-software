@@ -30,7 +30,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </div>
         <p className="text-gray-700 text-sm max-w-3xl mx-auto leading-relaxed">
           Nate's Software is a consumer marketplace for shareware you actually keep.
-          You walk out with the running web app, a clean Git repository, single-file SQLite database,
+          You walk out with the running web app, a clean Git repository, runtime- and storage-independent architecture (with optional single-file persistence),
           and native binaries for macOS (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.dmg</code>), Windows (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.exe</code>), Linux, and iOS.
         </p>
       </div>
@@ -45,7 +45,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-gray-500 font-mono">DROPS</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Daily 12:01 AM drops leaderboard, maker streaks, and Nate's LLM Specs dyno scores.
+              Daily 12:01 AM drops leaderboard, maker streaks, and app moddability specs.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Drops Board &rarr;</span>
@@ -73,7 +73,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-gray-500 font-mono">RUNTIME</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Zero-fuss micro-container runtime with single-file SQLite persistence &amp; scale-to-zero.
+              Zero-fuss micro-container runtime with modular persistence &amp; scale-to-zero.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Inspect Dynos (Ports 3001..3010) &rarr;</span>

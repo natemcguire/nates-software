@@ -9,7 +9,7 @@ export const NatesLLMSpecsCard: React.FC<NatesLLMSpecsCardProps> = ({ app }) => 
   return (
     <div className="bg-white border-2 border-gray-800 p-3 text-xs font-tahoma">
       <div className="flex items-center justify-between border-b pb-1.5 mb-2">
-        <span className="font-bold text-w95-blue text-sm">📊 Nate's LLM Specs (Dyno Measurement)</span>
+        <span className="font-bold text-w95-blue text-sm">📊 Nate's App Moddability Specs</span>
         <span className="bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded border border-green-400">
           Score: {app.moddabilityScore}/100
         </span>
@@ -26,12 +26,12 @@ export const NatesLLMSpecsCard: React.FC<NatesLLMSpecsCardProps> = ({ app }) => 
             <td className="py-1 font-bold text-right text-green-700">{app.mergeCleanliness}</td>
           </tr>
           <tr className="border-b border-gray-200">
-            <td className="py-1 text-gray-600 font-medium">Persistence Layer</td>
-            <td className="py-1 font-bold text-right">{app.storage}</td>
+            <td className="py-1 text-gray-600 font-medium">Storage / Persistence</td>
+            <td className="py-1 font-bold text-right">{app.storage || 'Runtime Independent'}</td>
           </tr>
           <tr>
             <td className="py-1 text-gray-600 font-medium">Active Downstream Forks</td>
-            <td className="py-1 font-bold text-right text-w95-blue">{app.forks} branches</td>
+            <td className="py-1 font-bold text-right text-w95-blue">{app.forks || app.forkCount || 0} branches</td>
           </tr>
         </tbody>
       </table>

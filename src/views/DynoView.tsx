@@ -112,11 +112,13 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
       {/* Top Header */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Gauge size={18} className="text-yellow-400 animate-pulse" />
-          <span className="font-bold text-sm text-yellow-300 font-mono">DYNO AI DEVELOPER STREET RACE</span>
-          <span className="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-400 font-mono">
-            REAL-WORLD WORKFLOW BENCHMARK 2026.1
-          </span>
+          <Gauge size={18} className="text-yellow-400" />
+          <div>
+            <div className="font-bold text-sm text-yellow-300 font-mono">DYNO AI DEVELOPER BENCHMARK</div>
+            <div className="text-[10px] text-gray-300 font-sans">
+              Independent benchmark of Model + Harness + Tools on common dev tasks (never app runtime performance)
+            </div>
+          </div>
         </div>
 
         {/* Tab Controls */}
@@ -125,7 +127,7 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
             onClick={() => setActiveTab('race')}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'race' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            🏁 Street Race
+            🏁 Dev Task Race
           </button>
           <button
             onClick={() => setActiveTab('leaderboard')}
@@ -137,21 +139,34 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
             onClick={() => setActiveTab('export')}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'export' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            📋 Report & Badge
+            📋 Report &amp; Badge
           </button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto p-3 space-y-3">
+        {/* Truthfulness Notice Banner */}
+        <div className="bg-blue-50 border border-blue-300 p-2.5 rounded text-[11px] text-blue-950 flex items-start gap-2">
+          <Gauge size={15} className="text-blue-700 shrink-0 mt-0.5" />
+          <div>
+            <strong>DYNO Benchmark Definition:</strong> DYNO is an independent, real-world benchmark evaluating the capabilities of an AI model + agent harness + developer tools on 50 common software engineering workflows (bug fixing, schema changes, AST feature splicing, test repair). <em>It measures developer tool stack autonomy and accuracy—never user application runtime performance or server latency.</em>
+          </div>
+        </div>
+
         {activeTab === 'race' && (
           <div className="space-y-3">
             {/* Subject Configuration Banner */}
             <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm">
               <div className="flex items-center justify-between flex-wrap gap-2 border-b border-gray-300 pb-2 mb-2">
                 <div>
-                  <div className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Benchmark Subject</div>
-                  <div className="text-sm font-bold font-mono text-blue-900 flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Benchmark Subject</span>
+                    <span className="bg-yellow-100 text-yellow-900 border border-yellow-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
+                      SIMULATED RUN
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold font-mono text-blue-900 flex items-center gap-2 mt-0.5">
                     <span>{currentResult.subject.model}</span>
                     <span className="text-gray-400">·</span>
                     <span className="text-purple-700">{currentResult.subject.agentHarness}</span>
@@ -168,12 +183,12 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
                   {isRunningRace ? (
                     <>
                       <RefreshCw size={14} className="animate-spin text-yellow-300" />
-                      <span>Racing Workflow Tasks...</span>
+                      <span>Simulating Dev Tasks...</span>
                     </>
                   ) : (
                     <>
                       <Play size={14} className="text-green-300" />
-                      <span>Run Full Dev Street Race (50 Tasks)</span>
+                      <span>Run 50-Task Dev Benchmark (Simulated)</span>
                     </>
                   )}
                 </button>
@@ -182,7 +197,7 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
               {/* Real-World Key Performance Indicators */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 text-center pt-1">
                 <div className="bg-blue-50 border border-blue-200 p-2 rounded">
-                  <div className="text-[10px] text-gray-600 font-bold">OVERALL SCORE</div>
+                  <div className="text-[10px] text-gray-600 font-bold">DYNO DEV SCORE</div>
                   <div className="text-lg font-bold font-mono text-blue-950">{currentResult.overallDynoScore} <span className="text-xs font-normal text-gray-500">/ 1000</span></div>
                   <div className="text-[9px] font-bold text-green-700">{currentResult.grade}</div>
                 </div>
@@ -297,12 +312,17 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
           <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
             <div className="flex items-center justify-between border-b border-gray-200 pb-2">
               <div>
-                <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
-                  <Trophy size={16} className="text-yellow-500" />
-                  Official DYNO Real-World AI Street Race Leaderboard
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
+                    <Trophy size={16} className="text-yellow-500" />
+                    DYNO Real-World AI Developer Leaderboard
+                  </h3>
+                  <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
+                    PRESET DEMO DATA
+                  </span>
+                </div>
                 <p className="text-[11px] text-gray-600">
-                  Ranking autonomous agent configurations on 50 real-world engineering task completions.
+                  Ranking autonomous agent configurations (Model + Harness + Tools) on 50 real-world engineering task completions.
                 </p>
               </div>
             </div>
@@ -312,7 +332,7 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
                 <thead>
                   <tr className="bg-[#000080] text-white font-mono text-[11px]">
                     <th className="p-2">Rank</th>
-                    <th className="p-2">Model & Agent Harness</th>
+                    <th className="p-2">Model &amp; Agent Harness</th>
                     <th className="p-2">Environment</th>
                     <th className="p-2 text-center">Tasks</th>
                     <th className="p-2 text-center">First Attempt</th>
@@ -358,9 +378,14 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
             {/* Markdown Report Card */}
             <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-xs uppercase tracking-wide text-gray-800">
-                  Credible Benchmark Report Output
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-xs uppercase tracking-wide text-gray-800">
+                    Credible Benchmark Report Output
+                  </span>
+                  <span className="bg-purple-100 text-purple-900 border border-purple-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
+                    SIMULATED EXPORT
+                  </span>
+                </div>
                 <button
                   onClick={copyReport}
                   className="btn-w95 py-1 px-3 font-bold flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-white"
@@ -393,10 +418,10 @@ Overall DYNO score:    ${r.overallDynoScore} / 1000 (${r.grade})`;
               <div className="p-3 bg-gray-100 rounded border border-gray-300 flex items-center gap-3">
                 <div className="bg-[#000080] text-white px-3 py-1 rounded font-mono text-xs font-bold flex items-center gap-2 shadow">
                   <Gauge size={14} className="text-yellow-400" />
-                  <span>DYNO Real-World Score: {currentResult.overallDynoScore} / 1000</span>
+                  <span>DYNO Dev Benchmark: {currentResult.overallDynoScore} / 1000</span>
                 </div>
                 <span className="text-xs text-gray-600 font-mono">
-                  Markdown: `[![DYNO Real-World AI Benchmark](...)]`
+                  Markdown: `[![DYNO AI Developer Benchmark](...)]`
                 </span>
               </div>
             </div>

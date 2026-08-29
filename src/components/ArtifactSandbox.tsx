@@ -182,7 +182,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             onClick={() => { setActiveTab('sqlite'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'sqlite' ? 'btn-w95-primary' : ''}`}
           >
-            <Database size={13} /> SQLite DB
+            <Database size={13} /> Storage &amp; DB
           </button>
           <button
             onClick={() => { setActiveTab('screenshots'); playClickSound(); }}
@@ -238,16 +238,16 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         )}
 
-        {/* TAB 2: SQLite DB Inspector */}
+        {/* TAB 2: Storage & DB Inspector */}
         {activeTab === 'sqlite' && (
           <div className="h-full flex flex-col space-y-3 font-mono text-xs">
             <div className="bg-slate-50 p-3 border border-slate-300 rounded flex items-center justify-between">
               <div>
-                <span className="text-slate-500">Database File: </span>
-                <strong className="text-blue-900">{app.sqliteDatabase}</strong>
+                <span className="text-slate-500">Storage / Persistence: </span>
+                <strong className="text-blue-900">{app.sqliteDatabase || 'Runtime / Storage Independent'}</strong>
               </div>
-              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded font-bold">
-                WAL Mode Active (0 Locks)
+              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded font-bold text-[10px]">
+                {app.sqliteDatabase ? 'Local SQLite (Demo Query Engine)' : 'Runtime Independent'}
               </span>
             </div>
 
@@ -264,8 +264,14 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             </form>
 
             <div className="flex-1 overflow-auto border border-gray-300 bg-white">
+              <div className="bg-gray-100 border-b border-gray-300 px-2 py-1 flex items-center justify-between text-[11px]">
+                <span className="font-bold text-gray-700">Query Inspector Output</span>
+                <span className="text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded font-bold text-[10px]">
+                  Simulated Query Engine
+                </span>
+              </div>
               <table className="w-full text-left text-xs">
-                <thead className="bg-gray-100 border-b border-gray-300 sticky top-0">
+                <thead className="bg-gray-50 border-b border-gray-300 sticky top-0">
                   <tr>
                     {sqlResults.columns.map((col, i) => (
                       <th key={i} className="p-2 font-bold text-gray-700">{col}</th>

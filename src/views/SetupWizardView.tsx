@@ -128,7 +128,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <span>Step 1: Choose a Local-First Starter App to Fork</span>
               </div>
               <p className="text-gray-600 text-xs">
-                Pick one of Nate's 3 flagship shareware apps. Each comes with single-file SQLite storage (WAL mode) and automated 70/20/10 royalty lineage.
+                Pick one of Nate's 3 flagship shareware apps. Built with modular, runtime- and storage-independent architectures with automated 70/20/10 royalty lineage.
               </p>
             </div>
 
@@ -224,7 +224,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
               <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
                 <span>Terminal 1-Liner ({worktreeId})</span>
-                <span className="text-emerald-400">Single-file SQLite WAL</span>
+                <span className="text-emerald-400">Runtime &amp; Storage Independent</span>
               </div>
 
               <div className="text-emerald-300 whitespace-pre-wrap break-all leading-relaxed py-1 bg-black/50 p-2 rounded border border-slate-800 select-text">

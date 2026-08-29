@@ -14,7 +14,7 @@ export function resolveAppRoute(
   const requestedAppId = appIdQuery || (hostname ? hostname.split('.')[0] : null);
   const standaloneApp = requestedAppId ? INITIAL_APPS.find(a => a.id === requestedAppId || a.name.toLowerCase().replace(/[^a-z0-9]/g, '') === requestedAppId) : null;
 
-  if (standaloneApp && !['gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile', 'whitepapers', 'terminal', 'www', 'nates-software'].includes(requestedAppId || '')) {
+  if (standaloneApp && !['gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile', 'whitepapers', 'terminal', 'editorial', 'lab', 'www', 'nates-software'].includes(requestedAppId || '')) {
     return { type: 'standalone_app', id: standaloneApp.id, title: standaloneApp.name };
   }
 
@@ -30,12 +30,16 @@ export function resolveAppRoute(
     return { type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' };
   }
 
+  if (hostname.startsWith('editorial.') || hostname.startsWith('lab.') || pathname.startsWith('/editorial') || pathname.startsWith('/lab') || pathname.startsWith('/reviews') || viewQuery === 'editorial' || viewQuery === 'lab') {
+    return { type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" };
+  }
+
   if (hostname.startsWith('slopshop.') || pathname.startsWith('/slopshop') || pathname.startsWith('/speedshop') || viewQuery === 'slopshop') {
     return { type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' };
   }
 
   if (hostname.startsWith('rig.') || pathname.startsWith('/rig') || pathname.startsWith('/runtime') || viewQuery === 'rig') {
-    return { type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & SQLITE HUD' };
+    return { type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' };
   }
 
   if (hostname.startsWith('inbox.') || pathname.startsWith('/inbox') || viewQuery === 'inbox') {
@@ -47,7 +51,7 @@ export function resolveAppRoute(
   }
 
   if (pathname.startsWith('/dyno') || pathname.startsWith('/speedometer') || viewQuery === 'dyno') {
-    return { type: 'standalone_view', id: 'dyno', title: 'DYNO WORKSTATION SPEEDOMETER' };
+    return { type: 'standalone_view', id: 'dyno', title: 'DYNO AI DEVELOPER BENCHMARK (Model + Harness + Tools)' };
   }
 
   if (pathname.startsWith('/profile') || pathname.startsWith('/shelf') || viewQuery === 'profile') {
@@ -88,6 +92,7 @@ import { playClickSound, playSuccessChime } from './lib/soundEngine';
 
 function AppInner() {
   const { getApp } = useCatalog();
+  const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
@@ -98,7 +103,7 @@ function AppInner() {
   if (route.type === 'standalone_app' && route.id) {
     const resolvedApp = getApp(route.id) || {
       id: route.id,
-      name: route.id.replace(/[-_]/g, ' ').replace(/\w/g, c => c.toUpperCase()),
+      name: route.id.replace(/[-_]/g, ' ').replace(/ \w/g, c => c.toUpperCase()),
       tagline: `${route.id} — Go Fork, and Multiply!`,
       description: "Shareware application provisioned on Nate's Software.",
       author: 'nate',
@@ -164,6 +169,24 @@ function AppInner() {
       <div className="flex-1 overflow-hidden">
         {component}
       </div>
+
+      {editingApp && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
+            <PostEditorView
+              app={editingApp}
+              onSave={(_updatedApp) => {
+                playSuccessChime();
+                setEditingApp(null);
+              }}
+              onCancel={() => {
+                playClickSound();
+                setEditingApp(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -173,11 +196,6 @@ function AppInner() {
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
       case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
       case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView
-          onOpenApp={(appId) => {
-            playClickSound();
-            const targetApp = getApp(appId);
-            if (targetApp) openWindow(targetApp.id as any);
-          }}
           onOpenPostEditor={(app) => {
             playClickSound();
             setEditingApp(app || null);
@@ -207,7 +225,6 @@ function AppInner() {
   } = useWindowManager();
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
-  const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
   const getInitialScale = () => {

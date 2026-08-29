@@ -123,7 +123,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
                 ⚡ The Maker Guide: From Local Repo to 12:01 AM Drop
               </h2>
               <p className="text-xs text-blue-200 leading-relaxed">
-                Follow the standard developer flow to initialize your project, mount a single-file SQLite database, run verification proofs, and deploy to HOTWIRE.
+                Follow the standard developer flow to initialize your project, configure optional persistence, run verification proofs, and deploy to HOTWIRE.
               </p>
             </div>
 
@@ -160,12 +160,12 @@ $ slop --help</pre>
                 </h3>
               </div>
               <p className="text-xs text-gray-600">
-                Initialize your application with open source shareware metadata and SQLite schema:
+                Initialize your application with open source shareware metadata (apps are runtime and storage independent):
               </p>
               <ul className="text-xs text-gray-700 space-y-1 pl-4 list-disc font-sans">
                 <li><b>Project Directory:</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">{app.id || 'dronehunter'}</code></li>
                 <li><b>Configuration:</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">slop.config.json</code> (declaring appId, title, and screenshots)</li>
-                <li><b>Database Schema:</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">migrations/001_initial_scores.sql</code> (creating tables in WAL mode)</li>
+                <li><b>Database Schema (Optional):</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">migrations/001_initial_scores.sql</code> (for apps utilizing local SQLite)</li>
               </ul>
             </div>
 
@@ -197,7 +197,7 @@ Output:
   │ ⚡ SLOP CLI v1.0.0 (Open Source Shareware &amp; AI Speed Shop)   │
   └────────────────────────────────────────────────────────────┘
   [GITSMITH] Initiating 'slop push' from local repository...
-    ✔ Checking single-file SQLite database ({app.sqlitePath || '/data/dronehunter.sqlite'})... (PRAGMA journal_mode = WAL)
+    ✔ Checking runtime configuration &amp; storage ({app.sqlitePath || 'runtime independent'})...
     ✔ Running pre-push verification tests... (100% Green)
     ✔ Packing CAS commit SHA: 5cdee6f
     ✔ Pushing drop to HOTWIRE (https://nates-software.pages.dev/api/drops)...
@@ -216,7 +216,7 @@ Output:
                 Your drop is now indexed on HOTWIRE with live subdomain hosting at <code className="font-mono text-blue-800">https://{app.id || 'dronehunter'}.pages.dev</code>.
               </p>
               <pre className="bg-black text-green-400 p-3 rounded font-mono text-xs overflow-x-auto leading-relaxed">
-# Clone into isolated worktree, mount SQLite WAL, and bind micro-dyno port:
+# Clone into isolated worktree, configure runtime/storage, and bind port:
 $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
             </div>
           </div>

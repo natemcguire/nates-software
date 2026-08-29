@@ -102,7 +102,7 @@ export const RigRuntimeView: React.FC = () => {
           <Cpu size={16} className="text-green-400" />
           <span className="font-bold text-sm text-green-300 font-mono">RIG.EXE BUILDER &amp; EPHEMERAL FLEET</span>
           <span className="bg-green-900 text-green-300 text-[10px] font-bold px-2 py-0.5 rounded border border-green-500 font-mono">
-            ● {activeOnlineCount} ACTIVE / {fleet.length} TOTAL
+            ● DEMO FLEET / SIMULATED HUD ({activeOnlineCount} ACTIVE / {fleet.length} TOTAL)
           </span>
         </div>
 
@@ -124,7 +124,7 @@ export const RigRuntimeView: React.FC = () => {
             onClick={() => setActiveTab('storage')}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'storage' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            💾 SQLite Storage &amp; WAL
+            💾 Storage &amp; Persistence
           </button>
         </div>
       </div>
@@ -140,7 +140,7 @@ export const RigRuntimeView: React.FC = () => {
                 <div className="border-b pb-2 mb-2">
                   <span className="font-bold text-sm text-w95-blue">Connect Your Codebase to RIG.EXE</span>
                   <p className="text-gray-600 text-xs">
-                    Push any local repository to your Local-First Git forge remote. RIG.EXE automatically allocates an isolated cloud container, mounts your single-file SQLite database, and boots your live ephemeral portal.
+                    Push any local repository to your Local-First Git forge remote. RIG.EXE automatically allocates an isolated cloud container, mounts your optional local-first storage or state volume (apps are runtime and storage independent), and boots your live ephemeral portal.
                   </p>
                 </div>
 
@@ -208,7 +208,7 @@ export const RigRuntimeView: React.FC = () => {
                     <ShieldCheck size={13} className="text-green-700" /> Automated Build Invariants:
                   </div>
                   <ul className="text-[11px] text-gray-700 list-disc list-inside space-y-0.5">
-                    <li>Single-file SQLite WAL mounted at <code className="bg-gray-200 px-1 font-mono">/data/app.sqlite</code></li>
+                    <li>Runtime &amp; storage independent (optional persistence mounted at <code className="bg-gray-200 px-1 font-mono">/data/app.sqlite</code>)</li>
                     <li>Zero port collisions &middot; scale-to-zero micro-container</li>
                     <li>Instant live preview portal &amp; automatic HOTWIRE submission</li>
                   </ul>
@@ -221,7 +221,7 @@ export const RigRuntimeView: React.FC = () => {
                 disabled={isBuilding}
                 className="btn-w95 btn-w95-primary w-full py-2.5 text-xs flex items-center justify-center gap-2 font-bold shadow-md"
               >
-                <Play size={13} /> {isBuilding ? 'BUILDING EPHEMERAL RIG (Vite + SQLite)...' : '⚡ TEST / SIMULATE GIT PUSH BUILD PIPELINE'}
+                <Play size={13} /> {isBuilding ? 'BUILDING EPHEMERAL RIG (Vite + Runtime)...' : '⚡ TEST / SIMULATE GIT PUSH BUILD PIPELINE'}
               </button>
             </div>
 
@@ -230,7 +230,7 @@ export const RigRuntimeView: React.FC = () => {
               <div>
                 <div className="flex justify-between items-center border-b border-gray-800 pb-1.5 mb-2 text-gray-400 text-xs">
                   <span className="flex items-center gap-1.5 text-yellow-400">
-                    <Terminal size={13} /> RIG.EXE Automated Build Console
+                    <Terminal size={13} /> RIG.EXE Automated Build Console (Simulated)
                   </span>
                   <span className="text-[10px] text-gray-500 font-sans">Stream at 1000 Baud</span>
                 </div>
@@ -267,7 +267,12 @@ export const RigRuntimeView: React.FC = () => {
           <div className="space-y-3">
             <div className="border-b pb-2 flex items-center justify-between">
               <div>
-                <span className="font-bold text-sm text-w95-blue">Parallel Ephemeral Fleet ("Orbs")</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-w95-blue">Parallel Ephemeral Fleet ("Orbs")</span>
+                  <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
+                    DEMO SIMULATION
+                  </span>
+                </div>
                 <p className="text-gray-600 text-xs">
                   Every branch and mod runs on its own isolated micro-VM in the cloud with zero local CPU/port contention.
                 </p>
@@ -283,7 +288,7 @@ export const RigRuntimeView: React.FC = () => {
                   <th className="p-2">Container ID / App</th>
                   <th className="p-2">Port</th>
                   <th className="p-2">Memory / Cap</th>
-                  <th className="p-2">SQLite Volume (WAL)</th>
+                  <th className="p-2">Storage / Persistence</th>
                   <th className="p-2">Evidence</th>
                   <th className="p-2">Status</th>
                   <th className="p-2">Action</th>
@@ -332,18 +337,18 @@ export const RigRuntimeView: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: SQLite Storage & Recovery */}
+        {/* TAB 3: Storage & Persistence Recovery */}
         {activeTab === 'storage' && (
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-blue-50 border-2 border-w95-blue p-3 rounded space-y-2">
               <span className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
-                <Layers size={14} /> SQLite Disk Export
+                <Layers size={14} /> Database &amp; Storage Disk Export
               </span>
               <p className="text-gray-700 text-xs">
-                Export any running container's complete, uncorrupted SQLite database file to your local computer with zero locks.
+                Export stateful containers' complete, uncorrupted storage files or database snapshots to your local computer with zero locks (or deploy completely stateless).
               </p>
               <a
-                href="data:text/plain;charset=utf-8,WallArt%20SQLite%203.45%20Database"
+                href="data:text/plain;charset=utf-8,WallArt%20Database%20Backup"
                 download="wallart-live.sqlite"
                 className="btn-w95 btn-w95-primary w-full py-1.5 flex items-center justify-center gap-1.5"
               >
@@ -354,7 +359,7 @@ export const RigRuntimeView: React.FC = () => {
             <div className="bg-yellow-50 border-2 border-yellow-500 p-3 rounded space-y-2">
               <span className="font-bold text-yellow-900 text-sm">OOM Crash Proofing (Exit 137)</span>
               <p className="text-yellow-800 text-xs">
-                Strict 256MB memory cap. If arbitrary user code leaks memory, RIG.EXE checkpoints the SQLite WAL journal and restarts clean in &lt;50ms.
+                Strict 256MB memory cap. If arbitrary user code leaks memory, RIG.EXE safely checkpoints active storage volumes and restarts clean in &lt;50ms.
               </p>
               <div className="text-[11px] text-green-800 font-mono font-bold">
                 ✔ Litestream replication to Cloudflare R2 active

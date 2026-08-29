@@ -13,7 +13,7 @@ export const TerminalView: React.FC = () => {
   const { user } = useAuth();
   const [history, setHistory] = useState<TerminalLine[]>([
     { text: "Nate's Software Suite DOS/UNIX Shell v2.4.0 (x86_64-apple-darwin)", type: 'system' },
-    { text: "Type 'help' or 'slop help' for a list of available commands. SQLite WAL mode active.", type: 'system' },
+    { text: "Type 'help' or 'slop help' for a list of available commands. Runtime & storage independent.", type: 'system' },
     { text: "", type: 'output' }
   ]);
 
@@ -86,7 +86,7 @@ export const TerminalView: React.FC = () => {
           { text: "  slop <command>         - Execute Local-First Local-first Operations Protocol CLI", type: 'output' },
           { text: "    slop fork <slug>     - Clone app into isolated worktree (/tmp/slop-*)", type: 'output' },
           { text: "    slop mod <feature>   - Splice AST feature package into project", type: 'output' },
-          { text: "    slop dyno [--bench]  - Run Apple Silicon Metal AI token velocity benchmark", type: 'output' },
+          { text: "    slop dyno [--bench]  - Benchmark model + harness + tools on common dev tasks (independent suite)", type: 'output' },
           { text: "    slop test            - Run Local-First runtime verification test proofs", type: 'output' },
           { text: "    slop status          - Inspect micro-containers & active ports (3001..3010)", type: 'output' },
           { text: "    slop list            - Query 12:01 AM daily drops on Cloudflare D1", type: 'output' },
@@ -143,7 +143,7 @@ export const TerminalView: React.FC = () => {
           { text: "      /     \      ------------", type: 'system' },
           { text: "     | () () |     OS: Nate's Software Web OS 95", type: 'output' },
           { text: "      \  -  /      Host: Apple Mac mini (M4 Max)", type: 'output' },
-          { text: "       `---'       Kernel: WebAssembly SQLite (sql.js)", type: 'output' },
+          { text: "       `---'       Kernel: Runtime & Storage Independent", type: 'output' },
           { text: "                   Uptime: 99.98% (Scale-to-Zero)", type: 'output' },
           { text: "                   Packages: 3 Shareware Apps (dronehunter, certified-mailer, picfitai)", type: 'output' },
           { text: "                   Shell: SLOP CLI v1.0.0", type: 'output' },
@@ -183,7 +183,7 @@ export const TerminalView: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           <span className="bg-green-950 text-green-300 px-2 py-0.5 rounded text-[10px] border border-green-800">
-            WAL MODE ACTIVE
+            RUNTIME INDEPENDENT
           </span>
           <span className="text-green-700">80x25 ANSI</span>
         </div>

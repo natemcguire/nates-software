@@ -55,8 +55,9 @@ const ARTICLES: EditorialArticle[] = [
       { label: "Needle Recall", value: "99.2% at 128k context" }
     ],
     content: [
-      "Using the official `slop dyno --bench` suite, we stressed unified memory architectures under heavy speculative decoding loads.",
-      "Apple Silicon's unified 64GB memory pool enables instant zero-copy prompt cache reuse, eliminating PCIe bus bottlenecks encountered on discrete GPUs."
+      "We tested local LLM inference engines stressing unified memory architectures under heavy speculative decoding loads.",
+      "Apple Silicon's unified 64GB memory pool enables instant zero-copy prompt cache reuse, eliminating PCIe bus bottlenecks encountered on discrete GPUs.",
+      "Note: Raw token velocity benchmarks measure hardware and inference kernel speed, distinct from the DYNO developer benchmark which evaluates AI model + harness + tool autonomy on 50 software engineering tasks."
     ]
   },
   {
@@ -98,8 +99,13 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
         <div className="flex items-center space-x-3">
           <Award className="w-6 h-6 text-yellow-400" />
           <div>
-            <h1 className="font-bold text-sm tracking-wider font-mono">NATE'S SOFTWARE & EDITORIAL LAB</h1>
-            <p className="text-[11px] text-gray-300">Independent Shareware Teardowns, Hardware Benchmarks & Editor's Choice Awards</p>
+            <div className="flex items-center gap-2">
+              <h1 className="font-bold text-sm tracking-wider font-mono">NATE'S SOFTWARE &amp; EDITORIAL LAB</h1>
+              <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
+                DEMO REVIEWS
+              </span>
+            </div>
+            <p className="text-[11px] text-gray-300">Independent Shareware Teardowns, Hardware Benchmarks &amp; Editor's Choice Awards</p>
           </div>
         </div>
         <div className="bg-yellow-400 text-black px-2 py-0.5 font-mono font-bold text-xs border border-black shadow">
