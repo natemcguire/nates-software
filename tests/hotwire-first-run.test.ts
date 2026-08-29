@@ -3,6 +3,7 @@ import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as dropsApi from '../functions/api/drops';
 import * as upvoteApi from '../functions/api/upvote';
 import * as shelfApi from '../functions/api/shelf';
+import { hashSessionToken } from '../functions/api/_session';
 import { INITIAL_APPS } from '../src/data/mockData';
 import {
   getCurrentBatchWindow,
@@ -136,9 +137,9 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         VALUES ('usr_bob_buyer', 'bob_buyer', 'Bob Buyer', 'user')
       `).run();
       await ctx.d1.prepare(`
-        INSERT INTO user_sessions (token, user_id, expires_at)
-        VALUES ('tok_bob_123', 'usr_bob_buyer', ?)
-      `).bind(Date.now() + 100000).run();
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_bob_buyer', ?)
+      `).bind(await hashSessionToken('tok_bob_123'), Date.now() + 100000).run();
 
       // Claim dronehunter
       const postReq = new Request('http://localhost/api/shelf', {

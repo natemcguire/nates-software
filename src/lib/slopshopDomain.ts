@@ -9,7 +9,7 @@ export interface RepoCoordinate {
   readonly repoUrl: string;
   readonly sshRemote: string;
   readonly defaultPort: number;
-  readonly sqliteDatabase: string;
+  readonly sqliteDatabase?: string;
   readonly localPathHint: string;
   readonly techStack: readonly string[];
   readonly tagline: string;
@@ -60,7 +60,7 @@ export interface SlopFeatureManifest {
     readonly slug: string;
     readonly repoUrl: string;
     readonly defaultPort: number;
-    readonly sqliteDatabase: string;
+    readonly sqliteDatabase?: string;
   };
   readonly feature: {
     readonly id: string;
@@ -579,9 +579,8 @@ export function getAppCoordinate(appId: string): RepoCoordinate {
     repoUrl: `https://github.com/custom/${cleanId}.git`,
     sshRemote: `ssh://git@gitsmith.nates-software.com:2222/custom/${cleanId}.git`,
     defaultPort: 3010,
-    sqliteDatabase: `/data/${cleanId}.sqlite`,
     localPathHint: `~/Projects/${cleanId}`,
-    techStack: ['TypeScript', 'SQLite (WASM)', 'Vite'],
+    techStack: ['Repository-defined runtime', 'Repository-defined persistence'],
     tagline: `Custom software application repository (${cleanId}).`,
     version: 'v1.0.0',
     price: '$15.00',
@@ -731,7 +730,7 @@ export function generateLocalAgentPlan(params: {
       stepNumber: 1,
       title: 'Clone into Isolated Local Worktree',
       command: `git clone ${params.coordinate.repoUrl} "${worktreeDir}" && cd "${worktreeDir}" && git checkout -b ${branchName}`,
-      description: `Clones ${params.coordinate.name} into an isolated development folder to protect master branch stability and isolate SQLite database WAL locks.`,
+      description: `Clones ${params.coordinate.name} into an isolated development folder to protect the production branch and app-owned runtime state.`,
       requiredEvidence: 'Clean working directory created with git status OK'
     },
     {
@@ -744,11 +743,13 @@ export function generateLocalAgentPlan(params: {
     {
       stepNumber: 3,
       title: 'Execute Local Test Suite & Build Verification',
-      command: params.feature.migrationSql
+      command: params.feature.migrationSql && params.coordinate.sqliteDatabase
         ? `npm test && npm run build && sqlite3 ${params.coordinate.sqliteDatabase.replace('/data/', './data/')} "${escapeShellDoubleQuotes(params.feature.migrationSql)}"`
         : `npm test && npm run build`,
       description: 'Executes the local test suite and TypeScript compiler to produce verified cryptographic evidence.',
-      requiredEvidence: '100% passing test assertions, 0 type errors, validated SQLite schema'
+      requiredEvidence: params.feature.migrationSql
+        ? 'Passing tests, clean build, and repository-specific persistence migration evidence'
+        : 'Passing tests and clean build'
     },
     {
       stepNumber: 4,
@@ -807,10 +808,10 @@ export function getEvidenceChecklist(feature: FeaturePreset): {
     },
     {
       id: 'migrations',
-      title: '3. SQLite Schema Migration Proof',
-      command: feature.migrationSql ? `sqlite3 <db> "${feature.migrationSql.slice(0, 45)}..."` : 'No DDL migration needed',
-      description: 'Ensures database table schema modifies idempotently without WAL database lock contention.',
-      evidenceProduced: feature.migrationSql ? 'Applied SQL migration log & pragma integrity_check' : 'Zero schema delta verified'
+      title: '3. Persistence Migration Proof',
+      command: feature.migrationSql ? 'Run the repository-defined migration and integrity commands' : 'No persistence migration needed',
+      description: 'Validates persistence changes using the target repository’s own runtime and storage contract.',
+      evidenceProduced: feature.migrationSql ? 'Migration log and repository-defined integrity evidence' : 'Zero persistence delta verified'
     },
     {
       id: 'diff',

@@ -172,7 +172,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         JOIN dyno_environments e ON r.environment_id = e.id
         JOIN dyno_suites su ON r.suite_id = su.id
         LEFT JOIN users u ON r.submitted_by_user_id = u.id
-        WHERE r.status = 'completed' AND r.verification_status != 'rejected'
+        WHERE r.status = 'completed'
+          AND r.verification_status IN ('reproducible', 'verified')
         ORDER BY r.overall_score DESC, r.created_at DESC
         LIMIT 50
       `).all();
@@ -352,7 +353,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     const verifiedScore = calculatedScore.score;
-    const verifiedVerificationStatus = totalSafetyViolations > 0 ? 'rejected' : (run.verification_status || 'unverified');
+    // Client evidence is never self-verifying. A separate trusted verifier may
+    // later promote an unverified run to reproducible/verified.
+    const verifiedVerificationStatus = totalSafetyViolations > 0 ? 'rejected' : 'unverified';
 
     // 4. Canonical D1 Ingestion
     if (env && env.DB) {
@@ -553,14 +556,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       });
     }
 
-    return Response.json({
-      success: true,
-      runId: run.id,
-      score: verifiedScore,
-      grade: calculatedScore.grade,
-      verificationStatus: verifiedVerificationStatus,
-      mode: 'ephemeral'
-    });
+    return Response.json(
+      { success: false, error: 'Benchmark persistence is unavailable' },
+      { status: 503 }
+    );
   } catch (err: any) {
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }

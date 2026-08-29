@@ -273,7 +273,7 @@ export const SlopshopView: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-400 font-mono truncate mb-1">
-                    {app.sqliteDatabase}
+                    {app.sqliteDatabase || 'Persistence declared by repository'}
                   </div>
                   <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
                     <span className="text-emerald-400">Port {app.defaultPort}</span>
@@ -448,10 +448,10 @@ export const SlopshopView: React.FC = () => {
                   <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5">
                     <div className="text-slate-400 font-bold flex items-center gap-1.5">
                       <Database size={13} className="text-amber-400" />
-                      <span>SQLite Database Schema (WAL Mode):</span>
+                      <span>Repository Persistence Contract:</span>
                     </div>
                     <div className="text-[11px] text-slate-300 truncate">
-                      DB: <code className="text-amber-300">{coordinate.sqliteDatabase}</code>
+                      Target: <code className="text-amber-300">{coordinate.sqliteDatabase || 'Defined by repository manifest'}</code>
                     </div>
                     {activePreset.migrationSql ? (
                       <div className="bg-black/60 p-1.5 rounded border border-slate-800 text-[10px] text-slate-400 font-mono truncate select-text">
@@ -660,9 +660,9 @@ export const SlopshopView: React.FC = () => {
                     </div>
                   </div>
                   <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
-                    <div className="font-bold text-amber-400">2. WAL Database Isolation</div>
+                    <div className="font-bold text-amber-400">2. Runtime State Isolation</div>
                     <div className="text-[11px] text-slate-400">
-                      SQLite database files stay sandboxed to prevent lock contention with running live services.
+                      App-owned files, services, and persistence remain isolated from running production revisions.
                     </div>
                   </div>
                   <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">

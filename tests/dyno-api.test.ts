@@ -314,16 +314,15 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       const gradersInDb = await ctx.d1.prepare('SELECT * FROM dyno_grader_results WHERE task_attempt_id = ?').bind(payload.attempts[0].attempt.id).all();
       expect(gradersInDb.results?.length).toBeGreaterThan(0);
 
-      // Verify Leaderboard query returns the ingested run
+      // Client-submitted evidence remains unverified and cannot self-promote
+      // onto the public leaderboard.
       const lbReq = new Request('http://localhost/api/dyno', { method: 'GET' });
       const lbRes = await dynoApi.onRequestGet({ request: lbReq, env: { DB: ctx.d1 } });
       const lbData = await lbRes.json();
 
       expect(lbData.success).toBe(true);
-      expect(lbData.count).toBe(1);
-      expect(lbData.leaderboard[0].id).toBe(payload.run.id);
-      expect(lbData.leaderboard[0].model_id).toBe('claude-3-7-sonnet');
-      expect(lbData.leaderboard[0].overall_score).toBe(payload.expectedScore);
+      expect(lbData.count).toBe(0);
+      expect(lbData.leaderboard).toEqual([]);
 
       // Verify Detail query returns complete run with attempts and grader results
       const detailReq = new Request(`http://localhost/api/dyno?runId=${payload.run.id}`, { method: 'GET' });
