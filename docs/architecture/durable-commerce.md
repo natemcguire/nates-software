@@ -2,7 +2,7 @@
 
 ## Status
 
-Migration `0009_durable_commerce.sql` defines the canonical replacement for the legacy payment tables. Payment endpoints remain fail-closed unless `PAYMENTS_ENABLED=true`; that flag must not be enabled until checkout, webhook processing, fulfillment, and transfer-worker proofs all pass against Stripe test mode and isolated preview D1.
+Migrations `0009_durable_commerce.sql` and `0010_commerce_processing.sql` define the canonical replacement for the legacy payment tables. Payment endpoints remain fail-closed unless `PAYMENTS_ENABLED=true`; that flag must not be enabled until checkout, webhook processing, fulfillment, refund/dispute handling, and transfer/reversal-worker proofs all pass against Stripe test mode and isolated preview D1.
 
 ## Authority boundaries
 
@@ -27,7 +27,7 @@ Migration `0009_durable_commerce.sql` defines the canonical replacement for the 
 3. Validate and atomically persist the creating order, immutable allocations, and audit event.
 4. Create the Stripe PaymentIntent using the order ID as its idempotency key. Persist its ID and move the order to `requires_payment`; never fabricate a secret or success response.
 5. Verify webhook signature and timestamp, persist the raw event inbox record idempotently, then acknowledge receipt.
-6. A processor re-fetches the authoritative Stripe object, rejects out-of-order or regressive transitions, and atomically marks the order paid while issuing exactly one hashed license and creating one outbox row per payable allocation.
+6. A processor claims the inbox event with a finite lease, re-fetches the authoritative Stripe object, rejects out-of-order or regressive transitions, and atomically marks the order paid while issuing exactly one encrypted-at-rest license and creating one outbox row per payable allocation.
 7. A worker executes Stripe Connect transfers with the outbox ID as Stripe's idempotency key. Failures remain retryable and observable; webhook code never transfers funds.
 8. Fulfillment completes only after the license exists. Payout delays do not revoke a legitimately paid license.
 
@@ -35,7 +35,8 @@ Migration `0009_durable_commerce.sql` defines the canonical replacement for the 
 
 - Event delivery is at-least-once and unordered. Event-ID uniqueness alone is not sufficient.
 - PaymentIntent IDs, caller idempotency keys, licenses per order, allocation sequence, and outbox allocation references are unique.
-- Raw license keys are returned once and never stored; only a SHA-256 hash and last four characters are durable.
+- License keys are stored only as AES-256-GCM ciphertext plus a SHA-256 verification hash and last four characters. Encryption keys are versioned outside D1 so ciphertext can be rotated without changing the license.
+- The canonical commerce license is not dual-written into legacy `shelf_items`, whose required plaintext `license_key` column violates this storage boundary. Shelf reads must migrate to the canonical commerce tables before checkout is enabled.
 - External calls cannot be rolled back with D1. Each call therefore needs a stable idempotency key and a durable reconciliation state.
 - No caught database or Stripe error may be converted into `{ success: true }`.
 - Refund and dispute transitions must be monotonic, audited, and handled before live payments are enabled.
