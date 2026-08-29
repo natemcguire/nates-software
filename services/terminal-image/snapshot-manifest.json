@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "nates-software-terminal-v1",
+  "base": "node:22-bookworm",
+  "requiredTools": ["git", "node", "npm", "npx", "rg", "sqlite3", "claude", "slop"],
+  "optionalTools": {
+    "agy": "Not redistributed: install/authenticate interactively when an official remote installer is available.",
+    "aider": "Not preinstalled until a current trusted package source is selected.",
+    "cursor": "Desktop GUI; intentionally unavailable in a headless VM."
+  },
+  "persistence": "none",
+  "workspace": "/workspace",
+  "defaultUser": "daytona"
+}
