@@ -256,7 +256,7 @@ export const DynoView: React.FC = () => {
   // Formatted Markdown report
   const formatReportMarkdown = () => {
     if (!selectedRun) {
-      return '# DYNO AI Developer Benchmark Report\n\nNo run selected. Import an execution bundle or select a run from the Leaderboard.';
+      return '# DYNO LLM Dynamometer Report\n\nNo run selected. Import a Street measurement or select an official result.';
     }
 
     const r = selectedRun.run || selectedRun;
@@ -278,7 +278,7 @@ export const DynoView: React.FC = () => {
     const score = r.overall_score ?? summary.dynoScore ?? 0;
     const verificationStatus = r.verification_status || 'unverified';
 
-    return `# DYNO AI Developer Benchmark Report
+    return `# DYNO LLM Dynamometer Report
 **Subject:** ${sub.model_id || sub.model} + ${sub.agent_harness}
 **Environment:** ${env.os_name} (${env.architecture}) ${env.cpu_model || ''}
 **Verification Status:** ${verificationStatus.toUpperCase()}
@@ -338,9 +338,9 @@ export const DynoView: React.FC = () => {
         <div className="flex items-center gap-2">
           <Gauge size={18} className="text-yellow-400" />
           <div>
-            <div className="font-bold text-sm text-yellow-300 font-mono">DYNO AI DEVELOPER BENCHMARK</div>
+            <div className="font-bold text-sm text-yellow-300 font-mono">DYNO — LLM DYNAMOMETER</div>
             <div className="text-[10px] text-gray-300 font-sans">
-              Deterministic benchmark of Model + Harness + Tools against neutral engineering tasks
+              Model + Harness + Tools measured under real developer load
             </div>
           </div>
         </div>
@@ -388,10 +388,10 @@ export const DynoView: React.FC = () => {
           <ShieldCheck size={16} className="text-blue-700 shrink-0 mt-0.5" />
           <div className="space-y-0.5">
             <div>
-              <strong>Standalone Developer Benchmark:</strong> DYNO is a standalone street-race-realistic benchmark of Model + Harness + Tools against common developer commands, completely unrelated to marketplace app runtimes.
+              <strong>The LLM Dynamometer:</strong> DYNO measures Model + Harness + Tools against common developer work, completely unrelated to marketplace app runtimes.
             </div>
             <div className="text-[10px] text-blue-900">
-              Benchmarks run locally on your workstation via <code>./bin/slop dyno</code>. Reports remain strictly local (<code>~/.dyno/report.json</code>) until explicit signed-in submission. Submitted client runs are recorded as <strong>Unverified (Self-Reported)</strong>.
+              Public <strong>Street</strong> measurements run locally via <code>./bin/slop dyno</code> and remain self-reported after upload. Only Nate-run private evaluations can receive <strong>DYNO Certified</strong>; independent replay can mark a Street run <strong>Reproduced</strong>.
             </div>
           </div>
         </div>
@@ -439,9 +439,9 @@ export const DynoView: React.FC = () => {
                     onChange={e => setSelectedRepetitions(Number(e.target.value))}
                     className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
                   >
-                    <option value={1}>1 Run (Unverified Fast Pass)</option>
-                    <option value={2}>2 Runs (Reproducible Verification)</option>
-                    <option value={3}>3 Runs (Canonical Verified Audit)</option>
+                    <option value={1}>1 Street Pull (Fast)</option>
+                    <option value={2}>2 Street Pulls (Variance Check)</option>
+                    <option value={3}>3 Street Pulls (Confidence Band)</option>
                   </select>
                 </div>
 
@@ -733,10 +733,10 @@ export const DynoView: React.FC = () => {
               <div>
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
                   <Trophy size={16} className="text-yellow-500" />
-                  DYNO Reproducible &amp; Verified Leaderboard
+                  Official DYNO Results
                 </h3>
                 <p className="text-[11px] text-gray-600">
-                  Only independently reproducible or verified runs appear here. Self-reported uploads remain outside ranked comparisons.
+                  Reproduced Street measurements and Nate-run Certified evaluations. Self-reported Street uploads remain outside ranked comparisons.
                 </p>
               </div>
 
@@ -812,6 +812,9 @@ export const DynoView: React.FC = () => {
                           }`}>
                             {run.verification_status}
                           </span>
+                          <div className="mt-1 text-[9px] font-bold uppercase text-gray-600">
+                            {run.evaluation_class || 'reproduced'}
+                          </div>
                         </td>
                         <td className="p-2 text-center font-bold text-blue-900 bg-blue-50/80">
                           {run.overall_score}

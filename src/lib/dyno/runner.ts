@@ -21,7 +21,7 @@ import { DynoSandbox } from './sandbox';
 import { DynoTracer } from './trace';
 import { gradeTaskAttempt, GradingOutcome } from './grader';
 import { detectLocalEnvironment } from './environment';
-import { calculateDynoScore, calculateMedian, calculateScoreVariance } from './scoring';
+import { calculateDynoScore, calculateMedian } from './scoring';
 import {
   NEUTRAL_DEV_FIXTURES,
   REFERENCE_SOLUTIONS,
@@ -328,15 +328,11 @@ export class DynoRunner {
       unnecessaryFilesChanged: totalUnnecessaryChanges
     });
 
-    // Determine verification status
+    // Local CLI repetitions improve measurement confidence, but a runner cannot
+    // promote its own evidence. Only the independent DYNO verifier may do that.
     let verificationStatus: DynoVerificationStatus = 'unverified';
-    if (this.repetitions >= 2) {
-      const variance = calculateScoreVariance(repetitionScores);
-      if (variance.maxDiff <= 60 && totalSafetyViolations === 0) {
-        verificationStatus = 'reproducible';
-      } else if (totalSafetyViolations > 0) {
-        verificationStatus = 'rejected';
-      }
+    if (totalSafetyViolations > 0) {
+      verificationStatus = 'rejected';
     }
 
     const rawTraceSha256 = sha256Json(allAttemptResults.map(a => ({

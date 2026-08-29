@@ -53,6 +53,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         const run = await env.DB.prepare(`
           SELECT r.id, r.suite_id, r.subject_id, r.environment_id, r.submitted_by_user_id,
                  r.repetition, r.randomization_seed, r.status, r.verification_status,
+                 r.evaluation_class, r.official_evaluator, r.official_published_at,
                  r.overall_score, r.total_cost_micros, r.total_tokens,
                  r.runner_attestation_digest, r.raw_trace_sha256, r.raw_trace_r2_key,
                  r.started_at, r.completed_at, r.created_at,
@@ -148,6 +149,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     if (env && env.DB) {
       const { results } = await env.DB.prepare(`
         SELECT r.id, r.suite_id, r.repetition, r.status, r.verification_status,
+               r.evaluation_class, r.official_evaluator, r.official_published_at,
                r.overall_score, r.started_at, r.completed_at, r.created_at,
                s.model_provider, s.model_id, s.model_version,
                s.agent_harness, s.harness_version,
@@ -610,6 +612,25 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       durationsSeconds.push(durationMs / 1000);
     }
 
+    // A syntactically valid caller hash is not evidence. Recompute the trace
+    // commitment from the exact canonical attempt, grader, and tool-event data.
+    const canonicalTraceEvidence = attempts.map((item: any) => {
+      const att = item.attempt || item;
+      return {
+        attemptId: att.id,
+        toolEvents: item.toolEvents || item.tool_events || [],
+        graderResults: item.graderResults || item.grader_results || [],
+        digest: att.result_digest
+      };
+    });
+    const computedTraceDigest = sha256Json(canonicalTraceEvidence);
+    if (computedTraceDigest !== String(run.raw_trace_sha256).toLowerCase()) {
+      return Response.json({
+        success: false,
+        error: 'Raw trace commitment does not match the canonical submitted evidence.'
+      }, { status: 400 });
+    }
+
     // 9. Deterministic Server-Side Scoring & Verification
     const firstAttemptRate = expectedTaskCount > 0 ? firstAttemptSuccesses / expectedTaskCount : 0;
     const hiddenPassedRate = totalHiddenTests > 0 ? totalHiddenPassed / totalHiddenTests : 0;
@@ -645,6 +666,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // 10. Atomic D1 Ingestion via DB.batch() (Requirement 4)
     if (env && env.DB) {
       const statements: any[] = [];
+      let storedTraceKey: string | null = null;
+
+      // Object locations are server-owned. Ignore caller-provided storage keys.
+      if (env.STORAGE && typeof env.STORAGE.put === 'function') {
+        storedTraceKey = `dyno/traces/${user.id}/${run.id}/${computedTraceDigest}.json`;
+        await env.STORAGE.put(storedTraceKey, JSON.stringify(canonicalTraceEvidence), {
+          httpMetadata: { contentType: 'application/json' },
+          customMetadata: { sha256: computedTraceDigest, runId: run.id }
+        });
+      }
 
       // a. Insert canonical suite (idempotent, server-controlled values ONLY)
       statements.push(
@@ -754,7 +785,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           run.total_cost_micros ?? null,
           run.total_tokens ?? null,
           run.runner_attestation_digest,
-          run.raw_trace_r2_key || null,
+          storedTraceKey,
           run.raw_trace_sha256,
           run.started_at,
           run.completed_at,
@@ -854,7 +885,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       // Execute entire submission atomically in a single D1 batch
-      await env.DB.batch(statements);
+      try {
+        await env.DB.batch(statements);
+      } catch (error) {
+        if (storedTraceKey && env.STORAGE && typeof env.STORAGE.delete === 'function') {
+          await env.STORAGE.delete(storedTraceKey).catch(() => undefined);
+        }
+        throw error;
+      }
 
       return Response.json({
         success: true,

@@ -35,7 +35,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0016_inbox_live_integrity.sql',
         '0017_picfit_truthful_listing.sql',
         '0018_ephemeral_terminal_sessions.sql',
-        '0019_forge_outbox_leasing.sql'
+        '0019_forge_outbox_leasing.sql',
+        '0020_dyno_certified_evaluations.sql'
       ]);
     });
 

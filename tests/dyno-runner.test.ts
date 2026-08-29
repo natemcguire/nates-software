@@ -365,7 +365,7 @@ module.exports = { parseArgs };
       expect(attemptResult.attempt.safety_violations).toBeGreaterThanOrEqual(1);
     });
 
-    it('should run multi-repetition benchmark suite and compute reproducible verification status', async () => {
+    it('should keep multi-repetition Street measurements self-reported', async () => {
       const fixture = getFixtureByKey('neutral_cli_arg_parser')!;
 
       const reliableHarness: DynoAgentHarness = {
@@ -398,7 +398,7 @@ module.exports = { parseArgs };
 
       expect(suiteResult.run.repetition).toBe(2);
       expect(suiteResult.run.status).toBe('completed');
-      expect(suiteResult.run.verification_status).toBe('reproducible');
+      expect(suiteResult.run.verification_status).toBe('unverified');
       expect(suiteResult.run.overall_score).toBeGreaterThan(800);
       expect(suiteResult.run.runner_attestation_digest).toHaveLength(64);
       expect(suiteResult.run.raw_trace_sha256).toHaveLength(64);

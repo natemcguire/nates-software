@@ -87,7 +87,12 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       unnecessaryFilesChanged: 0
     });
 
-    const rawTraceSha256 = sha256Json(attempts.map(a => a.attempt.result_digest));
+    const rawTraceSha256 = sha256Json(attempts.map(a => ({
+      attemptId: a.attempt.id,
+      toolEvents: a.toolEvents,
+      graderResults: a.graderResults,
+      digest: a.attempt.result_digest
+    })));
     const attestationDigest = sha256Json({
       runId,
       score: scoreCalc.score,
@@ -359,6 +364,43 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(detailData.run.id).toBe(payload.run.id);
       expect(detailData.run.attempts.length).toBe(NEUTRAL_DEV_FIXTURES.length);
       expect(detailData.run.attempts[0].grader_results.length).toBeGreaterThan(0);
+    });
+
+    it('rejects a trace commitment that does not match canonical evidence', async () => {
+      const payload = generateValidRunPayload();
+      payload.run.raw_trace_sha256 = '0'.repeat(64);
+      const req = new Request('http://localhost/api/dyno', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+        body: JSON.stringify(payload)
+      });
+      const response = await dynoApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(response.status).toBe(400);
+      expect((await response.json() as any).error).toContain('does not match');
+      expect(await ctx.d1.prepare('SELECT id FROM dyno_runs WHERE id = ?').bind(payload.run.id).first()).toBeNull();
+    });
+
+    it('stores validated trace evidence under a server-owned object key', async () => {
+      const payload = generateValidRunPayload();
+      (payload.run as any).raw_trace_r2_key = 'attacker/chosen-key.json';
+      const writes: Array<{ key: string; body: string }> = [];
+      const storage = {
+        put: async (key: string, body: string) => { writes.push({ key, body }); },
+        delete: async () => undefined
+      };
+      const req = new Request('http://localhost/api/dyno', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
+        body: JSON.stringify(payload)
+      });
+      const response = await dynoApi.onRequestPost({ request: req, env: { DB: ctx.d1, STORAGE: storage } });
+      expect(response.status).toBe(200);
+      expect(writes).toHaveLength(1);
+      expect(writes[0].key).toContain(`dyno/traces/usr_nate/${payload.run.id}/`);
+      expect(writes[0].key).not.toContain('attacker');
+      expect(JSON.parse(writes[0].body)).toHaveLength(NEUTRAL_DEV_FIXTURES.length);
+      const row: any = await ctx.d1.prepare('SELECT raw_trace_r2_key FROM dyno_runs WHERE id = ?').bind(payload.run.id).first();
+      expect(row.raw_trace_r2_key).toBe(writes[0].key);
     });
   });
 

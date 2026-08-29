@@ -120,11 +120,11 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.summary.tasksPassed).toBe(1);
     });
 
-    it('should run multi-repetition benchmark and compute reproducible verification', async () => {
+    it('should run multi-repetition benchmark without self-promoting verification', async () => {
       const res = await handleDyno(['--task=neutral_cli_arg_parser', '--solve', '--bench', '--quiet']);
       expect(res.success).toBe(true);
       expect(res.data.run.repetition).toBe(2);
-      expect(res.data.run.verification_status).toBe('reproducible');
+      expect(res.data.run.verification_status).toBe('unverified');
       expect(res.data.summary.dynoScore).toBe(1000);
     });
 
