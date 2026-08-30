@@ -59,14 +59,14 @@ function send(res: ServerResponse, status: number, payload: unknown): void {
   res.end(JSON.stringify(payload));
 }
 
-async function readJson(req: IncomingMessage): Promise<any> {
+async function readJson(req: IncomingMessage, maxSizeBytes = 150 * 1024 * 1024): Promise<any> {
   return new Promise((resolve, reject) => {
     let raw = '';
     let size = 0;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > 64 * 1024) {
-        reject(new Error('Request body exceeds 64 KiB.'));
+      if (size > maxSizeBytes) {
+        reject(new Error(`Request body exceeds limit of ${Math.round(maxSizeBytes / (1024 * 1024))} MiB.`));
         req.destroy();
         return;
       }

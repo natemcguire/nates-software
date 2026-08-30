@@ -5,9 +5,9 @@ import { execFileSync } from 'node:child_process';
 import {
   type DockerCommandRunner,
   NodeChildProcessRunner
-} from '../rigDockerProvider';
-import type { DeploymentPlan } from '../deploymentLifecycle';
-import { validateArchiveEntries } from './verificationWorker';
+} from '../rigDockerProvider.ts';
+import type { DeploymentPlan } from '../deploymentLifecycle.ts';
+import { validateArchiveEntries } from './verificationWorker.ts';
 
 export interface StaticAssetFile {
   readonly path: string;

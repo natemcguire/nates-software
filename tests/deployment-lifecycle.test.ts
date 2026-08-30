@@ -427,6 +427,86 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(result.plan?.memoryMb).toBe(128);
     });
 
+    it('should detect static web projects with dronehunter-style package.json (no real build, main index.html)', () => {
+      const files = ['index.html', 'assets/drone.png', 'package.json', 'slop.config.json'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'dronehunter',
+          version: '1.0.0',
+          main: 'index.html',
+          scripts: {
+            dev: 'npx serve .',
+            test: 'node -e \'console.log("ok")\'',
+            build: "echo 'Build complete'"
+          }
+        }),
+        'index.html': '<!doctype html><html><body><canvas id="game"></canvas></body></html>'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('static');
+      expect(result.plan?.buildCommand).toBeUndefined();
+      expect(result.plan?.startCommand).toBe('static-pages-runtime');
+      expect(result.plan?.port).toBe(80);
+      expect(result.plan?.healthEndpoint).toBe('/');
+      expect(result.plan?.memoryMb).toBe(128);
+      expect(result.plan?.entrypointFile).toBe('index.html');
+    });
+
+    it('should detect static web projects with package.json having no scripts but index.html', () => {
+      const files = ['index.html', 'package.json'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'simple-static-page',
+          version: '1.0.0'
+        }),
+        'index.html': '<h1>Static Page</h1>'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('static');
+      expect(result.plan?.buildCommand).toBeUndefined();
+      expect(result.plan?.startCommand).toBe('static-pages-runtime');
+      expect(result.plan?.port).toBe(80);
+    });
+
+    it('should still detect Node.js projects when package.json has real build commands (e.g. Next.js / Vite)', () => {
+      const files = ['package.json', 'src/App.tsx', 'index.html'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'vite-app',
+          scripts: {
+            build: 'vite build',
+            preview: 'vite preview'
+          }
+        })
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('node');
+      expect(result.plan?.buildCommand).toBe('npm run build');
+    });
+
+    it('should still detect Node.js server projects when package.json has server start script', () => {
+      const files = ['package.json', 'server.js', 'index.html'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'express-server-app',
+          scripts: {
+            start: 'node server.js'
+          }
+        })
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('node');
+      expect(result.plan?.startCommand).toBe('npm start');
+    });
+
     it('should fail closed when committed tree contains unsupported files', async () => {
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role) VALUES ('usr_hs_dev', 'hsdev', 'Haskell Dev', 'user')
@@ -1676,6 +1756,182 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(data.success).toBe(false);
       expect(data.deploymentState).toBe('failed');
       expect(data.evidence.stage).toBe('smoke_check');
+    });
+
+    it('successfully deploys dronehunter static app with package.json (identity build, real smoke, R2 publish, active serving)', async () => {
+      const droneAppId = 'dronehunter-game';
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_drone_maker', 'dronemaker', 'Drone Maker', 'user')
+      `).run();
+      const token = 'token_drone_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_drone_maker', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const commitOid = '5cdee6f000000000000000000000000000000000';
+      const storageKey = 'repositories/dronehunter-game';
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'DroneHunter', 'Duck hunt shooter', 'Desc', 'usr_drone_maker', 'v1.0.0', 'MIT', '$19', 'None', '[]', '[]', '{}', 'draft')
+      `).bind(droneAppId).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_dronehunter_1', ?, 'usr_drone_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(droneAppId, droneAppId, storageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_dronehunter_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      const packageJsonContent = JSON.stringify({
+        name: 'dronehunter',
+        version: '1.0.0',
+        main: 'index.html',
+        scripts: {
+          dev: 'npx serve .',
+          test: 'node -e \'console.log("ok")\'',
+          build: "echo 'Build complete'"
+        }
+      });
+      const indexHtmlContent = '<!doctype html><html><head><title>DroneHunter</title></head><body><canvas></canvas></body></html>';
+      const fakePngContent = Buffer.from('fakepngbytes');
+
+      const fakeTarArchive = Buffer.from('fake-dronehunter-tar-bytes');
+
+      const gitsmithFetch: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === '/api/gateway/verify-commit') {
+          return Response.json({
+            success: true,
+            exists: true,
+            storageKey,
+            commitOid,
+            files: ['index.html', 'assets/drone.png', 'package.json', 'slop.config.json'],
+            manifestContents: {
+              'package.json': packageJsonContent,
+              'index.html': indexHtmlContent
+            }
+          });
+        }
+        if (url.pathname === '/api/gateway/archive') {
+          return new Response(fakeTarArchive, {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-tar', 'X-Gitsmith-Commit-Oid': commitOid }
+          });
+        }
+        throw new Error(`Unexpected GITSMITH URL: ${url.pathname}`);
+      };
+
+      let buildPlanPassedToRig: any = null;
+      const rigFetch: typeof fetch = async (_input, init) => {
+        const body = JSON.parse(String(init?.body || '{}'));
+        buildPlanPassedToRig = body.plan;
+
+        return Response.json({
+          success: true,
+          result: {
+            success: true,
+            exitCode: 0,
+            output: '[RIG] Static build succeeded with no build command. Real static serve smoke check passed.',
+            artifactDigest: 'sha256:dronehuntermanifestdigest123',
+            artifactKind: 'static',
+            staticFiles: [
+              {
+                path: 'index.html',
+                contentBase64: Buffer.from(indexHtmlContent).toString('base64'),
+                mediaType: 'text/html; charset=utf-8',
+                sizeBytes: indexHtmlContent.length,
+                sha256: 'sha256:dronehtml'
+              },
+              {
+                path: 'assets/drone.png',
+                contentBase64: fakePngContent.toString('base64'),
+                mediaType: 'image/png',
+                sizeBytes: fakePngContent.length,
+                sha256: 'sha256:dronepng'
+              }
+            ],
+            smokeCheck: {
+              passed: true,
+              statusCode: 200,
+              durationMs: 15,
+              responseSnippet: indexHtmlContent.slice(0, 100)
+            },
+            durationMs: 95
+          }
+        });
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: droneAppId
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          RIG_GATEWAY_URL: 'https://rig-provider.nates-software.com',
+          RIG_GATEWAY_SERVICE_SECRET: RIG_SECRET,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch,
+          __RIG_GATEWAY_FETCH: rigFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.deploymentState).toBe('active');
+      expect(data.isVerifiedActive).toBe(true);
+      expect(data.activeUrl).toBe(`https://${droneAppId}.nates-software.com`);
+
+      // Verify that detection classified as static with no build command
+      expect(buildPlanPassedToRig).toBeDefined();
+      expect(buildPlanPassedToRig.detectedType).toBe('static');
+      expect(buildPlanPassedToRig.buildCommand).toBeUndefined();
+      expect(buildPlanPassedToRig.startCommand).toBe('static-pages-runtime');
+
+      // Verify D1 records
+      const appRecord = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid, deployment_error
+        FROM app_listings WHERE id = ?
+      `).bind(droneAppId).first<any>();
+
+      expect(appRecord.deployment_state).toBe('active');
+      expect(appRecord.active_deployment_id).toBe(data.activeDeploymentId);
+      expect(appRecord.active_commit_oid).toBe(commitOid);
+      expect(appRecord.deployment_error).toBeNull();
+
+      // Verify asset serving from /serve/[app]/[[path]] route
+      const serveHtmlRes = await serveRoute.onRequestGet({
+        params: { app: droneAppId, path: 'index.html' },
+        env: { DB: ctx.d1, STORAGE: storage }
+      });
+      expect(serveHtmlRes.status).toBe(200);
+      expect(serveHtmlRes.headers.get('Content-Type')).toContain('text/html');
+      expect(await serveHtmlRes.text()).toBe(indexHtmlContent);
+
+      const serveAssetRes = await serveRoute.onRequestGet({
+        params: { app: droneAppId, path: ['assets', 'drone.png'] },
+        env: { DB: ctx.d1, STORAGE: storage }
+      });
+      expect(serveAssetRes.status).toBe(200);
+      expect(serveAssetRes.headers.get('Content-Type')).toBe('image/png');
     });
   });
 });
