@@ -182,14 +182,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     if (isRoot) {
       return (
-        <div className="fixed inset-0 bg-[#008080] flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-[#008080] flex items-center justify-center p-4 z-[130]">
           {panelContent}
         </div>
       );
     }
 
     return (
-      <div className="fixed inset-0 bg-black/25 flex items-center justify-center p-4 z-40">
+      <div className="fixed inset-0 bg-black/25 flex items-center justify-center p-4 z-[120]">
         {panelContent}
       </div>
     );
