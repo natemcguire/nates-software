@@ -25,13 +25,13 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
-          {app.id === 'wallart' || app.id === 'picfitai' ? (
+          {app.id === 'wallart' || app.id === 'picfitai' || app.id === 'certified-mailer' || app.id === 'dronehunter' ? (
             <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold">
-              <Shield size={11} /> Client-Side Sandbox
+              <Shield size={11} /> {app.id === 'dronehunter' ? 'Local Canvas Runtime' : 'Client-Side Sandbox'}
             </span>
           ) : (
-            <span className="bg-yellow-100 text-yellow-900 px-2 py-0.5 rounded border border-yellow-300 flex items-center gap-1 font-bold">
-              <Shield size={11} /> {app.id === 'dronehunter' ? 'Local browser session' : '2 / 10 Max Sessions'}
+            <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 font-bold">
+              <Shield size={11} /> Standalone Runtime
             </span>
           )}
           {liveUrl && <a

@@ -468,12 +468,13 @@ export function buildMakerLeaderboard(
     avatar?: string;
     bio?: string;
     dropDates: (Date | string | number)[];
-  }>
+  }>,
+  nowInput?: Date | string | number
 ): MakerLeaderboardEntry[] {
   if (!makers || makers.length === 0) return [];
 
   const leaderboard: MakerLeaderboardEntry[] = makers.map(m => {
-    const streakData = calculateMakerStreakFromHistory(m.dropDates || []);
+    const streakData = calculateMakerStreakFromHistory(m.dropDates || [], nowInput);
     return {
       id: m.id,
       username: m.username,
@@ -624,7 +625,8 @@ export function calculateMakerStreak(
  * current active streak, longest lifetime streak, and current badge tier.
  */
 export function calculateMakerStreakFromHistory(
-  dropDates: (Date | string | number)[]
+  dropDates: (Date | string | number)[],
+  nowInput?: Date | string | number
 ): {
   currentStreak: number;
   longestStreak: number;
@@ -682,8 +684,8 @@ export function calculateMakerStreakFromHistory(
     lastEvaluatedDate = currentDate;
   }
 
-  // Check if current streak has decayed relative to Date.now()
-  const now = new Date();
+  // Check if current streak has decayed relative to Date.now() / nowInput
+  const now = nowInput ? normalizeDate(nowInput) : new Date();
   if (lastEvaluatedDate) {
     const diffHoursFromNow = (now.getTime() - lastEvaluatedDate.getTime()) / (1000 * 60 * 60);
     if (diffHoursFromNow > 48) {
