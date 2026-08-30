@@ -25,7 +25,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(Object.keys(AGENT_TOOLS)).toContain('agy');
 
       const coords = getAppCoordinates();
-      expect(coords.length).toBeGreaterThanOrEqual(3);
+      expect(coords.length).toBeGreaterThanOrEqual(2);
 
       const drone = getAppCoordinate('dronehunter');
       expect(drone.appId).toBe('dronehunter');
@@ -40,10 +40,6 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       const mailer = getAppCoordinate('certified-mailer');
       expect(mailer.appId).toBe('certified-mailer');
       expect(mailer.slug).toBe('nate/certified-mailer');
-
-      const picfit = getAppCoordinate('picfitai');
-      expect(picfit.appId).toBe('picfitai');
-      expect(picfit.slug).toBe('nate/picfitai');
     });
 
     it('should handle custom repository coordinates cleanly', () => {
@@ -72,7 +68,6 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
     it('should preserve backward-compatible WORKTREE_CONFIGS', () => {
       expect(WORKTREE_CONFIGS.dronehunter.defaultPort).toBe(3004);
       expect(WORKTREE_CONFIGS['certified-mailer'].defaultPort).toBe(3005);
-      expect(WORKTREE_CONFIGS.picfitai.defaultPort).toBe(3006);
     });
   });
 
@@ -97,9 +92,6 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
 
       const mailerPresets = getFeaturePresets('certified-mailer');
       expect(mailerPresets.length).toBeGreaterThanOrEqual(3);
-
-      const picfitPresets = getFeaturePresets('picfitai');
-      expect(picfitPresets.length).toBeGreaterThanOrEqual(3);
     });
   });
 

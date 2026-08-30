@@ -49,7 +49,6 @@ describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
     const html = renderRig();
 
     // No fake URLs
-    expect(html).not.toContain('https://picfit.ai');
     expect(html).not.toContain('https://wallart-nate.rig.nates.software');
     expect(html).not.toContain('https://dronehunter.nates-software.com');
 

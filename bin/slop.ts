@@ -735,23 +735,6 @@ export async function handleFork(
             filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
           });
           templateApplied = 'certified-mailer';
-        } else if (selectedTemplate === 'picfitai' || selectedTemplate === 'picfit') {
-          const pfSources = [
-            pathMod?.resolve(pathMod.dirname(modulePath), '../../picfitai'),
-            pathMod?.resolve(pathMod.dirname(modulePath), '../picfitai'),
-            '/Volumes/MacMiniExtra/Projects/picfitai',
-            '/Users/nate/Projects/picfitai'
-          ];
-          const pfPath = pfSources.find((p: string) => p && fsMod.existsSync(p));
-          if (pfPath && fsMod.cpSync) {
-            fsMod.cpSync(pfPath, worktreePath, {
-              recursive: true,
-              filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
-            });
-            templateApplied = 'picfitai';
-          } else {
-            throw new Error(`PicFit starter is unavailable on this system.`);
-          }
         } else if (['minimal', 'blank', 'node', 'html', 'static'].includes(selectedTemplate.toLowerCase())) {
           fsMod.writeFileSync(`${worktreePath}/index.html`, `<!DOCTYPE html>\n<html>\n<head><title>${appId}</title></head>\n<body>\n  <h1>${appId}</h1>\n  <p>Created with SLOP CLI.</p>\n</body>\n</html>\n`);
           fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
@@ -765,7 +748,7 @@ export async function handleFork(
           fsMod.writeFileSync(`${worktreePath}/README.md`, `# ${appId}\n\nInitialized with minimal starter template.\n`);
           templateApplied = selectedTemplate;
         } else {
-          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, picfitai, minimal.`);
+          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, minimal.`);
         }
       }
 

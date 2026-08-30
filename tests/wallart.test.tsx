@@ -403,7 +403,7 @@ describe('EphemeralLiveApp Routing & Honest Fallback State', () => {
     expect(html).toContain('unknown-mystery-app');
     expect(html).toContain('DRAFT');
 
-    // Does NOT silently render PicFit
+    // Does NOT silently render fallback demo UI
     expect(html).not.toContain('WARDROBE &amp; MODEL SYNTHESIS');
     expect(html).not.toContain('Gemini Vision');
   });

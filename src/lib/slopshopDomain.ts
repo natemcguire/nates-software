@@ -170,22 +170,6 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     version: 'v1.1.0',
     price: '$25.00',
     icon: '📫'
-  },
-  picfitai: {
-    appId: 'picfitai',
-    name: 'PicFit',
-    author: 'nate',
-    slug: 'nate/picfitai',
-    repoUrl: '',
-    sshRemote: '',
-    defaultPort: 3006,
-    sqliteDatabase: '',
-    localPathHint: '~/Projects/picfitai',
-    techStack: ['TypeScript', 'Canvas API', 'Blob API', 'React 19'],
-    tagline: 'Private in-browser crop, resize, compression, and image export studio.',
-    version: 'v2.0.0',
-    price: '$20.00',
-    icon: '✨'
   }
 };
 
@@ -376,73 +360,6 @@ new file mode 100644
 +  readonly landlordName: string;
 +}`
     }
-  ],
-  picfitai: [
-    {
-      id: 'pf-batch-export',
-      name: '🗂️ Batch Image Export',
-      category: 'Image Workflow',
-      description: 'Apply one verified crop, resize, and format recipe to a local selection of images.',
-      prompt: 'Add a local-only batch queue that applies a chosen PicFit export recipe, reports each actual encoded size, and downloads results without uploading source images.',
-      targetFiles: ['src/components/BatchExportQueue.tsx', 'src/lib/batchExport.ts'],
-      verificationCriteria: [
-        'Every item is decoded and dimension-validated before canvas allocation',
-        'Failed items can be retried without restarting successful items',
-        'Object URLs and decoded image resources are released after export'
-      ],
-      blueprintDiffPreview: `diff --git a/src/lib/batchExport.ts b/src/lib/batchExport.ts
-new file mode 100644
---- /dev/null
-+++ b/src/lib/batchExport.ts
-@@ -0,0 +1,5 @@
-+export interface BatchExportItem {
-+  readonly file: File;
-+  readonly state: 'queued' | 'encoding' | 'ready' | 'error';
-+}`
-    },
-    {
-      id: 'pf-metadata-control',
-      name: '🛡️ Metadata Control',
-      category: 'Privacy',
-      description: 'Inspect which metadata will be removed by the browser canvas export path.',
-      prompt: 'Add an honest metadata inspector that distinguishes detectable source metadata from unknown metadata, without claiming guaranteed forensic erasure.',
-      targetFiles: ['src/components/MetadataInspector.tsx', 'src/lib/imageMetadata.ts'],
-      verificationCriteria: [
-        'Unsupported metadata is reported as unknown rather than absent',
-        'No source image or metadata is transmitted over the network',
-        'Tests cover malformed and truncated metadata blocks'
-      ],
-      blueprintDiffPreview: `diff --git a/src/lib/imageMetadata.ts b/src/lib/imageMetadata.ts
-new file mode 100644
---- /dev/null
-+++ b/src/lib/imageMetadata.ts
-@@ -0,0 +1,2 @@
-+export type MetadataFinding = 'present' | 'not-detected' | 'unknown';`
-    },
-    {
-      id: 'pf-custom-presets',
-      name: '📏 Reusable Export Presets',
-      category: 'Image Workflow',
-      description: 'Save named dimension, format, and quality recipes in browser-local storage or portable files.',
-      prompt: 'Add importable and exportable PicFit preset files plus optional browser-local storage, with no account or cloud-sync claim.',
-      targetFiles: ['src/components/ExportPresetManager.tsx', 'src/lib/exportPresets.ts'],
-      verificationCriteria: [
-        'Preset schema rejects invalid dimensions, formats, and quality values',
-        'Users can export and import portable preset JSON',
-        'Clearing local presets does not affect source images or downloads'
-      ],
-      blueprintDiffPreview: `diff --git a/src/lib/exportPresets.ts b/src/lib/exportPresets.ts
-new file mode 100644
---- /dev/null
-+++ b/src/lib/exportPresets.ts
-@@ -0,0 +1,6 @@
-+export interface ExportPreset {
-+  readonly name: string;
-+  readonly width: number;
-+  readonly height: number;
-+  readonly format: 'image/jpeg' | 'image/png' | 'image/webp';
-+}`
-    }
   ]
 };
 
@@ -560,18 +477,6 @@ export const WORKTREE_CONFIGS: Record<string, AppWorktreeConfig> = {
     repoUrl: '',
     defaultPort: 3005,
     suggestedPrompts: FEATURE_MOD_PRESETS['certified-mailer'].map(p => ({
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      description: p.description,
-      prompt: p.prompt
-    }))
-  },
-  picfitai: {
-    appId: 'picfitai',
-    repoUrl: '',
-    defaultPort: 3006,
-    suggestedPrompts: FEATURE_MOD_PRESETS.picfitai.map(p => ({
       id: p.id,
       name: p.name,
       category: p.category,

@@ -76,9 +76,8 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.drops).toHaveLength(1);
       expect(data.drops[0].id).toBe('solitaire-95');
 
-      // Seed apps (e.g. picfitai, certified-mailer) MUST NOT be present in authoritative output
+      // Seed apps (e.g. certified-mailer) MUST NOT be present in authoritative output
       const ids = data.drops.map((d: any) => d.id);
-      expect(ids).not.toContain('picfitai');
       expect(ids).not.toContain('certified-mailer');
     });
 
@@ -144,7 +143,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const ownedIds = data.shelf.map((s: any) => s.appId);
       expect(ownedIds).not.toContain('dronehunter');
       expect(ownedIds).not.toContain('certified-mailer');
-      expect(ownedIds).not.toContain('picfitai');
     });
 
     it('should reject direct minting and return canonical commerce licenses for authenticated user', async () => {
