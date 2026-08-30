@@ -108,12 +108,13 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         })
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok || (data && data.success === false)) {
+      // Require positive confirmation: a 2xx alone is not proof of persistence.
+      // Anything short of success:true with a canonical comment is treated as failure
+      // so the optimistic comment is rolled back rather than left as if it saved.
+      if (!res.ok || !data || data.success !== true || !data.comment) {
         throw new Error(data?.error || `Failed to post comment (Status ${res.status})`);
       }
-      if (data?.comment) {
-        setComments(prev => prev.map(c => c.id === tempCommentId ? data.comment : c));
-      }
+      setComments(prev => prev.map(c => c.id === tempCommentId ? data.comment : c));
     } catch (err: any) {
       setComments(prev => prev.filter(c => c.id !== tempCommentId));
       showAlert(
