@@ -379,6 +379,63 @@ export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string
 }
 
 /**
+ * Lists all file paths in the committed tree at a specific commit OID in a bare repository.
+ */
+export function listCommitFiles(reposRoot: string, storageKey: string, commitOid: string): string[] {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return [];
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return [];
+  if (!hasGitObject(reposRoot, storageKey, commitOid)) return [];
+
+  try {
+    const out = execFileSync('git', ['ls-tree', '-r', '--name-only', `${commitOid}^{tree}`, '--'], {
+      cwd: pathRes.resolvedPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 10_000
+    }).trim();
+
+    if (!out) return [];
+    return out.split('\n').map((f: string) => f.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Reads the text content of a file at a specific commit OID in a bare repository.
+ */
+export function readCommitFileContent(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string,
+  maxBytes: number = 1024 * 1024
+): string | null {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return null;
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return null;
+  if (!filePath || typeof filePath !== 'string' || filePath.startsWith('-') || filePath.includes('\0')) return null;
+
+  try {
+    const out = execFileSync('git', ['show', `${commitOid}:${filePath}`], {
+      cwd: pathRes.resolvedPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxBytes,
+      timeout: 10_000
+    });
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Lists all authoritative refs in a bare repository.
  */
 export function listAuthoritativeRefs(

@@ -797,7 +797,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should enforce deployment_state CHECK constraint on app_listings', async () => {
-      // Valid deployment states: draft, source_ready, building, deployable, active, failed, retired
+      // Valid deployment states: draft, source_ready, building, deployable, active, failed, retired, client_demo
       const valid = await ctx.d1.prepare(`
         SELECT id, deployment_state FROM app_listings WHERE id = 'american-gardener'
       `).first<{ id: string; deployment_state: string }>();
@@ -809,6 +809,24 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           UPDATE app_listings SET deployment_state = 'invalid_state' WHERE id = 'american-gardener'
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('should ensure no migration seeds active without an active_deployment_id', async () => {
+      const activeWithoutRevision = await ctx.d1.prepare(`
+        SELECT id, deployment_state, active_deployment_id
+        FROM app_listings
+        WHERE deployment_state = 'active' AND (active_deployment_id IS NULL OR trim(active_deployment_id) = '')
+      `).all();
+      expect(activeWithoutRevision.results).toEqual([]);
+
+      // Verify that the seed demo entries are seeded as client_demo, NOT active
+      const demos = await ctx.d1.prepare(`
+        SELECT id, deployment_state, active_deployment_id
+        FROM app_listings
+        WHERE id IN ('dronehunter', 'certified-mailer', 'wallart')
+      `).all<any>();
+      expect(demos.results?.map(d => d.deployment_state)).toEqual(['client_demo', 'client_demo', 'client_demo']);
+      demos.results?.forEach(d => expect(d.active_deployment_id).toBeNull());
     });
   });
 });

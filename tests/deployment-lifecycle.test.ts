@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import {
   APP_DEPLOYMENT_STATES,
@@ -7,22 +10,67 @@ import {
   detectRigRuntime,
   getHonestDeploymentMessage
 } from '../src/lib/deploymentLifecycle';
+import { initBareRepo } from '../src/lib/gitsmith/gitStorage';
 import { hashSessionToken } from '../functions/api/_session';
 import * as dropsApi from '../functions/api/drops';
 import * as deployApi from '../functions/api/deploy';
 
 describe('Authoritative Deployment Lifecycle Suite', () => {
   let ctx: TestD1Context;
+  let tempDir: string;
+  let reposRoot: string;
 
   beforeEach(async () => {
     ctx = await createTestD1Database({ foreignKeys: true });
+    tempDir = path.join('/tmp', `gitsmith-deploy-test-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
+    reposRoot = path.join(tempDir, 'repos');
+    fs.mkdirSync(reposRoot, { recursive: true });
+    process.env.GITSMITH_REPOS_ROOT = reposRoot;
   });
+
+  afterEach(() => {
+    if (tempDir && fs.existsSync(tempDir)) {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  // Helper to create a bare repository with real committed files
+  function createCommittedRepo(storageKey: string, files: Record<string, string>): { commitOid: string; repoPath: string } {
+    const initRes = initBareRepo(reposRoot, {
+      storageKey,
+      objectFormat: 'sha1',
+      defaultRef: 'refs/heads/main'
+    });
+    expect(initRes.success).toBe(true);
+
+    const workTree = path.join(tempDir, `wt-${Math.random().toString(36).substring(2, 7)}`);
+    fs.mkdirSync(workTree, { recursive: true });
+    execFileSync('git', ['init', workTree], { stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.email', 'test@nates.software'], { cwd: workTree, stdio: 'pipe' });
+
+    for (const [filePath, content] of Object.entries(files)) {
+      const fullPath = path.join(workTree, filePath);
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, content);
+    }
+
+    execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'feat: committed source'], { cwd: workTree, stdio: 'pipe' });
+    const commitOid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+
+    // Push to bare repo
+    execFileSync('git', ['remote', 'add', 'origin', initRes.repoPath], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workTree, stdio: 'pipe' });
+
+    return { commitOid, repoPath: initRes.repoPath };
+  }
 
   // ==========================================================================
   // 1. STATE MODEL & D1 SCHEMA INTEGRITY
   // ==========================================================================
   describe('1. State Model & D1 Schema Integrity', () => {
-    it('should define all authoritative deployment states', () => {
+    it('should define all authoritative deployment states including client_demo', () => {
       expect(APP_DEPLOYMENT_STATES).toEqual([
         'draft',
         'source_ready',
@@ -30,7 +78,8 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         'deployable',
         'active',
         'failed',
-        'retired'
+        'retired',
+        'client_demo'
       ]);
     });
 
@@ -42,6 +91,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(isValidDeploymentState('active')).toBe(true);
       expect(isValidDeploymentState('failed')).toBe(true);
       expect(isValidDeploymentState('retired')).toBe(true);
+      expect(isValidDeploymentState('client_demo')).toBe(true);
       expect(isValidDeploymentState('unknown')).toBe(false);
       expect(isValidDeploymentState('')).toBe(false);
       expect(isValidDeploymentState(null)).toBe(false);
@@ -85,14 +135,36 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
     });
+
+    it('should ensure no migration seeds active without an active_deployment_id', async () => {
+      const activeWithoutRevision = await ctx.d1.prepare(`
+        SELECT id, deployment_state, active_deployment_id
+        FROM app_listings
+        WHERE deployment_state = 'active' AND (active_deployment_id IS NULL OR trim(active_deployment_id) = '')
+      `).all();
+
+      expect(activeWithoutRevision.results).toEqual([]);
+
+      // Verify seed client-side demos are marked client_demo, NOT active
+      const demos = await ctx.d1.prepare(`
+        SELECT id, deployment_state, active_deployment_id
+        FROM app_listings
+        WHERE id IN ('dronehunter', 'certified-mailer', 'wallart')
+      `).all<any>();
+
+      expect(demos.results?.length).toBe(3);
+      demos.results?.forEach(d => {
+        expect(d.deployment_state).toBe('client_demo');
+        expect(d.active_deployment_id).toBeNull();
+      });
+    });
   });
 
   // ==========================================================================
-  // 2. PUBLICATION INVARIANT: CATALOG PUBLICATION != ACTIVE DEPLOYMENT
+  // 2. PUBLICATION INVARIANT & REPUBLISH RESET
   // ==========================================================================
-  describe('2. Publication Invariant (Catalog Listing != Active Deployment)', () => {
+  describe('2. Publication Invariant & Republish Reset', () => {
     it('should set deployment_state to draft upon new drop publication', async () => {
-      // Create session for user
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role) VALUES ('usr_alice', 'alice', 'Alice Maker', 'user')
       `).run();
@@ -128,27 +200,101 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
 
       // Check D1 record: listing_status is active (in catalog), but deployment_state is draft!
       const listing = await ctx.d1.prepare(`
-        SELECT id, listing_status, deployment_state, deployment_error FROM app_listings WHERE id = ?
+        SELECT id, listing_status, deployment_state, deployment_error, active_deployment_id FROM app_listings WHERE id = ?
       `).bind(data.id).first<any>();
 
       expect(listing.listing_status).toBe('active');
       expect(listing.deployment_state).toBe('draft');
+      expect(listing.active_deployment_id).toBeNull();
       expect(listing.deployment_error).toContain('No deployable revision exists');
     });
 
-    it('should return deployment lifecycle fields in GET /api/drops', async () => {
-      const req = new Request('https://nates-software.com/api/drops?sort=newest');
-      const res = await dropsApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
+    it('should reset deployment_state and clear active_deployment_id when republishing an active listing', async () => {
+      // Setup existing user and app that was previously active
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_bob', 'bob', 'Bob Maker', 'user')
+      `).run();
+      const token = 'token_bob_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_bob', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      // 1. Insert app_listings first with active_deployment_id NULL
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, listing_status, deployment_state, active_deployment_id, active_commit_oid
+        ) VALUES (
+          'active-republish-app', 'Active Republish App', 'Tag', 'Desc', 'usr_bob', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'active', 'active', NULL, 'oid_previous_commit_456'
+        )
+      `).run();
+
+      // 2. Insert repository referencing app_listings
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_bob_1', 'active-republish-app', 'usr_bob', 'active-republish-app', 'public', 'sha1', 'refs/heads/main', 'repositories/active-republish-app', 'active')
+      `).run();
+
+      // 3. Insert build_run referencing repository
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, exit_code, started_at, finished_at)
+        VALUES ('br_bob_1', 'repo_bob_1', 'oid_previous_commit_456', 'verification', 'passed', 'sha256:image', 'npm run build', 'sha256:manifest', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run();
+
+      // 4. Insert deployment_revisions referencing app_listings, repository, build_run, user
+      await ctx.d1.prepare(`
+        INSERT INTO deployment_revisions (id, app_id, repository_id, commit_oid, build_run_id, environment, revision_number, status, runtime_config_digest, deployed_by_user_id, deployed_at)
+        VALUES ('rev_previous_active_123', 'active-republish-app', 'repo_bob_1', 'oid_previous_commit_456', 'br_bob_1', 'production', 1, 'healthy', 'sha256:config', 'usr_bob', CURRENT_TIMESTAMP)
+      `).run();
+
+      // 5. Update app_listings to reference deployment_revision
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET active_deployment_id = 'rev_previous_active_123' WHERE id = 'active-republish-app'
+      `).run();
+
+      // Verify app was active
+      const before = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid FROM app_listings WHERE id = 'active-republish-app'
+      `).first<any>();
+      expect(before.deployment_state).toBe('active');
+      expect(before.active_deployment_id).toBe('rev_previous_active_123');
+
+      // Republish a new version (1.1.0)
+      const republishReq = new Request('https://nates-software.com/api/drops', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          id: 'active-republish-app',
+          name: 'Active Republish App',
+          version: '1.1.0',
+          tagline: 'Updated tagline for v1.1.0',
+          price: '$15'
+        })
+      });
+
+      const res = await dropsApi.onRequestPost({ request: republishReq, env: { DB: ctx.d1 } });
       const data: any = await res.json();
 
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(Array.isArray(data.drops)).toBe(true);
 
-      const gardener = data.drops.find((d: any) => d.id === 'american-gardener');
-      expect(gardener).toBeDefined();
-      expect(gardener.deploymentState).toBe('draft');
-      expect(gardener.deploymentError).toContain('No deployable revision exists for American Gardener');
+      // Verify that deployment_state has been reset to draft and active_deployment_id is cleared
+      const after = await ctx.d1.prepare(`
+        SELECT version, deployment_state, active_deployment_id, active_commit_oid, deployment_error
+        FROM app_listings WHERE id = 'active-republish-app'
+      `).first<any>();
+
+      expect(after.version).toBe('1.1.0');
+      expect(after.deployment_state).toBe('draft');
+      expect(after.active_deployment_id).toBeNull();
+      expect(after.active_commit_oid).toBeNull();
+      expect(after.deployment_error).toContain('No deployable revision exists');
     });
   });
 
@@ -182,6 +328,18 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(message.headline).toBe('Deployment failed for Bad App.');
       expect(message.subtext).toBe('Candidate build failed: Cargo.toml parse error at line 14.');
       expect(message.state).toBe('failed');
+    });
+
+    it('should produce honest message for client_demo state', () => {
+      const message = getHonestDeploymentMessage({
+        id: 'wallart',
+        name: 'WallArt Canvas Pro',
+        deploymentState: 'client_demo'
+      });
+
+      expect(message.headline).toContain('running as a client-side demo');
+      expect(message.subtext).toContain('without a backend deployment revision');
+      expect(message.state).toBe('client_demo');
     });
 
     it('should return honest diagnostic payload from GET /api/deploy', async () => {
@@ -323,19 +481,41 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
   });
 
   // ==========================================================================
-  // 5. FAIL-CLOSED DEPLOYMENT LIFECYCLE EXECUTION
+  // 5. COMMITTED SOURCE INSPECTION & RUNTIME DETECTION
   // ==========================================================================
-  describe('5. Fail-Closed Deployment Lifecycle Execution', () => {
-    it('should fail closed when attempting to deploy an app without GITSMITH source', async () => {
-      // Create session for usr_nate (creator of american-gardener)
-      const token = 'token_nate_gardener';
+  describe('5. Committed Source Tree Inspection vs Request Metadata', () => {
+    it('should detect project type directly from the committed Git tree when files are omitted from request', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_python_dev', 'pydev', 'Python Dev', 'user')
+      `).run();
+      const token = 'token_pydev_123';
       const tokenHash = await hashSessionToken(token);
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
-        VALUES (?, 'usr_nate', datetime('now', '+1 hour'))
+        VALUES (?, 'usr_python_dev', datetime('now', '+1 hour'))
       `).bind(tokenHash).run();
 
-      // Attempt deploy on american-gardener (which has no GITSMITH repo/commit)
+      // Create a real bare repo on disk with committed Python source
+      const storageKey = 'repositories/python-demo-app';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'requirements.txt': 'fastapi==0.110.0\nuvicorn==0.28.0\n',
+        'main.py': 'from fastapi import FastAPI\napp = FastAPI()\n@app.get("/")\ndef root(): return {"ok": True}\n'
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('python-demo-app', 'Python Demo App', 'Tag', 'Desc', 'usr_python_dev', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_py_1', 'python-demo-app', 'usr_python_dev', 'python-demo-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_py_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      // Call /api/deploy with NO files provided in request body
       const req = new Request('https://nates-software.com/api/deploy', {
         method: 'POST',
         headers: {
@@ -344,119 +524,124 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         },
         body: JSON.stringify({
           action: 'deploy',
-          appId: 'american-gardener'
+          appId: 'python-demo-app'
+          // files omitted! Must read from committed git tree
         })
       });
 
-      const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+      const data: any = await res.json();
+
+      // RIG is not configured in this test, so it should fail closed at the build stage,
+      // but project type MUST be detected as python from the committed tree!
+      expect(res.status).toBe(503);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.evidence.detectedType).toBe('python');
+      expect(data.evidence.plan.startCommand).toBe('python main.py');
+
+      const app = await ctx.d1.prepare(`
+        SELECT detected_project_type, deployment_plan_json FROM app_listings WHERE id = 'python-demo-app'
+      `).first<any>();
+      expect(app.detected_project_type).toBe('python');
+    });
+
+    it('should fail closed when committed tree contains unsupported files, even if request provides fake index.html', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_haskell_dev', 'hsdev', 'Haskell Dev', 'user')
+      `).run();
+      const token = 'token_hsdev_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_haskell_dev', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      // Create a real bare repo on disk with unsupported source
+      const storageKey = 'repositories/unsupported-repo';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'Main.hs': 'main = putStrLn "Hello"\n',
+        'project.cabal': 'name: unsupported\n'
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('unsupported-app', 'Unsupported App', 'Tag', 'Desc', 'usr_haskell_dev', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_hs_1', 'unsupported-app', 'usr_haskell_dev', 'unsupported-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_hs_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      // Caller tries to bypass unsupported detection by passing fake files: ['index.html']
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'unsupported-app',
+          files: ['index.html'] // fake caller metadata! Must be ignored in favor of committed tree.
+        })
+      });
+
+      const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
       const data: any = await res.json();
 
       expect(res.status).toBe(422);
       expect(data.success).toBe(false);
-      expect(data.deploymentState).toBe('draft');
-      expect(data.error).toContain('No deployable revision exists for American Gardener');
-      expect(data.evidence.stage).toBe('source_verification');
-
-      // Verify D1 state
-      const app = await ctx.d1.prepare(`
-        SELECT deployment_state, deployment_error FROM app_listings WHERE id = 'american-gardener'
-      `).first<any>();
-      expect(app.deployment_state).toBe('draft');
-      expect(app.deployment_error).toContain('No deployable revision exists');
-    });
-
-    it('should fail closed with specific error when RIG backend is unconfigured', async () => {
-      // Setup user + repository + commit in GITSMITH
-      await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role) VALUES ('usr_dev', 'dev_user', 'Developer', 'user')
-      `).run();
-      const token = 'token_dev_123';
-      const tokenHash = await hashSessionToken(token);
-      await ctx.d1.prepare(`
-        INSERT INTO user_sessions (token_hash, user_id, expires_at)
-        VALUES (?, 'usr_dev', datetime('now', '+1 hour'))
-      `).bind(tokenHash).run();
-      await ctx.d1.prepare(`
-        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
-        VALUES ('test-node-app', 'Test Node App', 'Tag', 'Desc', 'usr_dev', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
-      `).run();
-      await ctx.d1.prepare(`
-        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
-        VALUES ('repo_node_1', 'test-node-app', 'usr_dev', 'test-node-app', 'public', 'sha1', 'refs/heads/main', 'repositories/test-node-app', 'active')
-      `).run();
-      await ctx.d1.prepare(`
-        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
-        VALUES ('repo_node_1', 'refs/heads/main', 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0')
-      `).run();
-
-      // Trigger deploy without RIG_GATEWAY_URL configured
-      const req = new Request('https://nates-software.com/api/deploy', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          action: 'deploy',
-          appId: 'test-node-app',
-          files: ['package.json', 'index.js'],
-          fileContents: {
-            'package.json': JSON.stringify({ name: 'test-node-app', scripts: { start: 'node index.js' } })
-          }
-        })
-      });
-
-      const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
-      const data: any = await res.json();
-
-      expect(res.status).toBe(503);
-      expect(data.success).toBe(false);
       expect(data.deploymentState).toBe('failed');
-      expect(data.error).toContain('RIG provider gateway is not configured or Docker daemon is unreachable');
-      expect(data.evidence.stage).toBe('build');
+      expect(data.error).toContain('Unsupported project type');
+      expect(data.evidence.stage).toBe('detection');
 
-      // Verify D1 state is failed, NOT active
       const app = await ctx.d1.prepare(`
-        SELECT deployment_state, deployment_error, detected_project_type FROM app_listings WHERE id = 'test-node-app'
+        SELECT deployment_state, detected_project_type FROM app_listings WHERE id = 'unsupported-app'
       `).first<any>();
       expect(app.deployment_state).toBe('failed');
-      expect(app.deployment_error).toContain('RIG provider gateway is not configured');
-      expect(app.detected_project_type).toBe('node');
-
-      // Verify build_runs record was written with failed status
-      const buildRun = await ctx.d1.prepare(`
-        SELECT status, exit_code, build_command FROM build_runs WHERE repository_id = 'repo_node_1'
-      `).first<any>();
-      expect(buildRun).toBeDefined();
-      expect(buildRun.status).toBe('failed');
-      expect(buildRun.exit_code).toBe(1);
+      expect(app.detected_project_type).toBe('unsupported');
     });
+  });
 
-    it('should promote to active only when real RIG provider verifies candidate build', async () => {
-      // Setup user + repository + commit in GITSMITH
+  // ==========================================================================
+  // 5. FAIL-CLOSED DEPLOYMENT EXECUTION & ACTUAL RIG VERIFICATION
+  // ==========================================================================
+  describe('5. Fail-Closed RIG Execution & Genuine Verified Promotion', () => {
+    it('should fail closed when RIG provider probe succeeds but container execution fails', async () => {
       await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role) VALUES ('usr_dev2', 'dev_user2', 'Developer 2', 'user')
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_smoke_fail', 'smokefail', 'Smoke Tester', 'user')
       `).run();
-      const token = 'token_dev2_456';
+      const token = 'token_smokefail_123';
       const tokenHash = await hashSessionToken(token);
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
-        VALUES (?, 'usr_dev2', datetime('now', '+1 hour'))
+        VALUES (?, 'usr_smoke_fail', datetime('now', '+1 hour'))
       `).bind(tokenHash).run();
+
+      const storageKey = 'repositories/smoke-fail-app';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'package.json': JSON.stringify({ name: 'smoke-fail-app', scripts: { start: 'node server.js' } }),
+        'server.js': 'console.log("Starting server");\n'
+      });
+
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
-        VALUES ('test-verified-app', 'Test Verified App', 'Tag', 'Desc', 'usr_dev2', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+        VALUES ('smoke-fail-app', 'Smoke Fail App', 'Tag', 'Desc', 'usr_smoke_fail', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
       `).run();
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
-        VALUES ('repo_ver_1', 'test-verified-app', 'usr_dev2', 'test-verified-app', 'public', 'sha1', 'refs/heads/main', 'repositories/test-verified-app', 'active')
-      `).run();
+        VALUES ('repo_sf_1', 'smoke-fail-app', 'usr_smoke_fail', 'smoke-fail-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
       await ctx.d1.prepare(`
         INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
-        VALUES ('repo_ver_1', 'refs/heads/main', 'f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0')
-      `).run();
+        VALUES ('repo_sf_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
 
-      // Mock production RIG gateway provider capability probe response
+      // Mock RIG gateway: capabilities probe passes, but instance creation returns crashed state
       const mockFetch = async (url: string | URL | Request) => {
         const urlStr = url.toString();
         if (urlStr.includes('/capabilities')) {
@@ -470,11 +655,26 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
             isolation: { nonRoot: true, readOnlyRootfs: true, noDockerSocketMount: true }
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
+        if (urlStr.includes('/v1/instances/create')) {
+          // Container crashed during smoke test
+          return new Response(JSON.stringify({
+            success: true,
+            result: {
+              spec: { id: 'rig-box-crashed' },
+              observed: {
+                lifecycle: 'crashed',
+                exitCode: 1,
+                errorMessage: 'Application crashed immediately on startup with uncaught exception'
+              }
+            }
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         return new Response('Not Found', { status: 404 });
       };
 
       const env = {
         DB: ctx.d1,
+        GITSMITH_REPOS_ROOT: reposRoot,
         RIG_GATEWAY_URL: 'https://rig-gateway.internal:3000',
         RIG_GATEWAY_SERVICE_SECRET: 'super-secret-service-token-that-is-longer-than-32-chars',
         __RIG_GATEWAY_FETCH: mockFetch
@@ -488,11 +688,109 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         },
         body: JSON.stringify({
           action: 'deploy',
-          appId: 'test-verified-app',
-          files: ['package.json', 'index.js'],
-          fileContents: {
-            'package.json': JSON.stringify({ name: 'test-verified-app', scripts: { start: 'node index.js' } })
-          }
+          appId: 'smoke-fail-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({ request: req, env });
+      const data: any = await res.json();
+
+      // Must fail closed with 503 and state failed!
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.error).toContain('RIG smoke/health check failed');
+      expect(data.evidence.stage).toBe('smoke_check');
+
+      // Verify D1 state is failed, active_deployment_id is NULL
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, deployment_error FROM app_listings WHERE id = 'smoke-fail-app'
+      `).first<any>();
+      expect(app.deployment_state).toBe('failed');
+      expect(app.active_deployment_id).toBeNull();
+      expect(app.deployment_error).toContain('smoke/health check failed');
+    });
+
+    it('should promote to active with real artifact digest and active_deployment_id on genuine pass', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_real_deploy', 'realdev', 'Real Deployer', 'user')
+      `).run();
+      const token = 'token_real_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_real_deploy', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const storageKey = 'repositories/real-verified-app';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'package.json': JSON.stringify({
+          name: 'real-verified-app',
+          scripts: { build: 'echo building', start: 'node index.js' }
+        }),
+        'index.js': 'console.log("Serving on port 3000");\n'
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('real-verified-app', 'Real Verified App', 'Tag', 'Desc', 'usr_real_deploy', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_real_1', 'real-verified-app', 'usr_real_deploy', 'real-verified-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_real_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      // Mock production RIG gateway: capabilities probe passes AND instance reaches healthy
+      const mockFetch = async (url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/capabilities')) {
+          return new Response(JSON.stringify({
+            apiVersion: 1,
+            provider: 'docker',
+            liveContainers: true,
+            ephemeralCleanup: true,
+            authRequired: true,
+            limits: { maxMemoryMb: 256, maxTtlSeconds: 3600 },
+            isolation: { nonRoot: true, readOnlyRootfs: true, noDockerSocketMount: true }
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (urlStr.includes('/v1/instances/create')) {
+          return new Response(JSON.stringify({
+            success: true,
+            result: {
+              spec: { id: 'rig-box-passed' },
+              observed: {
+                lifecycle: 'healthy',
+                allocatedPort: 3001,
+                startedAt: new Date().toISOString()
+              }
+            }
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return new Response('Not Found', { status: 404 });
+      };
+
+      const env = {
+        DB: ctx.d1,
+        GITSMITH_REPOS_ROOT: reposRoot,
+        RIG_GATEWAY_URL: 'https://rig-gateway.internal:3000',
+        RIG_GATEWAY_SERVICE_SECRET: 'super-secret-service-token-that-is-longer-than-32-chars',
+        __RIG_GATEWAY_FETCH: mockFetch
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'real-verified-app'
         })
       });
 
@@ -502,23 +800,54 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
       expect(data.deploymentState).toBe('active');
-      expect(data.activeUrl).toBe('https://test-verified-app.nates-software.com');
+      expect(data.activeUrl).toBe('https://real-verified-app.nates-software.com');
+      expect(data.artifactDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
 
-      // Verify D1 state is now active with active_deployment_id and active_commit_oid
+      // Verify D1 state is active with valid active_deployment_id and active_commit_oid
       const app = await ctx.d1.prepare(`
-        SELECT deployment_state, active_deployment_id, active_commit_oid FROM app_listings WHERE id = 'test-verified-app'
+        SELECT deployment_state, active_deployment_id, active_commit_oid, deployment_error
+        FROM app_listings WHERE id = 'real-verified-app'
       `).first<any>();
+
       expect(app.deployment_state).toBe('active');
       expect(app.active_deployment_id).toBe(data.deploymentRevisionId);
-      expect(app.active_commit_oid).toBe('f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e0');
+      expect(app.active_commit_oid).toBe(commitOid);
+      expect(app.deployment_error).toBeNull();
 
-      // Verify deployment_revisions record exists with status healthy
+      // Verify deployment_revisions record
       const rev = await ctx.d1.prepare(`
-        SELECT status, environment, url FROM deployment_revisions WHERE id = ?
+        SELECT id, status, environment, url, commit_oid, runtime_config_digest
+        FROM deployment_revisions WHERE id = ?
       `).bind(data.deploymentRevisionId).first<any>();
+
       expect(rev.status).toBe('healthy');
       expect(rev.environment).toBe('production');
-      expect(rev.url).toBe('https://test-verified-app.nates-software.com');
+      expect(rev.url).toBe('https://real-verified-app.nates-software.com');
+      expect(rev.commit_oid).toBe(commitOid);
+      expect(rev.runtime_config_digest).toBe(data.artifactDigest);
+
+      // Verify build_artifacts record
+      const artifact = await ctx.d1.prepare(`
+        SELECT kind, sha256, size_bytes, media_type
+        FROM build_artifacts WHERE build_run_id = (SELECT build_run_id FROM deployment_revisions WHERE id = ?)
+      `).bind(data.deploymentRevisionId).first<any>();
+
+      expect(artifact.kind).toBe('bundle');
+      expect(artifact.sha256).toBe(data.artifactDigest);
+      expect(artifact.size_bytes).toBeGreaterThan(0);
+      expect(artifact.media_type).toBe('application/x-tar');
+
+      // GET /api/deploy query verifies active state with activeUrl
+      const getReq = new Request('https://nates-software.com/api/deploy?appId=real-verified-app');
+      const getRes = await deployApi.onRequestGet({ request: getReq, env: { DB: ctx.d1 } });
+      const getData: any = await getRes.json();
+
+      expect(getData.isVerifiedActive).toBe(true);
+      expect(getData.deploymentState).toBe('active');
+      expect(getData.activeUrl).toBe('https://real-verified-app.nates-software.com');
+      expect(getData.activeDeploymentId).toBe(data.deploymentRevisionId);
+      expect(getData.activeCommitOid).toBe(commitOid);
     });
   });
 });
+

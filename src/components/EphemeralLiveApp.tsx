@@ -13,13 +13,16 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
   const liveUrl = /^https?:\/\//i.test(configuredLiveUrl) ? configuredLiveUrl : undefined;
 
-  const deploymentState: AppDeploymentState = app.deploymentState || (
-    (app.id === 'dronehunter' || app.id === 'certified-mailer' || app.id === 'wallart')
-      ? 'active'
-      : 'draft'
+  const isClientDemo = app.deploymentState === 'client_demo' || (
+    (app.id === 'dronehunter' || app.id === 'certified-mailer' || app.id === 'wallart') &&
+    Boolean(app.isDemo || !app.deploymentState)
   );
 
-  const isVerifiedActive = deploymentState === 'active';
+  const deploymentState: AppDeploymentState = app.deploymentState || (
+    isClientDemo ? 'client_demo' : 'draft'
+  );
+
+  const isVerifiedActive = deploymentState === 'active' && Boolean(app.activeDeploymentId);
   const honestInfo = getHonestDeploymentMessage({
     id: app.id,
     name: app.name,
@@ -32,7 +35,13 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
       case 'active':
         return (
           <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
-            <Shield size={11} /> ACTIVE (Client-Side Sandbox)
+            <Shield size={11} /> ACTIVE (VERIFIED DEPLOYMENT)
+          </span>
+        );
+      case 'client_demo':
+        return (
+          <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <Shield size={11} /> CLIENT DEMO (Client-Side Sandbox)
           </span>
         );
       case 'deployable':
@@ -80,7 +89,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
       {/* Top Header Bar */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2 shadow-sm select-none">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
+          <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive || isClientDemo ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
           <span className="font-bold text-xs">{app.name} Live Sandbox</span>
           <span className="text-gray-400 font-mono text-[11px]">({app.version})</span>
         </div>
@@ -104,7 +113,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
 
       {/* Main Viewport */}
       <div className="flex-1 bg-white overflow-hidden flex flex-col">
-        {isVerifiedActive && app.id === 'dronehunter' ? (
+        {isClientDemo && app.id === 'dronehunter' ? (
           <div className="flex-1 bg-black border-2 border-gray-800 rounded overflow-hidden relative">
             <iframe
               src="/dronehunter-game/index.html"
@@ -113,11 +122,11 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
               allow="autoplay; fullscreen"
             />
           </div>
-        ) : isVerifiedActive && app.id === 'certified-mailer' ? (
+        ) : isClientDemo && app.id === 'certified-mailer' ? (
           <div className="flex-1 overflow-hidden">
             <CertifiedMailerStudio />
           </div>
-        ) : isVerifiedActive && app.id === 'wallart' ? (
+        ) : isClientDemo && app.id === 'wallart' ? (
           <div className="flex-1 overflow-hidden">
             <WallArtStudio />
           </div>

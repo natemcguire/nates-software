@@ -26,17 +26,19 @@ export const APP_DEPLOYMENT_STATES: readonly AppDeploymentState[] = [
   'deployable',
   'active',
   'failed',
-  'retired'
+  'retired',
+  'client_demo'
 ] as const;
 
 export const DEPLOYMENT_STATE_TRANSITIONS: Readonly<Record<AppDeploymentState, readonly AppDeploymentState[]>> = {
-  draft: ['source_ready', 'building', 'failed', 'retired'],
+  draft: ['source_ready', 'building', 'failed', 'retired', 'client_demo'],
   source_ready: ['building', 'failed', 'retired', 'draft'],
   building: ['deployable', 'failed', 'retired'],
   deployable: ['active', 'building', 'failed', 'retired'],
   active: ['building', 'deployable', 'failed', 'retired'],
   failed: ['source_ready', 'building', 'draft', 'retired'],
-  retired: ['draft', 'source_ready']
+  retired: ['draft', 'source_ready'],
+  client_demo: ['draft', 'source_ready', 'retired']
 };
 
 export function isValidDeploymentState(state: unknown): state is AppDeploymentState {
@@ -596,6 +598,18 @@ export function getHonestDeploymentMessage(
       state: 'retired',
       guidance: [
         'The catalog entry or deployment has been decommissioned by the maker.'
+      ]
+    };
+  }
+
+  if (state === 'client_demo') {
+    return {
+      headline: `${name} is running as a client-side demo.`,
+      subtext: 'This studio runs directly in your browser without a backend deployment revision.',
+      state: 'client_demo',
+      guidance: [
+        'The application operates locally in the browser.',
+        'To deploy a standalone backend container, import source to GITSMITH and trigger RIG.'
       ]
     };
   }

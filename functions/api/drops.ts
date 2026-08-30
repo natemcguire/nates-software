@@ -258,7 +258,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         storage = excluded.storage,
         tags = excluded.tags,
         screenshots = excluded.screenshots,
-        binaries = excluded.binaries
+        binaries = excluded.binaries,
+        deployment_state = excluded.deployment_state,
+        deployment_error = excluded.deployment_error,
+        deployment_evidence_json = NULL,
+        active_deployment_id = NULL,
+        active_commit_oid = NULL
       WHERE app_listings.creator_id = excluded.creator_id
       RETURNING id, deployment_state
     `).bind(
