@@ -278,6 +278,22 @@ export class MockDockerCommandRunner implements DockerCommandRunner {
       };
     }
 
+    if (subcommand === 'run') {
+      const isSmokeCheck = args.some(a => typeof a === 'string' && (a.includes('statusCode') || a.includes('http.createServer')));
+      if (isSmokeCheck) {
+        return {
+          stdout: JSON.stringify({ passed: true, statusCode: 200, responseSnippet: 'OK' }),
+          stderr: '',
+          exitCode: 0
+        };
+      }
+      return {
+        stdout: '',
+        stderr: '',
+        exitCode: 0
+      };
+    }
+
     return {
       stdout: '',
       stderr: '',

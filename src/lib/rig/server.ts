@@ -92,7 +92,7 @@ function ownerFromHeaders(req: IncomingMessage): RigOwnerIdentity | null {
 
 export function createRigGatewayServer(
   config: RigGatewayConfig,
-  options?: RigControlApiOptions & { api?: RigDockerControlApi; stateStore?: RigInstanceStateStore }
+  options?: RigControlApiOptions & { api?: RigDockerControlApi; stateStore?: RigInstanceStateStore; deployExecutor?: (params: any) => Promise<any> }
 ): Server {
   validateRigGatewayConfig(config);
   const api = options?.api || new RigDockerControlApi(options);
@@ -124,6 +124,39 @@ export function createRigGatewayServer(
         isolation: { nonRoot: true, readOnlyRootfs: true, noDockerSocketMount: true, capDropAll: true },
         preflight
       });
+      return;
+    }
+
+    if (req.method === 'POST' && (url.pathname === '/v1/build' || url.pathname === '/v1/deploy/build' || url.pathname === '/v1/deploy')) {
+      const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!tokenMatches(bearer, config.serviceSecret)) {
+        send(res, 401, { success: false, error: 'Unauthorized RIG control-plane caller.' });
+        return;
+      }
+      try {
+        const body = await readJson(req);
+        const { appId, repositoryId, commitOid, plan, sourceArchiveBase64, runnerImageDigest, timeoutMs } = body;
+        if (!appId || !commitOid || !sourceArchiveBase64 || !plan) {
+          send(res, 400, { success: false, error: 'appId, commitOid, plan, and sourceArchiveBase64 are required.' });
+          return;
+        }
+
+        const sourceArchive = Buffer.from(sourceArchiveBase64, 'base64');
+        const executor = options?.deployExecutor || (await import('./deployExecutor.ts')).executeRigDeployBuild;
+        const result = await executor({
+          appId,
+          repositoryId: repositoryId || appId,
+          commitOid,
+          sourceArchive,
+          plan,
+          runnerImageDigest,
+          timeoutMs: typeof timeoutMs === 'number' ? timeoutMs : undefined
+        });
+
+        send(res, result.success ? 200 : 422, { success: result.success, result });
+      } catch (error: any) {
+        send(res, 500, { success: false, error: error?.message || 'Deploy build execution failed.' });
+      }
       return;
     }
 
