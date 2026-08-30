@@ -213,22 +213,104 @@ export function repositoryRoleAllows(role: RepositoryRole, action: RepositoryAct
 
 export interface RefPolicy {
   readonly refPattern: string;
-  readonly requireSignedCommits: boolean;
-  readonly requirePassingBuild: boolean;
-  readonly minimumApprovals: number;
-  readonly allowForcePush: boolean;
-  readonly allowDelete: boolean;
+  readonly requireSignedCommits?: boolean | number;
+  readonly requirePassingBuild?: boolean | number;
+  readonly minimumApprovals?: number;
+  readonly allowForcePush?: boolean | number;
+  readonly allowDelete?: boolean | number;
+}
+
+export function normalizeRefPattern(refOrPattern: string): string {
+  if (!refOrPattern || typeof refOrPattern !== 'string') return '';
+  const trimmed = refOrPattern.trim();
+  if (trimmed.startsWith('refs/')) return trimmed;
+  return `refs/heads/${trimmed}`;
 }
 
 export function refPatternMatches(pattern: string, refName: string): boolean {
-  if (!pattern.endsWith('*')) return pattern === refName;
-  return refName.startsWith(pattern.slice(0, -1));
+  if (!pattern || typeof pattern !== 'string') return false;
+  if (!refName || typeof refName !== 'string') return false;
+  const p = pattern.trim();
+  const r = refName.trim();
+  const normP = normalizeRefPattern(p);
+  const normR = normalizeRefPattern(r);
+
+  if (r === p || normR === normP || normR === p || r === normP) return true;
+
+  if (p.endsWith('*')) {
+    const prefix = p.slice(0, -1);
+    const normPrefix = normP.slice(0, -1);
+    return r.startsWith(prefix) || normR.startsWith(normPrefix) || normR.startsWith(prefix) || r.startsWith(normPrefix);
+  }
+  return false;
+}
+
+export function isValidRefPolicyEntry(entry: unknown): boolean {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return false;
+  }
+  const p = entry as Record<string, unknown>;
+  if (typeof p.refPattern !== 'string' || !p.refPattern.trim()) {
+    return false;
+  }
+  if (p.allowForcePush !== undefined && typeof p.allowForcePush !== 'boolean' && p.allowForcePush !== 0 && p.allowForcePush !== 1) {
+    return false;
+  }
+  if (p.allowDelete !== undefined && typeof p.allowDelete !== 'boolean' && p.allowDelete !== 0 && p.allowDelete !== 1) {
+    return false;
+  }
+  if (p.requireSignedCommits !== undefined && typeof p.requireSignedCommits !== 'boolean' && p.requireSignedCommits !== 0 && p.requireSignedCommits !== 1) {
+    return false;
+  }
+  if (p.requirePassingBuild !== undefined && typeof p.requirePassingBuild !== 'boolean' && p.requirePassingBuild !== 0 && p.requirePassingBuild !== 1) {
+    return false;
+  }
+  if (p.minimumApprovals !== undefined && (typeof p.minimumApprovals !== 'number' || !Number.isFinite(p.minimumApprovals) || p.minimumApprovals < 0)) {
+    return false;
+  }
+  return true;
+}
+
+export function isValidRefPolicies(policies: unknown): boolean {
+  if (!Array.isArray(policies)) return false;
+  return policies.every(isValidRefPolicyEntry);
 }
 
 export function selectRefPolicy(policies: readonly RefPolicy[], refName: string): RefPolicy | null {
-  const matches = policies.filter(policy => refPatternMatches(policy.refPattern, refName));
+  if (!Array.isArray(policies) || policies.length === 0 || !refName) return null;
+  const matches = policies.filter(policy => policy && typeof policy.refPattern === 'string' && refPatternMatches(policy.refPattern, refName));
   if (matches.length === 0) return null;
-  return [...matches].sort((a, b) => b.refPattern.replace(/\*$/, '').length - a.refPattern.replace(/\*$/, '').length)[0];
+
+  return [...matches].sort((a, b) => {
+    const normA = normalizeRefPattern(a.refPattern);
+    const normB = normalizeRefPattern(b.refPattern);
+    const hasWildcardA = normA.endsWith('*') ? 1 : 0;
+    const hasWildcardB = normB.endsWith('*') ? 1 : 0;
+    const prefixLenA = normA.endsWith('*') ? normA.slice(0, -1).length : normA.length;
+    const prefixLenB = normB.endsWith('*') ? normB.slice(0, -1).length : normB.length;
+
+    // 1. Longest literal prefix wins (most specific prefix)
+    if (prefixLenB !== prefixLenA) {
+      return prefixLenB - prefixLenA;
+    }
+    // 2. Exact match over wildcard (fewest wildcards)
+    if (hasWildcardA !== hasWildcardB) {
+      return hasWildcardA - hasWildcardB;
+    }
+    // 3. Conservative tie-breaking: deny (0 / false) wins over allow (1 / true)
+    const allowForceA = Boolean(a.allowForcePush) ? 1 : 0;
+    const allowForceB = Boolean(b.allowForcePush) ? 1 : 0;
+    if (allowForceA !== allowForceB) {
+      return allowForceA - allowForceB;
+    }
+    const allowDelA = Boolean(a.allowDelete) ? 1 : 0;
+    const allowDelB = Boolean(b.allowDelete) ? 1 : 0;
+    if (allowDelA !== allowDelB) {
+      return allowDelA - allowDelB;
+    }
+    // 4. Deterministic string order
+    return normA.localeCompare(normB);
+  })[0];
 }
 
 export interface MergeJobRecord {

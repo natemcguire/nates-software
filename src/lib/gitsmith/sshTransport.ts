@@ -6,6 +6,7 @@ import ssh2, { type Connection, type AuthContext, type Session } from 'ssh2';
 import type { GatewayConfig } from './types.ts';
 import { resolveRepoPath } from './gitStorage.ts';
 import { GitsmithGatewayService } from './gatewayService.ts';
+import { isValidRefPolicies } from '../forgeDomain.ts';
 
 const { Server, utils } = ssh2;
 
@@ -20,6 +21,16 @@ interface Authorization {
   repositoryId: string;
   storageKey: string;
   operation: 'read' | 'write';
+  defaultRef?: string;
+  memberRole?: string;
+  refPolicies?: Array<{
+    refPattern: string;
+    requireSignedCommits?: boolean | number;
+    requirePassingBuild?: boolean | number;
+    minimumApprovals?: number;
+    allowForcePush?: boolean | number;
+    allowDelete?: boolean | number;
+  }>;
 }
 
 export interface SshTransportStatus {
@@ -68,13 +79,323 @@ export class GitsmithSshTransport {
     return fs.readFileSync(keyPath);
   }
 
-  private ensureReceiveHook(): string {
+  public ensurePreReceiveHook(): string {
+    const hookDir = path.join(this.config.reposRoot, '.gitsmith-hooks');
+    const hookPath = path.join(hookDir, 'pre-receive');
+    fs.mkdirSync(hookDir, { recursive: true, mode: 0o700 });
+    const script = `#!/usr/bin/env node
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+
+function failClosed(reason) {
+  process.stderr.write('rejected: ' + reason + '\\n');
+  process.exit(1);
+}
+
+function isZeroOid(oid) {
+  return !oid || /^0+$/.test(oid.trim());
+}
+
+function normalizeRef(ref) {
+  if (!ref) return '';
+  ref = ref.trim();
+  if (ref.startsWith('refs/')) return ref;
+  return 'refs/heads/' + ref;
+}
+
+function matchesPattern(refName, pattern) {
+  if (!pattern || typeof pattern !== 'string') return false;
+  if (!refName || typeof refName !== 'string') return false;
+  pattern = pattern.trim();
+  refName = refName.trim();
+  const normalizedPattern = normalizeRef(pattern);
+  const normalizedRef = normalizeRef(refName);
+  if (refName === normalizedPattern || refName === pattern || normalizedRef === normalizedPattern || normalizedRef === pattern) return true;
+  if (pattern.endsWith('*')) {
+    const prefix = pattern.slice(0, -1);
+    const normalizedPrefix = normalizeRef(prefix);
+    if (refName.startsWith(normalizedPrefix) || refName.startsWith(prefix) || normalizedRef.startsWith(normalizedPrefix) || normalizedRef.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function selectRefPolicy(policies, refName) {
+  if (!Array.isArray(policies) || policies.length === 0 || !refName) return null;
+  const matches = policies.filter(p => p && typeof p.refPattern === 'string' && matchesPattern(refName, p.refPattern));
+  if (matches.length === 0) return null;
+  return matches.slice().sort((a, b) => {
+    const normA = normalizeRef(a.refPattern);
+    const normB = normalizeRef(b.refPattern);
+    const hasWildcardA = normA.endsWith('*') ? 1 : 0;
+    const hasWildcardB = normB.endsWith('*') ? 1 : 0;
+    const prefixLenA = normA.endsWith('*') ? normA.slice(0, -1).length : normA.length;
+    const prefixLenB = normB.endsWith('*') ? normB.slice(0, -1).length : normB.length;
+
+    if (prefixLenB !== prefixLenA) {
+      return prefixLenB - prefixLenA;
+    }
+    if (hasWildcardA !== hasWildcardB) {
+      return hasWildcardA - hasWildcardB;
+    }
+    const allowForceA = Boolean(a.allowForcePush) ? 1 : 0;
+    const allowForceB = Boolean(b.allowForcePush) ? 1 : 0;
+    if (allowForceA !== allowForceB) {
+      return allowForceA - allowForceB;
+    }
+    const allowDelA = Boolean(a.allowDelete) ? 1 : 0;
+    const allowDelB = Boolean(b.allowDelete) ? 1 : 0;
+    if (allowDelA !== allowDelB) {
+      return allowDelA - allowDelB;
+    }
+    return normA.localeCompare(normB);
+  })[0];
+}
+
+function isValidPolicyEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return false;
+  }
+  if (typeof entry.refPattern !== 'string' || !entry.refPattern.trim()) {
+    return false;
+  }
+  if (entry.allowForcePush !== undefined && typeof entry.allowForcePush !== 'boolean' && entry.allowForcePush !== 0 && entry.allowForcePush !== 1) {
+    return false;
+  }
+  if (entry.allowDelete !== undefined && typeof entry.allowDelete !== 'boolean' && entry.allowDelete !== 0 && entry.allowDelete !== 1) {
+    return false;
+  }
+  if (entry.requireSignedCommits !== undefined && typeof entry.requireSignedCommits !== 'boolean' && entry.requireSignedCommits !== 0 && entry.requireSignedCommits !== 1) {
+    return false;
+  }
+  if (entry.requirePassingBuild !== undefined && typeof entry.requirePassingBuild !== 'boolean' && entry.requirePassingBuild !== 0 && entry.requirePassingBuild !== 1) {
+    return false;
+  }
+  if (entry.minimumApprovals !== undefined && (typeof entry.minimumApprovals !== 'number' || !Number.isFinite(entry.minimumApprovals) || entry.minimumApprovals < 0)) {
+    return false;
+  }
+  return true;
+}
+
+function isValidRefPolicies(policies) {
+  if (!Array.isArray(policies)) return false;
+  return policies.every(isValidPolicyEntry);
+}
+
+function isFastForward(oldOid, newOid) {
+  if (isZeroOid(oldOid)) return true;
+  if (isZeroOid(newOid)) return false;
+  try {
+    const res = spawnSync('git', ['merge-base', '--is-ancestor', oldOid, newOid], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf8'
+    });
+    return res.status === 0;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function main() {
+  const policyFile = process.env.GITSMITH_POLICY_FILE;
+  if (!policyFile) {
+    failClosed('policy check failed: GITSMITH_POLICY_FILE is not set');
+    return;
+  }
+
+  let policy;
+  try {
+    if (!fs.existsSync(policyFile)) {
+      failClosed('policy check failed: policy file not found');
+      return;
+    }
+    const content = fs.readFileSync(policyFile, 'utf8');
+    policy = JSON.parse(content);
+  } catch (err) {
+    failClosed('policy check failed: unable to read policy file: ' + err.message);
+    return;
+  }
+
+  if (!policy || policy.unreachable || policy.error) {
+    failClosed('policy check failed: ' + (policy?.error || 'policy is unreachable or invalid'));
+    return;
+  }
+
+  if (!isValidRefPolicies(policy.refPolicies)) {
+    failClosed('policy check failed: refPolicies data is missing or invalid');
+    return;
+  }
+
+  if (!policy.defaultRef || typeof policy.defaultRef !== 'string') {
+    failClosed('policy check failed: defaultRef data is missing or invalid');
+    return;
+  }
+
+  if (!policy.controlPlaneUrl || !policy.gatewayToken || !policy.repositoryId || !policy.actorUserId) {
+    failClosed('policy check failed: missing required gateway connection parameters');
+    return;
+  }
+
+  let input = '';
+  try {
+    input = fs.readFileSync(0, 'utf8');
+  } catch (err) {
+    failClosed('unable to read ref updates from stdin: ' + err.message);
+    return;
+  }
+
+  const lines = input.trim().split('\\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    process.exit(0);
+  }
+
+  const updates = [];
+  for (const line of lines) {
+    const parts = line.split(/\\s+/);
+    if (parts.length < 3) {
+      failClosed('invalid ref update line: ' + line);
+      return;
+    }
+    const [oldOid, newOid, rawRefName] = parts;
+    const refName = rawRefName.trim();
+    if (!refName) {
+      failClosed('invalid ref update: empty ref name');
+      return;
+    }
+    const isDelete = isZeroOid(newOid);
+    const isCreate = isZeroOid(oldOid);
+    if (isDelete && isCreate) {
+      failClosed('invalid ref update: both old and new OIDs are zero');
+      return;
+    }
+
+    const ff = (!isCreate && !isDelete) ? isFastForward(oldOid, newOid) : true;
+    updates.push({
+      refName,
+      oldOid: isCreate ? null : oldOid,
+      newOid: isDelete ? null : newOid,
+      isFastForward: ff,
+      isDelete
+    });
+  }
+
+  // Live policy re-check against control plane at pre-receive time (prevents TOCTOU)
+  const endpoint = policy.controlPlaneUrl.replace(/\\/$/, '') + '/api/git';
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + policy.gatewayToken
+      },
+      body: JSON.stringify({
+        action: 'gateway-check-ref-policy',
+        repositoryId: policy.repositoryId,
+        actorUserId: policy.actorUserId,
+        updates: updates
+      })
+    });
+  } catch (err) {
+    failClosed('policy check failed: Control plane unreachable: ' + err.message);
+    return;
+  }
+
+  if (!response || !response.ok) {
+    let errMsg = 'HTTP ' + (response ? response.status : 'unknown error');
+    try {
+      const errBody = await response.json();
+      if (errBody && errBody.error) errMsg = errBody.error;
+    } catch (_) {}
+    failClosed('policy check failed: ' + errMsg);
+    return;
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    failClosed('policy check failed: unable to parse policy response: ' + err.message);
+    return;
+  }
+
+  if (!data || typeof data !== 'object' || data.success !== true) {
+    failClosed('policy check failed: ' + (data && data.error ? data.error : 'policy check unsuccessful'));
+    return;
+  }
+
+  if (data.allowed === false) {
+    failClosed(data.reason || 'ref update prohibited by policy');
+    return;
+  }
+
+  if (data.allowed !== true) {
+    failClosed('policy check failed: policy decision missing or invalid');
+    return;
+  }
+
+  if (!isValidRefPolicies(data.refPolicies)) {
+    failClosed('policy check failed: refPolicies data is missing or invalid');
+    return;
+  }
+
+  if (!data.defaultRef || typeof data.defaultRef !== 'string') {
+    failClosed('policy check failed: defaultRef data is missing or invalid');
+    return;
+  }
+
+  // Double check the live policies locally for defense-in-depth
+  const liveDefaultRef = normalizeRef(data.defaultRef);
+  const liveRefPolicies = data.refPolicies;
+
+  for (const update of updates) {
+    const refName = update.refName;
+    const isDefaultBranch = refName === liveDefaultRef;
+    const matchingPolicy = selectRefPolicy(liveRefPolicies, refName);
+    const isProtected = isDefaultBranch || Boolean(matchingPolicy);
+
+    if (isProtected) {
+      if (update.isDelete) {
+        const allowDelete = matchingPolicy ? Boolean(matchingPolicy.allowDelete) : false;
+        if (!allowDelete) {
+          failClosed('deletion of protected ref ' + refName + ' is prohibited');
+          return;
+        }
+      }
+
+      if (!update.isCreate && !update.isDelete) {
+        if (!update.isFastForward) {
+          const allowForce = matchingPolicy ? Boolean(matchingPolicy.allowForcePush) : false;
+          if (!allowForce) {
+            failClosed('non-fast-forward update to protected ref ' + refName + ' is prohibited');
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  process.exit(0);
+}
+
+main().catch(err => {
+  failClosed('policy check failed: ' + (err?.message || 'unexpected error'));
+});
+`;
+    if (!fs.existsSync(hookPath) || fs.readFileSync(hookPath, 'utf8') !== script) {
+      fs.writeFileSync(hookPath, script, { mode: 0o700 });
+      fs.chmodSync(hookPath, 0o700);
+    }
+    return hookDir;
+  }
+
+  public ensureReceiveHook(): string {
     const hookDir = path.join(this.config.reposRoot, '.gitsmith-hooks');
     const hookPath = path.join(hookDir, 'post-receive');
     fs.mkdirSync(hookDir, { recursive: true, mode: 0o700 });
     const script = '#!/bin/sh\nset -eu\n: "${GITSMITH_UPDATES_FILE:?}"\nwhile read old_oid new_oid ref_name; do\n  printf "%s %s %s\\n" "$old_oid" "$new_oid" "$ref_name" >> "$GITSMITH_UPDATES_FILE"\ndone\n';
     if (!fs.existsSync(hookPath) || fs.readFileSync(hookPath, 'utf8') !== script) {
       fs.writeFileSync(hookPath, script, { mode: 0o700 });
+      fs.chmodSync(hookPath, 0o700);
     }
     return hookDir;
   }
@@ -97,8 +418,12 @@ export class GitsmithSshTransport {
       body: JSON.stringify({ action: 'gateway-authorize-ssh', keyType: identity.keyType, keyBase64: identity.keyBase64, owner, slug, operation })
     });
     if (!response.ok) return null;
-    const payload: any = await response.json();
-    return payload?.success ? payload as Authorization : null;
+    const payload: any = await response.json().catch(() => null);
+    if (!payload?.success || !payload?.storageKey) return null;
+    if (operation === 'write' && (!isValidRefPolicies(payload.refPolicies) || typeof payload.defaultRef !== 'string' || !payload.defaultRef.trim())) {
+      return null;
+    }
+    return payload as Authorization;
   }
 
   private parseCommand(command: string): { service: 'git-upload-pack' | 'git-receive-pack'; owner: string; slug: string } | null {
@@ -122,20 +447,50 @@ export class GitsmithSshTransport {
       const operation = parsed.service === 'git-receive-pack' ? 'write' : 'read';
       const authorization = await this.authorizeRepository(identity, parsed.owner, parsed.slug, operation).catch(() => null);
       if (!authorization) return rejectExec();
+      if (operation === 'write' && (!isValidRefPolicies(authorization.refPolicies) || typeof authorization.defaultRef !== 'string' || !authorization.defaultRef.trim())) {
+        return rejectExec();
+      }
       const resolved = resolveRepoPath(this.config.reposRoot, authorization.storageKey);
       if (!resolved.valid || !resolved.resolvedPath || !fs.existsSync(resolved.resolvedPath)) return rejectExec();
 
       const channel = acceptExec();
-      const hookDir = operation === 'write' ? this.ensureReceiveHook() : '';
+      if (operation === 'write') {
+        this.ensurePreReceiveHook();
+        this.ensureReceiveHook();
+      }
+      const hookDir = operation === 'write' ? path.join(this.config.reposRoot, '.gitsmith-hooks') : '';
       const updatesFile = operation === 'write'
         ? path.join(this.config.reposRoot, '.gitsmith-ssh', `updates-${randomUUID()}.txt`)
         : '';
+      const policyFile = operation === 'write'
+        ? path.join(this.config.reposRoot, '.gitsmith-ssh', `policy-${randomUUID()}.json`)
+        : '';
+
+      if (operation === 'write' && policyFile) {
+        const policyDir = path.dirname(policyFile);
+        fs.mkdirSync(policyDir, { recursive: true, mode: 0o700 });
+        const policyData = {
+          repositoryId: authorization.repositoryId,
+          actorUserId: authorization.actorUserId,
+          defaultRef: authorization.defaultRef,
+          memberRole: authorization.memberRole || 'writer',
+          refPolicies: authorization.refPolicies,
+          controlPlaneUrl: this.config.controlPlaneUrl,
+          gatewayToken: this.config.gatewayToken
+        };
+        fs.writeFileSync(policyFile, JSON.stringify(policyData), { mode: 0o600 });
+      }
+
       const args = operation === 'write'
         ? ['-c', `core.hooksPath=${hookDir}`, 'receive-pack', resolved.resolvedPath]
         : ['upload-pack', resolved.resolvedPath];
       const child = spawn('git', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, GITSMITH_UPDATES_FILE: updatesFile }
+        env: {
+          ...process.env,
+          GITSMITH_UPDATES_FILE: updatesFile,
+          GITSMITH_POLICY_FILE: policyFile
+        }
       });
       channel.pipe(child.stdin);
       // Keep the SSH channel open until the child exit status and any durable
@@ -143,8 +498,16 @@ export class GitsmithSshTransport {
       // channel before we can send SSH_MSG_CHANNEL_REQUEST(exit-status).
       child.stdout.pipe(channel, { end: false });
       child.stderr.pipe(channel.stderr);
-      child.on('error', () => { channel.exit(1); channel.end(); });
+      child.on('error', () => {
+        if (policyFile) { try { fs.unlinkSync(policyFile); } catch {} }
+        if (updatesFile) { try { fs.unlinkSync(updatesFile); } catch {} }
+        channel.exit(1);
+        channel.end();
+      });
       child.on('close', async code => {
+        if (policyFile) {
+          try { fs.unlinkSync(policyFile); } catch {}
+        }
         if (operation === 'write' && code === 0 && fs.existsSync(updatesFile)) {
           const zero = /^0+$/;
           const lines = fs.readFileSync(updatesFile, 'utf8').trim().split('\n').filter(Boolean);
@@ -158,6 +521,8 @@ export class GitsmithSshTransport {
               actorUserId: authorization.actorUserId, idempotencyKey
             });
           }
+          try { fs.unlinkSync(updatesFile); } catch {}
+        } else if (updatesFile) {
           try { fs.unlinkSync(updatesFile); } catch {}
         }
         channel.exit(code ?? 1);

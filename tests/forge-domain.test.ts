@@ -14,7 +14,9 @@ import {
   validateGitRef,
   isValidGitRef,
   buildRepositoryStorageKey,
-  constantTimeTokenCompare
+  constantTimeTokenCompare,
+  isValidRefPolicyEntry,
+  isValidRefPolicies
 } from '../src/lib/forgeDomain';
 
 const oid = 'a'.repeat(40);
@@ -134,17 +136,94 @@ describe('canonical forge domain invariants', () => {
     expect(repositoryRoleAllows('owner', 'manage_members')).toBe(true);
   });
 
-  it('selects the most specific matching ref policy', () => {
-    const broad = {
+  it('selects the most specific matching ref policy regardless of input order', () => {
+    const broadAllow = {
       refPattern: 'refs/heads/*',
       requireSignedCommits: false,
       requirePassingBuild: true,
       minimumApprovals: 0,
+      allowForcePush: true,
+      allowDelete: true
+    };
+    const specificDeny = {
+      refPattern: 'refs/heads/release/*',
+      requireSignedCommits: false,
+      requirePassingBuild: true,
+      minimumApprovals: 1,
       allowForcePush: false,
       allowDelete: false
     };
-    const main = { ...broad, refPattern: 'refs/heads/main', minimumApprovals: 2 };
-    expect(refPatternMatches(broad.refPattern, 'refs/heads/topic')).toBe(true);
-    expect(selectRefPolicy([broad, main], 'refs/heads/main')).toEqual(main);
+    const exactMain = {
+      refPattern: 'refs/heads/main',
+      requireSignedCommits: true,
+      requirePassingBuild: true,
+      minimumApprovals: 2,
+      allowForcePush: false,
+      allowDelete: false
+    };
+    const exactRelease10 = {
+      refPattern: 'refs/heads/release/1.0',
+      requireSignedCommits: true,
+      requirePassingBuild: true,
+      minimumApprovals: 3,
+      allowForcePush: false,
+      allowDelete: false
+    };
+
+    // Pattern matches
+    expect(refPatternMatches(broadAllow.refPattern, 'refs/heads/topic')).toBe(true);
+    expect(refPatternMatches(specificDeny.refPattern, 'refs/heads/release/1.0')).toBe(true);
+    expect(refPatternMatches(specificDeny.refPattern, 'refs/heads/feature/xyz')).toBe(false);
+
+    // Overlapping: broad allow + specific deny -> specific deny wins regardless of array/D1 row order
+    expect(selectRefPolicy([broadAllow, specificDeny], 'refs/heads/release/1.0')).toEqual(specificDeny);
+    expect(selectRefPolicy([specificDeny, broadAllow], 'refs/heads/release/1.0')).toEqual(specificDeny);
+
+    // Exact match wins over prefix wildcard regardless of array order
+    expect(selectRefPolicy([broadAllow, exactMain], 'refs/heads/main')).toEqual(exactMain);
+    expect(selectRefPolicy([exactMain, broadAllow], 'refs/heads/main')).toEqual(exactMain);
+
+    // Exact match on release branch wins over release wildcard and broad wildcard
+    expect(selectRefPolicy([broadAllow, specificDeny, exactRelease10], 'refs/heads/release/1.0')).toEqual(exactRelease10);
+    expect(selectRefPolicy([exactRelease10, broadAllow, specificDeny], 'refs/heads/release/1.0')).toEqual(exactRelease10);
+
+    // Non-overlapping case: single matching policy honored
+    expect(selectRefPolicy([specificDeny], 'refs/heads/release/2.0')).toEqual(specificDeny);
+    expect(selectRefPolicy([specificDeny], 'refs/heads/feature/foo')).toBeNull();
+    expect(selectRefPolicy([broadAllow], 'refs/heads/feature/foo')).toEqual(broadAllow);
+
+    // Conservative tie-breaking when patterns are identical: deny wins over allow
+    const duplicatePatternAllow = { ...broadAllow, refPattern: 'refs/heads/feature/*' };
+    const duplicatePatternDeny = { ...specificDeny, refPattern: 'refs/heads/feature/*' };
+    expect(selectRefPolicy([duplicatePatternAllow, duplicatePatternDeny], 'refs/heads/feature/abc')).toEqual(duplicatePatternDeny);
+    expect(selectRefPolicy([duplicatePatternDeny, duplicatePatternAllow], 'refs/heads/feature/abc')).toEqual(duplicatePatternDeny);
+  });
+
+  it('validates ref policy entries and ref policy lists strictly', () => {
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main' })).toBe(true);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: true, allowDelete: false })).toBe(true);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 0 })).toBe(true);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', requireSignedCommits: true, requirePassingBuild: 1, minimumApprovals: 2 })).toBe(true);
+
+    // Malformed entries
+    expect(isValidRefPolicyEntry(null)).toBe(false);
+    expect(isValidRefPolicyEntry({})).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: '' })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: '   ' })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 123 })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', allowForcePush: 'yes' })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', allowDelete: 42 })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', requireSignedCommits: 'invalid' })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', requirePassingBuild: 'bad' })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', minimumApprovals: -1 })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', minimumApprovals: NaN })).toBe(false);
+
+    // Lists
+    expect(isValidRefPolicies([])).toBe(true);
+    expect(isValidRefPolicies([{ refPattern: 'refs/heads/main' }])).toBe(true);
+    expect(isValidRefPolicies([{}])).toBe(false);
+    expect(isValidRefPolicies([{ refPattern: 'refs/heads/main' }, {}])).toBe(false);
+    expect(isValidRefPolicies('not-an-array')).toBe(false);
+    expect(isValidRefPolicies(null)).toBe(false);
   });
 });
