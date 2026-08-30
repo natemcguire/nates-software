@@ -11,6 +11,15 @@ export interface Comment {
 
 export type AppComment = Comment;
 
+export type AppDeploymentState =
+  | 'draft'
+  | 'source_ready'
+  | 'building'
+  | 'deployable'
+  | 'active'
+  | 'failed'
+  | 'retired';
+
 export interface AppListing {
   id: string;
   name: string;
@@ -37,6 +46,13 @@ export interface AppListing {
   price?: number;
   moddabilityScore?: number;
   mergeCleanliness?: string;
+  deploymentState?: AppDeploymentState;
+  deploymentError?: string;
+  deploymentEvidence?: any;
+  detectedProjectType?: string;
+  deploymentPlan?: any;
+  activeDeploymentId?: string;
+  activeCommitOid?: string;
   binaries?: {
     web?: string;
     mac?: string;
@@ -58,6 +74,7 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'dronehunter',
     name: 'DroneHunter 95',
+    deploymentState: 'active',
     tagline: 'Retro Duck Hunt-Style Arcade Drone Shooter with Local High Scores',
     description: 'Fast-paced arcade browser game inspired by classic Duck Hunt. Double-barrel shotgun reloads, laughing dog animations, drone explosions, and local high score tracking with storage freedom.',
     author: 'nate',
@@ -113,6 +130,7 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'certified-mailer',
     name: 'Certified Mailer',
+    deploymentState: 'active',
     tagline: 'Private letter preparation and user-recorded mailing evidence journal',
     description: 'Prepare, review, print, and locally journal important correspondence. Postal tracking and receipt observations are entered by the user and remain explicitly unverified.',
     author: 'nate',
@@ -165,6 +183,8 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'american-gardener',
     name: 'American Gardener',
+    deploymentState: 'draft',
+    deploymentError: 'No deployable revision exists for American Gardener. Source has not been imported into GITSMITH and built by RIG.',
     tagline: 'Local garden operations, crop timing, light, and inventory intelligence',
     description: 'A private local dashboard that combines garden inventory, crop and growing-degree-day targets, garden-spot light readings, and optional Home Assistant observations without publishing household data.',
     author: 'nate',
@@ -206,6 +226,7 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'wallart',
     name: 'WallArt Canvas Pro',
+    deploymentState: 'active',
     tagline: 'Interactive Canvas Split & Living Room Wall Art Studio',
     description: 'Browser-first wall art visualizer and source-resolution inspector. Supports single, triptych, and 4-grid canvas splits with finish previews, custom wall colors, and a 300-PPI target comparison.',
     author: 'nate',

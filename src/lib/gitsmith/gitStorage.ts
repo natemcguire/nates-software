@@ -2,9 +2,12 @@
 // Guarantees path sandboxing beneath configured explicit root, symlink protection,
 // object format (sha1/sha256) support, and git update-ref compare-and-swap.
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import child_process from 'node:child_process';
+
+const execFileSync = (...args: any[]) => (child_process.execFileSync as any)(...args);
+const spawnSync = (...args: any[]) => (child_process.spawnSync as any)(...args);
 import type {
   AuthoritativeRefCasParams,
   AuthoritativeRefCasResult,
@@ -1172,7 +1175,7 @@ export function getProposalDiff(
     }).trim();
 
     if (logOut) {
-      const records = logOut.split('\x1e').filter(r => r.trim());
+      const records = logOut.split('\x1e').filter((r: string) => r.trim());
       for (const record of records) {
         const [sha, shortSha, authorName, authorEmail, authorDate, summary, body] = record.split('\x1f');
         if (sha && isValidGitOid(sha.trim())) {
