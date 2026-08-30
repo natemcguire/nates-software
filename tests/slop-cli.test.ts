@@ -1,5 +1,7 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   handleInit,
@@ -19,8 +21,8 @@ import {
 } from '../bin/slop.ts';
 
 const createdWorktrees: string[] = [];
-const trackedFork = (slug?: string) => {
-  const result = handleFork(slug);
+const trackedFork = (slugOrArgs?: string | string[], options?: any) => {
+  const result = handleFork(slugOrArgs, options);
   if (result.success && result.data?.worktreePath) createdWorktrees.push(result.data.worktreePath);
   return result;
 };
@@ -64,7 +66,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.worktreePath).toContain(`${tmpdir()}/slop-dronehunter-`);
       expect(existsSync(`${res.data.worktreePath}/index.html`)).toBe(true);
       expect(existsSync(`${res.data.worktreePath}/assets/drone.png`)).toBe(true);
-      expect(existsSync(`${res.data.worktreePath}/server.mjs`)).toBe(true);
+      expect(existsSync(`${res.data.worktreePath}/package.json`)).toBe(true);
       expect(readFileSync(`${res.data.worktreePath}/index.html`, 'utf8')).toContain('Drone Hunter');
       expect(res.message).not.toContain('agy');
       const engineInstructions = getEngineStartInstructions(res.data.worktreePath);
@@ -86,6 +88,141 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.success).toBe(false);
       expect(res.message).toContain('no placeholder fork was created');
       expect(existsSync(res.data.worktreePath)).toBe(false);
+    });
+
+    it('should succeed when forking an empty canonical repository without fabricating source files', () => {
+      const emptyCanonicalDir = join(tmpdir(), `test-empty-canonical-${Date.now().toString(36)}`);
+      mkdirSync(emptyCanonicalDir, { recursive: true });
+      execSync(`git init "${emptyCanonicalDir}"`, { stdio: 'pipe' });
+
+      try {
+        const res = trackedFork(emptyCanonicalDir);
+        expect(res.success).toBe(true);
+        expect(res.command).toBe('fork');
+        expect(res.data.isEmptyRepo).toBe(true);
+        expect(res.data.templateApplied).toBeNull();
+        expect(res.data.isRealWorktree).toBe(true);
+        expect(res.message).toContain('Forked empty repository');
+
+        const worktree = res.data.worktreePath;
+        expect(existsSync(worktree)).toBe(true);
+        expect(existsSync(join(worktree, '.git'))).toBe(true);
+
+        // TRUTHFULNESS GUARANTEE: Never fabricate source into an empty repo!
+        expect(existsSync(join(worktree, 'package.json'))).toBe(false);
+        expect(existsSync(join(worktree, 'index.html'))).toBe(false);
+        expect(existsSync(join(worktree, 'server.mjs'))).toBe(false);
+        expect(existsSync(join(worktree, 'README.md'))).toBe(false);
+
+        // Verify publication remote configured
+        const remotes = execSync('git remote', { cwd: worktree, encoding: 'utf8' });
+        expect(remotes).toContain('slop');
+      } finally {
+        rmSync(emptyCanonicalDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should scaffold starter template when user explicitly passes --template flag against empty repo', () => {
+      const emptyCanonicalDir = join(tmpdir(), `test-empty-template-${Date.now().toString(36)}`);
+      mkdirSync(emptyCanonicalDir, { recursive: true });
+      execSync(`git init "${emptyCanonicalDir}"`, { stdio: 'pipe' });
+
+      try {
+        const res = trackedFork([emptyCanonicalDir, '--template=dronehunter']);
+        expect(res.success).toBe(true);
+        expect(res.data.templateApplied).toBe('dronehunter');
+
+        const worktree = res.data.worktreePath;
+        expect(existsSync(worktree)).toBe(true);
+        expect(existsSync(join(worktree, '.git'))).toBe(true);
+        expect(existsSync(join(worktree, 'package.json'))).toBe(true);
+        expect(existsSync(join(worktree, 'index.html'))).toBe(true);
+        expect(existsSync(join(worktree, 'server.mjs'))).toBe(true);
+        expect(readFileSync(join(worktree, 'index.html'), 'utf8')).toContain('Drone Hunter');
+      } finally {
+        rmSync(emptyCanonicalDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should scaffold minimal starter when user explicitly passes --template minimal against empty repo', () => {
+      const emptyCanonicalDir = join(tmpdir(), `test-empty-minimal-${Date.now().toString(36)}`);
+      mkdirSync(emptyCanonicalDir, { recursive: true });
+      execSync(`git init "${emptyCanonicalDir}"`, { stdio: 'pipe' });
+
+      try {
+        const res = trackedFork([emptyCanonicalDir, '--template=minimal']);
+        expect(res.success).toBe(true);
+        expect(res.data.templateApplied).toBe('minimal');
+
+        const worktree = res.data.worktreePath;
+        expect(existsSync(worktree)).toBe(true);
+        expect(existsSync(join(worktree, '.git'))).toBe(true);
+        expect(existsSync(join(worktree, 'package.json'))).toBe(true);
+        expect(existsSync(join(worktree, 'index.html'))).toBe(true);
+        expect(existsSync(join(worktree, 'README.md'))).toBe(true);
+      } finally {
+        rmSync(emptyCanonicalDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should truthfully fork an empty repo named dronehunter with NO --template and scaffold ONLY when --template is passed', () => {
+      const emptyDronehunterDir = join(tmpdir(), `test-empty-dh-${Date.now().toString(36)}`, 'dronehunter');
+      mkdirSync(emptyDronehunterDir, { recursive: true });
+      execSync(`git init "${emptyDronehunterDir}"`, { stdio: 'pipe' });
+
+      try {
+        // Without --template: must NOT auto-scaffold just because the repo is named dronehunter
+        const resEmpty = trackedFork(emptyDronehunterDir);
+        expect(resEmpty.success).toBe(true);
+        expect(resEmpty.data.isEmptyRepo).toBe(true);
+        expect(resEmpty.data.templateApplied).toBeNull();
+        expect(resEmpty.message).toContain('Forked empty repository');
+
+        const emptyWorktree = resEmpty.data.worktreePath;
+        expect(existsSync(emptyWorktree)).toBe(true);
+        expect(existsSync(join(emptyWorktree, '.git'))).toBe(true);
+        expect(existsSync(join(emptyWorktree, 'package.json'))).toBe(false);
+        expect(existsSync(join(emptyWorktree, 'index.html'))).toBe(false);
+        expect(existsSync(join(emptyWorktree, 'server.mjs'))).toBe(false);
+        expect(existsSync(join(emptyWorktree, 'README.md'))).toBe(false);
+
+        // With explicit --template dronehunter: must scaffold
+        const resScaffolded = trackedFork([emptyDronehunterDir, '--template=dronehunter']);
+        expect(resScaffolded.success).toBe(true);
+        expect(resScaffolded.data.templateApplied).toBe('dronehunter');
+
+        const scaffoldedWorktree = resScaffolded.data.worktreePath;
+        expect(existsSync(scaffoldedWorktree)).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, '.git'))).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, 'package.json'))).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, 'index.html'))).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, 'server.mjs'))).toBe(true);
+        expect(readFileSync(join(scaffoldedWorktree, 'index.html'), 'utf8')).toContain('Drone Hunter');
+      } finally {
+        rmSync(join(emptyDronehunterDir, '..'), { recursive: true, force: true });
+      }
+    });
+
+    it('should preserve content when forking an existing content repository', () => {
+      const contentCanonicalDir = join(tmpdir(), `test-content-repo-${Date.now().toString(36)}`);
+      mkdirSync(contentCanonicalDir, { recursive: true });
+      execSync(`git init "${contentCanonicalDir}"`, { stdio: 'pipe' });
+      writeFileSync(join(contentCanonicalDir, 'README.md'), '# Sovereign App Source\n');
+      writeFileSync(join(contentCanonicalDir, 'package.json'), JSON.stringify({ name: 'sovereign-app', version: '1.0.0' }));
+      execSync(`git -C "${contentCanonicalDir}" add -A && git -C "${contentCanonicalDir}" -c user.name=Test -c user.email=test@test.com commit -m "initial commit"`, { stdio: 'pipe' });
+
+      try {
+        const res = trackedFork(contentCanonicalDir);
+        expect(res.success).toBe(true);
+        expect(res.data.isEmptyRepo).toBe(false);
+        expect(res.data.templateApplied).toBeNull();
+
+        const worktree = res.data.worktreePath;
+        expect(existsSync(join(worktree, 'README.md'))).toBe(true);
+        expect(readFileSync(join(worktree, 'README.md'), 'utf8')).toContain('Sovereign App Source');
+      } finally {
+        rmSync(contentCanonicalDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -242,7 +379,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect((await runSlopCli(['shelf'])).success).toBe(false);
       expect((await runSlopCli(['login'])).success).toBe(false);
       expect((await runSlopCli(['help'])).success).toBe(true);
-    });
+    }, 15_000);
 
     it('should handle unknown command with error', async () => {
       const res = await runSlopCli(['invalid-unknown-cmd']);

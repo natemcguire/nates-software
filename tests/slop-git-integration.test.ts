@@ -206,4 +206,101 @@ describe('Local Bare Repository Git Integration', () => {
     expect(forkRes.message).toContain('no placeholder fork was created');
     expect(existsSync(forkRes.data.worktreePath)).toBe(false);
   });
+
+  it('should truthfully fork an empty canonical repository without fabricating source', () => {
+    const emptyRepoDir = join(testRootDir, 'empty-canonical-repo');
+    mkdirSync(emptyRepoDir, { recursive: true });
+    execSync(`git init "${emptyRepoDir}"`, { stdio: 'pipe' });
+
+    const forkRes = handleFork(emptyRepoDir);
+    try {
+      expect(forkRes.success).toBe(true);
+      expect(forkRes.command).toBe('fork');
+      expect(forkRes.data.isEmptyRepo).toBe(true);
+      expect(forkRes.data.templateApplied).toBeNull();
+      expect(forkRes.data.isRealWorktree).toBe(true);
+
+      const worktree = forkRes.data.worktreePath;
+      expect(existsSync(worktree)).toBe(true);
+      expect(existsSync(join(worktree, '.git'))).toBe(true);
+      expect(existsSync(join(worktree, 'package.json'))).toBe(false);
+      expect(existsSync(join(worktree, 'index.html'))).toBe(false);
+      expect(existsSync(join(worktree, 'README.md'))).toBe(false);
+
+      const remotes = execSync('git remote', { cwd: worktree, encoding: 'utf8' });
+      expect(remotes).toContain('slop');
+    } finally {
+      if (forkRes.data?.worktreePath) {
+        rmSync(forkRes.data.worktreePath, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('should scaffold explicit template into empty canonical repository when requested', () => {
+    const emptyRepoDir = join(testRootDir, 'empty-canonical-template-repo');
+    mkdirSync(emptyRepoDir, { recursive: true });
+    execSync(`git init "${emptyRepoDir}"`, { stdio: 'pipe' });
+
+    const forkRes = handleFork([emptyRepoDir, '--template=dronehunter']);
+    try {
+      expect(forkRes.success).toBe(true);
+      expect(forkRes.data.templateApplied).toBe('dronehunter');
+
+      const worktree = forkRes.data.worktreePath;
+      expect(existsSync(worktree)).toBe(true);
+      expect(existsSync(join(worktree, '.git'))).toBe(true);
+      expect(existsSync(join(worktree, 'package.json'))).toBe(true);
+      expect(existsSync(join(worktree, 'index.html'))).toBe(true);
+      expect(existsSync(join(worktree, 'server.mjs'))).toBe(true);
+    } finally {
+      if (forkRes.data?.worktreePath) {
+        rmSync(forkRes.data.worktreePath, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('should truthfully clone empty repo named dronehunter without fabricating files unless --template is passed', () => {
+    const emptyDronehunterDir = join(testRootDir, 'test-empty-dh-repo', 'dronehunter');
+    mkdirSync(emptyDronehunterDir, { recursive: true });
+    execSync(`git init "${emptyDronehunterDir}"`, { stdio: 'pipe' });
+
+    // Without --template: must NOT fabricate files even though named dronehunter
+    const forkResEmpty = handleFork(emptyDronehunterDir);
+    try {
+      expect(forkResEmpty.success).toBe(true);
+      expect(forkResEmpty.data.isEmptyRepo).toBe(true);
+      expect(forkResEmpty.data.templateApplied).toBeNull();
+
+      const worktree = forkResEmpty.data.worktreePath;
+      expect(existsSync(worktree)).toBe(true);
+      expect(existsSync(join(worktree, '.git'))).toBe(true);
+      expect(existsSync(join(worktree, 'package.json'))).toBe(false);
+      expect(existsSync(join(worktree, 'index.html'))).toBe(false);
+      expect(existsSync(join(worktree, 'server.mjs'))).toBe(false);
+      expect(existsSync(join(worktree, 'README.md'))).toBe(false);
+    } finally {
+      if (forkResEmpty.data?.worktreePath) {
+        rmSync(forkResEmpty.data.worktreePath, { recursive: true, force: true });
+      }
+    }
+
+    // With --template dronehunter: must scaffold
+    const forkResTmpl = handleFork([emptyDronehunterDir, '--template=dronehunter']);
+    try {
+      expect(forkResTmpl.success).toBe(true);
+      expect(forkResTmpl.data.templateApplied).toBe('dronehunter');
+
+      const worktree = forkResTmpl.data.worktreePath;
+      expect(existsSync(worktree)).toBe(true);
+      expect(existsSync(join(worktree, '.git'))).toBe(true);
+      expect(existsSync(join(worktree, 'package.json'))).toBe(true);
+      expect(existsSync(join(worktree, 'index.html'))).toBe(true);
+      expect(existsSync(join(worktree, 'server.mjs'))).toBe(true);
+    } finally {
+      if (forkResTmpl.data?.worktreePath) {
+        rmSync(forkResTmpl.data.worktreePath, { recursive: true, force: true });
+      }
+    }
+  });
 });
+
