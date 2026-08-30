@@ -135,13 +135,36 @@ export function createRigGatewayServer(
       }
       try {
         const body = await readJson(req);
-        const { appId, repositoryId, commitOid, plan, sourceArchiveBase64, runnerImageDigest, timeoutMs } = body;
-        if (!appId || !commitOid || !sourceArchiveBase64 || !plan) {
-          send(res, 400, { success: false, error: 'appId, commitOid, plan, and sourceArchiveBase64 are required.' });
+        const { appId, repositoryId, storageKey, commitOid, plan, sourceArchiveBase64, runnerImageDigest, timeoutMs } = body;
+        if (!appId || !commitOid || !plan) {
+          send(res, 400, { success: false, error: 'appId, commitOid, and plan are required.' });
           return;
         }
 
-        const sourceArchive = Buffer.from(sourceArchiveBase64, 'base64');
+        let sourceArchive: Buffer;
+        if (sourceArchiveBase64) {
+          sourceArchive = Buffer.from(sourceArchiveBase64, 'base64');
+        } else {
+          const gitsmithUrl = body.gitsmithGatewayUrl || process.env.GITSMITH_GATEWAY_URL;
+          const gitsmithToken = body.gitsmithGatewayToken || process.env.GITSMITH_GATEWAY_TOKEN;
+          if (!gitsmithUrl || !gitsmithToken) {
+            send(res, 400, { success: false, error: 'Either sourceArchiveBase64 or (gitsmithGatewayUrl, gitsmithGatewayToken) is required to fetch source archive.' });
+            return;
+          }
+          const archiveUrl = new URL('/api/gateway/archive', gitsmithUrl);
+          archiveUrl.searchParams.set('storageKey', storageKey || repositoryId || appId);
+          archiveUrl.searchParams.set('commitOid', commitOid);
+          const fetchImpl = (options as any)?.fetchImpl || globalThis.fetch;
+          const archiveRes = await fetchImpl(archiveUrl.toString(), {
+            headers: { Authorization: `Bearer ${gitsmithToken}` }
+          });
+          if (!archiveRes.ok) {
+            send(res, 502, { success: false, error: `Failed to fetch source archive from GITSMITH gateway (status ${archiveRes.status}).` });
+            return;
+          }
+          sourceArchive = Buffer.from(await archiveRes.arrayBuffer());
+        }
+
         const executor = options?.deployExecutor || (await import('./deployExecutor.ts')).executeRigDeployBuild;
         const result = await executor({
           appId,

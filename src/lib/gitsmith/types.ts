@@ -263,3 +263,19 @@ export interface ProposalDiffResult {
   readonly error?: string;
 }
 
+export interface InspectCommitTreeParams {
+  readonly storageKey: string;
+  readonly commitOid: string;
+  readonly manifestCandidates?: readonly string[];
+}
+
+export interface InspectCommitTreeResult {
+  readonly success: boolean;
+  readonly exists: boolean;
+  readonly storageKey: string;
+  readonly commitOid: string;
+  readonly files?: readonly string[];
+  readonly manifestContents?: Record<string, string>;
+  readonly error?: string;
+}
+

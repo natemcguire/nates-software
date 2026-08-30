@@ -1238,4 +1238,444 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       });
     });
   });
+
+  // ==========================================================================
+  // 7. LIVE GATEWAY DELEGATION ON EDGE PAGES (NO LOCAL REPOS FILESYSTEM)
+  // ==========================================================================
+  describe('7. Live Gateway Delegation on Edge Pages (No Local Repos Filesystem)', () => {
+    const GITSMITH_TOKEN = 'secret_gitsmith_gateway_token_123';
+    const RIG_SECRET = 'secret_rig_gateway_service_secret_456';
+    let makerToken: string;
+
+    beforeEach(async () => {
+      // Unset GITSMITH_REPOS_ROOT to ensure no local disk fallback is used!
+      delete process.env.GITSMITH_REPOS_ROOT;
+
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_edge_maker', 'edgemaker', 'Edge Maker', 'user')
+      `).run();
+      makerToken = 'token_edge_123';
+      const tokenHash = await hashSessionToken(makerToken);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_edge_maker', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('edge-app', 'Edge App', 'Tag', 'Desc', 'usr_edge_maker', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_edge_1', 'edge-app', 'usr_edge_maker', 'edge-app', 'public', 'sha1', 'refs/heads/main', 'repositories/edge-app', 'active')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_edge_1', 'refs/heads/main', 'commit_edge_oid_111122223333444455556666')
+      `).run();
+    });
+
+    it('delegates action:plan tree inspection to GITSMITH gateway without local reposRoot', async () => {
+      const gitsmithFetch: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe('/api/gateway/verify-commit');
+        expect(init?.headers).toEqual(expect.objectContaining({
+          Authorization: `Bearer ${GITSMITH_TOKEN}`
+        }));
+        const body = JSON.parse(String(init?.body || '{}'));
+        expect(body.storageKey).toBe('repositories/edge-app');
+        expect(body.commitOid).toBe('commit_edge_oid_111122223333444455556666');
+
+        return Response.json({
+          success: true,
+          exists: true,
+          storageKey: body.storageKey,
+          commitOid: body.commitOid,
+          files: ['index.html', 'styles.css'],
+          manifestContents: {
+            'index.html': '<h1>Edge App</h1>'
+          }
+        });
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${makerToken}`
+        },
+        body: JSON.stringify({
+          action: 'plan',
+          appId: 'edge-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.isDeployable).toBe(true);
+      expect(data.detectedType).toBe('static');
+    });
+
+    it('successfully deploys by delegating source verification, archive fetch, and container build to gateways', async () => {
+      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const fakeTarArchive = Buffer.from('fake-tar-archive-bytes');
+
+      const gitsmithFetch: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === '/api/gateway/verify-commit') {
+          return Response.json({
+            success: true,
+            exists: true,
+            storageKey: 'repositories/edge-app',
+            commitOid,
+            files: ['index.html', 'style.css'],
+            manifestContents: { 'index.html': '<!DOCTYPE html><h1>Edge App</h1>' }
+          });
+        }
+        if (url.pathname === '/api/gateway/archive') {
+          expect(url.searchParams.get('storageKey')).toBe('repositories/edge-app');
+          expect(url.searchParams.get('commitOid')).toBe(commitOid);
+          return new Response(fakeTarArchive, {
+            status: 200,
+            headers: { 'Content-Type': 'application/x-tar', 'X-Gitsmith-Commit-Oid': commitOid }
+          });
+        }
+        throw new Error(`Unexpected GITSMITH URL: ${url.pathname}`);
+      };
+
+      const rigFetch: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe('/v1/build');
+        expect(init?.headers).toEqual(expect.objectContaining({
+          Authorization: `Bearer ${RIG_SECRET}`,
+          'X-Rig-Owner-Id': 'usr_edge_maker'
+        }));
+        const body = JSON.parse(String(init?.body || '{}'));
+        expect(body.appId).toBe('edge-app');
+        expect(body.commitOid).toBe(commitOid);
+        expect(body.sourceArchiveBase64).toBe(fakeTarArchive.toString('base64'));
+
+        return Response.json({
+          success: true,
+          result: {
+            success: true,
+            exitCode: 0,
+            output: '[RIG] Static build succeeded. Smoke check passed.',
+            artifactDigest: 'sha256:edgemanifestdigest123456',
+            artifactKind: 'static',
+            staticFiles: [
+              {
+                path: 'index.html',
+                contentBase64: Buffer.from('<!DOCTYPE html><h1>Edge App</h1>').toString('base64'),
+                mediaType: 'text/html; charset=utf-8',
+                sizeBytes: 31,
+                sha256: 'sha256:htmlhash'
+              }
+            ],
+            smokeCheck: {
+              passed: true,
+              statusCode: 200,
+              durationMs: 25,
+              responseSnippet: '<!DOCTYPE html><h1>Edge App</h1>'
+            },
+            durationMs: 150
+          }
+        });
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${makerToken}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'edge-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          RIG_GATEWAY_URL: 'https://rig-provider.nates-software.com',
+          RIG_GATEWAY_SERVICE_SECRET: RIG_SECRET,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch,
+          __RIG_GATEWAY_FETCH: rigFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.deploymentState).toBe('active');
+      expect(data.isVerifiedActive).toBe(true);
+      expect(data.activeDeploymentId).toBeDefined();
+      expect(data.activeCommitOid).toBe(commitOid);
+
+      // Verify files uploaded to R2 STORAGE
+      const r2Index = await storage.get(`apps/edge-app/revisions/${data.activeDeploymentId}/index.html`);
+      expect(r2Index).toBeDefined();
+      const r2Live = await storage.get('apps/edge-app/live/index.html');
+      expect(r2Live).toBeDefined();
+      expect(await r2Live.text()).toBe('<!DOCTYPE html><h1>Edge App</h1>');
+
+      // Verify D1 records
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid, deployment_error
+        FROM app_listings WHERE id = 'edge-app'
+      `).first<any>();
+
+      expect(app.deployment_state).toBe('active');
+      expect(app.active_deployment_id).toBe(data.activeDeploymentId);
+      expect(app.deployment_error).toBeNull();
+
+      const revision = await ctx.d1.prepare(`
+        SELECT id, app_id, status, environment, url FROM deployment_revisions WHERE id = ?
+      `).bind(data.activeDeploymentId).first<any>();
+
+      expect(revision.status).toBe('healthy');
+      expect(revision.environment).toBe('production');
+      expect(revision.url).toBe('https://edge-app.nates-software.com');
+    });
+
+    it('fails closed when GITSMITH gateway indicates commit does not exist (404)', async () => {
+      const gitsmithFetch: typeof fetch = async () => {
+        return Response.json(
+          { success: false, exists: false, error: 'Commit not found in repository.' },
+          { status: 404 }
+        );
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${makerToken}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'edge-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          RIG_GATEWAY_URL: 'https://rig-provider.nates-software.com',
+          RIG_GATEWAY_SERVICE_SECRET: RIG_SECRET,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('draft');
+      expect(data.error).toContain('No deployable revision exists for Edge App');
+
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id FROM app_listings WHERE id = 'edge-app'
+      `).first<any>();
+      expect(app.deployment_state).toBe('draft');
+      expect(app.active_deployment_id).toBeNull();
+    });
+
+    it('fails closed when GITSMITH gateway is unreachable (503)', async () => {
+      const gitsmithFetch: typeof fetch = async () => {
+        throw new Error('Connection refused to gitsmith gateway');
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${makerToken}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'edge-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('draft');
+      expect(data.evidence.details).toContain('GITSMITH gateway unreachable');
+    });
+
+    it('fails closed when RIG gateway returns build failure', async () => {
+      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const fakeTar = Buffer.from('tar');
+
+      const gitsmithFetch: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === '/api/gateway/verify-commit') {
+          return Response.json({
+            success: true,
+            exists: true,
+            files: ['package.json', 'src/index.ts'],
+            manifestContents: { 'package.json': JSON.stringify({ scripts: { build: 'tsc' } }) }
+          });
+        }
+        return new Response(fakeTar, { status: 200, headers: { 'Content-Type': 'application/x-tar', 'X-Gitsmith-Commit-Oid': commitOid } });
+      };
+
+      const rigFetch: typeof fetch = async () => {
+        return Response.json({
+          success: false,
+          result: {
+            success: false,
+            exitCode: 1,
+            output: 'TypeScript compiler error: src/index.ts(1,1): error TS2304: Cannot find name "invalid".',
+            artifactDigest: '',
+            artifactKind: 'bundle',
+            smokeCheck: { passed: false, statusCode: 0, durationMs: 0, error: 'Build failed before smoke check' },
+            durationMs: 80,
+            error: 'Build command failed with exit code 1'
+          }
+        }, { status: 422 });
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${makerToken}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'edge-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          RIG_GATEWAY_URL: 'https://rig-provider.nates-software.com',
+          RIG_GATEWAY_SERVICE_SECRET: RIG_SECRET,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch,
+          __RIG_GATEWAY_FETCH: rigFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.evidence.stage).toBe('build');
+
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, deployment_error FROM app_listings WHERE id = 'edge-app'
+      `).first<any>();
+      expect(app.deployment_state).toBe('failed');
+      expect(app.active_deployment_id).toBeNull();
+    });
+
+    it('fails closed when RIG gateway returns smoke check failure', async () => {
+      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const fakeTar = Buffer.from('tar');
+
+      const gitsmithFetch: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === '/api/gateway/verify-commit') {
+          return Response.json({
+            success: true,
+            exists: true,
+            files: ['index.html'],
+            manifestContents: { 'index.html': '<h1>Static</h1>' }
+          });
+        }
+        return new Response(fakeTar, { status: 200, headers: { 'Content-Type': 'application/x-tar', 'X-Gitsmith-Commit-Oid': commitOid } });
+      };
+
+      const rigFetch: typeof fetch = async () => {
+        return Response.json({
+          success: false,
+          result: {
+            success: false,
+            exitCode: 0,
+            output: 'Built static files.',
+            artifactDigest: 'sha256:someartifactdigest',
+            artifactKind: 'static',
+            smokeCheck: {
+              passed: false,
+              statusCode: 500,
+              durationMs: 30,
+              error: 'Smoke check probe failed with status 500'
+            },
+            durationMs: 120,
+            error: 'Smoke check probe failed with status 500'
+          }
+        }, { status: 422 });
+      };
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${makerToken}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'edge-app'
+        })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith-gateway-production.up.railway.app',
+          GITSMITH_GATEWAY_TOKEN: GITSMITH_TOKEN,
+          RIG_GATEWAY_URL: 'https://rig-provider.nates-software.com',
+          RIG_GATEWAY_SERVICE_SECRET: RIG_SECRET,
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch,
+          __RIG_GATEWAY_FETCH: rigFetch
+        }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.evidence.stage).toBe('smoke_check');
+    });
+  });
 });

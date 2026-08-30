@@ -17,6 +17,7 @@ import type {
   GitCommitInfo,
   DiffHunk,
   GitFileDiff,
+  InspectCommitTreeResult,
   ProposalDiffResult,
   ProvisionRepoParams,
   ProvisionRepoResult,
@@ -433,6 +434,77 @@ export function readCommitFileContent(
   } catch {
     return null;
   }
+}
+
+/**
+ * Inspects a committed tree on disk: verifies existence, lists committed files,
+ * and reads contents of manifest candidate files.
+ */
+export function inspectCommitTree(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  manifestCandidates: readonly string[] = [
+    'package.json', 'Dockerfile', 'dockerfile', 'requirements.txt',
+    'pyproject.toml', 'Cargo.toml', 'go.mod', 'slop.json',
+    'deploy.json', 'rig.json', 'app.json', 'manifest.json',
+    'wrangler.toml', 'index.html', 'index.htm'
+  ]
+): InspectCommitTreeResult {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return {
+      success: false,
+      exists: false,
+      storageKey,
+      commitOid,
+      error: pathRes.error || `Repository '${storageKey}' does not exist on gateway disk.`
+    };
+  }
+
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) {
+    return {
+      success: false,
+      exists: false,
+      storageKey,
+      commitOid,
+      error: 'Invalid commit OID format.'
+    };
+  }
+
+  if (!hasGitObject(reposRoot, storageKey, commitOid)) {
+    return {
+      success: false,
+      exists: false,
+      storageKey,
+      commitOid,
+      error: `Commit ${commitOid.slice(0, 12)} does not exist in repository '${storageKey}'.`
+    };
+  }
+
+  const files = listCommitFiles(reposRoot, storageKey, commitOid);
+  const manifestContents: Record<string, string> = {};
+
+  for (const candidate of manifestCandidates) {
+    const matched = files.find(
+      f => f.toLowerCase() === candidate.toLowerCase() || f.toLowerCase().endsWith(`/${candidate.toLowerCase()}`)
+    );
+    if (matched && !(matched in manifestContents)) {
+      const content = readCommitFileContent(reposRoot, storageKey, commitOid, matched);
+      if (content !== null) {
+        manifestContents[matched] = content;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    exists: true,
+    storageKey,
+    commitOid,
+    files,
+    manifestContents
+  };
 }
 
 /**
