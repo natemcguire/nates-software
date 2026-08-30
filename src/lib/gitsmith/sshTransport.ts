@@ -119,36 +119,51 @@ function matchesPattern(refName, pattern) {
   return false;
 }
 
+function comparePolicySpecificity(a, b) {
+  const normA = normalizeRef(a.refPattern);
+  const normB = normalizeRef(b.refPattern);
+  const hasWildcardA = normA.endsWith('*') ? 1 : 0;
+  const hasWildcardB = normB.endsWith('*') ? 1 : 0;
+  const prefixLenA = hasWildcardA ? normA.slice(0, -1).length : normA.length;
+  const prefixLenB = normB.endsWith('*') ? normB.slice(0, -1).length : normB.length;
+
+  if (prefixLenB !== prefixLenA) {
+    return prefixLenB - prefixLenA;
+  }
+  if (hasWildcardA !== hasWildcardB) {
+    return hasWildcardA - hasWildcardB;
+  }
+  return 0;
+}
+
 function selectRefPolicy(policies, refName) {
   if (!Array.isArray(policies) || policies.length === 0 || !refName) return null;
   const matches = policies.filter(p => p && typeof p.refPattern === 'string' && matchesPattern(refName, p.refPattern));
   if (matches.length === 0) return null;
-  return matches.slice().sort((a, b) => {
-    const normA = normalizeRef(a.refPattern);
-    const normB = normalizeRef(b.refPattern);
-    const hasWildcardA = normA.endsWith('*') ? 1 : 0;
-    const hasWildcardB = normB.endsWith('*') ? 1 : 0;
-    const prefixLenA = normA.endsWith('*') ? normA.slice(0, -1).length : normA.length;
-    const prefixLenB = normB.endsWith('*') ? normB.slice(0, -1).length : normB.length;
+  if (matches.length === 1) return matches[0];
 
-    if (prefixLenB !== prefixLenA) {
-      return prefixLenB - prefixLenA;
-    }
-    if (hasWildcardA !== hasWildcardB) {
-      return hasWildcardA - hasWildcardB;
-    }
-    const allowForceA = Boolean(a.allowForcePush) ? 1 : 0;
-    const allowForceB = Boolean(b.allowForcePush) ? 1 : 0;
-    if (allowForceA !== allowForceB) {
-      return allowForceA - allowForceB;
-    }
-    const allowDelA = Boolean(a.allowDelete) ? 1 : 0;
-    const allowDelB = Boolean(b.allowDelete) ? 1 : 0;
-    if (allowDelA !== allowDelB) {
-      return allowDelA - allowDelB;
-    }
-    return normA.localeCompare(normB);
-  })[0];
+  const sorted = matches.slice().sort(comparePolicySpecificity);
+  const best = sorted[0];
+  const topTier = sorted.filter(p => comparePolicySpecificity(best, p) === 0);
+
+  if (topTier.length === 1) return topTier[0];
+
+  // For EQUAL specificity, combine conservatively PER OPERATION (deny wins)
+  const allowForcePush = topTier.every(p => Boolean(p.allowForcePush));
+  const allowDelete = topTier.every(p => Boolean(p.allowDelete));
+  const requireSignedCommits = topTier.some(p => Boolean(p.requireSignedCommits));
+  const requirePassingBuild = topTier.some(p => Boolean(p.requirePassingBuild));
+  const minimumApprovals = Math.max(...topTier.map(p => Number(p.minimumApprovals) || 0));
+  const sortedPatterns = topTier.slice().sort((a, b) => normalizeRef(a.refPattern).localeCompare(normalizeRef(b.refPattern)));
+
+  return {
+    refPattern: sortedPatterns[0].refPattern,
+    allowForcePush,
+    allowDelete,
+    requireSignedCommits,
+    requirePassingBuild,
+    minimumApprovals
+  };
 }
 
 function isValidPolicyEntry(entry) {
@@ -158,19 +173,19 @@ function isValidPolicyEntry(entry) {
   if (typeof entry.refPattern !== 'string' || !entry.refPattern.trim()) {
     return false;
   }
-  if (entry.allowForcePush !== undefined && typeof entry.allowForcePush !== 'boolean' && entry.allowForcePush !== 0 && entry.allowForcePush !== 1) {
+  if (entry.allowForcePush === undefined || (typeof entry.allowForcePush !== 'boolean' && entry.allowForcePush !== 0 && entry.allowForcePush !== 1)) {
     return false;
   }
-  if (entry.allowDelete !== undefined && typeof entry.allowDelete !== 'boolean' && entry.allowDelete !== 0 && entry.allowDelete !== 1) {
+  if (entry.allowDelete === undefined || (typeof entry.allowDelete !== 'boolean' && entry.allowDelete !== 0 && entry.allowDelete !== 1)) {
     return false;
   }
-  if (entry.requireSignedCommits !== undefined && typeof entry.requireSignedCommits !== 'boolean' && entry.requireSignedCommits !== 0 && entry.requireSignedCommits !== 1) {
+  if (entry.requireSignedCommits === undefined || (typeof entry.requireSignedCommits !== 'boolean' && entry.requireSignedCommits !== 0 && entry.requireSignedCommits !== 1)) {
     return false;
   }
-  if (entry.requirePassingBuild !== undefined && typeof entry.requirePassingBuild !== 'boolean' && entry.requirePassingBuild !== 0 && entry.requirePassingBuild !== 1) {
+  if (entry.requirePassingBuild === undefined || (typeof entry.requirePassingBuild !== 'boolean' && entry.requirePassingBuild !== 0 && entry.requirePassingBuild !== 1)) {
     return false;
   }
-  if (entry.minimumApprovals !== undefined && (typeof entry.minimumApprovals !== 'number' || !Number.isFinite(entry.minimumApprovals) || entry.minimumApprovals < 0)) {
+  if (entry.minimumApprovals === undefined || typeof entry.minimumApprovals !== 'number' || !Number.isFinite(entry.minimumApprovals) || entry.minimumApprovals < 0) {
     return false;
   }
   return true;
@@ -343,6 +358,11 @@ async function main() {
     return;
   }
 
+  // Note: The sub-second in-process window between the live policy check and
+  // receive-pack's ref write is a known, accepted limitation (policy mutation is
+  // a rare admin action; closing it requires policy-revision binding, deferred).
+  // This is deliberate scope, not an oversight.
+
   // Double check the live policies locally for defense-in-depth
   const liveDefaultRef = normalizeRef(data.defaultRef);
   const liveRefPolicies = data.refPolicies;
@@ -354,6 +374,21 @@ async function main() {
     const isProtected = isDefaultBranch || Boolean(matchingPolicy);
 
     if (isProtected) {
+      if (matchingPolicy) {
+        if (Boolean(matchingPolicy.requireSignedCommits)) {
+          failClosed('protected ref requires signed commits which this gateway cannot verify');
+          return;
+        }
+        if (Boolean(matchingPolicy.requirePassingBuild)) {
+          failClosed('protected ref requires passing build which this gateway cannot verify');
+          return;
+        }
+        if (typeof matchingPolicy.minimumApprovals === 'number' && matchingPolicy.minimumApprovals > 0) {
+          failClosed('protected ref requires approvals which this gateway cannot verify');
+          return;
+        }
+      }
+
       if (update.isDelete) {
         const allowDelete = matchingPolicy ? Boolean(matchingPolicy.allowDelete) : false;
         if (!allowDelete) {
@@ -481,6 +516,10 @@ main().catch(err => {
         fs.writeFileSync(policyFile, JSON.stringify(policyData), { mode: 0o600 });
       }
 
+      // Note: The sub-second in-process window between the live policy check and
+      // receive-pack's ref write is a known, accepted limitation (policy mutation is
+      // a rare admin action; closing it requires policy-revision binding, deferred).
+      // This is deliberate scope, not an oversight.
       const args = operation === 'write'
         ? ['-c', `core.hooksPath=${hookDir}`, 'receive-pack', resolved.resolvedPath]
         : ['upload-pack', resolved.resolvedPath];

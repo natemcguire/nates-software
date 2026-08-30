@@ -552,6 +552,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const isProtected = isDefaultBranch || Boolean(matchingPolicy);
 
         if (isProtected) {
+          if (matchingPolicy) {
+            if (Boolean(matchingPolicy.requireSignedCommits)) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `protected ref requires signed commits which this gateway cannot verify`
+              });
+            }
+            if (Boolean(matchingPolicy.requirePassingBuild)) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `protected ref requires passing build which this gateway cannot verify`
+              });
+            }
+            if (typeof matchingPolicy.minimumApprovals === 'number' && matchingPolicy.minimumApprovals > 0) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `protected ref requires approvals which this gateway cannot verify`
+              });
+            }
+          }
+
           if (isDelete) {
             const allowDelete = matchingPolicy ? Boolean(matchingPolicy.allowDelete) : false;
             if (!allowDelete) {

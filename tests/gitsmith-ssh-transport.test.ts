@@ -107,6 +107,36 @@ describe('GITSMITH SSH transport', () => {
             const isProtected = isDefaultBranch || Boolean(matchingPolicy);
 
             if (isProtected) {
+              if (matchingPolicy) {
+                if (Boolean(matchingPolicy.requireSignedCommits)) {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    success: true,
+                    allowed: false,
+                    reason: 'protected ref requires signed commits which this gateway cannot verify'
+                  }));
+                  return;
+                }
+                if (Boolean(matchingPolicy.requirePassingBuild)) {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    success: true,
+                    allowed: false,
+                    reason: 'protected ref requires passing build which this gateway cannot verify'
+                  }));
+                  return;
+                }
+                if (typeof matchingPolicy.minimumApprovals === 'number' && matchingPolicy.minimumApprovals > 0) {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({
+                    success: true,
+                    allowed: false,
+                    reason: 'protected ref requires approvals which this gateway cannot verify'
+                  }));
+                  return;
+                }
+              }
+
               if (isDelete) {
                 const allowDelete = matchingPolicy ? Boolean(matchingPolicy.allowDelete) : false;
                 if (!allowDelete) {
@@ -487,8 +517,8 @@ describe('GITSMITH SSH transport', () => {
     const c2Oid = execFileSync('git', ['-C', wtDir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 
     const overlappingPolicies = [
-      { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1 },
-      { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0 }
+      { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 },
+      { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
     ];
 
     // Mock control plane server returning allowed: true to test defense-in-depth hook evaluation
@@ -553,7 +583,7 @@ describe('GITSMITH SSH transport', () => {
     expect(forceRes.stderr).toContain('rejected: non-fast-forward update to protected ref refs/heads/release/1.0 is prohibited');
   });
 
-  it('fails closed on malformed policy entry during push (empty object, missing refPattern, bad allow flags)', async () => {
+  it('fails closed on malformed or incomplete policy entry during push (empty object, missing columns, bad types)', async () => {
     // 1. Policy with empty object [{}]
     const t1 = await setupTransport({ refPolicies: [{}] });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${t1.port}/nate/demo.git`, t1.checkout], {
@@ -573,8 +603,8 @@ describe('GITSMITH SSH transport', () => {
     }
     expect(pushErr1).not.toBeNull();
 
-    // 2. Policy with empty refPattern [{ refPattern: '' }]
-    const t2 = await setupTransport({ refPolicies: [{ refPattern: '' }] });
+    // 2. Policy with empty refPattern [{ refPattern: '', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }]
+    const t2 = await setupTransport({ refPolicies: [{ refPattern: '', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }] });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${t2.port}/nate/demo.git`, t2.checkout], {
       env: { ...process.env, GIT_SSH_COMMAND: t2.sshCommand }
     });
@@ -592,8 +622,8 @@ describe('GITSMITH SSH transport', () => {
     }
     expect(pushErr2).not.toBeNull();
 
-    // 3. Policy with bad allow flags [{ refPattern: 'refs/heads/*', allowForcePush: 'invalid-flag' }]
-    const t3 = await setupTransport({ refPolicies: [{ refPattern: 'refs/heads/*', allowForcePush: 'invalid-flag' }] });
+    // 3. Policy with bad allow flags [{ refPattern: 'refs/heads/*', allowForcePush: 'invalid-flag', allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }]
+    const t3 = await setupTransport({ refPolicies: [{ refPattern: 'refs/heads/*', allowForcePush: 'invalid-flag', allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }] });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${t3.port}/nate/demo.git`, t3.checkout], {
       env: { ...process.env, GIT_SSH_COMMAND: t3.sshCommand }
     });
@@ -610,6 +640,25 @@ describe('GITSMITH SSH transport', () => {
       pushErr3 = err;
     }
     expect(pushErr3).not.toBeNull();
+
+    // 4. Incomplete policy (missing flags/columns like requireSignedCommits, requirePassingBuild, minimumApprovals)
+    const t4 = await setupTransport({ refPolicies: [{ refPattern: 'refs/heads/main' }] });
+    await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${t4.port}/nate/demo.git`, t4.checkout], {
+      env: { ...process.env, GIT_SSH_COMMAND: t4.sshCommand }
+    });
+    fs.writeFileSync(path.join(t4.checkout, 'incomplete.txt'), 'Incomplete policy\n');
+    await execFileAsync('git', ['-C', t4.checkout, 'add', 'incomplete.txt']);
+    await execFileAsync('git', ['-C', t4.checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'inc']);
+
+    let pushErr4: any = null;
+    try {
+      await execFileAsync('git', ['-C', t4.checkout, 'push', 'origin', 'HEAD:main'], {
+        env: { ...process.env, GIT_SSH_COMMAND: t4.sshCommand }
+      });
+    } catch (err: any) {
+      pushErr4 = err;
+    }
+    expect(pushErr4).not.toBeNull();
   }, 30_000);
 
   it('rejects push when ref becomes protected after auth but before pre-receive (TOCTOU prevention)', async () => {
@@ -644,7 +693,7 @@ describe('GITSMITH SSH transport', () => {
 
     // Now update policy on the control plane to protect refs/heads/feature/toctou
     currentPolicies = [
-      { refPattern: 'refs/heads/feature/toctou', allowForcePush: 0, allowDelete: 0 }
+      { refPattern: 'refs/heads/feature/toctou', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
     ];
 
     // Attempt force-push now (simulates push occurring after policy changed on control plane)
@@ -686,7 +735,7 @@ describe('GITSMITH SSH transport', () => {
   it('allows normal fast-forward push to writable non-protected ref when policy is complete and current', async () => {
     const { checkout, sshCommand, port, callbacks } = await setupTransport({
       refPolicies: [
-        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0 }
+        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
       ]
     });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${port}/nate/demo.git`, checkout], {
@@ -706,7 +755,7 @@ describe('GITSMITH SSH transport', () => {
   it('enforces custom protected ref patterns from refPolicies', async () => {
     const { checkout, sshCommand, port } = await setupTransport({
       refPolicies: [
-        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0 }
+        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
       ]
     });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${port}/nate/demo.git`, checkout], {
@@ -737,8 +786,8 @@ describe('GITSMITH SSH transport', () => {
     // Ordering 1: broad permissive first, specific restrictive second (simulates arbitrary D1 row order)
     const { checkout, sshCommand, port } = await setupTransport({
       refPolicies: [
-        { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1 },
-        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0 }
+        { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 },
+        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
       ]
     });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${port}/nate/demo.git`, checkout], {
@@ -785,8 +834,8 @@ describe('GITSMITH SSH transport', () => {
     // Ordering: broad allow first, specific deny second
     const { checkout, sshCommand, port } = await setupTransport({
       refPolicies: [
-        { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1 },
-        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0 }
+        { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 },
+        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
       ]
     });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${port}/nate/demo.git`, checkout], {
@@ -818,8 +867,8 @@ describe('GITSMITH SSH transport', () => {
   it('honors non-overlapping single policy and broad permissive policy on non-protected refs', async () => {
     const { checkout, sshCommand, port, callbacks } = await setupTransport({
       refPolicies: [
-        { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1 },
-        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0 }
+        { refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 },
+        { refPattern: 'refs/heads/release/*', allowForcePush: 0, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
       ]
     });
     await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${port}/nate/demo.git`, checkout], {
@@ -841,5 +890,145 @@ describe('GITSMITH SSH transport', () => {
 
     expect(callbacks.some(c => c.refName === 'refs/heads/feature/unprotected' && c.operation === 'delete')).toBe(true);
   }, 25_000);
+
+  it('rejects push when policy demands unsupported requirements (signed commits, passing build, approvals)', async () => {
+    // 1. requireSignedCommits: true
+    const tSigned = await setupTransport({
+      refPolicies: [
+        { refPattern: 'refs/heads/feature/signed-req', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 1, requirePassingBuild: 0, minimumApprovals: 0 }
+      ]
+    });
+    await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${tSigned.port}/nate/demo.git`, tSigned.checkout], {
+      env: { ...process.env, GIT_SSH_COMMAND: tSigned.sshCommand }
+    });
+    fs.writeFileSync(path.join(tSigned.checkout, 'signed.txt'), 'Signed req\n');
+    await execFileAsync('git', ['-C', tSigned.checkout, 'add', 'signed.txt']);
+    await execFileAsync('git', ['-C', tSigned.checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'signed req commit']);
+
+    let signedErr: any = null;
+    try {
+      await execFileAsync('git', ['-C', tSigned.checkout, 'push', 'origin', 'HEAD:refs/heads/feature/signed-req'], {
+        env: { ...process.env, GIT_SSH_COMMAND: tSigned.sshCommand }
+      });
+    } catch (err: any) {
+      signedErr = err;
+    }
+    expect(signedErr).not.toBeNull();
+    const signedOut = (signedErr.stderr || '') + (signedErr.stdout || '') + (signedErr.message || '');
+    expect(signedOut).toContain('protected ref requires signed commits which this gateway cannot verify');
+
+    // 2. requirePassingBuild: true
+    const tBuild = await setupTransport({
+      refPolicies: [
+        { refPattern: 'refs/heads/feature/build-req', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 1, minimumApprovals: 0 }
+      ]
+    });
+    await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${tBuild.port}/nate/demo.git`, tBuild.checkout], {
+      env: { ...process.env, GIT_SSH_COMMAND: tBuild.sshCommand }
+    });
+    fs.writeFileSync(path.join(tBuild.checkout, 'build.txt'), 'Build req\n');
+    await execFileAsync('git', ['-C', tBuild.checkout, 'add', 'build.txt']);
+    await execFileAsync('git', ['-C', tBuild.checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'build req commit']);
+
+    let buildErr: any = null;
+    try {
+      await execFileAsync('git', ['-C', tBuild.checkout, 'push', 'origin', 'HEAD:refs/heads/feature/build-req'], {
+        env: { ...process.env, GIT_SSH_COMMAND: tBuild.sshCommand }
+      });
+    } catch (err: any) {
+      buildErr = err;
+    }
+    expect(buildErr).not.toBeNull();
+    const buildOut = (buildErr.stderr || '') + (buildErr.stdout || '') + (buildErr.message || '');
+    expect(buildOut).toContain('protected ref requires passing build which this gateway cannot verify');
+
+    // 3. minimumApprovals > 0
+    const tAppr = await setupTransport({
+      refPolicies: [
+        { refPattern: 'refs/heads/feature/appr-req', allowForcePush: 1, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 2 }
+      ]
+    });
+    await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${tAppr.port}/nate/demo.git`, tAppr.checkout], {
+      env: { ...process.env, GIT_SSH_COMMAND: tAppr.sshCommand }
+    });
+    fs.writeFileSync(path.join(tAppr.checkout, 'appr.txt'), 'Appr req\n');
+    await execFileAsync('git', ['-C', tAppr.checkout, 'add', 'appr.txt']);
+    await execFileAsync('git', ['-C', tAppr.checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'appr req commit']);
+
+    let apprErr: any = null;
+    try {
+      await execFileAsync('git', ['-C', tAppr.checkout, 'push', 'origin', 'HEAD:refs/heads/feature/appr-req'], {
+        env: { ...process.env, GIT_SSH_COMMAND: tAppr.sshCommand }
+      });
+    } catch (err: any) {
+      apprErr = err;
+    }
+    expect(apprErr).not.toBeNull();
+    const apprOut = (apprErr.stderr || '') + (apprErr.stdout || '') + (apprErr.message || '');
+    expect(apprOut).toContain('protected ref requires approvals which this gateway cannot verify');
+  }, 40_000);
+
+  it('enforces equal-specificity conflict (main vs refs/heads/main, opposite allow/deny) -> deny wins for BOTH operations', async () => {
+    // Policy 1: 'main' allows force-push, denies delete
+    // Policy 2: 'refs/heads/main' denies force-push, allows delete
+    const equalConflictPolicies = [
+      { refPattern: 'main', allowForcePush: 1, allowDelete: 0, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 },
+      { refPattern: 'refs/heads/main', allowForcePush: 0, allowDelete: 1, requireSignedCommits: 0, requirePassingBuild: 0, minimumApprovals: 0 }
+    ];
+
+    const { checkout, sshCommand, port } = await setupTransport({
+      refPolicies: equalConflictPolicies
+    });
+    await execFileAsync('git', ['clone', `ssh://git@127.0.0.1:${port}/nate/demo.git`, checkout], {
+      env: { ...process.env, GIT_SSH_COMMAND: sshCommand }
+    });
+
+    // 1. Initial commit
+    fs.writeFileSync(path.join(checkout, 'c1.txt'), 'Commit 1\n');
+    await execFileAsync('git', ['-C', checkout, 'add', 'c1.txt']);
+    await execFileAsync('git', ['-C', checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'c1']);
+    await execFileAsync('git', ['-C', checkout, 'push', 'origin', 'HEAD:main'], {
+      env: { ...process.env, GIT_SSH_COMMAND: sshCommand }
+    });
+
+    // 2. Second commit
+    fs.writeFileSync(path.join(checkout, 'c2.txt'), 'Commit 2\n');
+    await execFileAsync('git', ['-C', checkout, 'add', 'c2.txt']);
+    await execFileAsync('git', ['-C', checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'c2']);
+    await execFileAsync('git', ['-C', checkout, 'push', 'origin', 'HEAD:main'], {
+      env: { ...process.env, GIT_SSH_COMMAND: sshCommand }
+    });
+
+    // 3. Test Deny-Wins on Force-Push: Reset to c1, make divergent c3, attempt force push -> MUST BE REJECTED
+    await execFileAsync('git', ['-C', checkout, 'reset', '--hard', 'HEAD~1']);
+    fs.writeFileSync(path.join(checkout, 'c3.txt'), 'Commit 3 (diverged)\n');
+    await execFileAsync('git', ['-C', checkout, 'add', 'c3.txt']);
+    await execFileAsync('git', ['-C', checkout, '-c', 'user.name=Nate', '-c', 'user.email=nate@example.test', 'commit', '-m', 'c3 diverged']);
+
+    let fpErr: any = null;
+    try {
+      await execFileAsync('git', ['-C', checkout, 'push', '--force', 'origin', 'HEAD:main'], {
+        env: { ...process.env, GIT_SSH_COMMAND: sshCommand }
+      });
+    } catch (err: any) {
+      fpErr = err;
+    }
+    expect(fpErr).not.toBeNull();
+    const fpOut = (fpErr.stderr || '') + (fpErr.stdout || '') + (fpErr.message || '');
+    expect(fpOut).toContain('non-fast-forward update to protected ref refs/heads/main is prohibited');
+
+    // 4. Test Deny-Wins on Deletion: Attempt to delete main -> MUST BE REJECTED
+    let delErr: any = null;
+    try {
+      await execFileAsync('git', ['-C', checkout, 'push', 'origin', ':main'], {
+        env: { ...process.env, GIT_SSH_COMMAND: sshCommand }
+      });
+    } catch (err: any) {
+      delErr = err;
+    }
+    expect(delErr).not.toBeNull();
+    const delOut = (delErr.stderr || '') + (delErr.stdout || '') + (delErr.message || '');
+    expect(delOut).toContain('deletion of protected ref refs/heads/main is prohibited');
+  }, 30_000);
 });
 

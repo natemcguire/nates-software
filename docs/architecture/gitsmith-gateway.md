@@ -126,3 +126,8 @@ GITSMITH_SSH_HOST=<public TCP proxy host>
 GITSMITH_SSH_PORT=2222
 GITSMITH_SSH_PUBLIC_PORT=<public TCP proxy port>
 ```
+
+### Policy Enforcement & Accepted Race Window
+
+The live pre-receive hook re-validates ref policies with the control plane immediately before ref updates land. The sub-second in-process window between the live policy check and receive-pack's ref write is a known, accepted limitation (policy mutation is a rare admin action; closing it requires policy-revision binding, deferred). This is deliberate scope, not an oversight.
+

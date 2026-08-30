@@ -199,30 +199,107 @@ describe('canonical forge domain invariants', () => {
     expect(selectRefPolicy([duplicatePatternDeny, duplicatePatternAllow], 'refs/heads/feature/abc')).toEqual(duplicatePatternDeny);
   });
 
+  it('combines equal-specificity policies per operation with deny-wins semantics', () => {
+    const policyA = {
+      refPattern: 'main',
+      allowForcePush: true,
+      allowDelete: false,
+      requireSignedCommits: false,
+      requirePassingBuild: false,
+      minimumApprovals: 0
+    };
+    const policyB = {
+      refPattern: 'refs/heads/main',
+      allowForcePush: false,
+      allowDelete: true,
+      requireSignedCommits: false,
+      requirePassingBuild: false,
+      minimumApprovals: 0
+    };
+
+    // Equal specificity: 'main' vs 'refs/heads/main' -> deny wins for BOTH force-push and delete
+    const result = selectRefPolicy([policyA, policyB], 'refs/heads/main');
+    expect(result).not.toBeNull();
+    expect(result?.allowForcePush).toBe(false);
+    expect(result?.allowDelete).toBe(false);
+
+    // Reversed input order produces identical deny-wins result
+    const resultReversed = selectRefPolicy([policyB, policyA], 'refs/heads/main');
+    expect(resultReversed).not.toBeNull();
+    expect(resultReversed?.allowForcePush).toBe(false);
+    expect(resultReversed?.allowDelete).toBe(false);
+
+    // Strictest requirements also win in equal-specificity merge
+    const policyC = {
+      refPattern: 'main',
+      allowForcePush: true,
+      allowDelete: true,
+      requireSignedCommits: true,
+      requirePassingBuild: false,
+      minimumApprovals: 3
+    };
+    const policyD = {
+      refPattern: 'refs/heads/main',
+      allowForcePush: true,
+      allowDelete: true,
+      requireSignedCommits: false,
+      requirePassingBuild: true,
+      minimumApprovals: 1
+    };
+    const strictResult = selectRefPolicy([policyC, policyD], 'refs/heads/main');
+    expect(strictResult).not.toBeNull();
+    expect(strictResult?.requireSignedCommits).toBe(true);
+    expect(strictResult?.requirePassingBuild).toBe(true);
+    expect(strictResult?.minimumApprovals).toBe(3);
+    expect(strictResult?.allowForcePush).toBe(true);
+    expect(strictResult?.allowDelete).toBe(true);
+  });
+
   it('validates ref policy entries and ref policy lists strictly', () => {
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main' })).toBe(true);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: true, allowDelete: false })).toBe(true);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 0 })).toBe(true);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', requireSignedCommits: true, requirePassingBuild: 1, minimumApprovals: 2 })).toBe(true);
+    const completeEntry = {
+      refPattern: 'refs/heads/main',
+      allowForcePush: false,
+      allowDelete: false,
+      requireSignedCommits: false,
+      requirePassingBuild: false,
+      minimumApprovals: 0
+    };
+    expect(isValidRefPolicyEntry(completeEntry)).toBe(true);
+    expect(isValidRefPolicyEntry({ ...completeEntry, allowForcePush: true, allowDelete: 0 })).toBe(true);
+    expect(isValidRefPolicyEntry({ ...completeEntry, allowForcePush: 1, allowDelete: false })).toBe(true);
+    expect(isValidRefPolicyEntry({ ...completeEntry, requireSignedCommits: 1, requirePassingBuild: true, minimumApprovals: 2 })).toBe(true);
+
+    // Incomplete entries (missing any required column) must fail closed
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main' })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: true, allowDelete: false })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 0 })).toBe(false);
+    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', requireSignedCommits: true, requirePassingBuild: 1, minimumApprovals: 2 })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, allowForcePush: undefined })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, allowDelete: undefined })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, requireSignedCommits: undefined })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, requirePassingBuild: undefined })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, minimumApprovals: undefined })).toBe(false);
 
     // Malformed entries
     expect(isValidRefPolicyEntry(null)).toBe(false);
     expect(isValidRefPolicyEntry({})).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: '' })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: '   ' })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 123 })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', allowForcePush: 'yes' })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', allowDelete: 42 })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', requireSignedCommits: 'invalid' })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', requirePassingBuild: 'bad' })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', minimumApprovals: -1 })).toBe(false);
-    expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main', minimumApprovals: NaN })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, refPattern: '' })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, refPattern: '   ' })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, refPattern: 123 })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, allowForcePush: 'yes' })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, allowDelete: 42 })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, requireSignedCommits: 'invalid' })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, requirePassingBuild: 'bad' })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, minimumApprovals: -1 })).toBe(false);
+    expect(isValidRefPolicyEntry({ ...completeEntry, minimumApprovals: NaN })).toBe(false);
 
     // Lists
     expect(isValidRefPolicies([])).toBe(true);
-    expect(isValidRefPolicies([{ refPattern: 'refs/heads/main' }])).toBe(true);
+    expect(isValidRefPolicies([completeEntry])).toBe(true);
+    expect(isValidRefPolicies([{ refPattern: 'refs/heads/main' }])).toBe(false);
     expect(isValidRefPolicies([{}])).toBe(false);
-    expect(isValidRefPolicies([{ refPattern: 'refs/heads/main' }, {}])).toBe(false);
+    expect(isValidRefPolicies([completeEntry, {}])).toBe(false);
+    expect(isValidRefPolicies([completeEntry, { refPattern: 'refs/heads/main' }])).toBe(false);
     expect(isValidRefPolicies('not-an-array')).toBe(false);
     expect(isValidRefPolicies(null)).toBe(false);
   });
