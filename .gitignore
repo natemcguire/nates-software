@@ -6,3 +6,6 @@ dist
 # Generated TS build cache (was causing merge conflicts)
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+
+# Wrangler local state cache (never commit)
+.wrangler/
