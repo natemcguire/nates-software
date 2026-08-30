@@ -1820,7 +1820,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (childSlug.includes('/')) {
       childSlug = childSlug.split('/').pop()!;
     }
-    const parentRefName = String(body.parentRefName || 'refs/heads/main').trim();
     const visibility = ['public', 'unlisted', 'private'].includes(body.visibility) ? body.visibility : 'public';
 
     try {
@@ -1894,6 +1893,31 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       if (!parent) return failure('Parent repository not found.', 404);
       const parentRepositoryId = (parent as any).id;
+
+      // Cross-validate appId ↔ parentRepositoryId
+      if (body.appId) {
+        const rawAppId = String(body.appId).trim();
+        if (rawAppId) {
+          let isLinked = false;
+          if ((parent as any).appId === rawAppId || (parent as any).slug === rawAppId) {
+            isLinked = true;
+          } else {
+            const linkedListing = await db.prepare(`
+              SELECT id FROM app_listings
+              WHERE id = ? AND repository_id = ?
+            `).bind(rawAppId, parentRepositoryId).first();
+            if (linkedListing) {
+              isLinked = true;
+            }
+          }
+
+          if (!isLinked) {
+            return failure('Provided appId does not match the parent repository.', 400);
+          }
+        }
+      }
+
+      const parentRefName = String(body.parentRefName || (parent as any).defaultRef || 'refs/heads/main').trim();
 
       if (!childSlug) {
         childSlug = (parent as any).slug;
@@ -2017,7 +2041,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         visibility
       });
 
-      const parentAppId = (parent as any).appId || (body.appId ? String(body.appId).trim() : null);
+      const resolvedParentAppId = (parent as any).appId || null;
 
       await db.batch([
         db.prepare(`
@@ -2043,9 +2067,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           WHERE id = (
             SELECT id FROM app_listings
             WHERE repository_id = ? OR id = ? OR id = ?
+            ORDER BY (CASE WHEN repository_id = ? THEN 0 WHEN id = ? THEN 1 ELSE 2 END)
             LIMIT 1
           )
-        `).bind(parentRepositoryId, parentAppId || '', (parent as any).slug || '')
+        `).bind(parentRepositoryId, resolvedParentAppId || '', (parent as any).slug || '', parentRepositoryId, resolvedParentAppId || '')
       ]);
 
       return Response.json({

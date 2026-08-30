@@ -353,5 +353,128 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(data.success).toBe(true);
       expect(data.repository.slug).toBe('wallart-thin-api');
     });
+
+    it('succeeds forking a repository whose default_ref is not main when parentRefName is sent', async () => {
+      const OID_CUSTOM = '9999888877776666555544443333222211110000';
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_custom_branch', 'usr_nate', 'custom-branch-app', 'public', 'sha1', 'refs/heads/develop', 'repositories/repo_custom_branch', 'active')
+      `).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+        VALUES ('repo_custom_branch', 'refs/heads/develop', ?, 1, 'usr_nate')
+      `).bind(OID_CUSTOM).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, creator_id, name, tagline, description, version, price, repository_id, forks)
+        VALUES ('custom-app', 'usr_nate', 'Custom App', 'Custom Branch App', 'App on develop ref', '1.0.0', '0.00', 'repo_custom_branch', 0)
+      `).run();
+
+      // 1. Explicit parentRefName: 'refs/heads/develop'
+      const req1 = new Request('http://localhost/api/git', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer session_sam',
+          Origin: 'http://localhost'
+        },
+        body: JSON.stringify({
+          action: 'fork',
+          parentRepositoryId: 'repo_custom_branch',
+          appId: 'custom-app',
+          childSlug: 'custom-app-sam-mod',
+          parentRefName: 'refs/heads/develop'
+        })
+      });
+
+      const res1 = await gitApi.onRequestPost({ request: req1, env: testEnv() });
+      expect(res1.status).toBe(201);
+      const data1 = await res1.json();
+      expect(data1.success).toBe(true);
+      expect(data1.forkRequest.parentRefName).toBe('refs/heads/develop');
+      expect(data1.forkRequest.parentCommitOid).toBe(OID_CUSTOM);
+      expect(data1.repository.defaultRef).toBe('refs/heads/develop');
+
+      // 2. Omitted parentRefName defaults to parent repository default_ref ('refs/heads/develop')
+      const req2 = new Request('http://localhost/api/git', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer session_nate',
+          Origin: 'http://localhost'
+        },
+        body: JSON.stringify({
+          action: 'fork',
+          parentRepositoryId: 'repo_custom_branch',
+          childSlug: 'custom-app-nate-mod'
+        })
+      });
+
+      const res2 = await gitApi.onRequestPost({ request: req2, env: testEnv() });
+      expect(res2.status).toBe(201);
+      const data2 = await res2.json();
+      expect(data2.success).toBe(true);
+      expect(data2.forkRequest.parentRefName).toBe('refs/heads/develop');
+      expect(data2.forkRequest.parentCommitOid).toBe(OID_CUSTOM);
+    });
+
+    it('rejects fork request with 400 when mismatched appId and parentRepositoryId are provided', async () => {
+      // wallart is linked to repo_wallart; dronehunter is not linked to repo_wallart
+      const wallartBefore = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
+      const droneBefore = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('dronehunter').first<{ forks: number }>();
+
+      const req = new Request('http://localhost/api/git', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer session_sam',
+          Origin: 'http://localhost'
+        },
+        body: JSON.stringify({
+          action: 'fork',
+          parentRepositoryId: 'repo_wallart',
+          appId: 'dronehunter', // mismatched appId
+          childSlug: 'wallart-tampered'
+        })
+      });
+
+      const res = await gitApi.onRequestPost({ request: req, env: testEnv() });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('Provided appId does not match the parent repository');
+
+      // Ensure neither listing's fork counter was modified
+      const wallartAfter = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
+      const droneAfter = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('dronehunter').first<{ forks: number }>();
+      expect(wallartAfter?.forks).toBe(wallartBefore?.forks);
+      expect(droneAfter?.forks).toBe(droneBefore?.forks);
+    });
+
+    it('targets solely the resolved parent repository listing when incrementing forks count', async () => {
+      // Fork repo_wallart by repository ID without passing appId
+      const wallartBefore = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
+
+      const req = new Request('http://localhost/api/git', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer session_sam',
+          Origin: 'http://localhost'
+        },
+        body: JSON.stringify({
+          action: 'fork',
+          parentRepositoryId: 'repo_wallart',
+          childSlug: 'wallart-sole-target'
+        })
+      });
+
+      const res = await gitApi.onRequestPost({ request: req, env: testEnv() });
+      expect(res.status).toBe(201);
+
+      const wallartAfter = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
+      expect(wallartAfter?.forks).toBe((wallartBefore?.forks || 0) + 1);
+    });
   });
 });

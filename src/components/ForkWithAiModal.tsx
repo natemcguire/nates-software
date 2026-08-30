@@ -135,7 +135,8 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
           action: 'fork',
           parentRepositoryId: parentIdentifier,
           appId: app.id,
-          childSlug: app.repoName || app.id
+          childSlug: app.repoName || app.id,
+          parentRefName: app.repoDefaultRef || 'refs/heads/main'
         })
       });
 
