@@ -55,7 +55,8 @@ function runCommandSync(cmd: string, opts: any = {}): string {
     return '';
   }
   try {
-    return cp.execSync(cmd, opts);
+    const res = cp.execSync(cmd, { encoding: 'utf-8', ...opts });
+    return typeof res === 'string' ? res : (res ? res.toString('utf-8') : '');
   } catch (err: any) {
     if (opts.throwError) throw err;
     return '';
@@ -154,11 +155,15 @@ export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandR
     } else if (fsMod && fsMod.existsSync(slug)) {
       source = `file://${slug}`;
     } else {
+      const pathMod = getPath();
+      const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
       const localSources = [
+        pathMod?.resolve(pathMod.dirname(modulePath), '../../', appId),
+        pathMod?.resolve(pathMod.dirname(modulePath), '../', appId),
         `/Volumes/MacMiniExtra/Projects/${appId}`,
         `/Users/nate/Projects/${appId}`
       ];
-      const foundLocal = localSources.find(p => getFs()?.existsSync(p));
+      const foundLocal = localSources.find(p => p && getFs()?.existsSync(p));
       if (foundLocal) {
         source = `file://${foundLocal}`;
       } else {
@@ -303,8 +308,80 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   };
 }
 
-export function handleFork(slugArg?: string): SlopCommandResult {
-  const slug = (slugArg && slugArg.trim()) ? slugArg.trim() : "nate/dronehunter";
+export interface SlopForkOptions {
+  template?: string;
+  starter?: string;
+  [key: string]: any;
+}
+
+export function parseForkArgs(
+  slugOrArgs?: string | string[],
+  optionsArg?: SlopForkOptions | string
+): { slug: string; options: SlopForkOptions } {
+  let slug = '';
+  let template: string | undefined;
+
+  const rawTokens: string[] = [];
+
+  if (Array.isArray(slugOrArgs)) {
+    rawTokens.push(...slugOrArgs);
+  } else if (typeof slugOrArgs === 'string') {
+    const parts = slugOrArgs.trim().split(/\s+/).filter(Boolean);
+    if (parts.length > 1) {
+      rawTokens.push(...parts);
+    } else if (parts.length === 1) {
+      rawTokens.push(parts[0]);
+    }
+  }
+
+  if (typeof optionsArg === 'string') {
+    const parts = optionsArg.trim().split(/\s+/).filter(Boolean);
+    rawTokens.push(...parts);
+  } else if (optionsArg && typeof optionsArg === 'object') {
+    if (optionsArg.template) {
+      template = optionsArg.template;
+    } else if (optionsArg.starter) {
+      template = optionsArg.starter;
+    }
+  }
+
+  for (let i = 0; i < rawTokens.length; i++) {
+    const token = rawTokens[i];
+    if (token.startsWith('--template=')) {
+      template = token.slice('--template='.length).trim();
+    } else if (token === '--template' || token === '-t') {
+      if (i + 1 < rawTokens.length && !rawTokens[i + 1].startsWith('-')) {
+        template = rawTokens[++i].trim();
+      }
+    } else if (token.startsWith('-t=')) {
+      template = token.slice(3).trim();
+    } else if (token.startsWith('--starter=')) {
+      template = token.slice('--starter='.length).trim();
+    } else if (token === '--starter') {
+      if (i + 1 < rawTokens.length && !rawTokens[i + 1].startsWith('-')) {
+        template = rawTokens[++i].trim();
+      }
+    } else if (!token.startsWith('-') && !slug) {
+      slug = token;
+    }
+  }
+
+  return {
+    slug: slug || '',
+    options: {
+      ...(template ? { template } : {})
+    }
+  };
+}
+
+export function handleFork(
+  slugArg?: string | string[],
+  optionsArg?: SlopForkOptions | string
+): SlopCommandResult {
+  const { slug: parsedSlug, options } = parseForkArgs(slugArg, optionsArg);
+  const slug = parsedSlug ? parsedSlug.trim() : "nate/dronehunter";
+  const explicitTemplate = options.template ? options.template.trim() : undefined;
+
   let appId = slug.replace(/\.git$/i, '').replace(/\/+$/, '').split('/').pop() || 'repository';
   if (/^(ssh|https?):\/\//.test(slug)) {
     try {
@@ -326,6 +403,9 @@ export function handleFork(slugArg?: string): SlopCommandResult {
 
   let success = true;
   let forkError: string | null = null;
+  let isEmptyRepo = false;
+  let templateApplied: string | null = null;
+  let canonicalSourceUrl: string | null = null;
 
   try {
     const fsMod = getFs();
@@ -333,6 +413,15 @@ export function handleFork(slugArg?: string): SlopCommandResult {
       if (!fsMod.existsSync(worktreePath)) {
         fsMod.mkdirSync(worktreePath, { recursive: true });
       }
+
+      const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
+      const localSources = [
+        pathMod?.resolve(pathMod.dirname(modulePath), '../../', appId),
+        pathMod?.resolve(pathMod.dirname(modulePath), '../', appId),
+        `/Volumes/MacMiniExtra/Projects/${appId}`,
+        `/Users/nate/Projects/${appId}`
+      ];
+      const foundLocal = localSources.find((p: string) => p && fsMod.existsSync(p) && fsMod.existsSync(`${p}/.git`));
 
       // Resolve a real canonical source. Missing titles fail; SLOP never creates
       // an unrelated starter and calls it a fork.
@@ -343,65 +432,148 @@ export function handleFork(slugArg?: string): SlopCommandResult {
             !/^\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+(?:\.git)?$/.test(remote.pathname)) {
           throw new Error('Canonical Git remote URL is invalid or contains unsupported components.');
         }
+        canonicalSourceUrl = remote.toString();
         const cp = getChildProcess();
         if (!cp?.execFileSync) throw new Error('child_process is unavailable');
-        cp.execFileSync('git', ['clone', '--depth', '1', remote.toString(), worktreePath], {
+        cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
           stdio: 'pipe', timeout: 30000
         });
       } else if (slug.startsWith("file://") || slug.startsWith("/") || fsMod.existsSync(slug)) {
         const sourcePath = slug.startsWith("file://") ? slug.slice(7) : slug;
         if (!fsMod.existsSync(sourcePath)) throw new Error(`Canonical source does not exist: ${sourcePath}`);
-        runCommandSync(`git clone --depth 1 file://${sourcePath} "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+        canonicalSourceUrl = `file://${sourcePath}`;
+        runCommandSync(`git clone "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+      } else if (appId === 'dronehunter' || slug === 'nate/dronehunter' || (!parsedSlug && !explicitTemplate)) {
+        // Bundled showcase starter Dronehunter
+      } else if (foundLocal) {
+        canonicalSourceUrl = `file://${foundLocal}`;
+        runCommandSync(`git clone "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
       } else if (appId === 'picfitai') {
-        runCommandSync(`git clone --depth 1 "https://github.com/natemcguire/picfitai.git" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
-      } else if (appId === 'certified-mailer') {
-        const pathMod = getPath();
-        const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
-        const localCanonical = pathMod?.resolve(pathMod.dirname(modulePath), '../../certified-mailer');
-        if (!localCanonical || !fsMod.existsSync(`${localCanonical}/.git`)) {
-          throw new Error('Certified Mailer has no published canonical Git source yet; no placeholder fork was created.');
-        }
-        runCommandSync(`git clone --depth 1 file://${localCanonical} "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
-      } else if (appId !== 'dronehunter') {
+        canonicalSourceUrl = "https://github.com/natemcguire/picfitai.git";
+        runCommandSync(`git clone --depth 1 "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
+      } else {
         throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
       }
 
-      // Drone Hunter ships with SLOP as a complete, dependency-free starter.
-      // Copy the actual game source when the forge is not being addressed by an
-      // explicit local path; never substitute the unrelated React placeholder.
-      if (appId === "dronehunter" && !fsMod.existsSync(`${worktreePath}/package.json`)) {
-        const pathMod = getPath();
-        const modulePath = decodeURIComponent(new URL(import.meta.url).pathname);
-        const bundledSource = pathMod?.resolve(pathMod.dirname(modulePath), "../public/dronehunter-game");
-        if (!bundledSource || !fsMod.existsSync(bundledSource) || !fsMod.cpSync) {
-          throw new Error("The bundled Drone Hunter source is unavailable; no placeholder fork was created.");
+      // Check if git repository exists in worktreePath
+      const hasGit = fsMod.existsSync(`${worktreePath}/.git`);
+      let hasCommits = false;
+      if (hasGit) {
+        try {
+          const headSha = runCommandSync(`git -C "${worktreePath}" rev-parse --verify HEAD`, { stdio: "pipe" }).trim();
+          hasCommits = Boolean(headSha);
+        } catch {
+          hasCommits = false;
         }
-        fsMod.cpSync(bundledSource, worktreePath, { recursive: true });
-        fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
-          name: "dronehunter",
-          version: "1.0.0",
-          private: true,
-          type: "module",
-          scripts: { dev: "node server.mjs", start: "node server.mjs" }
-        }, null, 2) + "\n");
-        fsMod.writeFileSync(`${worktreePath}/server.mjs`, `import { createServer } from "node:http";\nimport { createReadStream, statSync } from "node:fs";\nimport { extname, join, normalize } from "node:path";\nconst port = Number(process.env.PORT || ${port});\nconst root = process.cwd();\nconst types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml" };\ncreateServer((req, res) => {\n  const requested = decodeURIComponent(new URL(req.url || "/", "http://localhost").pathname);\n  const relative = normalize(requested).replace(/^(\\.\\.(\\/|\\\\|$))+/, "").replace(/^[/\\\\]+/, "");\n  let file = join(root, relative || "index.html");\n  try { if (statSync(file).isDirectory()) file = join(file, "index.html"); } catch { res.writeHead(404); res.end("Not found"); return; }\n  res.setHeader("content-type", types[extname(file)] || "application/octet-stream");\n  createReadStream(file).on("error", () => { if (!res.headersSent) res.writeHead(500); res.end("Unable to read file"); }).pipe(res);\n}).listen(port, "127.0.0.1", () => console.log(\`Drone Hunter ready at http://127.0.0.1:\${port}\`));\n`);
-        fsMod.writeFileSync(`${worktreePath}/README.md`, `# Drone Hunter 95\n\nA dependency-free, local browser arcade game.\n\nRun \`npm run dev\`, then open the printed local URL. Scores and preferences remain in this browser's local storage.\n`);
       }
 
-      // A fork without canonical source content is a failure, never a generated
-      // template with invented ancestry.
       const hasProjectManifest = ['package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'index.html']
         .some(name => fsMod.existsSync(`${worktreePath}/${name}`));
-      if (!hasProjectManifest) {
-        throw new Error(`Canonical source for ${slug} did not contain a recognized runnable project; no placeholder fork was created.`);
+
+      const isBundledShowcase = (appId === "dronehunter" || slug === "nate/dronehunter" || (!parsedSlug && !explicitTemplate)) && !hasProjectManifest && !hasCommits;
+
+      // Determine template to scaffold:
+      // 1. Explicit template flag (--template=<name>)
+      // 2. Bundled showcase starter if nate/dronehunter was chosen or defaulted without an existing git repo
+      const selectedTemplate = explicitTemplate || (isBundledShowcase ? 'dronehunter' : undefined);
+
+      if (selectedTemplate) {
+        if (selectedTemplate === 'dronehunter' || selectedTemplate === 'dronehunter-game' || selectedTemplate === 'drone-hunter') {
+          const candidateDirs = [
+            pathMod?.resolve(pathMod.dirname(modulePath), "../public/dronehunter-game"),
+            pathMod?.resolve(pathMod.dirname(modulePath), "../../public/dronehunter-game"),
+            '/Volumes/MacMiniExtra/Projects/nates_software/public/dronehunter-game',
+            '/Users/nate/Projects/nates_software/public/dronehunter-game'
+          ];
+          const bundledSource = candidateDirs.find((dir: string) => dir && fsMod.existsSync(dir));
+          if (!bundledSource || !fsMod.cpSync) {
+            throw new Error("The bundled Drone Hunter source is unavailable; no placeholder fork was created.");
+          }
+          fsMod.cpSync(bundledSource, worktreePath, { recursive: true });
+          fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
+            name: "dronehunter",
+            version: "1.0.0",
+            private: true,
+            type: "module",
+            scripts: { dev: "node server.mjs", start: "node server.mjs" }
+          }, null, 2) + "\n");
+          fsMod.writeFileSync(`${worktreePath}/server.mjs`, `import { createServer } from "node:http";\nimport { createReadStream, statSync } from "node:fs";\nimport { extname, join, normalize } from "node:path";\nconst port = Number(process.env.PORT || ${port});\nconst root = process.cwd();\nconst types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml" };\ncreateServer((req, res) => {\n  const requested = decodeURIComponent(new URL(req.url || "/", "http://localhost").pathname);\n  const relative = normalize(requested).replace(/^(\\.\\.(\\/|\\\\|$))+/, "").replace(/^[/\\\\]+/, "");\n  let file = join(root, relative || "index.html");\n  try { if (statSync(file).isDirectory()) file = join(file, "index.html"); } catch { res.writeHead(404); res.end("Not found"); return; }\n  res.setHeader("content-type", types[extname(file)] || "application/octet-stream");\n  createReadStream(file).on("error", () => { if (!res.headersSent) res.writeHead(500); res.end("Unable to read file"); }).pipe(res);\n}).listen(port, "127.0.0.1", () => console.log(\`Drone Hunter ready at http://127.0.0.1:\${port}\`));\n`);
+          fsMod.writeFileSync(`${worktreePath}/README.md`, `# Drone Hunter 95\n\nA dependency-free, local browser arcade game.\n\nRun \`npm run dev\`, then open the printed local URL. Scores and preferences remain in this browser's local storage.\n`);
+          templateApplied = 'dronehunter';
+        } else if (selectedTemplate === 'certified-mailer') {
+          const cmSources = [
+            pathMod?.resolve(pathMod.dirname(modulePath), '../../certified-mailer'),
+            pathMod?.resolve(pathMod.dirname(modulePath), '../certified-mailer'),
+            '/Volumes/MacMiniExtra/Projects/certified-mailer',
+            '/Users/nate/Projects/certified-mailer'
+          ];
+          const cmPath = cmSources.find((p: string) => p && fsMod.existsSync(p));
+          if (!cmPath || !fsMod.cpSync) {
+            throw new Error(`Certified Mailer starter is unavailable on this system.`);
+          }
+          fsMod.cpSync(cmPath, worktreePath, {
+            recursive: true,
+            filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
+          });
+          templateApplied = 'certified-mailer';
+        } else if (selectedTemplate === 'picfitai' || selectedTemplate === 'picfit') {
+          const pfSources = [
+            pathMod?.resolve(pathMod.dirname(modulePath), '../../picfitai'),
+            pathMod?.resolve(pathMod.dirname(modulePath), '../picfitai'),
+            '/Volumes/MacMiniExtra/Projects/picfitai',
+            '/Users/nate/Projects/picfitai'
+          ];
+          const pfPath = pfSources.find((p: string) => p && fsMod.existsSync(p));
+          if (pfPath && fsMod.cpSync) {
+            fsMod.cpSync(pfPath, worktreePath, {
+              recursive: true,
+              filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
+            });
+          } else {
+            runCommandSync(`git clone --depth 1 "https://github.com/natemcguire/picfitai.git" "${worktreePath}/.pf-temp"`, { stdio: "pipe", timeout: 30000, throwError: true });
+            fsMod.cpSync(`${worktreePath}/.pf-temp`, worktreePath, {
+              recursive: true,
+              filter: (src: string) => !src.includes('/.git') && !src.includes('/.pf-temp')
+            });
+            try { fsMod.rmSync(`${worktreePath}/.pf-temp`, { recursive: true, force: true }); } catch {}
+          }
+          templateApplied = 'picfitai';
+        } else if (['minimal', 'blank', 'node', 'html', 'static'].includes(selectedTemplate.toLowerCase())) {
+          fsMod.writeFileSync(`${worktreePath}/index.html`, `<!DOCTYPE html>\n<html>\n<head><title>${appId}</title></head>\n<body>\n  <h1>${appId}</h1>\n  <p>Created with SLOP CLI.</p>\n</body>\n</html>\n`);
+          fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
+            name: appId,
+            version: "0.1.0",
+            private: true,
+            type: "module",
+            scripts: { dev: "node server.mjs", start: "node server.mjs" }
+          }, null, 2) + "\n");
+          fsMod.writeFileSync(`${worktreePath}/server.mjs`, `import { createServer } from "node:http";\nimport { createReadStream, statSync } from "node:fs";\nimport { extname, join, normalize } from "node:path";\nconst port = Number(process.env.PORT || ${port});\nconst root = process.cwd();\nconst types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };\ncreateServer((req, res) => {\n  const requested = decodeURIComponent(new URL(req.url || "/", "http://localhost").pathname);\n  let file = join(root, normalize(requested).replace(/^(\\.\\.(\\/|\\\\|$))+/, "").replace(/^[/\\\\]+/, "") || "index.html");\n  try { if (statSync(file).isDirectory()) file = join(file, "index.html"); } catch { res.writeHead(404); res.end("Not found"); return; }\n  res.setHeader("content-type", types[extname(file)] || "text/plain");\n  createReadStream(file).pipe(res);\n}).listen(port, "127.0.0.1", () => console.log(\`App ready at http://127.0.0.1:\${port}\`));\n`);
+          fsMod.writeFileSync(`${worktreePath}/README.md`, `# ${appId}\n\nInitialized with minimal starter template.\n`);
+          templateApplied = selectedTemplate;
+        } else {
+          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, picfitai, minimal.`);
+        }
       }
 
-      // A copied bundled starter still needs a real Git repository before the
-      // install may be reported as complete.
+      // If no git repository exists yet (e.g. bundled starter copy), initialize git
       if (!fsMod.existsSync(`${worktreePath}/.git`)) {
         runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
         runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 15000, throwError: true });
         runCommandSync(`git -C "${worktreePath}" -c user.name="SLOP Installer" -c user.email="installer@nates-software.com" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+      }
+
+      // Check if this is an empty repository clone (no commits and no starter template applied)
+      if (!hasCommits && !templateApplied) {
+        isEmptyRepo = true;
+        if (canonicalSourceUrl) {
+          try {
+            const remotesStr = runCommandSync(`git -C "${worktreePath}" remote`, { stdio: "pipe" }) || "";
+            const remotes = remotesStr.split(/\s+/).filter(Boolean);
+            if (!remotes.includes("slop")) {
+              runCommandSync(`git -C "${worktreePath}" remote add slop "${canonicalSourceUrl}"`, { stdio: "pipe" });
+            }
+          } catch {}
+        }
       }
 
       if (!fsMod.existsSync(worktreePath)) {
@@ -414,18 +586,45 @@ export function handleFork(slugArg?: string): SlopCommandResult {
     try { getFs()?.rmSync(worktreePath, { recursive: true, force: true }); } catch {}
   }
 
-  const output = [
-    `[SLOP] ${success ? 'Forked' : 'Failed to fork'} ${slug} into isolated worktree ${worktreePath}...`,
-    success ? `  ✔ Created directory on disk: ${worktreePath}` : `  ✖ Error: ${forkError}`,
-    success ? `  ✔ Canonical Git ancestry preserved (publication remote not provisioned)` : ``,
-    success ? `  ✔ Suggested local dev port: ${port}` : ``,
-    success ? `  ✔ RIG resource profile available: ${MEMORY_CAP_MB}MB cap (not started)` : ``,
-    success ? `  ✔ Installation complete. No LLM or IDE was launched.` : ``,
-    success ? `\nSTART YOUR ENGINES (optional — you choose after install):` : ``,
-    ...(success ? getEngineStartInstructions(worktreePath) : []),
-    success ? `  0. Not now (default)` : ``,
-    success ? `🚀 Go Fork, and Multiply!` : ``
-  ].filter(Boolean).join("\n");
+  let output = '';
+  if (success && isEmptyRepo && !templateApplied) {
+    output = [
+      `[SLOP] Forked ${slug} into isolated worktree ${worktreePath}...`,
+      `  ✔ Cloned empty canonical repository (no commits yet)`,
+      `  ✔ Created directory on disk: ${worktreePath}`,
+      canonicalSourceUrl ? `  ✔ Publication remote configured: slop -> ${canonicalSourceUrl}` : ``,
+      `  ✔ Suggested local dev port: ${port}`,
+      `  ✔ RIG resource profile available: ${MEMORY_CAP_MB}MB cap (not started)`,
+      `  ℹ Repository is empty. No starter template was applied (none requested).`,
+      `\nINITIALIZATION GUIDANCE:`,
+      `  1. Add your project files to the worktree:`,
+      `     cd "${worktreePath}"`,
+      `  2. Create your project manifest (e.g. package.json, index.html, pyproject.toml)`,
+      `  3. Create your first commit:`,
+      `     git add -A && git commit -m "feat: initial commit"`,
+      `  4. Push back to the forge:`,
+      `     slop push (or git push slop main)`,
+      `\nSTART YOUR ENGINES (optional — choose an LLM/IDE to begin coding):`,
+      ...getEngineStartInstructions(worktreePath),
+      `  0. Not now (default)`,
+      `🚀 Go Fork, and Multiply!`
+    ].filter(Boolean).join("\n");
+  } else {
+    output = [
+      `[SLOP] ${success ? 'Forked' : 'Failed to fork'} ${slug} into isolated worktree ${worktreePath}...`,
+      success ? `  ✔ Created directory on disk: ${worktreePath}` : `  ✖ Error: ${forkError}`,
+      success && templateApplied
+        ? `  ✔ Applied starter template: ${templateApplied}`
+        : (success ? `  ✔ Canonical Git ancestry preserved (publication remote not provisioned)` : ``),
+      success ? `  ✔ Suggested local dev port: ${port}` : ``,
+      success ? `  ✔ RIG resource profile available: ${MEMORY_CAP_MB}MB cap (not started)` : ``,
+      success ? `  ✔ Installation complete. No LLM or IDE was launched.` : ``,
+      success ? `\nSTART YOUR ENGINES (optional — you choose after install):` : ``,
+      ...(success ? getEngineStartInstructions(worktreePath) : []),
+      success ? `  0. Not now (default)` : ``,
+      success ? `🚀 Go Fork, and Multiply!` : ``
+    ].filter(Boolean).join("\n");
+  }
 
   if (success) {
     console.log(output);
@@ -433,10 +632,14 @@ export function handleFork(slugArg?: string): SlopCommandResult {
     console.error(output);
   }
 
+  const successMessage = isEmptyRepo && !templateApplied
+    ? `Forked empty repository ${slug} to ${worktreePath}`
+    : (templateApplied ? `Forked ${slug} to ${worktreePath} (template: ${templateApplied})` : `Forked ${slug} to ${worktreePath}`);
+
   return {
     success,
     command: "fork",
-    message: success ? `Forked ${slug} to ${worktreePath}` : `Failed to fork ${slug}: ${forkError}`,
+    message: success ? successMessage : `Failed to fork ${slug}: ${forkError}`,
     data: {
       slug,
       appId,
@@ -444,6 +647,8 @@ export function handleFork(slugArg?: string): SlopCommandResult {
       port,
       memoryCapMb: MEMORY_CAP_MB,
       isRealWorktree: success,
+      isEmptyRepo,
+      templateApplied: templateApplied || null,
       error: forkError
     }
   };
@@ -1060,7 +1265,7 @@ Developer Loop: FORK -> AI CODES IN WORKTREE -> PUSH
 
 Commands:
   slop init [name]     Initialize project and set git remote "slop" (zero prompts)
-  slop fork <slug>     Clone app into isolated worktree with micro-dyno
+  slop fork <slug>     Clone app into isolated worktree with micro-dyno (supports --template=<name>)
   slop mod <package>   Weld AST feature package/manifest into worktree with test verification
                        Options: --worktree=<path>, --skip-tests, --no-rollback, --json
   slop push            Push a Git ref and verify the remote head
@@ -1102,7 +1307,7 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
       return handleDrop(rawArgs.slice(1));
 
     case "fork":
-      return handleFork(rawArgs[1]);
+      return handleFork(rawArgs.slice(1));
 
     case "mod":
       return handleMod(rawArgs.slice(1));
