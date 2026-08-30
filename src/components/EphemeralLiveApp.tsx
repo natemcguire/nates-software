@@ -12,8 +12,14 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const deploymentState: AppDeploymentState = app.deploymentState || 'draft';
 
   const defaultServeUrl = `/serve/${app.id}/index.html`;
-  const configuredLiveUrl = app.liveAppUrl || app.liveUrl || (isVerifiedActive ? defaultServeUrl : '');
-  const liveUrl = (/^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/')) ? configuredLiveUrl : undefined;
+  const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
+  const isValidUrl = /^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/');
+  // A verified-active deployment always has a valid serve path; only override it
+  // with a configured listing URL when that URL is well-formed. A malformed
+  // liveUrl must NOT hide a real Phase 3 deployment.
+  const liveUrl = isValidUrl
+    ? configuredLiveUrl
+    : (isVerifiedActive ? defaultServeUrl : undefined);
 
   const honestInfo = getHonestDeploymentMessage({
     id: app.id,
