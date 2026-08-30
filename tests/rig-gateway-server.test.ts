@@ -84,4 +84,21 @@ describe('RIG Docker provider gateway server', () => {
     expect(listed.status).toBe(200);
     expect(await listed.json()).toEqual({ success: true, result: [] });
   });
+
+  it('handles /v1/build requests with service secret authorization', async () => {
+    const base = await start(true);
+    const unauthorized = await fetch(`${base}/v1/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId: 'app1' })
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const missingFields = await fetch(`${base}/v1/build`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${'s'.repeat(32)}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appId: 'app1' })
+    });
+    expect(missingFields.status).toBe(400);
+  });
 });

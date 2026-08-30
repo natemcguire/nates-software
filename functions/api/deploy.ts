@@ -4,10 +4,13 @@
 // 1. Apps must reach a verified deployment before appearing 'active'.
 // 2. Publication sets 'draft' (or 'source_ready'), NEVER 'active'.
 // 3. RIG runtime detection inspects the committed source tree at the pinned commit OID.
-// 4. Fail-closed deployment: when no live RIG provider/runner is available,
-//    or container execution/smoke check fails, records honest failure evidence in D1; NEVER fakes active or success.
+// 4. Real build of the pinned commit in a hardened container via the RIG provider gateway.
+// 5. Real smoke/health check verifies real HTTP 200 before promotion.
+// 6. Real promotion inserts deployment_revisions row and sets app_listings.deployment_state='active'.
+// 7. Fail-closed deployment: records honest failure evidence in D1; NEVER fakes active or success.
 
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { requireAuth } from './_auth';
 import {
   detectRigRuntime,
@@ -18,11 +21,15 @@ import {
 import {
   listCommitFiles,
   readCommitFileContent,
-  hasGitObject
+  hasGitObject,
+  archiveAuthoritativeCommit
 } from '../../src/lib/gitsmith/gitStorage';
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+
+const digest = (value: Buffer | string): string =>
+  `sha256:${createHash('sha256').update(value).digest('hex')}`;
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -54,7 +61,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         r.id AS repositoryId, r.default_ref AS defaultRef,
         dr.status AS revisionStatus, dr.url AS deploymentUrl, dr.deployed_at AS deployedAt
       FROM app_listings a
-      LEFT JOIN repositories r ON r.app_id = a.id OR r.slug = a.id
+      LEFT JOIN repositories r ON r.id = a.repository_id OR r.app_id = a.id OR r.slug = a.id
       LEFT JOIN deployment_revisions dr ON dr.id = a.active_deployment_id
       WHERE a.id = ?
     `).bind(appId).first();
@@ -122,7 +129,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     // 1. Check if application listing exists
     const appListing = await env.DB.prepare(`
-      SELECT id, name, creator_id, version, deployment_state, deployment_error
+      SELECT id, name, creator_id, version, deployment_state, deployment_error, repository_id
       FROM app_listings WHERE id = ?
     `).bind(appId).first();
 
@@ -142,14 +149,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       let files: string[] = Array.isArray(body.files) ? body.files : [];
       let fileContents: Record<string, string> = typeof body.fileContents === 'object' && body.fileContents !== null ? body.fileContents : {};
 
-      // If no files provided in request, check if canonical repo exists to read committed tree
+      // If no files provided in request, read committed tree from canonical repo
       if (files.length === 0) {
         const repository = await env.DB.prepare(`
           SELECT r.id, r.storage_key, rf.commit_oid AS headCommitOid
           FROM repositories r
           LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
-          WHERE r.app_id = ? OR r.slug = ?
-        `).bind(appId, appId).first();
+          WHERE r.id = ? OR r.app_id = ? OR r.slug = ?
+        `).bind(appListing.repository_id || appId, appId, appId).first();
 
         if (repository && repository.headCommitOid) {
           const storageKey = repository.storage_key || `repositories/${repository.id}`;
@@ -186,7 +193,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       });
     }
 
-    // Action: Deploy lifecycle (source -> detect -> plan -> honestly fail closed)
+    // Action: Deploy lifecycle (source -> detect -> plan -> build -> smoke -> promote -> serve)
     if (action === 'deploy' || action === 'promote') {
       const timestamp = new Date().toISOString();
 
@@ -196,8 +203,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
                rf.commit_oid AS headCommitOid
         FROM repositories r
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
-        WHERE r.app_id = ? OR r.slug = ?
-      `).bind(appId, appId).first();
+        WHERE r.id = ? OR r.app_id = ? OR r.slug = ?
+      `).bind(appListing.repository_id || appId, appId, appId).first();
 
       const storageKey = repository?.storage_key || `repositories/${repository?.id}`;
       const commitOid = repository?.headCommitOid;
@@ -230,15 +237,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
-      // Step 2: Transition to source_ready
-      await env.DB.prepare(`
-        UPDATE app_listings SET
-          deployment_state = 'source_ready',
-          active_commit_oid = ?
-        WHERE id = ?
-      `).bind(commitOid, appId).run();
-
-      // Step 3: Detect project type & build plan strictly from committed tree
+      // Step 2: Detect project type & build plan strictly from committed tree
       const committedFiles = listCommitFiles(reposRoot, storageKey, commitOid);
 
       if (committedFiles.length === 0) {
@@ -319,43 +318,306 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       const plan = detection.plan;
 
-      // Update plan in DB
+      // Step 3: Transition to building state & record build run
+      const buildRunId = `br_${crypto.randomUUID().replace(/-/g, '')}`;
+      const runnerImageDigest = env?.RIG_VERIFICATION_IMAGE_DIGEST || 'node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e';
+      const sourceArchive = archiveAuthoritativeCommit(reposRoot, storageKey, commitOid);
+      const sourceManifestDigest = digest(sourceArchive);
+
+      await env.DB.prepare(`
+        INSERT INTO build_runs (
+          id, repository_id, commit_oid, purpose, status, runner_image_digest,
+          build_command, test_command, source_manifest_digest, started_at
+        ) VALUES (?, ?, ?, 'release', 'running', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        buildRunId,
+        repository.id,
+        commitOid,
+        runnerImageDigest,
+        plan.buildCommand || 'none',
+        plan.healthCommand || null,
+        sourceManifestDigest
+      ).run();
+
       await env.DB.prepare(`
         UPDATE app_listings SET
+          deployment_state = 'building',
           detected_project_type = ?,
-          deployment_plan_json = ?
+          deployment_plan_json = ?,
+          active_commit_oid = ?
         WHERE id = ?
-      `).bind(plan.detectedType, JSON.stringify(plan), appId).run();
+      `).bind(plan.detectedType, JSON.stringify(plan), commitOid, appId).run();
 
-      // Step 4: Fail closed honestly: Deployment pipeline is not commissioned
-      const failClosedError = "Deployment pipeline is not yet commissioned. No application can be promoted to 'active' until (1) a RIG deploy-build job builds and smoke-tests the pinned commit, and (2) hostname-to-container serving is provisioned.";
-      const evidence = {
+      // Step 4: Execute candidate build via RIG gateway (or injected executor)
+      let buildResult: any;
+
+      if (typeof env?.__RIG_DEPLOY_EXECUTOR === 'function') {
+        buildResult = await env.__RIG_DEPLOY_EXECUTOR({
+          appId,
+          repositoryId: repository.id,
+          commitOid,
+          sourceArchive,
+          plan,
+          runnerImageDigest
+        });
+      } else if (env?.RIG_GATEWAY_URL && env?.RIG_GATEWAY_SERVICE_SECRET) {
+        const gatewayUrl = new URL('/v1/build', env.RIG_GATEWAY_URL);
+        const gatewayFetch = env.__RIG_GATEWAY_FETCH || fetch;
+        const gatewayRes = await gatewayFetch(gatewayUrl.toString(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.RIG_GATEWAY_SERVICE_SECRET}`,
+            'X-Rig-Owner-Id': auth.user.id
+          },
+          body: JSON.stringify({
+            appId,
+            repositoryId: repository.id,
+            commitOid,
+            plan,
+            sourceArchiveBase64: sourceArchive.toString('base64'),
+            runnerImageDigest
+          })
+        }).catch((err: any) => ({ ok: false, status: 503, json: async () => ({ error: err?.message || 'Gateway unreachable' }) }));
+
+        if (!gatewayRes.ok) {
+          const errBody = await gatewayRes.json().catch(() => ({ error: `RIG gateway returned ${gatewayRes.status}` }));
+          buildResult = {
+            success: false,
+            exitCode: 1,
+            output: errBody?.error || `RIG gateway returned ${gatewayRes.status}`,
+            artifactDigest: '',
+            artifactKind: 'bundle',
+            smokeCheck: { passed: false, statusCode: gatewayRes.status, durationMs: 0, error: errBody?.error },
+            durationMs: 0,
+            error: errBody?.error || 'RIG gateway build failed'
+          };
+        } else {
+          const gData = await gatewayRes.json();
+          buildResult = gData.result;
+        }
+      } else {
+        // Direct local execution using deployExecutor
+        const { executeRigDeployBuild } = await import('../../src/lib/rig/deployExecutor');
+        buildResult = await executeRigDeployBuild({
+          appId,
+          repositoryId: repository.id,
+          commitOid,
+          sourceArchive,
+          plan,
+          runnerImageDigest
+        });
+      }
+
+      // Step 5: Evaluate build & smoke result
+      if (!buildResult || !buildResult.success || buildResult.exitCode !== 0 || !buildResult.smokeCheck?.passed) {
+        const errorMsg = buildResult?.error || buildResult?.smokeCheck?.error || `Build or smoke check failed for ${appListing.name}.`;
+        const failureEvidence = {
+          stage: (buildResult?.exitCode ?? 1) !== 0 ? 'build' : 'smoke_check',
+          timestamp: new Date().toISOString(),
+          details: errorMsg,
+          detectedType: plan.detectedType,
+          plan,
+          repositoryId: repository.id,
+          commitOid,
+          buildRunId,
+          exitCode: buildResult?.exitCode ?? 1,
+          logs: [buildResult?.output || errorMsg],
+          smokeCheck: buildResult?.smokeCheck
+        };
+
+        await env.DB.prepare(`
+          UPDATE build_runs SET
+            status = 'failed',
+            result_digest = ?,
+            exit_code = ?,
+            duration_ms = ?,
+            finished_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(buildResult?.artifactDigest || null, buildResult?.exitCode ?? 1, buildResult?.durationMs ?? 0, buildRunId).run();
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'failed',
+          error: errorMsg,
+          evidence: failureEvidence
+        }, 422);
+      }
+
+      // Step 6: Handle Server vs Static applications
+      const isServerApp = plan.detectedType === 'python' || plan.detectedType === 'rust' || plan.detectedType === 'go' ||
+        (plan.detectedType === 'node' && buildResult.artifactKind !== 'static');
+
+      if (isServerApp) {
+        // Server apps: fail closed from active serving if hostname-to-container ingress is not provisioned
+        const serverMessage = "Server applications require hostname-to-container ingress proxying which is not yet provisioned. Deployment remains built/deployable but cannot be promoted to active-served.";
+        const serverEvidence = {
+          stage: 'runtime',
+          timestamp: new Date().toISOString(),
+          details: serverMessage,
+          detectedType: plan.detectedType,
+          plan,
+          repositoryId: repository.id,
+          commitOid,
+          buildRunId,
+          artifactDigest: buildResult.artifactDigest,
+          smokeCheck: buildResult.smokeCheck,
+          logs: [buildResult.output]
+        };
+
+        await env.DB.prepare(`
+          UPDATE build_runs SET
+            status = 'passed',
+            result_digest = ?,
+            exit_code = 0,
+            duration_ms = ?,
+            finished_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(buildResult.artifactDigest, buildResult.durationMs, buildRunId).run();
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'deployable',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(serverMessage, JSON.stringify(serverEvidence), appId).run();
+
+        return json({
+          success: true,
+          appId,
+          deploymentState: 'deployable',
+          isDeployable: true,
+          buildRunId,
+          artifactDigest: buildResult.artifactDigest,
+          smokeCheck: buildResult.smokeCheck,
+          evidence: serverEvidence,
+          message: serverMessage
+        });
+      }
+
+      // Step 7: Static App Promotion (real deployment_revisions row + R2 static publish + active state)
+      const revisionId = `rev_${crypto.randomUUID().replace(/-/g, '')}`;
+      const deployedUrl = `https://${appId}.nates-software.com`;
+
+      // Upload static files to R2 STORAGE if binding exists
+      if (buildResult.staticFiles && env?.STORAGE) {
+        for (const file of buildResult.staticFiles) {
+          const contentBuffer = Buffer.from(file.contentBase64, 'base64');
+          await env.STORAGE.put(`apps/${appId}/revisions/${revisionId}/${file.path}`, contentBuffer, {
+            httpMetadata: { contentType: file.mediaType }
+          });
+          await env.STORAGE.put(`apps/${appId}/live/${file.path}`, contentBuffer, {
+            httpMetadata: { contentType: file.mediaType }
+          });
+        }
+      }
+
+      // Insert build_artifacts
+      const artifactId = `art_${crypto.randomUUID().replace(/-/g, '')}`;
+      const totalSizeBytes = buildResult.staticFiles?.reduce((acc: number, f: any) => acc + (f.sizeBytes || 0), 0) || 0;
+
+      await env.DB.prepare(`
+        INSERT INTO build_artifacts (id, build_run_id, kind, r2_key, sha256, media_type, size_bytes)
+        VALUES (?, ?, 'bundle', ?, ?, 'application/x-tar', ?)
+      `).bind(
+        artifactId,
+        buildRunId,
+        `apps/${appId}/revisions/${revisionId}`,
+        buildResult.artifactDigest,
+        totalSizeBytes
+      ).run();
+
+      // Update build_runs
+      await env.DB.prepare(`
+        UPDATE build_runs SET
+          status = 'passed',
+          result_digest = ?,
+          exit_code = 0,
+          duration_ms = ?,
+          finished_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(buildResult.artifactDigest, buildResult.durationMs, buildRunId).run();
+
+      // Calculate next revision number
+      const revRow: any = await env.DB.prepare(`
+        SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRev
+        FROM deployment_revisions
+        WHERE app_id = ? AND environment = 'production'
+      `).bind(appId).first();
+      const revisionNumber = revRow?.nextRev || 1;
+
+      // Supersede previous active revisions
+      await env.DB.prepare(`
+        UPDATE deployment_revisions SET status = 'superseded'
+        WHERE app_id = ? AND environment = 'production' AND status = 'healthy'
+      `).bind(appId).run();
+
+      // Insert real deployment_revisions row
+      await env.DB.prepare(`
+        INSERT INTO deployment_revisions (
+          id, app_id, repository_id, commit_oid, build_run_id, environment,
+          revision_number, status, url, runtime_config_digest, deployed_by_user_id, deployed_at
+        ) VALUES (?, ?, ?, ?, ?, 'production', ?, 'healthy', ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        revisionId,
+        appId,
+        repository.id,
+        commitOid,
+        buildRunId,
+        revisionNumber,
+        deployedUrl,
+        buildResult.artifactDigest,
+        auth.user.id
+      ).run();
+
+      // Promote app_listings to 'active'
+      const promotionEvidence = {
         stage: 'promotion',
-        timestamp,
-        details: 'Fail-closed execution: Per-commit container builds and hostname-to-container serving are not yet commissioned.',
+        timestamp: new Date().toISOString(),
+        details: 'Real RIG candidate build and smoke verification succeeded. Revision promoted to active.',
         detectedType: plan.detectedType,
         plan,
         repositoryId: repository.id,
         commitOid,
-        error: failClosedError
+        buildRunId,
+        deploymentRevisionId: revisionId,
+        artifactDigest: buildResult.artifactDigest,
+        smokeCheck: buildResult.smokeCheck,
+        logs: [buildResult.output]
       };
 
       await env.DB.prepare(`
         UPDATE app_listings SET
-          deployment_state = 'source_ready',
-          deployment_error = ?,
+          deployment_state = 'active',
+          active_deployment_id = ?,
+          active_commit_oid = ?,
+          deployment_error = NULL,
           deployment_evidence_json = ?
         WHERE id = ?
-      `).bind(failClosedError, JSON.stringify(evidence), appId).run();
+      `).bind(revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
 
       return json({
-        success: false,
+        success: true,
         appId,
-        deploymentState: 'source_ready',
-        error: failClosedError,
-        evidence,
-        plan
-      }, 503);
+        deploymentState: 'active',
+        isVerifiedActive: true,
+        activeDeploymentId: revisionId,
+        activeCommitOid: commitOid,
+        activeUrl: deployedUrl,
+        artifactDigest: buildResult.artifactDigest,
+        smokeCheck: buildResult.smokeCheck,
+        evidence: promotionEvidence
+      });
     }
 
     return json({ success: false, error: `Unsupported deployment action '${action}'` }, 400);
@@ -363,4 +625,3 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     return json({ success: false, error: err.message || 'Deployment execution failed' }, 500);
   }
 };
-

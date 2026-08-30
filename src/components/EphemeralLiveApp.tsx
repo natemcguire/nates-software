@@ -10,19 +10,23 @@ interface EphemeralLiveAppProps {
 }
 
 export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
-  const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
-  const liveUrl = /^https?:\/\//i.test(configuredLiveUrl) ? configuredLiveUrl : undefined;
+  const isVerifiedActive = (app.deploymentState === 'active') && Boolean(app.activeDeploymentId);
 
-  const isClientDemo = app.deploymentState === 'client_demo' || (
-    (app.id === 'dronehunter' || app.id === 'certified-mailer' || app.id === 'wallart') &&
-    Boolean(app.isDemo || !app.deploymentState)
+  const isClientDemo = !isVerifiedActive && (
+    app.deploymentState === 'client_demo' || (
+      (app.id === 'dronehunter' || app.id === 'certified-mailer' || app.id === 'wallart') &&
+      Boolean(app.isDemo || !app.deploymentState)
+    )
   );
 
   const deploymentState: AppDeploymentState = app.deploymentState || (
     isClientDemo ? 'client_demo' : 'draft'
   );
 
-  const isVerifiedActive = deploymentState === 'active' && Boolean(app.activeDeploymentId);
+  const defaultServeUrl = `/serve/${app.id}/index.html`;
+  const configuredLiveUrl = app.liveAppUrl || app.liveUrl || (isVerifiedActive ? defaultServeUrl : '');
+  const liveUrl = (/^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/')) ? configuredLiveUrl : undefined;
+
   const honestInfo = getHonestDeploymentMessage({
     id: app.id,
     name: app.name,
