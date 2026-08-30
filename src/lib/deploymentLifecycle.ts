@@ -558,7 +558,7 @@ export function getHonestDeploymentMessage(
   if (state === 'source_ready') {
     return {
       headline: `Source repository is ready for ${name}.`,
-      subtext: 'Canonical Git commit received; candidate build is awaiting RIG execution.',
+      subtext: app.deploymentError || 'Canonical Git commit received; candidate build is awaiting RIG execution.',
       state: 'source_ready',
       guidance: [
         'A canonical repository and commit exist in GITSMITH.',

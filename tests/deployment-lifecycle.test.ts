@@ -532,10 +532,11 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
       const data: any = await res.json();
 
-      // RIG is not configured in this test, so it should fail closed at the build stage,
+      // RIG pipeline is uncommissioned, so it should fail closed at promotion stage with 503,
       // but project type MUST be detected as python from the committed tree!
       expect(res.status).toBe(503);
-      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentState).toBe('source_ready');
+      expect(data.error).toContain('Deployment pipeline is not yet commissioned');
       expect(data.evidence.detectedType).toBe('python');
       expect(data.evidence.plan.startCommand).toBe('python main.py');
 
@@ -608,77 +609,38 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
   });
 
   // ==========================================================================
-  // 5. FAIL-CLOSED DEPLOYMENT EXECUTION & ACTUAL RIG VERIFICATION
+  // 5. FAIL-CLOSED DEPLOYMENT & PROMOTION (HONEST UNCOMMISSIONED PIPELINE)
   // ==========================================================================
-  describe('5. Fail-Closed RIG Execution & Genuine Verified Promotion', () => {
-    it('should fail closed when RIG provider probe succeeds but container execution fails', async () => {
+  describe('5. Fail-Closed Deployment & Promotion Invariant', () => {
+    it('should fail closed with 503 and truthful message on deploy action, landing in source_ready with evidence', async () => {
       await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role) VALUES ('usr_smoke_fail', 'smokefail', 'Smoke Tester', 'user')
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_node_dev', 'nodedev', 'Node Developer', 'user')
       `).run();
-      const token = 'token_smokefail_123';
+      const token = 'token_node_123';
       const tokenHash = await hashSessionToken(token);
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
-        VALUES (?, 'usr_smoke_fail', datetime('now', '+1 hour'))
+        VALUES (?, 'usr_node_dev', datetime('now', '+1 hour'))
       `).bind(tokenHash).run();
 
-      const storageKey = 'repositories/smoke-fail-app';
+      const storageKey = 'repositories/node-failclosed-app';
       const { commitOid } = createCommittedRepo(storageKey, {
-        'package.json': JSON.stringify({ name: 'smoke-fail-app', scripts: { start: 'node server.js' } }),
+        'package.json': JSON.stringify({ name: 'node-failclosed-app', scripts: { start: 'node server.js' } }),
         'server.js': 'console.log("Starting server");\n'
       });
 
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
-        VALUES ('smoke-fail-app', 'Smoke Fail App', 'Tag', 'Desc', 'usr_smoke_fail', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+        VALUES ('node-failclosed-app', 'Node FailClosed App', 'Tag', 'Desc', 'usr_node_dev', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
       `).run();
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
-        VALUES ('repo_sf_1', 'smoke-fail-app', 'usr_smoke_fail', 'smoke-fail-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+        VALUES ('repo_fc_1', 'node-failclosed-app', 'usr_node_dev', 'node-failclosed-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
       `).bind(storageKey).run();
       await ctx.d1.prepare(`
         INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
-        VALUES ('repo_sf_1', 'refs/heads/main', ?)
+        VALUES ('repo_fc_1', 'refs/heads/main', ?)
       `).bind(commitOid).run();
-
-      // Mock RIG gateway: capabilities probe passes, but instance creation returns crashed state
-      const mockFetch = async (url: string | URL | Request) => {
-        const urlStr = url.toString();
-        if (urlStr.includes('/capabilities')) {
-          return new Response(JSON.stringify({
-            apiVersion: 1,
-            provider: 'docker',
-            liveContainers: true,
-            ephemeralCleanup: true,
-            authRequired: true,
-            limits: { maxMemoryMb: 256, maxTtlSeconds: 3600 },
-            isolation: { nonRoot: true, readOnlyRootfs: true, noDockerSocketMount: true }
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        if (urlStr.includes('/v1/instances/create')) {
-          // Container crashed during smoke test
-          return new Response(JSON.stringify({
-            success: true,
-            result: {
-              spec: { id: 'rig-box-crashed' },
-              observed: {
-                lifecycle: 'crashed',
-                exitCode: 1,
-                errorMessage: 'Application crashed immediately on startup with uncaught exception'
-              }
-            }
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        return new Response('Not Found', { status: 404 });
-      };
-
-      const env = {
-        DB: ctx.d1,
-        GITSMITH_REPOS_ROOT: reposRoot,
-        RIG_GATEWAY_URL: 'https://rig-gateway.internal:3000',
-        RIG_GATEWAY_SERVICE_SECRET: 'super-secret-service-token-that-is-longer-than-32-chars',
-        __RIG_GATEWAY_FETCH: mockFetch
-      };
 
       const req = new Request('https://nates-software.com/api/deploy', {
         method: 'POST',
@@ -688,99 +650,75 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         },
         body: JSON.stringify({
           action: 'deploy',
-          appId: 'smoke-fail-app'
+          appId: 'node-failclosed-app'
         })
       });
 
-      const res = await deployApi.onRequestPost({ request: req, env });
+      const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
       const data: any = await res.json();
 
-      // Must fail closed with 503 and state failed!
       expect(res.status).toBe(503);
       expect(data.success).toBe(false);
-      expect(data.deploymentState).toBe('failed');
-      expect(data.error).toContain('RIG smoke/health check failed');
-      expect(data.evidence.stage).toBe('smoke_check');
+      expect(data.deploymentState).toBe('source_ready');
+      expect(data.error).toBe(
+        "Deployment pipeline is not yet commissioned. No application can be promoted to 'active' until (1) a RIG deploy-build job builds and smoke-tests the pinned commit, and (2) hostname-to-container serving is provisioned."
+      );
+      expect(data.evidence.stage).toBe('promotion');
+      expect(data.evidence.detectedType).toBe('node');
+      expect(data.evidence.commitOid).toBe(commitOid);
 
-      // Verify D1 state is failed, active_deployment_id is NULL
+      // Verify D1 state: source_ready, active_deployment_id is NULL, active_commit_oid is set
       const app = await ctx.d1.prepare(`
-        SELECT deployment_state, active_deployment_id, deployment_error FROM app_listings WHERE id = 'smoke-fail-app'
+        SELECT deployment_state, active_deployment_id, active_commit_oid, deployment_error, deployment_evidence_json FROM app_listings WHERE id = 'node-failclosed-app'
       `).first<any>();
-      expect(app.deployment_state).toBe('failed');
+      expect(app.deployment_state).toBe('source_ready');
       expect(app.active_deployment_id).toBeNull();
-      expect(app.deployment_error).toContain('smoke/health check failed');
+      expect(app.active_commit_oid).toBe(commitOid);
+      expect(app.deployment_error).toContain('Deployment pipeline is not yet commissioned');
+
+      // GET /api/deploy query verifies app is NOT active
+      const getReq = new Request('https://nates-software.com/api/deploy?appId=node-failclosed-app');
+      const getRes = await deployApi.onRequestGet({ request: getReq, env: { DB: ctx.d1 } });
+      const getData: any = await getRes.json();
+
+      expect(getData.isVerifiedActive).toBe(false);
+      expect(getData.deploymentState).toBe('source_ready');
+      expect(getData.activeUrl).toBeNull();
+      expect(getData.activeDeploymentId).toBeNull();
+      expect(getData.activeCommitOid).toBe(commitOid);
+      expect(getData.honestMessage.headline).toBe('Source repository is ready for Node FailClosed App.');
+      expect(getData.honestMessage.subtext).toContain('Deployment pipeline is not yet commissioned');
     });
 
-    it('should promote to active with real artifact digest and active_deployment_id on genuine pass', async () => {
+    it('should fail closed with 503 and truthful message on promote action as well', async () => {
       await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role) VALUES ('usr_real_deploy', 'realdev', 'Real Deployer', 'user')
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_prom_dev', 'promdev', 'Promote Developer', 'user')
       `).run();
-      const token = 'token_real_123';
+      const token = 'token_prom_123';
       const tokenHash = await hashSessionToken(token);
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
-        VALUES (?, 'usr_real_deploy', datetime('now', '+1 hour'))
+        VALUES (?, 'usr_prom_dev', datetime('now', '+1 hour'))
       `).bind(tokenHash).run();
 
-      const storageKey = 'repositories/real-verified-app';
+      const storageKey = 'repositories/promote-failclosed-app';
       const { commitOid } = createCommittedRepo(storageKey, {
-        'package.json': JSON.stringify({
-          name: 'real-verified-app',
-          scripts: { build: 'echo building', start: 'node index.js' }
-        }),
-        'index.js': 'console.log("Serving on port 3000");\n'
+        'package.json': JSON.stringify({ name: 'promote-failclosed-app', scripts: { start: 'node server.js' } }),
+        'server.js': 'console.log("Starting server");\n'
       });
 
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
-        VALUES ('real-verified-app', 'Real Verified App', 'Tag', 'Desc', 'usr_real_deploy', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+        VALUES ('promote-failclosed-app', 'Promote FailClosed App', 'Tag', 'Desc', 'usr_prom_dev', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
       `).run();
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
-        VALUES ('repo_real_1', 'real-verified-app', 'usr_real_deploy', 'real-verified-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+        VALUES ('repo_prom_1', 'promote-failclosed-app', 'usr_prom_dev', 'promote-failclosed-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
       `).bind(storageKey).run();
       await ctx.d1.prepare(`
         INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
-        VALUES ('repo_real_1', 'refs/heads/main', ?)
+        VALUES ('repo_prom_1', 'refs/heads/main', ?)
       `).bind(commitOid).run();
-
-      // Mock production RIG gateway: capabilities probe passes AND instance reaches healthy
-      const mockFetch = async (url: string | URL | Request) => {
-        const urlStr = url.toString();
-        if (urlStr.includes('/capabilities')) {
-          return new Response(JSON.stringify({
-            apiVersion: 1,
-            provider: 'docker',
-            liveContainers: true,
-            ephemeralCleanup: true,
-            authRequired: true,
-            limits: { maxMemoryMb: 256, maxTtlSeconds: 3600 },
-            isolation: { nonRoot: true, readOnlyRootfs: true, noDockerSocketMount: true }
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        if (urlStr.includes('/v1/instances/create')) {
-          return new Response(JSON.stringify({
-            success: true,
-            result: {
-              spec: { id: 'rig-box-passed' },
-              observed: {
-                lifecycle: 'healthy',
-                allocatedPort: 3001,
-                startedAt: new Date().toISOString()
-              }
-            }
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        return new Response('Not Found', { status: 404 });
-      };
-
-      const env = {
-        DB: ctx.d1,
-        GITSMITH_REPOS_ROOT: reposRoot,
-        RIG_GATEWAY_URL: 'https://rig-gateway.internal:3000',
-        RIG_GATEWAY_SERVICE_SECRET: 'super-secret-service-token-that-is-longer-than-32-chars',
-        __RIG_GATEWAY_FETCH: mockFetch
-      };
 
       const req = new Request('https://nates-software.com/api/deploy', {
         method: 'POST',
@@ -789,64 +727,32 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          action: 'deploy',
-          appId: 'real-verified-app'
+          action: 'promote',
+          appId: 'promote-failclosed-app'
         })
       });
 
-      const res = await deployApi.onRequestPost({ request: req, env });
+      const res = await deployApi.onRequestPost({ request: req, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
       const data: any = await res.json();
 
-      expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.deploymentState).toBe('active');
-      expect(data.activeUrl).toBe('https://real-verified-app.nates-software.com');
-      expect(data.artifactDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(res.status).toBe(503);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('source_ready');
+      expect(data.error).toContain('Deployment pipeline is not yet commissioned');
 
-      // Verify D1 state is active with valid active_deployment_id and active_commit_oid
       const app = await ctx.d1.prepare(`
-        SELECT deployment_state, active_deployment_id, active_commit_oid, deployment_error
-        FROM app_listings WHERE id = 'real-verified-app'
+        SELECT deployment_state, active_deployment_id FROM app_listings WHERE id = 'promote-failclosed-app'
       `).first<any>();
+      expect(app.deployment_state).toBe('source_ready');
+      expect(app.active_deployment_id).toBeNull();
+    });
 
-      expect(app.deployment_state).toBe('active');
-      expect(app.active_deployment_id).toBe(data.deploymentRevisionId);
-      expect(app.active_commit_oid).toBe(commitOid);
-      expect(app.deployment_error).toBeNull();
+    it('should guarantee no code path sets active and no active listings exist without verified revision', async () => {
+      const activeRows = await ctx.d1.prepare(`
+        SELECT id, deployment_state, active_deployment_id FROM app_listings WHERE deployment_state = 'active'
+      `).all<any>();
 
-      // Verify deployment_revisions record
-      const rev = await ctx.d1.prepare(`
-        SELECT id, status, environment, url, commit_oid, runtime_config_digest
-        FROM deployment_revisions WHERE id = ?
-      `).bind(data.deploymentRevisionId).first<any>();
-
-      expect(rev.status).toBe('healthy');
-      expect(rev.environment).toBe('production');
-      expect(rev.url).toBe('https://real-verified-app.nates-software.com');
-      expect(rev.commit_oid).toBe(commitOid);
-      expect(rev.runtime_config_digest).toBe(data.artifactDigest);
-
-      // Verify build_artifacts record
-      const artifact = await ctx.d1.prepare(`
-        SELECT kind, sha256, size_bytes, media_type
-        FROM build_artifacts WHERE build_run_id = (SELECT build_run_id FROM deployment_revisions WHERE id = ?)
-      `).bind(data.deploymentRevisionId).first<any>();
-
-      expect(artifact.kind).toBe('bundle');
-      expect(artifact.sha256).toBe(data.artifactDigest);
-      expect(artifact.size_bytes).toBeGreaterThan(0);
-      expect(artifact.media_type).toBe('application/x-tar');
-
-      // GET /api/deploy query verifies active state with activeUrl
-      const getReq = new Request('https://nates-software.com/api/deploy?appId=real-verified-app');
-      const getRes = await deployApi.onRequestGet({ request: getReq, env: { DB: ctx.d1 } });
-      const getData: any = await getRes.json();
-
-      expect(getData.isVerifiedActive).toBe(true);
-      expect(getData.deploymentState).toBe('active');
-      expect(getData.activeUrl).toBe('https://real-verified-app.nates-software.com');
-      expect(getData.activeDeploymentId).toBe(data.deploymentRevisionId);
-      expect(getData.activeCommitOid).toBe(commitOid);
+      expect(activeRows.results).toEqual([]);
     });
   });
 });
