@@ -443,14 +443,17 @@ export function handleFork(
         if (!fsMod.existsSync(sourcePath)) throw new Error(`Canonical source does not exist: ${sourcePath}`);
         canonicalSourceUrl = `file://${sourcePath}`;
         runCommandSync(`git clone "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
-      } else if (appId === 'dronehunter' || slug === 'nate/dronehunter' || (!parsedSlug && !explicitTemplate)) {
-        // Bundled showcase starter Dronehunter
       } else if (foundLocal) {
         canonicalSourceUrl = `file://${foundLocal}`;
         runCommandSync(`git clone "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+      } else if (appId === 'dronehunter' || slug === 'nate/dronehunter') {
+        canonicalSourceUrl = "https://github.com/natemcguire/dronehunter.git";
+        runCommandSync(`git clone --depth 1 "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
       } else if (appId === 'picfitai') {
         canonicalSourceUrl = "https://github.com/natemcguire/picfitai.git";
         runCommandSync(`git clone --depth 1 "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
+      } else if (explicitTemplate) {
+        // Explicit starter template requested without a pre-existing canonical repository
       } else {
         throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
       }
@@ -467,15 +470,10 @@ export function handleFork(
         }
       }
 
-      const hasProjectManifest = ['package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'index.html']
-        .some(name => fsMod.existsSync(`${worktreePath}/${name}`));
-
-      const isBundledShowcase = (appId === "dronehunter" || slug === "nate/dronehunter" || (!parsedSlug && !explicitTemplate)) && !hasProjectManifest && !hasCommits;
-
       // Determine template to scaffold:
-      // 1. Explicit template flag (--template=<name>)
-      // 2. Bundled showcase starter if nate/dronehunter was chosen or defaulted without an existing git repo
-      const selectedTemplate = explicitTemplate || (isBundledShowcase ? 'dronehunter' : undefined);
+      // Scaffolding is strictly opt-in via an explicit flag (--template <name>).
+      // NEVER auto-invent source into an empty repo based on its name or slug.
+      const selectedTemplate = explicitTemplate;
 
       if (selectedTemplate) {
         if (selectedTemplate === 'dronehunter' || selectedTemplate === 'dronehunter-game' || selectedTemplate === 'drone-hunter') {

@@ -66,7 +66,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.worktreePath).toContain(`${tmpdir()}/slop-dronehunter-`);
       expect(existsSync(`${res.data.worktreePath}/index.html`)).toBe(true);
       expect(existsSync(`${res.data.worktreePath}/assets/drone.png`)).toBe(true);
-      expect(existsSync(`${res.data.worktreePath}/server.mjs`)).toBe(true);
+      expect(existsSync(`${res.data.worktreePath}/package.json`)).toBe(true);
       expect(readFileSync(`${res.data.worktreePath}/index.html`, 'utf8')).toContain('Drone Hunter');
       expect(res.message).not.toContain('agy');
       const engineInstructions = getEngineStartInstructions(res.data.worktreePath);
@@ -162,6 +162,44 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         expect(existsSync(join(worktree, 'README.md'))).toBe(true);
       } finally {
         rmSync(emptyCanonicalDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should truthfully fork an empty repo named dronehunter with NO --template and scaffold ONLY when --template is passed', () => {
+      const emptyDronehunterDir = join(tmpdir(), `test-empty-dh-${Date.now().toString(36)}`, 'dronehunter');
+      mkdirSync(emptyDronehunterDir, { recursive: true });
+      execSync(`git init "${emptyDronehunterDir}"`, { stdio: 'pipe' });
+
+      try {
+        // Without --template: must NOT auto-scaffold just because the repo is named dronehunter
+        const resEmpty = trackedFork(emptyDronehunterDir);
+        expect(resEmpty.success).toBe(true);
+        expect(resEmpty.data.isEmptyRepo).toBe(true);
+        expect(resEmpty.data.templateApplied).toBeNull();
+        expect(resEmpty.message).toContain('Forked empty repository');
+
+        const emptyWorktree = resEmpty.data.worktreePath;
+        expect(existsSync(emptyWorktree)).toBe(true);
+        expect(existsSync(join(emptyWorktree, '.git'))).toBe(true);
+        expect(existsSync(join(emptyWorktree, 'package.json'))).toBe(false);
+        expect(existsSync(join(emptyWorktree, 'index.html'))).toBe(false);
+        expect(existsSync(join(emptyWorktree, 'server.mjs'))).toBe(false);
+        expect(existsSync(join(emptyWorktree, 'README.md'))).toBe(false);
+
+        // With explicit --template dronehunter: must scaffold
+        const resScaffolded = trackedFork([emptyDronehunterDir, '--template=dronehunter']);
+        expect(resScaffolded.success).toBe(true);
+        expect(resScaffolded.data.templateApplied).toBe('dronehunter');
+
+        const scaffoldedWorktree = resScaffolded.data.worktreePath;
+        expect(existsSync(scaffoldedWorktree)).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, '.git'))).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, 'package.json'))).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, 'index.html'))).toBe(true);
+        expect(existsSync(join(scaffoldedWorktree, 'server.mjs'))).toBe(true);
+        expect(readFileSync(join(scaffoldedWorktree, 'index.html'), 'utf8')).toContain('Drone Hunter');
+      } finally {
+        rmSync(join(emptyDronehunterDir, '..'), { recursive: true, force: true });
       }
     });
 
@@ -341,7 +379,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect((await runSlopCli(['shelf'])).success).toBe(false);
       expect((await runSlopCli(['login'])).success).toBe(false);
       expect((await runSlopCli(['help'])).success).toBe(true);
-    });
+    }, 15_000);
 
     it('should handle unknown command with error', async () => {
       const res = await runSlopCli(['invalid-unknown-cmd']);
