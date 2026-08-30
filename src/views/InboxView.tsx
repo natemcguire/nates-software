@@ -8,6 +8,7 @@ import {
   PRDiffData
 } from '../lib/inboxDomain';
 import { useAuth } from '../context/AuthContext';
+import { LocalAgentMailbox } from '../components/LocalAgentMailbox';
 import {
   Check,
   GitPullRequest,
@@ -32,6 +33,9 @@ import {
 
 export const InboxView: React.FC = () => {
   const { user, isAuthenticated, openAuthModal } = useAuth();
+  // Top-level mailbox mode: cloud merge-proposals (default) vs local agent mailbox.
+  // Local mode swaps the entire 3-pane body for LocalAgentMailbox; cloud logic below is untouched.
+  const [mailboxMode, setMailboxMode] = useState<'cloud' | 'local'>('cloud');
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<string>('all');
@@ -270,11 +274,52 @@ export const InboxView: React.FC = () => {
     return <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-emerald-100 text-emerald-800">LIVE</span>;
   };
 
+  // Defined once so it renders identically in both modes and can switch back.
+  const modeToggle = (
+    <div className="flex border-2 border-gray-800 bg-w95-gray p-0.5 gap-0.5 shrink-0" role="tablist" aria-label="Mailbox mode">
+      <button
+        role="tab"
+        aria-selected={mailboxMode === 'cloud'}
+        onClick={() => setMailboxMode('cloud')}
+        className={`flex-1 px-2 py-1 text-[11px] font-bold border-2 flex items-center justify-center gap-1 ${
+          mailboxMode === 'cloud'
+            ? 'bg-white border-gray-800 text-w95-blue'
+            : 'bg-w95-gray border-gray-400 text-gray-700 hover:bg-gray-100'
+        }`}
+      >
+        ☁ Cloud Proposals
+      </button>
+      <button
+        role="tab"
+        aria-selected={mailboxMode === 'local'}
+        onClick={() => setMailboxMode('local')}
+        className={`flex-1 px-2 py-1 text-[11px] font-bold border-2 flex items-center justify-center gap-1 ${
+          mailboxMode === 'local'
+            ? 'bg-white border-gray-800 text-w95-blue'
+            : 'bg-w95-gray border-gray-400 text-gray-700 hover:bg-gray-100'
+        }`}
+      >
+        🖥 Local Agent Mailbox
+      </button>
+    </div>
+  );
+
+  // Local mode: swap the whole 3-pane body for the local agent mailbox.
+  // The toggle is passed in so it renders at the top of the local left rail and can switch back.
+  if (mailboxMode === 'local') {
+    return (
+      <div className="h-full overflow-hidden font-tahoma text-xs">
+        <LocalAgentMailbox modeToggle={modeToggle} />
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-12 gap-2 h-full overflow-hidden font-tahoma text-xs">
       {/* Pane 1: Mailboxes & Navigation */}
       <div className="col-span-3 bg-white border-2 border-gray-800 p-2 flex flex-col justify-between overflow-y-auto">
         <div className="space-y-1">
+          {modeToggle}
           <div className="font-bold text-w95-blue border-b pb-1 mb-2 flex items-center justify-between">
             <span className="flex items-center gap-1">
               <Mail size={13} /> INBOX.EXE
