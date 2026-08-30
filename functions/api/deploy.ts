@@ -566,10 +566,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             storageKey,
             commitOid,
             plan,
+            // RIG builds from the self-contained source archive; it must NOT
+            // receive the privileged GITSMITH gateway token (repo-wide credential).
             sourceArchiveBase64: sourceArchive.toString('base64'),
-            runnerImageDigest,
-            gitsmithGatewayUrl: env.GITSMITH_GATEWAY_URL,
-            gitsmithGatewayToken: env.GITSMITH_GATEWAY_TOKEN
+            runnerImageDigest
           })
         }).catch((err: any) => ({ ok: false, status: 503, json: async () => ({ error: err?.message || 'Gateway unreachable' }) }));
 
