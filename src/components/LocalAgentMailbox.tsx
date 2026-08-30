@@ -164,11 +164,12 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
       </div>
       <div className="p-4 space-y-3 text-gray-800">
         <p className="leading-relaxed">
-          The local <span className="font-mono font-bold">agent-inbox</span> service is not running on{' '}
+          Could not reach the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
           <span className="font-mono bg-gray-100 border border-gray-300 px-1 rounded">
             http://127.0.0.1:8791
           </span>
-          .
+          . Either it is not running, or your browser is blocking local-network
+          access from this site (grant it when prompted, then Reconnect).
         </p>
         <div className="space-y-1">
           <div className="font-bold text-gray-700">To enable inter-agent mailbox inspection:</div>

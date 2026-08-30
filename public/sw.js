@@ -4,7 +4,7 @@
 // 404 and fall back to HTML, breaking MIME. v2 is network-first for the HTML
 // shell and navigations (always pick up fresh asset hashes) and only
 // cache-first for content-hashed /assets/* (which are immutable).
-const CACHE_NAME = 'nates-software-v2';
+const CACHE_NAME = 'nates-software-v3';
 const CORE_ASSETS = [
   '/manifest.webmanifest',
   '/icon-192.svg',
@@ -37,6 +37,13 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+
+  // Never intercept cross-origin requests. In particular the Local Agent
+  // Mailbox fetches http://127.0.0.1:8791 from this page; if the SW wrapped
+  // that fetch, a failure would resolve to caches.match() -> a synthesized
+  // bogus response instead of letting the browser handle the cross-origin
+  // request (and its local-network permission) natively.
+  if (url.origin !== self.location.origin) return;
 
   // API: network-first, no stale serving.
   if (url.pathname.startsWith('/api/')) {
