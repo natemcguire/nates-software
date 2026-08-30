@@ -85,7 +85,8 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'dronehunter',
     name: 'DroneHunter 95',
-    deploymentState: 'client_demo',
+    deploymentState: 'draft',
+    deploymentError: 'No deployable revision exists for DroneHunter 95. Source has not been imported into GITSMITH and built by RIG.',
     tagline: 'Retro Duck Hunt-Style Arcade Drone Shooter with Local High Scores',
     description: 'Fast-paced arcade browser game inspired by classic Duck Hunt. Double-barrel shotgun reloads, laughing dog animations, drone explosions, and local high score tracking with storage freedom.',
     author: 'nate',
@@ -141,7 +142,8 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'certified-mailer',
     name: 'Certified Mailer',
-    deploymentState: 'client_demo',
+    deploymentState: 'draft',
+    deploymentError: 'No deployable revision exists for Certified Mailer. Source has not been imported into GITSMITH and built by RIG.',
     tagline: 'Private letter preparation and user-recorded mailing evidence journal',
     description: 'Prepare, review, print, and locally journal important correspondence. Postal tracking and receipt observations are entered by the user and remain explicitly unverified.',
     author: 'nate',
@@ -237,7 +239,8 @@ export const INITIAL_APPS: AppListing[] = [
   {
     id: 'wallart',
     name: 'WallArt Canvas Pro',
-    deploymentState: 'client_demo',
+    deploymentState: 'draft',
+    deploymentError: 'No deployable revision exists for WallArt Canvas Pro. Source has not been imported into GITSMITH and built by RIG.',
     tagline: 'Interactive Canvas Split & Living Room Wall Art Studio',
     description: 'Browser-first wall art visualizer and source-resolution inspector. Supports single, triptych, and 4-grid canvas splits with finish previews, custom wall colors, and a 300-PPI target comparison.',
     author: 'nate',

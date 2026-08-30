@@ -1,8 +1,6 @@
 import { AppListing, AppDeploymentState } from '../data/mockData';
 import { ExternalLink, Shield, AlertTriangle, GitBranch, Cpu, RefreshCw, FileCode, CheckCircle2, XCircle, Info } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
-import { CertifiedMailerStudio } from './CertifiedMailerStudio';
-import { WallArtStudio } from './WallArtStudio';
 import { getHonestDeploymentMessage } from '../lib/deploymentLifecycle';
 
 interface EphemeralLiveAppProps {
@@ -11,17 +9,7 @@ interface EphemeralLiveAppProps {
 
 export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const isVerifiedActive = (app.deploymentState === 'active') && Boolean(app.activeDeploymentId);
-
-  const isClientDemo = !isVerifiedActive && (
-    app.deploymentState === 'client_demo' || (
-      (app.id === 'dronehunter' || app.id === 'certified-mailer' || app.id === 'wallart') &&
-      Boolean(app.isDemo || !app.deploymentState)
-    )
-  );
-
-  const deploymentState: AppDeploymentState = app.deploymentState || (
-    isClientDemo ? 'client_demo' : 'draft'
-  );
+  const deploymentState: AppDeploymentState = app.deploymentState || 'draft';
 
   const defaultServeUrl = `/serve/${app.id}/index.html`;
   const configuredLiveUrl = app.liveAppUrl || app.liveUrl || (isVerifiedActive ? defaultServeUrl : '');
@@ -40,12 +28,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         return (
           <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
             <Shield size={11} /> ACTIVE (VERIFIED DEPLOYMENT)
-          </span>
-        );
-      case 'client_demo':
-        return (
-          <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
-            <Shield size={11} /> CLIENT DEMO (Client-Side Sandbox)
           </span>
         );
       case 'deployable':
@@ -93,7 +75,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
       {/* Top Header Bar */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2 shadow-sm select-none">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive || isClientDemo ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
+          <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
           <span className="font-bold text-xs">{app.name} Live Sandbox</span>
           <span className="text-gray-400 font-mono text-[11px]">({app.version})</span>
         </div>
@@ -117,24 +99,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
 
       {/* Main Viewport */}
       <div className="flex-1 bg-white overflow-hidden flex flex-col">
-        {isClientDemo && app.id === 'dronehunter' ? (
-          <div className="flex-1 bg-black border-2 border-gray-800 rounded overflow-hidden relative">
-            <iframe
-              src="/dronehunter-game/index.html"
-              title="Drone Hunter Arcade Game"
-              className="w-full h-full border-0 absolute inset-0"
-              allow="autoplay; fullscreen"
-            />
-          </div>
-        ) : isClientDemo && app.id === 'certified-mailer' ? (
-          <div className="flex-1 overflow-hidden">
-            <CertifiedMailerStudio />
-          </div>
-        ) : isClientDemo && app.id === 'wallart' ? (
-          <div className="flex-1 overflow-hidden">
-            <WallArtStudio />
-          </div>
-        ) : isVerifiedActive && liveUrl ? (
+        {isVerifiedActive && liveUrl ? (
           <div className="flex-1 bg-white relative">
             <iframe
               src={liveUrl}
