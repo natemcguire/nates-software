@@ -66,20 +66,24 @@ export function conversationForThread(threads: readonly InboxThread[], selectedI
     .sort((a, b) => a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
 }
 
-export function formatProposalStatus(thread: InboxThread): {
+export function formatProposalStatus(thread: InboxThread, diffData?: PRDiffData | null): {
   badgeLabel: string;
   badgeStyle: string;
   description: string;
   canApprove: boolean;
   canReject: boolean;
+  isDiverged: boolean;
+  isFastForward: boolean;
 } {
   if (thread.isMerged && thread.mergeStatus === 'landed') {
     return {
-      badgeLabel: 'Landed by GITSMITH',
+      badgeLabel: 'Merged · Landed by GITSMITH',
       badgeStyle: 'bg-green-700 text-white',
       description: 'GITSMITH reports that this exact result commit is now the target ref.',
       canApprove: false,
-      canReject: false
+      canReject: false,
+      isDiverged: false,
+      isFastForward: true
     };
   }
 
@@ -88,7 +92,9 @@ export function formatProposalStatus(thread: InboxThread): {
     badgeStyle: 'bg-blue-700 text-white',
     description: 'The immutable attempt is approved and queued. GITSMITH is performing the authoritative compare-and-swap.',
     canApprove: false,
-    canReject: false
+    canReject: false,
+    isDiverged: false,
+    isFastForward: true
   };
 
   if (thread.approvalStatus === 'rejected') return {
@@ -96,7 +102,9 @@ export function formatProposalStatus(thread: InboxThread): {
     badgeStyle: 'bg-red-100 text-red-800 border border-red-300',
     description: 'This exact result commit was rejected. No Git ref was changed.',
     canApprove: false,
-    canReject: false
+    canReject: false,
+    isDiverged: Boolean(diffData?.diverged),
+    isFastForward: Boolean(diffData?.isFastForward)
   };
 
   if (!thread.mergeAttemptId || thread.mergeStatus !== 'preview_ready') return {
@@ -104,14 +112,90 @@ export function formatProposalStatus(thread: InboxThread): {
     badgeStyle: 'bg-gray-200 text-gray-700 border border-gray-400',
     description: 'This message is not attached to a preview-ready immutable merge attempt.',
     canApprove: false,
-    canReject: false
+    canReject: false,
+    isDiverged: false,
+    isFastForward: false
   };
 
+  if (diffData && (diffData.diverged || !diffData.isFastForward)) {
+    return {
+      badgeLabel: 'Open · Diverged (Needs Merge Commit)',
+      badgeStyle: 'bg-amber-100 text-amber-900 border border-amber-400 font-bold',
+      description: `This branch has conflicts / needs a merge commit — rebase or merge required. Target is ahead by ${diffData.behindCount || 1} commit(s).`,
+      canApprove: false,
+      canReject: true,
+      isDiverged: true,
+      isFastForward: false
+    };
+  }
+
   return {
-    badgeLabel: 'Pending Approval',
-    badgeStyle: 'bg-amber-100 text-amber-800 border border-amber-300',
+    badgeLabel: 'Open · Fast-forwardable',
+    badgeStyle: 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold',
     description: 'Approve this exact result commit to queue an authoritative GITSMITH compare-and-swap.',
     canApprove: true,
-    canReject: true
+    canReject: true,
+    isDiverged: false,
+    isFastForward: true
   };
 }
+
+export interface PRCommit {
+  readonly sha: string;
+  readonly shortSha: string;
+  readonly authorName: string;
+  readonly authorEmail: string;
+  readonly authorDate: string;
+  readonly summary: string;
+  readonly message: string;
+}
+
+export interface PRDiffLine {
+  readonly type: 'add' | 'delete' | 'context' | 'header';
+  readonly oldLineNumber: number | null;
+  readonly newLineNumber: number | null;
+  readonly content: string;
+}
+
+export interface PRDiffHunk {
+  readonly oldStart: number;
+  readonly oldLines: number;
+  readonly newStart: number;
+  readonly newLines: number;
+  readonly header: string;
+  readonly lines: PRDiffLine[];
+}
+
+export interface PRFileDiff {
+  readonly oldPath: string;
+  readonly newPath: string;
+  readonly status: 'modified' | 'added' | 'deleted' | 'renamed';
+  readonly additions: number;
+  readonly deletions: number;
+  readonly isBinary: boolean;
+  readonly patch: string;
+  readonly hunks?: PRDiffHunk[];
+}
+
+export interface PRDiffData {
+  readonly success: boolean;
+  readonly proposalId?: string;
+  readonly repositorySlug?: string;
+  readonly targetRef?: string;
+  readonly featureRef?: string;
+  readonly baseOid: string;
+  readonly headOid: string;
+  readonly mergeBaseOid: string | null;
+  readonly isFastForward: boolean;
+  readonly diverged: boolean;
+  readonly aheadCount: number;
+  readonly behindCount: number;
+  readonly commits: PRCommit[];
+  readonly files: PRFileDiff[];
+  readonly totalAdditions: number;
+  readonly totalDeletions: number;
+  readonly filesChanged: number;
+  readonly unifiedDiff: string;
+  readonly error?: string;
+}
+

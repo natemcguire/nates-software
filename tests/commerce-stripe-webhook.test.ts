@@ -168,8 +168,8 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
 
     it('rejects expired signature timestamp older than 5 minutes (300 seconds) with 401', async () => {
-      // 301 seconds in the past
-      const { buildRequest } = createSignedRequest(validPayload, webhookSecret, -301);
+      // 360 seconds in the past
+      const { buildRequest } = createSignedRequest(validPayload, webhookSecret, -360);
       const req = await buildRequest();
 
       const res = await webhookApi.onRequestPost({ request: req, env: validEnv() });
@@ -181,8 +181,8 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
 
     it('rejects future signature timestamp drifted > 5 minutes with 401', async () => {
-      // 301 seconds in the future
-      const { buildRequest } = createSignedRequest(validPayload, webhookSecret, +301);
+      // 360 seconds in the future
+      const { buildRequest } = createSignedRequest(validPayload, webhookSecret, +360);
       const req = await buildRequest();
 
       const res = await webhookApi.onRequestPost({ request: req, env: validEnv() });

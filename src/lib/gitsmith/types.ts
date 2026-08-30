@@ -207,3 +207,59 @@ export interface GatewayReadinessStatus {
   };
   readonly timestamp: string;
 }
+
+export interface GitCommitInfo {
+  readonly sha: string;
+  readonly shortSha: string;
+  readonly authorName: string;
+  readonly authorEmail: string;
+  readonly authorDate: string;
+  readonly summary: string;
+  readonly message: string;
+}
+
+export interface DiffLine {
+  readonly type: 'add' | 'delete' | 'context' | 'header';
+  readonly oldLineNumber: number | null;
+  readonly newLineNumber: number | null;
+  readonly content: string;
+}
+
+export interface DiffHunk {
+  readonly oldStart: number;
+  readonly oldLines: number;
+  readonly newStart: number;
+  readonly newLines: number;
+  readonly header: string;
+  readonly lines: DiffLine[];
+}
+
+export interface GitFileDiff {
+  readonly oldPath: string;
+  readonly newPath: string;
+  readonly status: 'modified' | 'added' | 'deleted' | 'renamed';
+  readonly additions: number;
+  readonly deletions: number;
+  readonly isBinary: boolean;
+  readonly patch: string;
+  readonly hunks: DiffHunk[];
+}
+
+export interface ProposalDiffResult {
+  readonly success: boolean;
+  readonly baseOid: string;
+  readonly headOid: string;
+  readonly mergeBaseOid: string | null;
+  readonly isFastForward: boolean;
+  readonly diverged: boolean;
+  readonly aheadCount: number;
+  readonly behindCount: number;
+  readonly commits: GitCommitInfo[];
+  readonly files: GitFileDiff[];
+  readonly totalAdditions: number;
+  readonly totalDeletions: number;
+  readonly filesChanged: number;
+  readonly unifiedDiff: string;
+  readonly error?: string;
+}
+

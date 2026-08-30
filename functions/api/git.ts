@@ -2,6 +2,7 @@
 // belong to a real Git gateway. D1 stores the query projection, immutable fork
 // lineage, access policy, and durable work queue.
 
+import * as path from 'node:path';
 import { getSessionUser, requireAuth } from './_auth';
 import { hashSessionToken } from './_session';
 import {
@@ -16,6 +17,7 @@ import {
   isValidRefPolicies,
   selectRefPolicy
 } from '../../src/lib/forgeDomain';
+import { getProposalDiff } from '../../src/lib/gitsmith/gitStorage';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
 
@@ -162,6 +164,72 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       'Git smart HTTP is not served by this control-plane endpoint. Configure the GITSMITH gateway.',
       501
     );
+  }
+
+  // Diff API endpoint for PRs and repository ref comparisons
+  if (url.searchParams.get('action') === 'diff') {
+    const db = dbFrom(env);
+    if (!db) return failure('Forge database binding is unavailable.');
+    const user = await getSessionUser(request, env);
+    const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId') || url.searchParams.get('mergeAttemptId');
+    const repoIdParam = url.searchParams.get('repositoryId') || url.searchParams.get('id');
+    const baseParam = url.searchParams.get('base') || url.searchParams.get('baseOid');
+    const headParam = url.searchParams.get('head') || url.searchParams.get('headOid');
+
+    const reposRoot = env?.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
+
+    if (proposalId) {
+      const proposal = await db.prepare(`
+        SELECT m.id, m.user_id AS recipientId, m.sender_id AS senderId,
+          m.merge_attempt_id AS mergeAttemptId,
+          ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid,
+          ma.status AS attemptStatus,
+          mj.target_ref AS targetRef, mj.status AS jobStatus,
+          r.id AS repositoryId, r.storage_key AS storageKey, r.slug AS repositorySlug,
+          r.visibility,
+          CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE rm.role END AS memberRole
+        FROM inbox_messages m
+        LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
+        LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
+        LEFT JOIN repositories r ON r.id = mj.target_repository_id
+        LEFT JOIN repository_members rm ON rm.repository_id = r.id AND rm.user_id = ?
+        WHERE (m.id = ? OR m.merge_attempt_id = ?)
+      `).bind(user?.id || '', user?.id || '', proposalId, proposalId).first();
+
+      if (!proposal) return failure('Proposal not found.', 404);
+      if ((proposal as any).visibility === 'private' && (proposal as any).recipientId !== user?.id && (proposal as any).senderId !== user?.id && !(proposal as any).memberRole) {
+        return failure(user ? 'Forbidden.' : 'Authentication required.', user ? 403 : 401);
+      }
+      if (!(proposal as any).inputTargetOid || !(proposal as any).resultCommitOid) {
+        return failure('Proposal is not bound to a valid merge attempt.', 400);
+      }
+
+      const diffResult = getProposalDiff(reposRoot, (proposal as any).storageKey, (proposal as any).inputTargetOid, (proposal as any).resultCommitOid);
+      return Response.json({
+        proposalId: (proposal as any).id,
+        mergeAttemptId: (proposal as any).mergeAttemptId,
+        repositorySlug: (proposal as any).repositorySlug,
+        targetRef: (proposal as any).targetRef,
+        ...diffResult
+      });
+    }
+
+    if (repoIdParam && baseParam && headParam) {
+      const repository = await repositoryAccess(db, repoIdParam, user?.id);
+      if (!repository) return failure('Repository not found.', 404);
+      if ((repository as any).visibility === 'private' && !(repository as any).memberRole) {
+        return failure(user ? 'Forbidden.' : 'Authentication required.', user ? 403 : 401);
+      }
+
+      const diffResult = getProposalDiff(reposRoot, (repository as any).storageKey, baseParam, headParam);
+      return Response.json({
+        repositoryId: (repository as any).id,
+        repositorySlug: (repository as any).slug,
+        ...diffResult
+      });
+    }
+
+    return failure('proposalId or (repositoryId, base, head) is required for diff action.', 400);
   }
 
   const repositoryId = url.searchParams.get('repositoryId') || url.searchParams.get('id');

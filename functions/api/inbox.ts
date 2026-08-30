@@ -1,6 +1,9 @@
 // Authenticated mailbox, replies, and immutable merge-attempt approvals.
 // GITSMITH remains the only authority that may land a Git ref.
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { requireAuth } from './_auth';
+import { getProposalDiff, resolveRepoPath } from '../../src/lib/gitsmith/gitStorage';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
 const jsonError = (error: string, status: number) => Response.json({ success: false, error }, { status });
@@ -32,12 +35,110 @@ function normalizeKind(value: unknown): 'proposals' | 'agent_logs' | 'royalties'
   return 'feedback';
 }
 
-export const onRequestGet = async ({ request, env }: { request: Request; env: { DB?: D1Database } }) => {
+export const onRequestGet = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string } }) => {
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   if (!env.DB) return jsonError('Inbox storage is unavailable', 503);
   try {
     const url = new URL(request.url);
+    const action = url.searchParams.get('action');
+
+    // 1. Proposal Diff Action
+    if (action === 'diff') {
+      const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId') || url.searchParams.get('mergeAttemptId');
+      if (!proposalId) return jsonError('proposalId is required', 400);
+
+      const proposal = await env.DB.prepare(`
+        SELECT m.id, m.user_id AS recipientId, m.sender_id AS senderId,
+          m.title, m.content, m.feature_ref AS featureRef,
+          m.merge_attempt_id AS mergeAttemptId,
+          ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid,
+          ma.status AS attemptStatus,
+          mj.id AS mergeJobId, mj.target_ref AS targetRef, mj.status AS jobStatus,
+          mj.landed_commit_oid AS landedCommitOid,
+          r.id AS repositoryId, r.storage_key AS storageKey, r.slug AS repositorySlug,
+          r.owner_user_id AS repositoryOwnerId,
+          fpv.git_ref AS versionFeatureRef
+        FROM inbox_messages m
+        LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
+        LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
+        LEFT JOIN repositories r ON r.id = mj.target_repository_id
+        LEFT JOIN feature_package_versions fpv ON fpv.id = mj.feature_version_id
+        WHERE (m.id = ? OR m.merge_attempt_id = ?)
+          AND (m.user_id = ? OR m.sender_id = ?)
+      `).bind(proposalId, proposalId, auth.user!.id, auth.user!.id).first();
+
+      if (!proposal) return jsonError('Proposal not found or access denied', 404);
+      if (!proposal.mergeAttemptId || !proposal.resultCommitOid) {
+        return jsonError('Proposal is not bound to a valid merge attempt', 400);
+      }
+
+      const reposRoot = env.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
+      const storageKey = proposal.storageKey || `repositories/${proposal.repositoryId}`;
+      const baseOid = proposal.inputTargetOid;
+      const headOid = proposal.resultCommitOid;
+
+      const diffResult = getProposalDiff(reposRoot, storageKey, baseOid, headOid);
+
+      return Response.json({
+        proposalId: proposal.id,
+        mergeAttemptId: proposal.mergeAttemptId,
+        mergeJobId: proposal.mergeJobId,
+        repositorySlug: proposal.repositorySlug,
+        targetRef: proposal.targetRef,
+        featureRef: proposal.featureRef || proposal.versionFeatureRef || 'feature',
+        status: proposal.jobStatus,
+        attemptStatus: proposal.attemptStatus,
+        landed: Boolean(proposal.jobStatus === 'landed' && proposal.landedCommitOid === proposal.resultCommitOid),
+        ...diffResult
+      });
+    }
+
+    // 2. Proposal Comments & Discussion Thread Action
+    if (action === 'comments' || action === 'conversation') {
+      const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId');
+      if (!proposalId) return jsonError('proposalId is required', 400);
+
+      const proposal = await env.DB.prepare(`
+        SELECT m.id, m.user_id AS recipientId, m.sender_id AS senderId, m.merge_attempt_id AS mergeAttemptId
+        FROM inbox_messages m
+        WHERE (m.id = ? OR m.merge_attempt_id = ?) AND (m.user_id = ? OR m.sender_id = ?)
+      `).bind(proposalId, proposalId, auth.user!.id, auth.user!.id).first();
+
+      if (!proposal) return jsonError('Proposal not found or access denied', 404);
+
+      const messages = await env.DB.prepare(`
+        SELECT m.id, m.sender_id AS senderId, m.user_id AS recipientId,
+          m.title, m.content, m.created_at AS createdAt, m.message_kind AS messageKind,
+          m.in_reply_to_id AS inReplyToId,
+          COALESCE(sender.display_name, sender.username, 'System') AS authorName,
+          sender.username AS authorUsername,
+          COALESCE(sender.avatar_url, '⚡') AS authorAvatar,
+          CASE WHEN m.sender_id = ? THEN 'sent' ELSE 'received' END AS direction
+        FROM inbox_messages m
+        LEFT JOIN users sender ON sender.id = m.sender_id
+        WHERE (m.id = ? OR m.in_reply_to_id = ? OR (m.merge_attempt_id IS NOT NULL AND m.merge_attempt_id = ?))
+          AND (m.user_id = ? OR m.sender_id = ?)
+        ORDER BY CASE WHEN m.id = ? THEN 0 ELSE 1 END, m.created_at ASC, m.id ASC
+      `).bind(auth.user!.id, proposal.id, proposal.id, proposal.mergeAttemptId, auth.user!.id, auth.user!.id, proposal.id).all();
+
+      const approval = await env.DB.prepare(`
+        SELECT ma.decision, ma.comment, ma.created_at AS createdAt,
+          u.username AS approverUsername, COALESCE(u.display_name, u.username) AS approverDisplayName,
+          u.avatar_url AS approverAvatar
+        FROM merge_approvals ma
+        JOIN users u ON u.id = ma.approver_user_id
+        WHERE ma.merge_attempt_id = ?
+      `).bind(proposal.mergeAttemptId).first();
+
+      return Response.json({
+        success: true,
+        proposalId: proposal.id,
+        messages: messages.results || [],
+        approval: approval || null
+      });
+    }
+
     const requestedLimit = Number(url.searchParams.get('limit') || DEFAULT_PAGE_SIZE);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
     const cursorValue = url.searchParams.get('cursor');
@@ -104,7 +205,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
   }
 };
 
-export const onRequestPost = async ({ request, env }: { request: Request; env: { DB?: D1Database } }) => {
+export const onRequestPost = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string } }) => {
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   if (!env.DB) return jsonError('Inbox storage is unavailable', 503);
@@ -190,15 +291,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       return Response.json({ success: true, messageId, unread: body.action === 'mark_unread' });
     }
 
-    if (body.action === 'reply') {
-      if (!messageId) return jsonError('messageId is required', 400);
-      const text = typeof body.text === 'string' ? body.text.trim() : '';
+    if (body.action === 'reply' || body.action === 'comment' || body.action === 'proposal_comment') {
+      const targetId = messageId || (typeof body.proposalId === 'string' ? body.proposalId : '');
+      if (!targetId) return jsonError('messageId is required', 400);
+      const text = typeof body.text === 'string' ? body.text.trim() : (typeof body.comment === 'string' ? body.comment.trim() : '');
       if (!text) return jsonError('Reply text is required', 400);
       if (text.length > 10_000) return jsonError('Reply text must be 10,000 characters or fewer', 400);
       const parent = await env.DB.prepare(`
-        SELECT sender_id AS senderId, user_id AS recipientId, title
-        FROM inbox_messages WHERE id = ? AND (user_id = ? OR sender_id = ?)
-      `).bind(messageId, userId, userId).first();
+        SELECT id, sender_id AS senderId, user_id AS recipientId, title, merge_attempt_id AS mergeAttemptId
+        FROM inbox_messages WHERE (id = ? OR merge_attempt_id = ?) AND (user_id = ? OR sender_id = ?)
+      `).bind(targetId, targetId, userId, userId).first();
       if (!parent) return jsonError('Parent message not found', 404);
       const counterpartId = parent.senderId === userId ? parent.recipientId : parent.senderId;
       if (!counterpartId) return jsonError('This system message cannot receive replies', 409);
@@ -209,9 +311,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       const subject = title.startsWith('Re: ') ? title : `Re: ${title}`;
       await env.DB.prepare(`
         INSERT INTO inbox_messages
-          (id, user_id, sender_id, title, preview, content, feature_ref, is_merged, unread, message_kind, in_reply_to_id)
-        VALUES (?, ?, ?, ?, ?, ?, NULL, 0, 1, 'feedback', ?)
-      `).bind(replyId, recipient.id, userId, subject, text.slice(0, 160), text, messageId).run();
+          (id, user_id, sender_id, title, preview, content, feature_ref, is_merged, unread, message_kind, in_reply_to_id, merge_attempt_id)
+        VALUES (?, ?, ?, ?, ?, ?, NULL, 0, 1, 'feedback', ?, ?)
+      `).bind(replyId, recipient.id, userId, subject, text.slice(0, 160), text, parent.id, parent.mergeAttemptId || null).run();
       const storedReply = await env.DB.prepare(`
         SELECT m.id, m.title, m.content, m.created_at AS createdAt,
           COALESCE(recipient.display_name || ' (@' || recipient.username || ')', 'Unknown recipient') AS counterpartName,
@@ -224,6 +326,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       return Response.json({
         success: true,
         messageId: replyId,
+        commentId: replyId,
         thread: {
           id: storedReply.id,
           category: 'feedback',
@@ -234,7 +337,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
           body: storedReply.content,
           unread: false,
           featureRef: 'n/a',
-          inReplyToId: messageId,
+          inReplyToId: parent.id,
+          mergeAttemptId: parent.mergeAttemptId || undefined,
           time: storedReply.createdAt
         }
       });
@@ -274,6 +378,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       const rawComment = typeof body.comment === 'string' ? body.comment.trim() : '';
       if (rawComment.length > 2_000) return jsonError('Review comment must be 2,000 characters or fewer', 400);
       if (decision === 'rejected' && rawComment.length < 3) return jsonError('A meaningful rejection comment is required', 400);
+
+      // Server-side guard: verify that the proposal is not divergent before approving
+      // Fail closed: return conflict/error UNLESS the repository exists AND getProposalDiff confirms a fast-forward
+      if (decision === 'approved') {
+        const reposRoot = env.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
+        const storageKey = proposal.storageKey || `repositories/${proposal.repositoryId}`;
+        const pathRes = resolveRepoPath(reposRoot, storageKey);
+        if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+          return jsonError(`Cannot approve proposal: Repository storage '${storageKey}' does not exist or is unavailable for lineage verification`, 409);
+        }
+        const diffResult = getProposalDiff(reposRoot, storageKey, proposal.inputTargetOid, proposal.resultCommitOid);
+        if (!diffResult.success) {
+          return jsonError(`Cannot approve proposal: ${diffResult.error || 'Failed to verify Git lineage'}`, 409);
+        }
+        if (diffResult.diverged || !diffResult.isFastForward) {
+          return jsonError('Cannot approve divergent proposal: branch is not a fast-forward descendant of target (rebase or merge required)', 409);
+        }
+      }
       const existing = await env.DB.prepare(`
         SELECT result_commit_oid AS resultCommitOid FROM merge_approvals
         WHERE merge_attempt_id = ? AND approver_user_id = ?

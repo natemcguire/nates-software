@@ -11,6 +11,10 @@ import type {
   ForkProvisionParams,
   ForkProvisionResult,
   GitCapabilities,
+  GitCommitInfo,
+  DiffHunk,
+  GitFileDiff,
+  ProposalDiffResult,
   ProvisionRepoParams,
   ProvisionRepoResult,
   RepositoryObjectFormat,
@@ -287,6 +291,28 @@ export function initBareRepo(reposRoot: string, params: ProvisionRepoParams): Pr
 }
 
 /**
+ * Resolves a Git reference or OID to a canonical hexadecimal commit OID in a bare repository.
+ * Rejects any option-like inputs (starting with '-'), non-string values, or references that
+ * do not resolve to an actual commit object in the repository.
+ */
+export function resolveCanonicalCommitOid(repoPath: string, refOrOid: string): string | null {
+  if (typeof refOrOid !== 'string' || !refOrOid.trim() || refOrOid.trim().startsWith('-')) {
+    return null;
+  }
+  const cleanRef = refOrOid.trim();
+  try {
+    const out = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', `${cleanRef}^{commit}`], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+    return isValidGitOid(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Reads authoritative ref from bare git repository using git rev-parse / show-ref.
  */
 export function readAuthoritativeRef(reposRoot: string, storageKey: string, refName: string): string | null {
@@ -295,9 +321,14 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
     return null;
   }
 
+  if (typeof refName !== 'string' || !refName.trim() || refName.trim().startsWith('-')) {
+    return null;
+  }
+
+  const cleanRef = refName.trim();
   const repoPath = pathRes.resolvedPath;
   try {
-    const out = execFileSync('git', ['rev-parse', '--verify', '-q', `${refName}^{commit}`], {
+    const out = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', `${cleanRef}^{commit}`], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -307,7 +338,7 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
   } catch {
     // If ref^{commit} fails, try direct ref (for tags/notes)
     try {
-      const outDirect = execFileSync('git', ['rev-parse', '--verify', '-q', refName], {
+      const outDirect = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', cleanRef], {
         cwd: repoPath,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe']
@@ -329,10 +360,10 @@ export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
     throw new Error(pathRes.error || 'Authoritative repository does not exist.');
   }
-  if (!isValidGitOid(commitOid)) throw new Error('commitOid must be a valid Git object ID.');
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) throw new Error('commitOid must be a valid Git object ID.');
   if (!hasGitObject(reposRoot, storageKey, commitOid)) throw new Error('Requested commit does not exist in the authoritative repository.');
   try {
-    return execFileSync('git', ['archive', '--format=tar', `${commitOid}^{commit}`], {
+    return execFileSync('git', ['archive', '--format=tar', `${commitOid}^{commit}`, '--'], {
       cwd: pathRes.resolvedPath,
       encoding: 'buffer',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -357,9 +388,13 @@ export function listAuthoritativeRefs(
     return [];
   }
 
+  if (prefix !== undefined && (typeof prefix !== 'string' || prefix.startsWith('-'))) {
+    return [];
+  }
+
   const repoPath = pathRes.resolvedPath;
   try {
-    const args = ['for-each-ref', '--format=%(refname) %(objectname)'];
+    const args = ['for-each-ref', '--format=%(refname) %(objectname)', '--'];
     if (prefix) args.push(prefix);
 
     const out = execFileSync('git', args, {
@@ -393,11 +428,11 @@ export function hasGitObject(reposRoot: string, storageKey: string, oid: string)
     return false;
   }
 
-  if (!isValidGitOid(oid)) return false;
+  if (!isValidGitOid(oid) || oid.startsWith('-')) return false;
 
   const repoPath = pathRes.resolvedPath;
   try {
-    const res = spawnSync('git', ['cat-file', '-e', oid], { cwd: repoPath, stdio: 'pipe' });
+    const res = spawnSync('git', ['cat-file', '-e', '--', oid], { cwd: repoPath, stdio: 'pipe' });
     return res.status === 0;
   } catch {
     return false;
@@ -491,8 +526,8 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Execute atomic git update-ref <ref> <newOid> <zeroOid>
-    const res = spawnSync('git', ['update-ref', refName, newOid, zeroOid], {
+    // Execute atomic git update-ref -- <ref> <newOid> <zeroOid>
+    const res = spawnSync('git', ['update-ref', '--', refName, newOid, zeroOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -563,8 +598,8 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Execute atomic git update-ref <ref> <newOid> <expectedOldOid>
-    const res = spawnSync('git', ['update-ref', refName, newOid, expectedOldOid], {
+    // Execute atomic git update-ref -- <ref> <newOid> <expectedOldOid>
+    const res = spawnSync('git', ['update-ref', '--', refName, newOid, expectedOldOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -621,7 +656,7 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    const res = spawnSync('git', ['update-ref', '-d', refName, expectedOldOid], {
+    const res = spawnSync('git', ['update-ref', '-d', '--', refName, expectedOldOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -832,3 +867,415 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
     };
   }
 }
+
+/**
+ * Parses diff hunks from a single file's patch text.
+ */
+export function parseDiffHunks(patch: string): DiffHunk[] {
+  if (!patch || !patch.trim()) return [];
+
+  const lines = patch.split('\n');
+  const hunks: DiffHunk[] = [];
+  let currentHunk: DiffHunk | null = null;
+  let curOld = 0;
+  let curNew = 0;
+
+  for (const line of lines) {
+    if (line.startsWith('@@ ')) {
+      const match = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)/);
+      if (match) {
+        const oldStart = parseInt(match[1], 10);
+        const oldLines = match[2] !== undefined ? parseInt(match[2], 10) : 1;
+        const newStart = parseInt(match[3], 10);
+        const newLines = match[4] !== undefined ? parseInt(match[4], 10) : 1;
+        curOld = oldStart;
+        curNew = newStart;
+
+        currentHunk = {
+          oldStart,
+          oldLines,
+          newStart,
+          newLines,
+          header: line,
+          lines: [{
+            type: 'header',
+            oldLineNumber: null,
+            newLineNumber: null,
+            content: line
+          }]
+        };
+        hunks.push(currentHunk);
+      }
+      continue;
+    }
+
+    if (!currentHunk) continue;
+
+    if (line.startsWith('+')) {
+      currentHunk.lines.push({
+        type: 'add',
+        oldLineNumber: null,
+        newLineNumber: curNew++,
+        content: line.substring(1)
+      });
+    } else if (line.startsWith('-')) {
+      currentHunk.lines.push({
+        type: 'delete',
+        oldLineNumber: curOld++,
+        newLineNumber: null,
+        content: line.substring(1)
+      });
+    } else if (line.startsWith(' ')) {
+      currentHunk.lines.push({
+        type: 'context',
+        oldLineNumber: curOld++,
+        newLineNumber: curNew++,
+        content: line.substring(1)
+      });
+    } else if (line.startsWith('\\')) {
+      currentHunk.lines.push({
+        type: 'context',
+        oldLineNumber: null,
+        newLineNumber: null,
+        content: line
+      });
+    } else if (line === '') {
+      currentHunk.lines.push({
+        type: 'context',
+        oldLineNumber: curOld++,
+        newLineNumber: curNew++,
+        content: ''
+      });
+    }
+  }
+
+  return hunks;
+}
+
+/**
+ * Parses raw git unified diff output into structured per-file diffs.
+ */
+export function parseUnifiedDiff(
+  rawDiff: string,
+  numstatMap?: Map<string, { additions: number; deletions: number; isBinary: boolean }>
+): GitFileDiff[] {
+  if (!rawDiff || !rawDiff.trim()) return [];
+
+  const fileChunks = rawDiff.split(/^diff --git /m).filter(chunk => chunk.trim());
+  const results: GitFileDiff[] = [];
+
+  for (const chunk of fileChunks) {
+    const lines = chunk.split('\n');
+    const headerLine = lines[0];
+    const headerMatch = headerLine.match(/^a\/(.+?)\s+b\/(.+)$/);
+    let oldPath = headerMatch ? headerMatch[1] : '';
+    let newPath = headerMatch ? headerMatch[2] : '';
+
+    let status: 'modified' | 'added' | 'deleted' | 'renamed' = 'modified';
+    let isBinary = false;
+
+    for (let i = 0; i < Math.min(lines.length, 12); i++) {
+      const line = lines[i];
+      if (line.startsWith('new file mode')) {
+        status = 'added';
+      } else if (line.startsWith('deleted file mode')) {
+        status = 'deleted';
+      } else if (line.startsWith('similarity index') || line.startsWith('rename from')) {
+        status = 'renamed';
+      } else if (line.startsWith('rename from ')) {
+        oldPath = line.substring('rename from '.length).trim();
+      } else if (line.startsWith('rename to ')) {
+        newPath = line.substring('rename to '.length).trim();
+      } else if (line.startsWith('Binary files ') || line.includes('differ')) {
+        isBinary = true;
+      }
+    }
+
+    if (!oldPath && !newPath) {
+      const match = headerLine.split(' ');
+      oldPath = match[0]?.replace(/^a\//, '') || 'unknown';
+      newPath = match[1]?.replace(/^b\//, '') || oldPath;
+    }
+
+    const pathKey = newPath || oldPath;
+    const stat = numstatMap?.get(pathKey) || numstatMap?.get(oldPath);
+
+    const patch = 'diff --git ' + chunk;
+    const hunks = parseDiffHunks(chunk);
+
+    let additions = 0;
+    let deletions = 0;
+
+    if (stat) {
+      additions = stat.additions;
+      deletions = stat.deletions;
+      if (stat.isBinary) isBinary = true;
+    } else {
+      for (const hunk of hunks) {
+        for (const dl of hunk.lines) {
+          if (dl.type === 'add') additions++;
+          else if (dl.type === 'delete') deletions++;
+        }
+      }
+    }
+
+    results.push({
+      oldPath: oldPath || newPath,
+      newPath: newPath || oldPath,
+      status,
+      additions,
+      deletions,
+      isBinary,
+      patch,
+      hunks
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Computes the real Git unified diff, commit list, ahead/behind counts, and
+ * mergeability/divergence status between base and head in an on-disk bare repository.
+ */
+export function getProposalDiff(
+  reposRoot: string,
+  storageKey: string,
+  baseRefOrOid: string,
+  headRefOrOid: string,
+  options?: { maxBuffer?: number }
+): ProposalDiffResult {
+  const emptyDiff = (error?: string): ProposalDiffResult => ({
+    success: false,
+    baseOid: typeof baseRefOrOid === 'string' ? baseRefOrOid : '',
+    headOid: typeof headRefOrOid === 'string' ? headRefOrOid : '',
+    mergeBaseOid: null,
+    isFastForward: false,
+    diverged: false,
+    aheadCount: 0,
+    behindCount: 0,
+    commits: [],
+    files: [],
+    totalAdditions: 0,
+    totalDeletions: 0,
+    filesChanged: 0,
+    unifiedDiff: '',
+    error
+  });
+
+  if (typeof baseRefOrOid !== 'string' || !baseRefOrOid.trim() || baseRefOrOid.trim().startsWith('-')) {
+    return emptyDiff('Base commit reference is invalid or contains prohibited option flags.');
+  }
+
+  if (typeof headRefOrOid !== 'string' || !headRefOrOid.trim() || headRefOrOid.trim().startsWith('-')) {
+    return emptyDiff('Head commit reference is invalid or contains prohibited option flags.');
+  }
+
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return emptyDiff(pathRes.error || `Repository directory '${storageKey}' does not exist on disk.`);
+  }
+
+  const repoPath = pathRes.resolvedPath;
+
+  // Resolve base to canonical commit OID first and validate existence
+  const canonicalBaseOid = resolveCanonicalCommitOid(repoPath, baseRefOrOid);
+  if (!canonicalBaseOid || !isValidGitOid(canonicalBaseOid)) {
+    return emptyDiff(`Base commit '${baseRefOrOid}' does not exist or does not resolve to a commit in repository.`);
+  }
+
+  // Resolve head to canonical commit OID first and validate existence
+  const canonicalHeadOid = resolveCanonicalCommitOid(repoPath, headRefOrOid);
+  if (!canonicalHeadOid || !isValidGitOid(canonicalHeadOid)) {
+    return emptyDiff(`Head commit '${headRefOrOid}' does not exist or does not resolve to a commit in repository.`);
+  }
+
+  const baseOid = canonicalBaseOid;
+  const headOid = canonicalHeadOid;
+
+  // If base and head are identical
+  if (baseOid === headOid) {
+    return {
+      success: true,
+      baseOid,
+      headOid,
+      mergeBaseOid: baseOid,
+      isFastForward: true,
+      diverged: false,
+      aheadCount: 0,
+      behindCount: 0,
+      commits: [],
+      files: [],
+      totalAdditions: 0,
+      totalDeletions: 0,
+      filesChanged: 0,
+      unifiedDiff: ''
+    };
+  }
+
+  // 1. Find merge-base with canonical OIDs and -- argument terminator
+  let mergeBaseOid: string | null = null;
+  try {
+    const mbOut = execFileSync('git', ['merge-base', '--', baseOid, headOid], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+    if (isValidGitOid(mbOut)) mergeBaseOid = mbOut;
+  } catch {}
+
+  // 2. Check if base is an ancestor of head (clean fast-forward)
+  let isFastForward = false;
+  try {
+    const res = spawnSync('git', ['merge-base', '--is-ancestor', baseOid, headOid], {
+      cwd: repoPath,
+      stdio: 'pipe'
+    });
+    isFastForward = res.status === 0;
+  } catch {}
+
+  const diverged = !isFastForward;
+
+  // 3. Ahead / Behind counts with canonical OIDs and -- argument terminator
+  let aheadCount = 0;
+  let behindCount = 0;
+  try {
+    const aheadOut = execFileSync('git', ['rev-list', '--count', `${baseOid}..${headOid}`, '--'], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+    aheadCount = parseInt(aheadOut, 10) || 0;
+  } catch {}
+
+  try {
+    const behindOut = execFileSync('git', ['rev-list', '--count', `${headOid}..${baseOid}`, '--'], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+    behindCount = parseInt(behindOut, 10) || 0;
+  } catch {}
+
+  // 4. Commit list: git log base..head with canonical OIDs and -- argument terminator
+  const commits: GitCommitInfo[] = [];
+  try {
+    const logOut = execFileSync('git', [
+      'log',
+      '--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e',
+      `${baseOid}..${headOid}`,
+      '--'
+    ], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+
+    if (logOut) {
+      const records = logOut.split('\x1e').filter(r => r.trim());
+      for (const record of records) {
+        const [sha, shortSha, authorName, authorEmail, authorDate, summary, body] = record.split('\x1f');
+        if (sha && isValidGitOid(sha.trim())) {
+          commits.push({
+            sha: sha.trim(),
+            shortSha: shortSha?.trim() || sha.trim().slice(0, 7),
+            authorName: authorName?.trim() || 'Unknown',
+            authorEmail: authorEmail?.trim() || '',
+            authorDate: authorDate?.trim() || '',
+            summary: summary?.trim() || '',
+            message: body ? `${summary?.trim() || ''}\n\n${body.trim()}` : (summary?.trim() || '')
+          });
+        }
+      }
+    }
+  } catch {}
+
+  // 5. Unified diff (three-dot diff relative to merge base, or direct diff)
+  let unifiedDiff = '';
+  const diffTarget = mergeBaseOid ? `${mergeBaseOid}..${headOid}` : `${baseOid}..${headOid}`;
+  const maxDiffBuffer = options?.maxBuffer ?? (20 * 1024 * 1024);
+  try {
+    unifiedDiff = execFileSync('git', ['diff', '-u', diffTarget, '--'], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxDiffBuffer
+    });
+  } catch (err1: any) {
+    try {
+      unifiedDiff = execFileSync('git', ['diff', '-u', `${baseOid}...${headOid}`, '--'], {
+        cwd: repoPath,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        maxBuffer: maxDiffBuffer
+      });
+    } catch (err2: any) {
+      const err = err2 || err1;
+      const isBufferExceeded =
+        err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ||
+        err?.code === 'ENOBUFS' ||
+        err1?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ||
+        err1?.code === 'ENOBUFS' ||
+        String(err?.message || '').includes('maxBuffer') ||
+        String(err?.message || '').includes('ENOBUFS') ||
+        String(err1?.message || '').includes('maxBuffer') ||
+        String(err1?.message || '').includes('ENOBUFS');
+
+      const errorMessage = isBufferExceeded
+        ? 'Diff generation failed: diff output exceeded maximum buffer limit.'
+        : `Diff generation failed: ${err?.message || err1?.message || 'Git diff command failed.'}`;
+
+      return emptyDiff(errorMessage);
+    }
+  }
+
+  // 6. Numstat for file counts and line additions/deletions
+  const numstatMap = new Map<string, { additions: number; deletions: number; isBinary: boolean }>();
+  try {
+    const numstatOut = execFileSync('git', ['diff', '--numstat', diffTarget, '--'], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxDiffBuffer
+    }).trim();
+    if (numstatOut) {
+      for (const line of numstatOut.split('\n')) {
+        const parts = line.trim().split(/\t+/);
+        if (parts.length >= 3) {
+          const isBin = parts[0] === '-' && parts[1] === '-';
+          const adds = isBin ? 0 : parseInt(parts[0], 10) || 0;
+          const dels = isBin ? 0 : parseInt(parts[1], 10) || 0;
+          const fPath = parts.slice(2).join('\t');
+          numstatMap.set(fPath, { additions: adds, deletions: dels, isBinary: isBin });
+        }
+      }
+    }
+  } catch {}
+
+  // 7. Parse unified diff into per-file chunks
+  const files = parseUnifiedDiff(unifiedDiff, numstatMap);
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  for (const f of files) {
+    totalAdditions += f.additions;
+    totalDeletions += f.deletions;
+  }
+
+  return {
+    success: true,
+    baseOid,
+    headOid,
+    mergeBaseOid,
+    isFastForward,
+    diverged,
+    aheadCount: aheadCount || commits.length,
+    behindCount,
+    commits,
+    files,
+    totalAdditions,
+    totalDeletions,
+    filesChanged: files.length,
+    unifiedDiff
+  };
+}
+

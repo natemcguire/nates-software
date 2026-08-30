@@ -7,7 +7,7 @@ import { GitsmithGatewayService } from './gatewayService.ts';
 import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 import { GatewayHealthChecker } from './health.ts';
 import { constantTimeTokenCompare } from '../forgeDomain.ts';
-import { archiveAuthoritativeCommit } from './gitStorage.ts';
+import { archiveAuthoritativeCommit, getProposalDiff } from './gitStorage.ts';
 
 export interface CreateServerOptions {
   service?: GitsmithGatewayService;
@@ -99,6 +99,30 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       } catch (error: any) {
         res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ success: false, error: error?.message || 'Commit archive not found.' }));
+      }
+      return;
+    }
+
+    // Authenticated diff export for PR reviews
+    if (req.method === 'GET' && url.pathname === '/api/gateway/diff') {
+      if (!verifyToken()) {
+        res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Valid gateway token required.' }));
+        return;
+      }
+      const storageKey = String(url.searchParams.get('storageKey') || '').trim();
+      const base = String(url.searchParams.get('base') || url.searchParams.get('baseOid') || '').trim();
+      const head = String(url.searchParams.get('head') || url.searchParams.get('headOid') || '').trim();
+      try {
+        const diffRes = getProposalDiff(config.reposRoot, storageKey, base, head);
+        res.writeHead(diffRes.success ? 200 : 404, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'private, no-store'
+        });
+        res.end(JSON.stringify(diffRes));
+      } catch (error: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: error?.message || 'Diff computation failed.' }));
       }
       return;
     }
