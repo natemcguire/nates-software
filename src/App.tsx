@@ -127,9 +127,6 @@ function AppInner() {
       deploymentError: `No deployable revision exists for ${route.id}. Source has not been imported into GITSMITH and built by RIG.`
     };
 
-    const isClientDemo = resolvedApp.deploymentState === 'client_demo' || (
-      (resolvedApp.id === 'dronehunter' || resolvedApp.id === 'certified-mailer' || resolvedApp.id === 'wallart') && Boolean((resolvedApp as any).isDemo || !resolvedApp.deploymentState)
-    );
     const isAppActive = resolvedApp.deploymentState === 'active' && Boolean(resolvedApp.activeDeploymentId);
 
     return (
@@ -138,8 +135,8 @@ function AppInner() {
           <div className="flex items-center gap-2">
             <span className="text-base">{resolvedApp.creatorAvatar || resolvedApp.authorAvatar || '🎯'}</span>
             <span className="font-bold text-sm font-mono">{resolvedApp.name}</span>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${isAppActive || isClientDemo ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'}`}>
-              {isAppActive ? resolvedApp.version : isClientDemo ? 'CLIENT DEMO' : (resolvedApp.deploymentState || 'DRAFT').toUpperCase()}
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${isAppActive ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'}`}>
+              {isAppActive ? resolvedApp.version : (resolvedApp.deploymentState || 'DRAFT').toUpperCase()}
             </span>
             <span className="text-gray-300 font-mono text-[11px]">
               https://{resolvedApp.id}.nates-software.com
