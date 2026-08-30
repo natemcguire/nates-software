@@ -1,9 +1,9 @@
-import React from 'react';
-import { AppListing } from '../data/mockData';
-import { ExternalLink, Shield } from 'lucide-react';
+import { AppListing, AppDeploymentState } from '../data/mockData';
+import { ExternalLink, Shield, AlertTriangle, GitBranch, Cpu, RefreshCw, FileCode, CheckCircle2, XCircle, Info } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 import { CertifiedMailerStudio } from './CertifiedMailerStudio';
 import { WallArtStudio } from './WallArtStudio';
+import { getHonestDeploymentMessage } from '../lib/deploymentLifecycle';
 
 interface EphemeralLiveAppProps {
   app: AppListing;
@@ -13,42 +13,107 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
   const liveUrl = /^https?:\/\//i.test(configuredLiveUrl) ? configuredLiveUrl : undefined;
 
+  const isClientDemo = app.deploymentState === 'client_demo' || (
+    (app.id === 'dronehunter' || app.id === 'certified-mailer' || app.id === 'wallart') &&
+    Boolean(app.isDemo || !app.deploymentState)
+  );
+
+  const deploymentState: AppDeploymentState = app.deploymentState || (
+    isClientDemo ? 'client_demo' : 'draft'
+  );
+
+  const isVerifiedActive = deploymentState === 'active' && Boolean(app.activeDeploymentId);
+  const honestInfo = getHonestDeploymentMessage({
+    id: app.id,
+    name: app.name,
+    deploymentState,
+    deploymentError: app.deploymentError
+  });
+
+  const getStatusBadge = (state: AppDeploymentState) => {
+    switch (state) {
+      case 'active':
+        return (
+          <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <Shield size={11} /> ACTIVE (VERIFIED DEPLOYMENT)
+          </span>
+        );
+      case 'client_demo':
+        return (
+          <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <Shield size={11} /> CLIENT DEMO (Client-Side Sandbox)
+          </span>
+        );
+      case 'deployable':
+        return (
+          <span className="bg-blue-950 text-blue-300 px-2 py-0.5 rounded border border-blue-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <CheckCircle2 size={11} /> DEPLOYABLE (PROMOTION PENDING)
+          </span>
+        );
+      case 'building':
+        return (
+          <span className="bg-sky-950 text-sky-300 px-2 py-0.5 rounded border border-sky-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <RefreshCw size={11} className="animate-spin" /> BUILDING CANDIDATE
+          </span>
+        );
+      case 'source_ready':
+        return (
+          <span className="bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <GitBranch size={11} /> SOURCE READY (GITSMITH)
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="bg-rose-950 text-rose-300 px-2 py-0.5 rounded border border-rose-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <XCircle size={11} /> DEPLOYMENT FAILED
+          </span>
+        );
+      case 'retired':
+        return (
+          <span className="bg-gray-800 text-gray-400 px-2 py-0.5 rounded border border-gray-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <Info size={11} /> RETIRED
+          </span>
+        );
+      case 'draft':
+      default:
+        return (
+          <span className="bg-amber-950 text-amber-300 px-2 py-0.5 rounded border border-amber-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <AlertTriangle size={11} /> DRAFT (UNVERIFIED)
+          </span>
+        );
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden">
+    <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden" data-testid="ephemeral-live-app-container">
       {/* Top Header Bar */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2 shadow-sm select-none">
         <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+          <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive || isClientDemo ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
           <span className="font-bold text-xs">{app.name} Live Sandbox</span>
           <span className="text-gray-400 font-mono text-[11px]">({app.version})</span>
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
-          {app.id === 'wallart' || app.id === 'certified-mailer' || app.id === 'dronehunter' ? (
-            <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold">
-              <Shield size={11} /> {app.id === 'dronehunter' ? 'Local Canvas Runtime' : 'Client-Side Sandbox'}
-            </span>
-          ) : (
-            <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-600 flex items-center gap-1 font-bold">
-              <Shield size={11} /> Standalone Runtime
-            </span>
+          {getStatusBadge(deploymentState)}
+          {isVerifiedActive && liveUrl && (
+            <a
+              href={liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => playClickSound()}
+              className="bg-blue-900 hover:bg-blue-800 text-cyan-300 hover:text-white px-2.5 py-1 rounded text-[11px] font-mono transition-colors flex items-center gap-1 border border-blue-600 shadow-sm font-bold"
+            >
+              <span>Open published app</span>
+              <ExternalLink size={11} />
+            </a>
           )}
-          {liveUrl && <a
-            href={liveUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => playClickSound()}
-            className="bg-blue-900 hover:bg-blue-800 text-cyan-300 hover:text-white px-2.5 py-1 rounded text-[11px] font-mono transition-colors flex items-center gap-1 border border-blue-600 shadow-sm font-bold"
-          >
-            <span>Open published app</span>
-            <ExternalLink size={11} />
-          </a>}
         </div>
       </div>
 
       {/* Main Viewport */}
       <div className="flex-1 bg-white overflow-hidden flex flex-col">
-        {app.id === 'dronehunter' ? (
+        {isClientDemo && app.id === 'dronehunter' ? (
           <div className="flex-1 bg-black border-2 border-gray-800 rounded overflow-hidden relative">
             <iframe
               src="/dronehunter-game/index.html"
@@ -57,26 +122,117 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
               allow="autoplay; fullscreen"
             />
           </div>
-        ) : app.id === 'certified-mailer' ? (
+        ) : isClientDemo && app.id === 'certified-mailer' ? (
           <div className="flex-1 overflow-hidden">
             <CertifiedMailerStudio />
           </div>
-        ) : app.id === 'wallart' ? (
+        ) : isClientDemo && app.id === 'wallart' ? (
           <div className="flex-1 overflow-hidden">
             <WallArtStudio />
           </div>
+        ) : isVerifiedActive && liveUrl ? (
+          <div className="flex-1 bg-white relative">
+            <iframe
+              src={liveUrl}
+              title={app.name}
+              className="w-full h-full border-0 absolute inset-0"
+              allow="autoplay; fullscreen"
+            />
+          </div>
         ) : (
-          <div className="flex-1 bg-[#ece9d8] p-8 flex flex-col items-center justify-center text-center font-tahoma">
-            <div className="bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black p-6 max-w-md shadow-md">
-              <div className="text-2xl mb-2">⚠️</div>
-              <h2 className="font-bold text-sm text-gray-900 mb-2">Application Sandbox Unavailable</h2>
-              <p className="text-xs text-gray-700 mb-4">
-                No interactive sandbox runner is registered for &quot;{app.name}&quot; ({app.id}).
-              </p>
-              <div className="bg-white border border-gray-400 p-2 text-[11px] font-mono text-gray-600 text-left">
-                Status: UNREGISTERED_SANDBOX_RUNTIME<br />
-                App ID: {app.id}<br />
-                Version: {app.version}
+          /* HONEST DEPLOYMENT ERROR & EVIDENCE SURFACE */
+          <div className="flex-1 bg-[#ece9d8] p-6 sm:p-10 flex flex-col items-center justify-center text-center font-tahoma overflow-y-auto" data-testid="honest-deployment-surface">
+            <div className="bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black p-6 max-w-xl w-full shadow-lg text-left">
+              {/* Window Title Bar */}
+              <div className="bg-gradient-to-r from-[#000080] to-[#1084d0] text-white px-3 py-1.5 flex items-center justify-between mb-4 select-none font-bold text-xs">
+                <div className="flex items-center gap-2">
+                  <span>{deploymentState === 'failed' ? '🚫' : '⚠️'}</span>
+                  <span>DEPLOYMENT LIFECYCLE · {deploymentState.toUpperCase()}</span>
+                </div>
+                <span className="font-mono text-[10px] text-blue-200">RIG.EXE &middot; GITSMITH</span>
+              </div>
+
+              <div className="flex items-start gap-4 mb-4">
+                <div className="text-3xl select-none mt-1">
+                  {deploymentState === 'failed' ? '❌' : deploymentState === 'retired' ? '📦' : '🏗️'}
+                </div>
+                <div className="flex-1">
+                  <h2 className="font-bold text-sm text-gray-900 mb-1" data-testid="deployment-headline">
+                    {honestInfo.headline}
+                  </h2>
+                  <p className="text-xs text-gray-700 leading-relaxed font-sans" data-testid="deployment-error-message">
+                    {honestInfo.subtext}
+                  </p>
+                </div>
+              </div>
+
+              {/* Monospace Diagnostics & Evidence */}
+              <div className="bg-[#0f172a] text-emerald-400 border border-gray-700 p-3.5 rounded font-mono text-[11px] mb-4 space-y-1 overflow-x-auto shadow-inner" data-testid="deployment-evidence-box">
+                <div className="text-gray-400 border-b border-gray-800 pb-1 mb-1.5 font-bold flex justify-between">
+                  <span>[RIG & GITSMITH LIFECYCLE EVIDENCE]</span>
+                  <span className="text-amber-400">{deploymentState.toUpperCase()}</span>
+                </div>
+                <div><span className="text-gray-400">Target App:</span> {app.name} ({app.id})</div>
+                <div><span className="text-gray-400">Target Hostname:</span> https://{app.id}.nates-software.com</div>
+                <div><span className="text-gray-400">Version:</span> {app.version}</div>
+                <div><span className="text-gray-400">Lifecycle State:</span> <span className={deploymentState === 'failed' ? 'text-rose-400 font-bold' : 'text-amber-300'}>{deploymentState}</span></div>
+                <div><span className="text-gray-400">Detected Project Type:</span> {app.detectedProjectType || 'Awaiting repository intake'}</div>
+                {app.activeCommitOid && <div><span className="text-gray-400">Commit OID:</span> {app.activeCommitOid}</div>}
+                {app.deploymentError && (
+                  <div className="mt-2 pt-2 border-t border-gray-800 text-rose-300">
+                    <span className="font-bold text-rose-400">Error Evidence:</span> {app.deploymentError}
+                  </div>
+                )}
+                {app.deploymentEvidence && (
+                  <div className="mt-2 pt-2 border-t border-gray-800 text-cyan-300 text-[10px]">
+                    <pre className="whitespace-pre-wrap">{typeof app.deploymentEvidence === 'string' ? app.deploymentEvidence : JSON.stringify(app.deploymentEvidence, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Remediation & Next Steps */}
+              <div className="bg-yellow-50 border border-yellow-300 p-3 rounded text-[11px] text-gray-800 mb-4">
+                <div className="font-bold text-yellow-900 mb-1 flex items-center gap-1.5">
+                  <FileCode size={13} />
+                  <span>Deployment Invariant:</span>
+                </div>
+                <p className="text-gray-700 leading-snug mb-2">
+                  Catalog publication does not imply active deployment. An app receives a live standalone hostname only after reaching <strong>deployable</strong> and successfully promoting a verified revision.
+                </p>
+                <div className="font-bold text-gray-800 mb-0.5">Deployment Steps:</div>
+                <ul className="list-disc pl-4 space-y-0.5 text-gray-600">
+                  {honestInfo.guidance.map((step, idx) => (
+                    <li key={idx}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="flex items-center justify-end gap-2 flex-wrap">
+                <a
+                  href={`https://gitsmith.nates-software.com?repo=${app.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-w95 text-xs py-1.5 px-3 font-bold bg-gray-200 hover:bg-white text-black flex items-center gap-1"
+                >
+                  <GitBranch size={12} />
+                  <span>Open GITSMITH Repo</span>
+                </a>
+                <a
+                  href={`https://rig.nates-software.com?app=${app.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-w95 text-xs py-1.5 px-3 font-bold bg-gray-200 hover:bg-white text-black flex items-center gap-1"
+                >
+                  <Cpu size={12} />
+                  <span>RIG Runtime HUD</span>
+                </a>
+                <a
+                  href="https://nates-software.com"
+                  className="btn-w95 text-xs py-1.5 px-3 font-bold bg-blue-900 text-white hover:bg-blue-800 flex items-center gap-1"
+                >
+                  <span>Return to Web OS</span>
+                </a>
               </div>
             </div>
           </div>

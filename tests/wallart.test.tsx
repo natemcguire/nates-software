@@ -397,11 +397,11 @@ describe('EphemeralLiveApp Routing & Honest Fallback State', () => {
 
     const html = renderToString(<EphemeralLiveApp app={unknownApp} />);
 
-    // Renders honest fallback card
-    expect(html).toContain('Application Sandbox Unavailable');
-    expect(html).toContain('No interactive sandbox runner is registered');
+    // Renders honest deployment lifecycle surface
+    expect(html).toContain('No deployable revision exists for Mystery App.');
+    expect(html).toContain('Source has not been imported into GITSMITH and built by RIG.');
     expect(html).toContain('unknown-mystery-app');
-    expect(html).toContain('UNREGISTERED_SANDBOX_RUNTIME');
+    expect(html).toContain('DRAFT');
 
     // Does NOT silently render PicFit
     expect(html).not.toContain('WARDROBE &amp; MODEL SYNTHESIS');

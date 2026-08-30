@@ -24,7 +24,8 @@ export const CANONICAL_MIGRATIONS = [
   '0018_ephemeral_terminal_sessions.sql',
   '0019_forge_outbox_leasing.sql',
   '0020_dyno_certified_evaluations.sql',
-  '0021_active_project_catalog.sql'
+  '0021_active_project_catalog.sql',
+  '0022_deployment_lifecycle_states.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];

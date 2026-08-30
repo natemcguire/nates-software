@@ -2,9 +2,12 @@
 // Guarantees path sandboxing beneath configured explicit root, symlink protection,
 // object format (sha1/sha256) support, and git update-ref compare-and-swap.
 
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import child_process from 'node:child_process';
+
+const execFileSync = (...args: any[]) => (child_process.execFileSync as any)(...args);
+const spawnSync = (...args: any[]) => (child_process.spawnSync as any)(...args);
 import type {
   AuthoritativeRefCasParams,
   AuthoritativeRefCasResult,
@@ -372,6 +375,63 @@ export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string
     });
   } catch (error: any) {
     throw new Error(`Unable to archive authoritative commit: ${String(error?.stderr || error?.message || error).trim()}`);
+  }
+}
+
+/**
+ * Lists all file paths in the committed tree at a specific commit OID in a bare repository.
+ */
+export function listCommitFiles(reposRoot: string, storageKey: string, commitOid: string): string[] {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return [];
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return [];
+  if (!hasGitObject(reposRoot, storageKey, commitOid)) return [];
+
+  try {
+    const out = execFileSync('git', ['ls-tree', '-r', '--name-only', `${commitOid}^{tree}`, '--'], {
+      cwd: pathRes.resolvedPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 10_000
+    }).trim();
+
+    if (!out) return [];
+    return out.split('\n').map((f: string) => f.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Reads the text content of a file at a specific commit OID in a bare repository.
+ */
+export function readCommitFileContent(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string,
+  maxBytes: number = 1024 * 1024
+): string | null {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return null;
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return null;
+  if (!filePath || typeof filePath !== 'string' || filePath.startsWith('-') || filePath.includes('\0')) return null;
+
+  try {
+    const out = execFileSync('git', ['show', `${commitOid}:${filePath}`], {
+      cwd: pathRes.resolvedPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxBytes,
+      timeout: 10_000
+    });
+    return out;
+  } catch {
+    return null;
   }
 }
 
@@ -1172,7 +1232,7 @@ export function getProposalDiff(
     }).trim();
 
     if (logOut) {
-      const records = logOut.split('\x1e').filter(r => r.trim());
+      const records = logOut.split('\x1e').filter((r: string) => r.trim());
       for (const record of records) {
         const [sha, shortSha, authorName, authorEmail, authorDate, summary, body] = record.split('\x1f');
         if (sha && isValidGitOid(sha.trim())) {

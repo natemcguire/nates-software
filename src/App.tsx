@@ -116,14 +116,21 @@ function AppInner() {
       creator: 'nate',
       creatorAvatar: '⚡',
       version: 'v1.0.0',
-      upvotes: 42,
-      forkCount: 12,
+      upvotes: 0,
+      forkCount: 0,
       tags: ['Shareware', 'App'],
       sqliteDatabase: '',
       sqliteSize: 'Not specified',
       screenshots: ['https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'],
-      comments: []
+      comments: [],
+      deploymentState: 'draft' as const,
+      deploymentError: `No deployable revision exists for ${route.id}. Source has not been imported into GITSMITH and built by RIG.`
     };
+
+    const isClientDemo = resolvedApp.deploymentState === 'client_demo' || (
+      (resolvedApp.id === 'dronehunter' || resolvedApp.id === 'certified-mailer' || resolvedApp.id === 'wallart') && Boolean((resolvedApp as any).isDemo || !resolvedApp.deploymentState)
+    );
+    const isAppActive = resolvedApp.deploymentState === 'active' && Boolean(resolvedApp.activeDeploymentId);
 
     return (
       <div className="fixed inset-0 bg-[#ece9d8] flex flex-col font-tahoma text-xs overflow-hidden">
@@ -131,8 +138,8 @@ function AppInner() {
           <div className="flex items-center gap-2">
             <span className="text-base">{resolvedApp.creatorAvatar || resolvedApp.authorAvatar || '🎯'}</span>
             <span className="font-bold text-sm font-mono">{resolvedApp.name}</span>
-            <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
-              {resolvedApp.version}
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${isAppActive || isClientDemo ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'}`}>
+              {isAppActive ? resolvedApp.version : isClientDemo ? 'CLIENT DEMO' : (resolvedApp.deploymentState || 'DRAFT').toUpperCase()}
             </span>
             <span className="text-gray-300 font-mono text-[11px]">
               https://{resolvedApp.id}.nates-software.com

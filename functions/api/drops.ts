@@ -31,6 +31,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         a.license, a.price, a.moddability_score AS moddabilityScore, 
         a.merge_cleanliness AS mergeCleanliness, a.storage,
         a.screenshots, a.binaries, a.tags, a.created_at AS createdAt,
+        a.listing_status AS listingStatus, a.deployment_state AS deploymentState,
+        a.deployment_error AS deploymentError, a.deployment_evidence_json AS deploymentEvidenceJson,
+        a.detected_project_type AS detectedProjectType, a.deployment_plan_json AS deploymentPlanJson,
+        a.active_deployment_id AS activeDeploymentId, a.active_commit_oid AS activeCommitOid,
         u.id AS creatorId, u.username AS creator, u.avatar_url AS creatorAvatar,
         u.is_verified_maker AS isVerifiedMaker
       FROM app_listings a
@@ -224,9 +228,27 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       mergedBinaries.web = liveUrl.trim();
     }
 
+    // Determine initial deployment state: publication sets draft or source_ready (NEVER active)
+    let initialDeploymentState = 'draft';
+    try {
+      const repoRecord = await env.DB.prepare(`
+        SELECT r.id, rf.commit_oid AS defaultCommitOid
+        FROM repositories r
+        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
+        WHERE r.app_id = ? OR r.slug = ?
+      `).bind(dropId, dropId).first();
+      if (repoRecord && repoRecord.defaultCommitOid) {
+        initialDeploymentState = 'source_ready';
+      }
+    } catch {}
+
+    const initialDeploymentError = initialDeploymentState === 'draft'
+      ? `No deployable revision exists for ${name.trim()}. Source has not been imported into GITSMITH and built by RIG.`
+      : null;
+
     const listingStmt = env.DB.prepare(`
-      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         tagline = excluded.tagline,
@@ -236,9 +258,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         storage = excluded.storage,
         tags = excluded.tags,
         screenshots = excluded.screenshots,
-        binaries = excluded.binaries
+        binaries = excluded.binaries,
+        deployment_state = excluded.deployment_state,
+        deployment_error = excluded.deployment_error,
+        deployment_evidence_json = NULL,
+        active_deployment_id = NULL,
+        active_commit_oid = NULL
       WHERE app_listings.creator_id = excluded.creator_id
-      RETURNING id
+      RETURNING id, deployment_state
     `).bind(
       dropId,
       name.trim(),
@@ -251,7 +278,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       storage || 'App-managed storage',
       JSON.stringify(Array.isArray(tags) ? tags : []),
       JSON.stringify(Array.isArray(screenshots) ? screenshots : []),
-      JSON.stringify(mergedBinaries)
+      JSON.stringify(mergedBinaries),
+      initialDeploymentState,
+      initialDeploymentError
     );
 
     // Synchronize with commerce_products so the drop is immediately purchasable
@@ -285,6 +314,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     return Response.json({
       success: true,
       id: dropId,
+      deploymentState: initialDeploymentState,
       batchWindow,
       message: 'Drop published successfully to Cloudflare D1'
     });

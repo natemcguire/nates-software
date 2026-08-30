@@ -101,6 +101,13 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               moddabilityScore: d.moddabilityScore || 95,
               mergeCleanliness: d.mergeCleanliness || '99.8% clean',
               comments: d.comments || [],
+              deploymentState: d.deploymentState || 'draft',
+              deploymentError: d.deploymentError,
+              deploymentEvidence: d.deploymentEvidence || d.deploymentEvidenceJson,
+              detectedProjectType: d.detectedProjectType,
+              deploymentPlan: d.deploymentPlan || d.deploymentPlanJson,
+              activeDeploymentId: d.activeDeploymentId,
+              activeCommitOid: d.activeCommitOid,
               isDemo: false
             };
           });
