@@ -447,6 +447,21 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                           </span>
                         )}
 
+                        {/* Canonical Forge Identity or Honest Absent Badge */}
+                        {app.hasCanonicalRepo && app.repoSlug ? (
+                          <span className="bg-blue-50 text-blue-900 border border-blue-300 font-mono text-[9px] px-1.5 py-0.2 rounded flex items-center gap-1" title={`Canonical GITSMITH Repo: ${app.repoSlug}`}>
+                            <GitFork size={9} className="text-blue-700 shrink-0" />
+                            <span>{app.repoSlug}</span>
+                            {app.repoHeadCommitOid && (
+                              <span className="text-blue-600">· #{app.repoHeadCommitOid.slice(0, 7)}</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="bg-gray-100 text-gray-500 border border-gray-300 font-mono text-[9px] px-1.5 py-0.2 rounded" title="Source repository not yet on GITSMITH forge">
+                            not yet on forge
+                          </span>
+                        )}
+
                         {/* Product Hunt Style Award Badges */}
                         {app.badge && (
                           <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold text-[9px] px-1.5 py-0.2 rounded-full flex items-center gap-1">

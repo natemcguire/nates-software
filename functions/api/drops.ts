@@ -35,10 +35,29 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         a.deployment_error AS deploymentError, a.deployment_evidence_json AS deploymentEvidenceJson,
         a.detected_project_type AS detectedProjectType, a.deployment_plan_json AS deploymentPlanJson,
         a.active_deployment_id AS activeDeploymentId, a.active_commit_oid AS activeCommitOid,
+        a.repository_id AS repositoryId,
+        r.id AS canonicalRepositoryId,
+        r.slug AS repoSlugName,
+        r.visibility AS repoVisibility,
+        r.status AS repoStatus,
+        r.default_ref AS repoDefaultRef,
+        ru.username AS repoOwnerUsername,
+        rf.commit_oid AS repoHeadCommitOid,
         u.id AS creatorId, u.username AS creator, u.avatar_url AS creatorAvatar,
         u.is_verified_maker AS isVerifiedMaker
       FROM app_listings a
       JOIN users u ON a.creator_id = u.id
+      LEFT JOIN repositories r ON (
+        r.id = a.repository_id
+        OR (a.repository_id IS NULL AND r.id = (
+          SELECT r2.id FROM repositories r2
+          WHERE r2.app_id = a.id
+          ORDER BY (CASE WHEN r2.status = 'active' THEN 0 ELSE 1 END), r2.created_at ASC
+          LIMIT 1
+        ))
+      )
+      LEFT JOIN users ru ON ru.id = r.owner_user_id
+      LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
     `;
 
     const queryParams: any[] = [];
@@ -128,8 +147,31 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
       const streakData = makerStreaks[r.creatorId] || { currentStreak: 1, activeTier: 'Rookie' };
 
+      const hasCanonicalRepo = Boolean(r.canonicalRepositoryId || r.repositoryId);
+      const isRepoActive = r.repoStatus === 'active';
+      const resolvedOwner = r.repoOwnerUsername || r.creator || 'nate';
+      const resolvedSlugName = r.repoSlugName;
+      const repoSlug = resolvedSlugName ? `${resolvedOwner}/${resolvedSlugName}` : null;
+      const repoName = resolvedSlugName || null;
+      const repoOwner = r.repoOwnerUsername || (resolvedSlugName ? resolvedOwner : null);
+      const repoHeadCommitOid = r.repoHeadCommitOid || null;
+      const repoVisibility = r.repoVisibility || null;
+      const repoStatus = r.repoStatus || null;
+      const repoDefaultRef = r.repoDefaultRef || null;
+      const repositoryId = r.canonicalRepositoryId || r.repositoryId || null;
+
       return {
         ...r,
+        repositoryId,
+        hasCanonicalRepo,
+        isRepoActive,
+        repoSlug,
+        repoName,
+        repoOwner,
+        repoHeadCommitOid,
+        repoVisibility,
+        repoStatus,
+        repoDefaultRef,
         screenshots: screenshots.length > 0 ? screenshots : ["https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"],
         binaries,
         liveUrl: binaries?.web || r.liveUrl,
@@ -230,15 +272,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     // Determine initial deployment state: publication sets draft or source_ready (NEVER active)
     let initialDeploymentState = 'draft';
+    let linkedRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     try {
       const repoRecord = await env.DB.prepare(`
         SELECT r.id, rf.commit_oid AS defaultCommitOid
         FROM repositories r
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
-        WHERE r.app_id = ? OR r.slug = ?
-      `).bind(dropId, dropId).first();
-      if (repoRecord && repoRecord.defaultCommitOid) {
-        initialDeploymentState = 'source_ready';
+        WHERE r.id = ? OR r.app_id = ? OR r.slug = ?
+      `).bind(linkedRepositoryId || dropId, dropId, dropId).first();
+      if (repoRecord) {
+        linkedRepositoryId = repoRecord.id;
+        if (repoRecord.defaultCommitOid) {
+          initialDeploymentState = 'source_ready';
+        }
       }
     } catch {}
 
@@ -247,8 +293,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       : null;
 
     const listingStmt = env.DB.prepare(`
-      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error, repository_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         tagline = excluded.tagline,
@@ -261,6 +307,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         binaries = excluded.binaries,
         deployment_state = excluded.deployment_state,
         deployment_error = excluded.deployment_error,
+        repository_id = COALESCE(excluded.repository_id, app_listings.repository_id),
         deployment_evidence_json = NULL,
         active_deployment_id = NULL,
         active_commit_oid = NULL
@@ -280,7 +327,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       JSON.stringify(Array.isArray(screenshots) ? screenshots : []),
       JSON.stringify(mergedBinaries),
       initialDeploymentState,
-      initialDeploymentError
+      initialDeploymentError,
+      linkedRepositoryId
     );
 
     // Synchronize with commerce_products so the drop is immediately purchasable

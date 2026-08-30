@@ -38,7 +38,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0019_forge_outbox_leasing.sql',
         '0020_dyno_certified_evaluations.sql',
         '0021_active_project_catalog.sql',
-        '0022_deployment_lifecycle_states.sql'
+        '0022_deployment_lifecycle_states.sql',
+        '0023_retire_picfit_listing.sql',
+        '0024_canonical_repository_linkage.sql'
       ]);
     });
 
@@ -828,5 +830,40 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(demos.results?.map(d => d.deployment_state)).toEqual(['client_demo', 'client_demo', 'client_demo']);
       demos.results?.forEach(d => expect(d.active_deployment_id).toBeNull());
     });
+
+    it('should support explicit repository_id foreign key linkage (migration 0024)', async () => {
+      // 1. Check column exists and is nullable
+      const listing = await ctx.d1.prepare(`
+        SELECT id, repository_id FROM app_listings WHERE id = 'wallart'
+      `).first<{ id: string; repository_id: string | null }>();
+      expect(listing).toBeDefined();
+      expect(listing?.id).toBe('wallart');
+      expect(listing?.repository_id).toBeNull();
+
+      // 2. Reject non-existent repository_id under foreign key enforcement
+      await expect(
+        ctx.d1.prepare(`
+          UPDATE app_listings SET repository_id = 'nonexistent_repo' WHERE id = 'wallart'
+        `).run()
+      ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+
+      // 3. Link valid repository
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, storage_key, status)
+        VALUES ('repo_wallart', 'usr_nate', 'wallart', 'storage_wallart', 'active')
+      `).run();
+
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET repository_id = 'repo_wallart' WHERE id = 'wallart'
+      `).run();
+
+      const updated = await ctx.d1.prepare(`
+        SELECT id, repository_id FROM app_listings WHERE id = 'wallart'
+      `).first<{ id: string; repository_id: string | null }>();
+      expect(updated?.repository_id).toBe('repo_wallart');
+
+      expect(ctx.runForeignKeyCheck()).toEqual([]);
+    });
   });
 });
+
