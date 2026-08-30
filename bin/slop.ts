@@ -391,7 +391,7 @@ export async function handleFork(
     } catch {}
   }
   appId = appId.replace(/[^a-zA-Z0-9._-]/g, '-');
-  const worktreeId = `slop-${appId}-${Date.now().toString(36)}`;
+  const worktreeId = `slop-${appId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const pathMod = getPath();
   const worktreePath = pathMod.join(getSlopWorktreeRoot(), worktreeId);
 
