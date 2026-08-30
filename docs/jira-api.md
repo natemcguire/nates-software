@@ -1,12 +1,14 @@
-# JIRA API Reference (sailscan.atlassian.net)
+# JIRA API Reference (eastbayprojects.atlassian.net)
 
 Hard-won knowledge for working with our JIRA via REST v3. Used to set up the NB board; reuse for any new project.
+
+> **Site note (2026-08-29):** all project boards — including NSW (Nate's Software) — live on `eastbayprojects.atlassian.net` (auth: `JIRA_EMAIL` + `EBP_JIRA_TOKEN`). Only SAIL remains on `sailscan.atlassian.net`. NSW was migrated 2026-08-29 via `nate-bot/scripts/jira/migrate_to_ebp.py`; the sailscan copy is in that site's trash (restorable ~60 days).
 
 ## Setup / Auth
 
 - **Auth**: Basic auth over REST v3 — `Authorization: Basic base64(email:api_token)`. The email must be the Atlassian account email (`nate.mcguire@gmail.com`, NOT a domain email — wrong email gives 401).
 - **Site discovery**: probe `https://<site>.atlassian.net/rest/api/3/myself` — 200 confirms site + credentials; 404 = wrong site, 401 = wrong email/token pair.
-- Config in `~/.config/keys/keys.env`: `JIRA_SITE=https://sailscan.atlassian.net`, `JIRA_EMAIL`, `JIRA_API_TOKEN`. (`source` with `set -a` so child processes see them.)
+- Config in `~/.config/keys/keys.env`: `JIRA_EMAIL` + `EBP_JIRA_TOKEN` for `eastbayprojects.atlassian.net` (the token reaches both sites; legacy `JIRA_SITE`/`JIRA_API_TOKEN` point at sailscan). (`source` with `set -a` so child processes see them.)
 
 ## Core endpoints that work
 
