@@ -291,6 +291,28 @@ export function initBareRepo(reposRoot: string, params: ProvisionRepoParams): Pr
 }
 
 /**
+ * Resolves a Git reference or OID to a canonical hexadecimal commit OID in a bare repository.
+ * Rejects any option-like inputs (starting with '-'), non-string values, or references that
+ * do not resolve to an actual commit object in the repository.
+ */
+export function resolveCanonicalCommitOid(repoPath: string, refOrOid: string): string | null {
+  if (typeof refOrOid !== 'string' || !refOrOid.trim() || refOrOid.trim().startsWith('-')) {
+    return null;
+  }
+  const cleanRef = refOrOid.trim();
+  try {
+    const out = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', `${cleanRef}^{commit}`], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+    return isValidGitOid(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Reads authoritative ref from bare git repository using git rev-parse / show-ref.
  */
 export function readAuthoritativeRef(reposRoot: string, storageKey: string, refName: string): string | null {
@@ -299,9 +321,14 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
     return null;
   }
 
+  if (typeof refName !== 'string' || !refName.trim() || refName.trim().startsWith('-')) {
+    return null;
+  }
+
+  const cleanRef = refName.trim();
   const repoPath = pathRes.resolvedPath;
   try {
-    const out = execFileSync('git', ['rev-parse', '--verify', '-q', `${refName}^{commit}`], {
+    const out = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', `${cleanRef}^{commit}`], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -311,7 +338,7 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
   } catch {
     // If ref^{commit} fails, try direct ref (for tags/notes)
     try {
-      const outDirect = execFileSync('git', ['rev-parse', '--verify', '-q', refName], {
+      const outDirect = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', cleanRef], {
         cwd: repoPath,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe']
@@ -333,10 +360,10 @@ export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
     throw new Error(pathRes.error || 'Authoritative repository does not exist.');
   }
-  if (!isValidGitOid(commitOid)) throw new Error('commitOid must be a valid Git object ID.');
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) throw new Error('commitOid must be a valid Git object ID.');
   if (!hasGitObject(reposRoot, storageKey, commitOid)) throw new Error('Requested commit does not exist in the authoritative repository.');
   try {
-    return execFileSync('git', ['archive', '--format=tar', `${commitOid}^{commit}`], {
+    return execFileSync('git', ['archive', '--format=tar', `${commitOid}^{commit}`, '--'], {
       cwd: pathRes.resolvedPath,
       encoding: 'buffer',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -361,9 +388,13 @@ export function listAuthoritativeRefs(
     return [];
   }
 
+  if (prefix !== undefined && (typeof prefix !== 'string' || prefix.startsWith('-'))) {
+    return [];
+  }
+
   const repoPath = pathRes.resolvedPath;
   try {
-    const args = ['for-each-ref', '--format=%(refname) %(objectname)'];
+    const args = ['for-each-ref', '--format=%(refname) %(objectname)', '--'];
     if (prefix) args.push(prefix);
 
     const out = execFileSync('git', args, {
@@ -397,11 +428,11 @@ export function hasGitObject(reposRoot: string, storageKey: string, oid: string)
     return false;
   }
 
-  if (!isValidGitOid(oid)) return false;
+  if (!isValidGitOid(oid) || oid.startsWith('-')) return false;
 
   const repoPath = pathRes.resolvedPath;
   try {
-    const res = spawnSync('git', ['cat-file', '-e', oid], { cwd: repoPath, stdio: 'pipe' });
+    const res = spawnSync('git', ['cat-file', '-e', '--', oid], { cwd: repoPath, stdio: 'pipe' });
     return res.status === 0;
   } catch {
     return false;
@@ -495,8 +526,8 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Execute atomic git update-ref <ref> <newOid> <zeroOid>
-    const res = spawnSync('git', ['update-ref', refName, newOid, zeroOid], {
+    // Execute atomic git update-ref -- <ref> <newOid> <zeroOid>
+    const res = spawnSync('git', ['update-ref', '--', refName, newOid, zeroOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -567,8 +598,8 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Execute atomic git update-ref <ref> <newOid> <expectedOldOid>
-    const res = spawnSync('git', ['update-ref', refName, newOid, expectedOldOid], {
+    // Execute atomic git update-ref -- <ref> <newOid> <expectedOldOid>
+    const res = spawnSync('git', ['update-ref', '--', refName, newOid, expectedOldOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -625,7 +656,7 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    const res = spawnSync('git', ['update-ref', '-d', refName, expectedOldOid], {
+    const res = spawnSync('git', ['update-ref', '-d', '--', refName, expectedOldOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -1013,70 +1044,53 @@ export function getProposalDiff(
   baseRefOrOid: string,
   headRefOrOid: string
 ): ProposalDiffResult {
+  const emptyDiff = (error?: string): ProposalDiffResult => ({
+    success: false,
+    baseOid: typeof baseRefOrOid === 'string' ? baseRefOrOid : '',
+    headOid: typeof headRefOrOid === 'string' ? headRefOrOid : '',
+    mergeBaseOid: null,
+    isFastForward: false,
+    diverged: false,
+    aheadCount: 0,
+    behindCount: 0,
+    commits: [],
+    files: [],
+    totalAdditions: 0,
+    totalDeletions: 0,
+    filesChanged: 0,
+    unifiedDiff: '',
+    error
+  });
+
+  if (typeof baseRefOrOid !== 'string' || !baseRefOrOid.trim() || baseRefOrOid.trim().startsWith('-')) {
+    return emptyDiff('Base commit reference is invalid or contains prohibited option flags.');
+  }
+
+  if (typeof headRefOrOid !== 'string' || !headRefOrOid.trim() || headRefOrOid.trim().startsWith('-')) {
+    return emptyDiff('Head commit reference is invalid or contains prohibited option flags.');
+  }
+
   const pathRes = resolveRepoPath(reposRoot, storageKey);
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
-    return {
-      success: false,
-      baseOid: baseRefOrOid,
-      headOid: headRefOrOid,
-      mergeBaseOid: null,
-      isFastForward: false,
-      diverged: false,
-      aheadCount: 0,
-      behindCount: 0,
-      commits: [],
-      files: [],
-      totalAdditions: 0,
-      totalDeletions: 0,
-      filesChanged: 0,
-      unifiedDiff: '',
-      error: pathRes.error || `Repository directory '${storageKey}' does not exist on disk.`
-    };
+    return emptyDiff(pathRes.error || `Repository directory '${storageKey}' does not exist on disk.`);
   }
 
   const repoPath = pathRes.resolvedPath;
 
-  let baseOid = baseRefOrOid;
-  let headOid = headRefOrOid;
-
-  try {
-    const resolvedBase = execFileSync('git', ['rev-parse', '--verify', '-q', `${baseRefOrOid}^{commit}`], {
-      cwd: repoPath,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    }).trim();
-    if (isValidGitOid(resolvedBase)) baseOid = resolvedBase;
-  } catch {}
-
-  try {
-    const resolvedHead = execFileSync('git', ['rev-parse', '--verify', '-q', `${headRefOrOid}^{commit}`], {
-      cwd: repoPath,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    }).trim();
-    if (isValidGitOid(resolvedHead)) headOid = resolvedHead;
-  } catch {}
-
-  // Check if head commit exists
-  if (!hasGitObject(reposRoot, storageKey, headOid)) {
-    return {
-      success: false,
-      baseOid,
-      headOid,
-      mergeBaseOid: null,
-      isFastForward: false,
-      diverged: false,
-      aheadCount: 0,
-      behindCount: 0,
-      commits: [],
-      files: [],
-      totalAdditions: 0,
-      totalDeletions: 0,
-      filesChanged: 0,
-      unifiedDiff: '',
-      error: `Head commit '${headOid}' does not exist in repository.`
-    };
+  // Resolve base to canonical commit OID first and validate existence
+  const canonicalBaseOid = resolveCanonicalCommitOid(repoPath, baseRefOrOid);
+  if (!canonicalBaseOid || !isValidGitOid(canonicalBaseOid)) {
+    return emptyDiff(`Base commit '${baseRefOrOid}' does not exist or does not resolve to a commit in repository.`);
   }
+
+  // Resolve head to canonical commit OID first and validate existence
+  const canonicalHeadOid = resolveCanonicalCommitOid(repoPath, headRefOrOid);
+  if (!canonicalHeadOid || !isValidGitOid(canonicalHeadOid)) {
+    return emptyDiff(`Head commit '${headRefOrOid}' does not exist or does not resolve to a commit in repository.`);
+  }
+
+  const baseOid = canonicalBaseOid;
+  const headOid = canonicalHeadOid;
 
   // If base and head are identical
   if (baseOid === headOid) {
@@ -1098,10 +1112,10 @@ export function getProposalDiff(
     };
   }
 
-  // 1. Find merge-base
+  // 1. Find merge-base with canonical OIDs and -- argument terminator
   let mergeBaseOid: string | null = null;
   try {
-    const mbOut = execFileSync('git', ['merge-base', baseOid, headOid], {
+    const mbOut = execFileSync('git', ['merge-base', '--', baseOid, headOid], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -1119,13 +1133,13 @@ export function getProposalDiff(
     isFastForward = res.status === 0;
   } catch {}
 
-  const diverged = !isFastForward && mergeBaseOid !== null;
+  const diverged = !isFastForward;
 
-  // 3. Ahead / Behind counts
+  // 3. Ahead / Behind counts with canonical OIDs and -- argument terminator
   let aheadCount = 0;
   let behindCount = 0;
   try {
-    const aheadOut = execFileSync('git', ['rev-list', '--count', `${baseOid}..${headOid}`], {
+    const aheadOut = execFileSync('git', ['rev-list', '--count', `${baseOid}..${headOid}`, '--'], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -1134,7 +1148,7 @@ export function getProposalDiff(
   } catch {}
 
   try {
-    const behindOut = execFileSync('git', ['rev-list', '--count', `${headOid}..${baseOid}`], {
+    const behindOut = execFileSync('git', ['rev-list', '--count', `${headOid}..${baseOid}`, '--'], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
@@ -1142,13 +1156,14 @@ export function getProposalDiff(
     behindCount = parseInt(behindOut, 10) || 0;
   } catch {}
 
-  // 4. Commit list: git log base..head
+  // 4. Commit list: git log base..head with canonical OIDs and -- argument terminator
   const commits: GitCommitInfo[] = [];
   try {
     const logOut = execFileSync('git', [
       'log',
       '--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e',
-      `${baseOid}..${headOid}`
+      `${baseOid}..${headOid}`,
+      '--'
     ], {
       cwd: repoPath,
       encoding: 'utf8',
@@ -1172,39 +1187,13 @@ export function getProposalDiff(
         }
       }
     }
-  } catch (err: any) {
-    try {
-      const singleOut = execFileSync('git', [
-        'log', '-1',
-        '--format=%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1f%b%x1e',
-        headOid
-      ], {
-        cwd: repoPath,
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      }).trim();
-      if (singleOut) {
-        const [sha, shortSha, authorName, authorEmail, authorDate, summary, body] = singleOut.replace(/\x1e$/, '').split('\x1f');
-        if (sha && isValidGitOid(sha.trim())) {
-          commits.push({
-            sha: sha.trim(),
-            shortSha: shortSha?.trim() || sha.trim().slice(0, 7),
-            authorName: authorName?.trim() || 'Unknown',
-            authorEmail: authorEmail?.trim() || '',
-            authorDate: authorDate?.trim() || '',
-            summary: summary?.trim() || '',
-            message: body ? `${summary?.trim() || ''}\n\n${body.trim()}` : (summary?.trim() || '')
-          });
-        }
-      }
-    } catch {}
-  }
+  } catch {}
 
   // 5. Unified diff (three-dot diff relative to merge base, or direct diff)
   let unifiedDiff = '';
   const diffTarget = mergeBaseOid ? `${mergeBaseOid}..${headOid}` : `${baseOid}..${headOid}`;
   try {
-    unifiedDiff = execFileSync('git', ['diff', '-u', diffTarget], {
+    unifiedDiff = execFileSync('git', ['diff', '-u', diffTarget, '--'], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -1212,7 +1201,7 @@ export function getProposalDiff(
     });
   } catch {
     try {
-      unifiedDiff = execFileSync('git', ['diff', '-u', `${baseOid}...${headOid}`], {
+      unifiedDiff = execFileSync('git', ['diff', '-u', `${baseOid}...${headOid}`, '--'], {
         cwd: repoPath,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -1224,7 +1213,7 @@ export function getProposalDiff(
   // 6. Numstat for file counts and line additions/deletions
   const numstatMap = new Map<string, { additions: number; deletions: number; isBinary: boolean }>();
   try {
-    const numstatOut = execFileSync('git', ['diff', '--numstat', diffTarget], {
+    const numstatOut = execFileSync('git', ['diff', '--numstat', diffTarget, '--'], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']

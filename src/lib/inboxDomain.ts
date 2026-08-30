@@ -121,8 +121,8 @@ export function formatProposalStatus(thread: InboxThread, diffData?: PRDiffData 
     return {
       badgeLabel: 'Open · Diverged (Needs Merge Commit)',
       badgeStyle: 'bg-amber-100 text-amber-900 border border-amber-400 font-bold',
-      description: `This branch cannot be fast-forwarded: histories have diverged. Target is ahead by ${diffData.behindCount || 1} commit(s).`,
-      canApprove: true,
+      description: `This branch has conflicts / needs a merge commit — rebase or merge required. Target is ahead by ${diffData.behindCount || 1} commit(s).`,
+      canApprove: false,
       canReject: true,
       isDiverged: true,
       isFastForward: false

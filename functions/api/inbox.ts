@@ -1,8 +1,9 @@
 // Authenticated mailbox, replies, and immutable merge-attempt approvals.
 // GITSMITH remains the only authority that may land a Git ref.
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { requireAuth } from './_auth';
-import { getProposalDiff } from '../../src/lib/gitsmith/gitStorage';
+import { getProposalDiff, resolveRepoPath } from '../../src/lib/gitsmith/gitStorage';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
 const jsonError = (error: string, status: number) => Response.json({ success: false, error }, { status });
@@ -204,7 +205,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
   }
 };
 
-export const onRequestPost = async ({ request, env }: { request: Request; env: { DB?: D1Database } }) => {
+export const onRequestPost = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string } }) => {
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   if (!env.DB) return jsonError('Inbox storage is unavailable', 503);
@@ -377,6 +378,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       const rawComment = typeof body.comment === 'string' ? body.comment.trim() : '';
       if (rawComment.length > 2_000) return jsonError('Review comment must be 2,000 characters or fewer', 400);
       if (decision === 'rejected' && rawComment.length < 3) return jsonError('A meaningful rejection comment is required', 400);
+
+      // Server-side guard: verify that the proposal is not divergent before approving
+      if (decision === 'approved') {
+        const reposRoot = env.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
+        const storageKey = proposal.storageKey || `repositories/${proposal.repositoryId}`;
+        const pathRes = resolveRepoPath(reposRoot, storageKey);
+        if (pathRes.valid && pathRes.resolvedPath && fs.existsSync(pathRes.resolvedPath)) {
+          const diffResult = getProposalDiff(reposRoot, storageKey, proposal.inputTargetOid, proposal.resultCommitOid);
+          if (!diffResult.success) {
+            return jsonError(`Cannot approve proposal: ${diffResult.error || 'Failed to verify Git lineage'}`, 409);
+          }
+          if (diffResult.diverged || !diffResult.isFastForward) {
+            return jsonError('Cannot approve divergent proposal: branch is not a fast-forward descendant of target (rebase or merge required)', 409);
+          }
+        }
+      }
       const existing = await env.DB.prepare(`
         SELECT result_commit_oid AS resultCommitOid FROM merge_approvals
         WHERE merge_attempt_id = ? AND approver_user_id = ?

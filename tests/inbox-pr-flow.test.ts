@@ -192,7 +192,47 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(delLines[0].newLineNumber).toBeNull();
     });
 
-    it('truthfully detects divergence when base is not an ancestor of head', () => {
+    it('rejects base or head starting with hyphen (option injection prevention) and creates no files', () => {
+      const injectedBaseFile = path.join(tempDir, 'injected-base-output.txt');
+      const injectedHeadFile = path.join(tempDir, 'injected-head-output.txt');
+      const injectedRefFile = path.join(tempDir, 'injected-ref-output.txt');
+
+      const badBaseRes = getProposalDiff(reposRoot, storageKey, `--output=${injectedBaseFile}`, commit3Oid);
+      expect(badBaseRes.success).toBe(false);
+      expect(badBaseRes.error).toContain('prohibited option flags');
+      expect(fs.existsSync(injectedBaseFile)).toBe(false);
+
+      const badHeadRes = getProposalDiff(reposRoot, storageKey, commit1Oid, `--output=${injectedHeadFile}`);
+      expect(badHeadRes.success).toBe(false);
+      expect(badHeadRes.error).toContain('prohibited option flags');
+      expect(fs.existsSync(injectedHeadFile)).toBe(false);
+
+      const badRef = readAuthoritativeRef(reposRoot, storageKey, `--output=${injectedRefFile}`);
+      expect(badRef).toBeNull();
+      expect(fs.existsSync(injectedRefFile)).toBe(false);
+    });
+
+    it('returns an honest error when base ref is missing or invalid (no fake-success empty diff)', () => {
+      const badBaseRes = getProposalDiff(reposRoot, storageKey, 'refs/heads/nonexistent_base', commit3Oid);
+      expect(badBaseRes.success).toBe(false);
+      expect(badBaseRes.error).toContain('does not exist');
+      expect(badBaseRes.unifiedDiff).toBe('');
+      expect(badBaseRes.commits).toHaveLength(0);
+
+      const badBaseOidRes = getProposalDiff(reposRoot, storageKey, '0123456789abcdef0123456789abcdef01234567', commit3Oid);
+      expect(badBaseOidRes.success).toBe(false);
+      expect(badBaseOidRes.error).toContain('does not exist');
+
+      const badRepoResult = getProposalDiff(reposRoot, 'repositories/nonexistent', commit1Oid, commit3Oid);
+      expect(badRepoResult.success).toBe(false);
+      expect(badRepoResult.error).toContain('does not exist');
+
+      const badCommitResult = getProposalDiff(reposRoot, storageKey, commit1Oid, 'f'.repeat(40));
+      expect(badCommitResult.success).toBe(false);
+      expect(badCommitResult.error).toContain('does not exist');
+    });
+
+    it('truthfully detects divergence and marks canApprove as false in domain status', () => {
       // Divergent comparison: base is commit 4 (on divergent-branch), head is commit 3 (on feature-branch)
       // Both branched from commit 1
       const result = getProposalDiff(reposRoot, storageKey, commit4DivergedOid, commit3Oid);
@@ -222,18 +262,10 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
 
       expect(status.isDiverged).toBe(true);
       expect(status.isFastForward).toBe(false);
+      expect(status.canApprove).toBe(false);
+      expect(status.canReject).toBe(true);
       expect(status.badgeLabel).toContain('Diverged');
-      expect(status.description).toContain('histories have diverged');
-    });
-
-    it('returns an honest error if bare repository or commit does not exist', () => {
-      const badRepoResult = getProposalDiff(reposRoot, 'repositories/nonexistent', commit1Oid, commit3Oid);
-      expect(badRepoResult.success).toBe(false);
-      expect(badRepoResult.error).toContain('does not exist');
-
-      const badCommitResult = getProposalDiff(reposRoot, storageKey, commit1Oid, 'f'.repeat(40));
-      expect(badCommitResult.success).toBe(false);
-      expect(badCommitResult.error).toContain('does not exist');
+      expect(status.description).toContain('needs a merge commit — rebase or merge required');
     });
   });
 
@@ -335,7 +367,47 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(getCommentsData.messages[1].content).toBe('Great work! Could you verify the export function performance?');
     });
 
-    it('authoritatively approves and lands PR commit OID via CAS', async () => {
+    it('server-side rejects approval attempt for a divergent proposal with 409 Conflict', async () => {
+      await seedProposalInD1();
+
+      // Seed a second divergent proposal in D1
+      await ctx.d1.prepare(`INSERT INTO merge_jobs
+        (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+        VALUES ('job-pr-div','repo-pr','refs/heads/main','usr_sam','preview_ready','pr-test-div')`).run();
+
+      await ctx.d1.prepare(`INSERT INTO merge_attempts
+        (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+        VALUES ('attempt-pr-div','job-pr-div',1,?,?,'tool-v1','policy-v1','preview_ready')`).bind(commit4DivergedOid, commit3Oid).run();
+
+      await ctx.d1.prepare(`INSERT INTO inbox_messages
+        (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
+        VALUES ('proposal:attempt-pr-div','usr_nate','usr_sam','feat: divergent PR','Divergent PR','Please review','refs/heads/feature',?,0,1,'proposal','attempt-pr-div')`)
+        .bind(commit3Oid).run();
+
+      // Attempt to approve divergent proposal
+      const approveReq = new Request('http://localhost/api/inbox', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          action: 'approve',
+          messageId: 'proposal:attempt-pr-div',
+          comment: 'Attempting to approve divergent proposal.'
+        })
+      });
+      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+      expect(approveRes.status).toBe(409);
+      const approveData: any = await approveRes.json();
+      expect(approveData.success).toBe(false);
+      expect(approveData.error).toContain('divergent proposal');
+
+      // Verify no outbox event was created and attempt was not approved
+      const outboxEvent = await ctx.d1.prepare("SELECT * FROM forge_outbox_events WHERE aggregate_id='attempt-pr-div'").first();
+      expect(outboxEvent).toBeNull();
+      const attemptRow: any = await ctx.d1.prepare("SELECT status FROM merge_attempts WHERE id='attempt-pr-div'").first();
+      expect(attemptRow.status).toBe('preview_ready');
+    });
+
+    it('authoritatively approves and lands valid fast-forward PR commit OID via CAS', async () => {
       await seedProposalInD1();
 
       // Approve proposal
@@ -348,7 +420,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
           comment: 'Approved for production landing.'
         })
       });
-      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1 } });
+      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
       expect(approveRes.status).toBe(200);
       const approveData: any = await approveRes.json();
       expect(approveData.success).toBe(true);
