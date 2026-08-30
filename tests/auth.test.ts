@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as authApi from '../functions/api/auth';
+import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
+import { hashSessionToken } from '../functions/api/_session';
 
 describe('Real Production Authentication & Security API Tests (/api/auth)', () => {
 
@@ -69,7 +71,7 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(data.error).toContain('at least 8 characters');
     });
 
-    it('should successfully register a valid new user with session token and Set-Cookie header', async () => {
+    it('should successfully register a valid new user with role "user" and NOT grant super_admin by username', async () => {
       const mockDb = {
         prepare: (_query: string) => ({
           bind: (..._args: any[]) => ({
@@ -83,11 +85,11 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: 'josh',
+          username: 'nate_dev',
           password: 'superSecretPassword2026',
-          displayName: 'Josh McGuire',
+          displayName: 'Nate Developer',
           avatar: '⛵',
-          bio: 'Co-founder at East Bay Projects'
+          bio: 'Builder'
         })
       });
 
@@ -96,9 +98,8 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
 
       expect(data.success).toBe(true);
       expect(data.authenticated).toBe(true);
-      expect(data.user.username).toBe('josh');
-      expect(data.user.displayName).toBe('Josh McGuire');
-      expect(data.user.avatar).toBe('⛵');
+      expect(data.user.username).toBe('nate_dev');
+      expect(data.user.displayName).toBe('Nate Developer');
       expect(data.user.role).toBe('user');
       expect(data.user.isSuperAdmin).toBe(false);
       expect(data.token).toBeDefined();
@@ -145,7 +146,7 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(data.error).toBe('Invalid username or password');
     });
 
-    it('should verify super-admin @nate credentials and return super_admin role', async () => {
+    it('should reject login for accounts still using placeholder seeded hashes with 403 and helpful activation message', async () => {
       const mockDb = {
         prepare: (_query: string) => ({
           bind: (..._args: any[]) => ({
@@ -171,6 +172,44 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       });
 
       const res = await authApi.onRequestPost({ request: req, env: { DB: mockDb } });
+      expect(res.status).toBe(403);
+      const data = await res.json();
+
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('Account not yet activated');
+    });
+
+    it('should verify real PBKDF2 credentials for activated super-admin @nate and return super_admin role', async () => {
+      const salt = authApi.generateSalt();
+      const realPassword = 'RealSecurePassword2026!';
+      const realHash = await authApi.hashPassword(realPassword, salt);
+
+      const mockDb = {
+        prepare: (_query: string) => ({
+          bind: (..._args: any[]) => ({
+            first: async () => ({
+              id: 'usr_nate',
+              username: 'nate',
+              display_name: 'Nate McGuire',
+              avatar_url: '⚡',
+              bio: 'Founder at East Bay Projects',
+              password_hash: realHash,
+              salt,
+              role: 'super_admin'
+            }),
+            run: async () => ({ success: true })
+          })
+        })
+      };
+
+      const req = new Request('http://localhost/api/auth?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', password: realPassword })
+      });
+
+      const res = await authApi.onRequestPost({ request: req, env: { DB: mockDb } });
+      expect(res.status).toBe(200);
       const data = await res.json();
 
       expect(data.success).toBe(true);
@@ -226,4 +265,245 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(res.headers.get('Set-Cookie')).toContain('Max-Age=0');
     });
   });
+
+  describe('4. Secure Owner Credential-Claim (/api/auth?action=claim-credentials)', () => {
+    let ctx: TestD1Context;
+    const BOOTSTRAP_TOKEN = 'secret-bootstrap-token-2026-xyz';
+
+    beforeEach(async () => {
+      ctx = await createTestD1Database({ foreignKeys: true });
+    });
+
+    it('should reject claim when username or new password are missing', async () => {
+      const req = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', token: BOOTSTRAP_TOKEN })
+      });
+
+      const res = await authApi.onRequestPost({
+        request: req,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toBe('Username and new password are required');
+    });
+
+    it('should reject claim when password is shorter than 8 characters', async () => {
+      const req = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', newPassword: 'short', token: BOOTSTRAP_TOKEN })
+      });
+
+      const res = await authApi.onRequestPost({
+        request: req,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('at least 8 characters');
+    });
+
+    it('should reject claim with 403 when OWNER_BOOTSTRAP_TOKEN is not configured on server', async () => {
+      const req = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', newPassword: 'RealSecurePassword2026!', token: BOOTSTRAP_TOKEN })
+      });
+
+      const res = await authApi.onRequestPost({
+        request: req,
+        env: { DB: ctx.d1 } // no OWNER_BOOTSTRAP_TOKEN
+      });
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('not configured on server');
+    });
+
+    it('should reject claim with 403 when bootstrap token is missing in request', async () => {
+      const req = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', newPassword: 'RealSecurePassword2026!' })
+      });
+
+      const res = await authApi.onRequestPost({
+        request: req,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toBe('Bootstrap token is required');
+    });
+
+    it('should reject claim with 403 when bootstrap token is incorrect (constant-time verification)', async () => {
+      const req = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', newPassword: 'RealSecurePassword2026!', token: 'wrong-token-value' })
+      });
+
+      const res = await authApi.onRequestPost({
+        request: req,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toBe('Invalid bootstrap token');
+    });
+
+    it('should reject claim with 404 for non-existent account', async () => {
+      const req = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nonexistent_user', newPassword: 'RealSecurePassword2026!', token: BOOTSTRAP_TOKEN })
+      });
+
+      const res = await authApi.onRequestPost({
+        request: req,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toBe('User not found');
+    });
+
+    it('should successfully claim credentials for seeded nate account, clear fake ssh key, hash with PBKDF2, and allow normal login', async () => {
+      // 1. Check initial state of seeded nate user in D1
+      const initialUser: any = await ctx.d1.prepare('SELECT * FROM users WHERE username = ?').bind('nate').first();
+      expect(initialUser).not.toBeNull();
+      expect(initialUser.password_hash).toBe('seeded_super_admin');
+      expect(initialUser.ssh_public_key).toContain('ssh-ed25519');
+      expect(initialUser.role).toBe('super_admin');
+
+      // 2. Claim credentials with valid bootstrap token
+      const claimPassword = 'NatesOwnerRealPassword2026!';
+      const claimReq = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'nate',
+          newPassword: claimPassword,
+          token: BOOTSTRAP_TOKEN
+        })
+      });
+
+      const claimRes = await authApi.onRequestPost({
+        request: claimReq,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+
+      expect(claimRes.status).toBe(200);
+      const claimData = await claimRes.json();
+      expect(claimData.success).toBe(true);
+      expect(claimData.authenticated).toBe(true);
+      expect(claimData.user.username).toBe('nate');
+      expect(claimData.user.role).toBe('super_admin');
+      expect(claimData.user.isSuperAdmin).toBe(true);
+      expect(claimData.token).toBeTruthy();
+      expect(claimRes.headers.get('Set-Cookie')).toContain('nsw_session=');
+
+      // 3. Verify user in D1 was updated: real PBKDF2 hash, new salt, ssh_public_key cleared to NULL
+      const updatedUser: any = await ctx.d1.prepare('SELECT * FROM users WHERE username = ?').bind('nate').first();
+      expect(updatedUser.password_hash).not.toBe('seeded_super_admin');
+      expect(updatedUser.password_hash.length).toBe(64); // 256-bit hex
+      expect(updatedUser.salt).not.toBe('salt_nate');
+      expect(updatedUser.ssh_public_key).toBeNull();
+
+      // Verify that the stored hash matches PBKDF2 with the new salt
+      const expectedHash = await authApi.hashPassword(claimPassword, updatedUser.salt);
+      expect(updatedUser.password_hash).toBe(expectedHash);
+
+      // Verify session was inserted into user_sessions
+      const sessionInDb: any = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE user_id = ?').bind(updatedUser.id).first();
+      expect(sessionInDb).not.toBeNull();
+      expect(sessionInDb.token_hash).toBe(await hashSessionToken(claimData.token));
+
+      // 4. Verify idempotency/safety: second claim attempt must be REFUSED
+      const secondClaimReq = new Request('http://localhost/api/auth?action=claim-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'nate',
+          newPassword: 'AnotherPassword2026!',
+          token: BOOTSTRAP_TOKEN
+        })
+      });
+
+      const secondClaimRes = await authApi.onRequestPost({
+        request: secondClaimReq,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+      expect(secondClaimRes.status).toBe(400);
+      const secondClaimData = await secondClaimRes.json();
+      expect(secondClaimData.success).toBe(false);
+      expect(secondClaimData.error).toContain('already been claimed');
+
+      // 5. Verify normal login now succeeds with the claimed password
+      const loginReq = new Request('http://localhost/api/auth?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', password: claimPassword })
+      });
+
+      const loginRes = await authApi.onRequestPost({
+        request: loginReq,
+        env: { DB: ctx.d1 }
+      });
+      expect(loginRes.status).toBe(200);
+      const loginData = await loginRes.json();
+      expect(loginData.success).toBe(true);
+      expect(loginData.authenticated).toBe(true);
+      expect(loginData.user.username).toBe('nate');
+      expect(loginData.user.role).toBe('super_admin');
+      expect(loginData.user.isSuperAdmin).toBe(true);
+
+      // 6. Verify login fails with incorrect password
+      const badLoginReq = new Request('http://localhost/api/auth?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nate', password: 'WrongPassword123' })
+      });
+
+      const badLoginRes = await authApi.onRequestPost({
+        request: badLoginReq,
+        env: { DB: ctx.d1 }
+      });
+      expect(badLoginRes.status).toBe(401);
+    });
+
+    it('should support action=set-initial-password alias and X-Bootstrap-Token header', async () => {
+      const claimPassword = 'NatesOwnerRealPassword2026!';
+      const claimReq = new Request('http://localhost/api/auth?action=set-initial-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Bootstrap-Token': BOOTSTRAP_TOKEN
+        },
+        body: JSON.stringify({
+          username: 'nate',
+          password: claimPassword
+        })
+      });
+
+      const claimRes = await authApi.onRequestPost({
+        request: claimReq,
+        env: { DB: ctx.d1, OWNER_BOOTSTRAP_TOKEN: BOOTSTRAP_TOKEN }
+      });
+
+      expect(claimRes.status).toBe(200);
+      const claimData = await claimRes.json();
+      expect(claimData.success).toBe(true);
+      expect(claimData.user.username).toBe('nate');
+    });
+  });
 });
+
