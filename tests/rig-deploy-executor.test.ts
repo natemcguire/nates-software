@@ -14,7 +14,7 @@ describe('RIG Deploy Executor Suite', () => {
   let jobsRoot: string;
 
   beforeEach(() => {
-    tempDir = path.join('/tmp', `rig-deploy-test-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
+    tempDir = path.join(process.cwd(), '.tmp-rig-deploy-tests', `test-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
     jobsRoot = path.join(tempDir, 'jobs');
     fs.mkdirSync(jobsRoot, { recursive: true });
   });
@@ -52,7 +52,7 @@ describe('RIG Deploy Executor Suite', () => {
   });
 
   describe('Static Application Build and Smoke Check', () => {
-    it('builds static web app directly without buildCommand when index.html is present', async () => {
+    it('builds static web app directly without buildCommand and performs real HTTP smoke probe', async () => {
       const archive = createSourceArchive({
         'index.html': '<!DOCTYPE html><html><body><h1>Hello Static</h1></body></html>',
         'styles.css': 'body { color: blue; }'
@@ -88,6 +88,59 @@ describe('RIG Deploy Executor Suite', () => {
       expect(result.smokeCheck.responseSnippet).toContain('Hello Static');
     });
 
+    it('enforces --read-only container root, /workspace bind mount, and /tmp tmpfs on docker run args', async () => {
+      const archive = createSourceArchive({
+        'package.json': JSON.stringify({ name: 'custom-build-app', scripts: { build: 'npm run build' } }),
+        'index.html': '<h1>App</h1>'
+      });
+
+      const plan: DeploymentPlan = {
+        detectedType: 'static',
+        buildCommand: 'npm run build',
+        startCommand: 'static-pages-runtime',
+        port: 80,
+        healthEndpoint: '/',
+        memoryMb: 256,
+        entrypointFile: 'index.html',
+        manifestApplied: false,
+        inferredFrom: ['index.html']
+      };
+
+      const runner = new MockDockerCommandRunner();
+      runner.setHandler('run', (_file, args) => {
+        if (args.some(a => typeof a === 'string' && a.includes('npm run build'))) {
+          return { stdout: 'build ok', stderr: '', exitCode: 0 };
+        }
+        return {
+          stdout: JSON.stringify({ passed: true, statusCode: 200, responseSnippet: 'App' }),
+          stderr: '',
+          exitCode: 0
+        };
+      });
+
+      const result = await executeRigDeployBuild({
+        appId: 'hardened-app',
+        repositoryId: 'repo_hardened_1',
+        commitOid: 'e'.repeat(40),
+        sourceArchive: archive,
+        plan,
+        jobsRoot,
+        runner
+      });
+
+      expect(result.success).toBe(true);
+
+      // Verify both build and smoke docker run args include --read-only, /workspace, and /tmp tmpfs
+      expect(runner.recordedCalls.length).toBeGreaterThanOrEqual(2);
+      for (const call of runner.recordedCalls) {
+        expect(call.file).toBe('docker');
+        expect(call.args).toContain('run');
+        expect(call.args).toContain('--read-only');
+        expect(call.args).toContain('--tmpfs=/tmp:rw,noexec,nosuid,size=64m');
+        expect(call.args.some(a => a.startsWith('type=bind,src=') && a.endsWith(',dst=/workspace'))).toBe(true);
+      }
+    });
+
     it('locates static output in out/ directory for Next.js static export', async () => {
       const archive = createSourceArchive({
         'package.json': JSON.stringify({ name: 'next-app', scripts: { build: 'next build' } }),
@@ -108,11 +161,16 @@ describe('RIG Deploy Executor Suite', () => {
       };
 
       const runner = new MockDockerCommandRunner();
-      runner.setHandler('run', () => ({
-        stdout: 'info  - Exported static site successfully',
-        stderr: '',
-        exitCode: 0
-      }));
+      runner.setHandler('run', (_file, args) => {
+        if (args.some(a => typeof a === 'string' && a.includes('next build'))) {
+          return { stdout: 'info  - Exported static site successfully', stderr: '', exitCode: 0 };
+        }
+        return {
+          stdout: JSON.stringify({ passed: true, statusCode: 200, responseSnippet: 'Next Static Export' }),
+          stderr: '',
+          exitCode: 0
+        };
+      });
 
       const result = await executeRigDeployBuild({
         appId: 'next-app',
@@ -131,6 +189,49 @@ describe('RIG Deploy Executor Suite', () => {
       expect(result.staticFiles?.some(f => f.path === 'index.html')).toBe(true);
       expect(result.smokeCheck.passed).toBe(true);
       expect(result.smokeCheck.responseSnippet).toContain('Next Static Export');
+    });
+
+    it('fails smoke check when static output cannot actually be served or probe returns non-200 / empty body', async () => {
+      const archive = createSourceArchive({
+        'index.html': '<!DOCTYPE html><html><body>Broken</body></html>'
+      });
+
+      const plan: DeploymentPlan = {
+        detectedType: 'static',
+        startCommand: 'static-pages-runtime',
+        port: 80,
+        healthEndpoint: '/',
+        memoryMb: 128,
+        entrypointFile: 'index.html',
+        manifestApplied: false,
+        inferredFrom: ['index.html']
+      };
+
+      const runner = new MockDockerCommandRunner();
+      runner.setHandler('run', () => ({
+        stdout: JSON.stringify({
+          passed: false,
+          statusCode: 500,
+          error: 'Smoke check HTTP probe failed with status 500'
+        }),
+        stderr: '',
+        exitCode: 1
+      }));
+
+      const result = await executeRigDeployBuild({
+        appId: 'broken-smoke-app',
+        repositoryId: 'repo_broken_smoke',
+        commitOid: 'f'.repeat(40),
+        sourceArchive: archive,
+        plan,
+        jobsRoot,
+        runner
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.smokeCheck.passed).toBe(false);
+      expect(result.smokeCheck.statusCode).toBe(500);
+      expect(result.smokeCheck.error).toContain('Smoke check HTTP probe failed with status 500');
     });
 
     it('reports failure when container build command returns non-zero exit code', async () => {

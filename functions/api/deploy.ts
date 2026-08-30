@@ -109,6 +109,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 };
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
+  let targetAppId = '';
+  let activeBuildRunId = '';
+  let targetRepoId = '';
+  let targetCommitOid = '';
+  let targetPlan: any = null;
+
   try {
     if (!env?.DB) {
       return json({ success: false, error: 'Database service is unavailable' }, 503);
@@ -122,6 +128,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const body = await request.json().catch(() => ({}));
     const action = String(body.action || 'deploy').trim();
     const appId = String(body.appId || body.id || '').trim();
+    targetAppId = appId;
 
     if (!appId) {
       return json({ success: false, error: 'appId is required' }, 400);
@@ -237,6 +244,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
+      targetRepoId = repository.id;
+      targetCommitOid = commitOid;
+
       // Step 2: Detect project type & build plan strictly from committed tree
       const committedFiles = listCommitFiles(reposRoot, storageKey, commitOid);
 
@@ -317,9 +327,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       const plan = detection.plan;
+      targetPlan = plan;
 
       // Step 3: Transition to building state & record build run
       const buildRunId = `br_${crypto.randomUUID().replace(/-/g, '')}`;
+      activeBuildRunId = buildRunId;
       const runnerImageDigest = env?.RIG_VERIFICATION_IMAGE_DIGEST || 'node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e';
       const sourceArchive = archiveAuthoritativeCommit(reposRoot, storageKey, commitOid);
       const sourceManifestDigest = digest(sourceArchive);
@@ -506,11 +518,96 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       // Step 7: Static App Promotion (real deployment_revisions row + R2 static publish + active state)
+      // Enforce: active requires env.STORAGE present, non-empty static files, and all puts succeeding.
+      if (!env?.STORAGE) {
+        const errorMsg = `Deployment publication failed for ${appListing.name}: Artifact storage service (R2 STORAGE) is unavailable.`;
+        const storageEvidence = {
+          stage: 'storage_publication',
+          timestamp: new Date().toISOString(),
+          details: errorMsg,
+          detectedType: plan.detectedType,
+          plan,
+          repositoryId: repository.id,
+          commitOid,
+          buildRunId,
+          artifactDigest: buildResult.artifactDigest,
+          smokeCheck: buildResult.smokeCheck
+        };
+
+        await env.DB.prepare(`
+          UPDATE build_runs SET
+            status = 'failed',
+            result_digest = ?,
+            exit_code = 1,
+            duration_ms = ?,
+            finished_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(buildResult.artifactDigest || null, buildResult.durationMs || 0, buildRunId).run();
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(storageEvidence), appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'failed',
+          error: errorMsg,
+          evidence: storageEvidence
+        }, 422);
+      }
+
+      if (!buildResult.staticFiles || buildResult.staticFiles.length === 0) {
+        const errorMsg = `Deployment publication failed for ${appListing.name}: No static artifact files produced for storage publication.`;
+        const storageEvidence = {
+          stage: 'storage_publication',
+          timestamp: new Date().toISOString(),
+          details: errorMsg,
+          detectedType: plan.detectedType,
+          plan,
+          repositoryId: repository.id,
+          commitOid,
+          buildRunId,
+          artifactDigest: buildResult.artifactDigest,
+          smokeCheck: buildResult.smokeCheck
+        };
+
+        await env.DB.prepare(`
+          UPDATE build_runs SET
+            status = 'failed',
+            result_digest = ?,
+            exit_code = 1,
+            duration_ms = ?,
+            finished_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(buildResult.artifactDigest || null, buildResult.durationMs || 0, buildRunId).run();
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(storageEvidence), appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'failed',
+          error: errorMsg,
+          evidence: storageEvidence
+        }, 422);
+      }
+
       const revisionId = `rev_${crypto.randomUUID().replace(/-/g, '')}`;
       const deployedUrl = `https://${appId}.nates-software.com`;
 
-      // Upload static files to R2 STORAGE if binding exists
-      if (buildResult.staticFiles && env?.STORAGE) {
+      // Upload static files to R2 STORAGE
+      try {
         for (const file of buildResult.staticFiles) {
           const contentBuffer = Buffer.from(file.contentBase64, 'base64');
           await env.STORAGE.put(`apps/${appId}/revisions/${revisionId}/${file.path}`, contentBuffer, {
@@ -520,6 +617,47 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             httpMetadata: { contentType: file.mediaType }
           });
         }
+      } catch (putErr: any) {
+        const errorMsg = `Deployment publication failed for ${appListing.name}: Storage upload failed (${putErr?.message || 'unknown storage error'}).`;
+        const storageEvidence = {
+          stage: 'storage_publication',
+          timestamp: new Date().toISOString(),
+          details: errorMsg,
+          error: putErr?.message || String(putErr),
+          detectedType: plan.detectedType,
+          plan,
+          repositoryId: repository.id,
+          commitOid,
+          buildRunId,
+          artifactDigest: buildResult.artifactDigest,
+          smokeCheck: buildResult.smokeCheck
+        };
+
+        await env.DB.prepare(`
+          UPDATE build_runs SET
+            status = 'failed',
+            result_digest = ?,
+            exit_code = 1,
+            duration_ms = ?,
+            finished_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(buildResult.artifactDigest || null, buildResult.durationMs || 0, buildRunId).run();
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(storageEvidence), appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'failed',
+          error: errorMsg,
+          evidence: storageEvidence
+        }, 422);
       }
 
       // Insert build_artifacts
@@ -584,7 +722,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const promotionEvidence = {
         stage: 'promotion',
         timestamp: new Date().toISOString(),
-        details: 'Real RIG candidate build and smoke verification succeeded. Revision promoted to active.',
+        details: 'Real RIG candidate build, HTTP smoke verification, and R2 byte storage succeeded. Revision promoted to active.',
         detectedType: plan.detectedType,
         plan,
         repositoryId: repository.id,
@@ -622,6 +760,49 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     return json({ success: false, error: `Unsupported deployment action '${action}'` }, 400);
   } catch (err: any) {
-    return json({ success: false, error: err.message || 'Deployment execution failed' }, 500);
+    const errorMsg = err?.message || 'Deployment execution failed';
+    const failureEvidence = {
+      stage: 'execution_error',
+      timestamp: new Date().toISOString(),
+      details: errorMsg,
+      error: String(err?.stack || err?.message || err),
+      appId: targetAppId || null,
+      repositoryId: targetRepoId || null,
+      commitOid: targetCommitOid || null,
+      buildRunId: activeBuildRunId || null,
+      plan: targetPlan || null
+    };
+
+    if (env?.DB && targetAppId) {
+      try {
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(failureEvidence), targetAppId).run();
+      } catch {}
+
+      if (activeBuildRunId) {
+        try {
+          await env.DB.prepare(`
+            UPDATE build_runs SET
+              status = 'failed',
+              exit_code = 1,
+              finished_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).bind(activeBuildRunId).run();
+        } catch {}
+      }
+    }
+
+    return json({
+      success: false,
+      appId: targetAppId || undefined,
+      deploymentState: 'failed',
+      error: errorMsg,
+      evidence: failureEvidence
+    }, 500);
   }
 };

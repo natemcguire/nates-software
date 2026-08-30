@@ -165,6 +165,7 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
         '--cpus=1',
         '--cap-drop=ALL',
         '--security-opt=no-new-privileges',
+        '--read-only',
         `--user=${process.getuid?.() || 65532}:${process.getgid?.() || 65532}`,
         '--tmpfs=/tmp:rw,noexec,nosuid,size=64m',
         '--mount', `type=bind,src=${workspace},dst=/workspace`,
@@ -245,17 +246,121 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
     let smokeError: string | undefined;
 
     if (artifactKind === 'static' && staticFiles) {
-      // Find index.html or health entrypoint
       const indexFile = staticFiles.find(f => f.path === 'index.html' || f.path.endsWith('/index.html'));
-      if (indexFile) {
-        smokePassed = true;
-        smokeStatusCode = 200;
-        const decoded = Buffer.from(indexFile.contentBase64, 'base64').toString('utf8');
-        smokeSnippet = decoded.slice(0, 200).replace(/\s+/g, ' ');
-      } else {
+      if (!indexFile) {
         smokePassed = false;
         smokeStatusCode = 404;
         smokeError = 'Smoke check failed: index.html entrypoint was not found in built static output.';
+      } else {
+        const runnerImage = params.runnerImageDigest || 'node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e';
+        const memoryMb = Math.min(plan.memoryMb || 256, 256);
+        const relStaticDir = staticRoot ? path.relative(workspace, staticRoot).replace(/\\/g, '/') : '.';
+        const healthPath = plan.healthEndpoint || '/';
+
+        const smokeScript = `
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const targetDir = path.resolve('/workspace', ${JSON.stringify(relStaticDir)});
+const healthPath = ${JSON.stringify(healthPath)};
+
+const server = http.createServer((req, res) => {
+  try {
+    let reqPath = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
+    if (reqPath.endsWith('/')) reqPath += 'index.html';
+    const filePath = path.join(targetDir, reqPath.startsWith('/') ? reqPath.slice(1) : reqPath);
+    if (!filePath.startsWith(targetDir) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+      return;
+    }
+    const content = fs.readFileSync(filePath);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(content);
+  } catch (e) {
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(e.message);
+  }
+});
+
+server.listen(0, '127.0.0.1', () => {
+  const port = server.address().port;
+  const targetUrl = 'http://127.0.0.1:' + port + (healthPath.startsWith('/') ? healthPath : '/' + healthPath);
+  http.get(targetUrl, (res) => {
+    let body = '';
+    res.on('data', chunk => body += chunk);
+    res.on('end', () => {
+      server.close();
+      if (res.statusCode === 200 && body.trim().length > 0) {
+        process.stdout.write(JSON.stringify({
+          passed: true,
+          statusCode: 200,
+          responseSnippet: body.slice(0, 200).replace(/\\s+/g, ' ')
+        }));
+        process.exit(0);
+      } else {
+        process.stderr.write(JSON.stringify({
+          passed: false,
+          statusCode: res.statusCode || 500,
+          error: 'Smoke check probe failed with status ' + res.statusCode + (body.trim().length === 0 ? ' (empty response body)' : '')
+        }));
+        process.exit(1);
+      }
+    });
+  }).on('error', (err) => {
+    server.close();
+    process.stderr.write(JSON.stringify({
+      passed: false,
+      statusCode: 500,
+      error: 'HTTP probe connection error: ' + err.message
+    }));
+    process.exit(1);
+  });
+});
+`;
+
+        const smokeDockerArgs = [
+          'run', '--rm', '--network=bridge',
+          `--memory=${memoryMb}m`,
+          `--memory-swap=${memoryMb}m`,
+          '--pids-limit=128',
+          '--cpus=1',
+          '--cap-drop=ALL',
+          '--security-opt=no-new-privileges',
+          '--read-only',
+          `--user=${process.getuid?.() || 65532}:${process.getgid?.() || 65532}`,
+          '--tmpfs=/tmp:rw,noexec,nosuid,size=64m',
+          '--mount', `type=bind,src=${workspace},dst=/workspace`,
+          '--workdir=/workspace',
+          runnerImage,
+          'node', '-e', smokeScript
+        ];
+
+        const smokeRun = await runner.exec('docker', smokeDockerArgs, { timeoutMs: Math.min(timeoutMs, 30_000) });
+
+        let parsedProbe: any = null;
+        try {
+          const combined = (smokeRun.stdout.trim() || smokeRun.stderr.trim());
+          if (combined) {
+            const match = combined.match(/\{[\s\S]*"statusCode"[\s\S]*\}/);
+            if (match) {
+              parsedProbe = JSON.parse(match[0]);
+            } else {
+              parsedProbe = JSON.parse(combined);
+            }
+          }
+        } catch {}
+
+        if (smokeRun.exitCode === 0 && parsedProbe?.passed === true && parsedProbe?.statusCode === 200) {
+          smokePassed = true;
+          smokeStatusCode = 200;
+          smokeSnippet = parsedProbe.responseSnippet || '';
+        } else {
+          smokePassed = false;
+          smokeStatusCode = parsedProbe?.statusCode || (smokeRun.exitCode !== 0 ? 500 : 0);
+          smokeError = parsedProbe?.error || smokeRun.stderr.trim() || smokeRun.stdout.trim() || `Smoke check probe failed with exit code ${smokeRun.exitCode}`;
+        }
       }
     } else {
       // For server apps, verify entrypoint file exists

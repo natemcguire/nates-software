@@ -933,6 +933,294 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(buildRun.result_digest).toBe('sha256:python_artifact_digest_123');
     });
 
+    it('should refuse activation and fail closed when R2 STORAGE is absent, leaving no healthy revision and deployment_state=failed', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_nostorage', 'nostorage', 'No Storage Maker', 'user')
+      `).run();
+      const token = 'token_nostorage_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nostorage', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const storageKey = 'repositories/no-storage-app';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'index.html': '<h1>No Storage App</h1>',
+        'styles.css': 'body { color: red; }'
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('no-storage-app', 'No Storage App', 'Tag', 'Desc', 'usr_nostorage', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_ns_1', 'no-storage-app', 'usr_nostorage', 'no-storage-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_ns_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'no-storage-app'
+        })
+      });
+
+      const mockStaticBuild = async () => ({
+        success: true,
+        exitCode: 0,
+        output: 'Build & smoke succeeded',
+        artifactDigest: 'sha256:nostorage_digest_123',
+        artifactKind: 'static',
+        staticFiles: [
+          {
+            path: 'index.html',
+            contentBase64: Buffer.from('<h1>No Storage App</h1>').toString('base64'),
+            mediaType: 'text/html; charset=utf-8',
+            sizeBytes: 23,
+            sha256: 'sha256:ns_index'
+          }
+        ],
+        smokeCheck: { passed: true, statusCode: 200, durationMs: 10, responseSnippet: '<h1>No Storage App</h1>' },
+        durationMs: 100
+      });
+
+      // Execute with STORAGE undefined in env
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: undefined,
+          GITSMITH_REPOS_ROOT: reposRoot,
+          __RIG_DEPLOY_EXECUTOR: mockStaticBuild
+        }
+      });
+
+      const data: any = await res.json();
+
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.error).toContain('Artifact storage service (R2 STORAGE) is unavailable');
+      expect(data.evidence.stage).toBe('storage_publication');
+
+      // Verify D1: failed state, active_deployment_id is NULL, no revisions inserted
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, deployment_error, deployment_evidence_json
+        FROM app_listings WHERE id = 'no-storage-app'
+      `).first<any>();
+
+      expect(app.deployment_state).toBe('failed');
+      expect(app.active_deployment_id).toBeNull();
+      expect(app.deployment_error).toContain('Artifact storage service (R2 STORAGE) is unavailable');
+
+      const revCount = await ctx.d1.prepare(`
+        SELECT count(*) AS c FROM deployment_revisions WHERE app_id = 'no-storage-app'
+      `).first<any>('c');
+      expect(revCount).toBe(0);
+
+      const buildRun = await ctx.d1.prepare(`
+        SELECT status, exit_code FROM build_runs WHERE repository_id = 'repo_ns_1'
+      `).first<any>();
+      expect(buildRun.status).toBe('failed');
+      expect(buildRun.exit_code).toBe(1);
+    });
+
+    it('should refuse activation and fail closed when R2 STORAGE.put fails during publication', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_putfail', 'putfail', 'Put Fail Maker', 'user')
+      `).run();
+      const token = 'token_putfail_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_putfail', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const storageKey = 'repositories/put-fail-app';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'index.html': '<h1>Put Fail App</h1>'
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('put-fail-app', 'Put Fail App', 'Tag', 'Desc', 'usr_putfail', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_pf_1', 'put-fail-app', 'usr_putfail', 'put-fail-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_pf_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'put-fail-app'
+        })
+      });
+
+      const mockStaticBuild = async () => ({
+        success: true,
+        exitCode: 0,
+        output: 'Build & smoke succeeded',
+        artifactDigest: 'sha256:putfail_digest_123',
+        artifactKind: 'static',
+        staticFiles: [
+          {
+            path: 'index.html',
+            contentBase64: Buffer.from('<h1>Put Fail App</h1>').toString('base64'),
+            mediaType: 'text/html; charset=utf-8',
+            sizeBytes: 22,
+            sha256: 'sha256:pf_index'
+          }
+        ],
+        smokeCheck: { passed: true, statusCode: 200, durationMs: 10, responseSnippet: '<h1>Put Fail App</h1>' },
+        durationMs: 100
+      });
+
+      const failingStorage = {
+        put: async () => {
+          throw new Error('R2 write quota exceeded / network timeout');
+        },
+        get: async () => null
+      };
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: failingStorage,
+          GITSMITH_REPOS_ROOT: reposRoot,
+          __RIG_DEPLOY_EXECUTOR: mockStaticBuild
+        }
+      });
+
+      const data: any = await res.json();
+
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.error).toContain('Storage upload failed');
+      expect(data.evidence.stage).toBe('storage_publication');
+
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, deployment_error
+        FROM app_listings WHERE id = 'put-fail-app'
+      `).first<any>();
+
+      expect(app.deployment_state).toBe('failed');
+      expect(app.active_deployment_id).toBeNull();
+      expect(app.deployment_error).toContain('Storage upload failed');
+
+      const revCount = await ctx.d1.prepare(`
+        SELECT count(*) AS c FROM deployment_revisions WHERE app_id = 'put-fail-app'
+      `).first<any>('c');
+      expect(revCount).toBe(0);
+    });
+
+    it('should persist thrown failures as deployment_state=failed in D1 with evidence and mark build_run failed instead of sticking in building', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_crash', 'crash', 'Crash Maker', 'user')
+      `).run();
+      const token = 'token_crash_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_crash', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const storageKey = 'repositories/crash-app';
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'index.html': '<h1>Crash App</h1>'
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES ('crash-app', 'Crash App', 'Tag', 'Desc', 'usr_crash', 'v1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_cr_1', 'crash-app', 'usr_crash', 'crash-app', 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_cr_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      const req = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          action: 'deploy',
+          appId: 'crash-app'
+        })
+      });
+
+      // Executor throws an unhandled exception (e.g. docker daemon panic / SIGPIPE)
+      const mockThrowingRigBuild = async () => {
+        throw new Error('Docker daemon connection reset by peer during build execution');
+      };
+
+      const res = await deployApi.onRequestPost({
+        request: req,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_REPOS_ROOT: reposRoot,
+          __RIG_DEPLOY_EXECUTOR: mockThrowingRigBuild
+        }
+      });
+
+      const data: any = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.error).toContain('Docker daemon connection reset by peer');
+      expect(data.evidence.stage).toBe('execution_error');
+
+      // CRITICAL INVARIANT: App listing must NOT be left in 'building' or 'running'!
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, deployment_error, deployment_evidence_json
+        FROM app_listings WHERE id = 'crash-app'
+      `).first<any>();
+
+      expect(app.deployment_state).toBe('failed');
+      expect(app.active_deployment_id).toBeNull();
+      expect(app.deployment_error).toContain('Docker daemon connection reset by peer');
+
+      const buildRun = await ctx.d1.prepare(`
+        SELECT status, exit_code FROM build_runs WHERE repository_id = 'repo_cr_1'
+      `).first<any>();
+      expect(buildRun.status).toBe('failed');
+      expect(buildRun.exit_code).toBe(1);
+
+      const revCount = await ctx.d1.prepare(`
+        SELECT count(*) AS c FROM deployment_revisions WHERE app_id = 'crash-app'
+      `).first<any>('c');
+      expect(revCount).toBe(0);
+    });
+
     it('should strictly enforce that active state requires a real healthy deployment revision', async () => {
       // Query all listings marked active
       const activeRows = await ctx.d1.prepare(`
