@@ -12,7 +12,6 @@ import {
 import type { DynoAgentHarness, DynoNetworkPolicy } from "../src/lib/dyno/types.ts";
 import { isCasRefUpdateValid } from "../src/lib/forgeDomain.ts";
 import { RigRuntimeBackend, MEMORY_CAP_MB, MicroDynoPortAllocator } from "../src/lib/rigBackend.ts";
-import * as gitControlPlane from "../functions/api/git.ts";
 
 const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
 
@@ -501,6 +500,8 @@ export async function handleFork(
             },
             body: JSON.stringify(forkPayload)
           });
+          const gitModulePath = "../functions/api/git.ts";
+          const gitControlPlane = await import(/* @vite-ignore */ gitModulePath);
           forkRes = await gitControlPlane.onRequestPost({ request: req, env: options.env });
         } else if (options.fetchImpl) {
           forkRes = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
@@ -566,6 +567,8 @@ export async function handleFork(
               },
               body: JSON.stringify(confirmPayload)
             });
+            const gitModulePath = "../functions/api/git.ts";
+            const gitControlPlane = await import(/* @vite-ignore */ gitModulePath);
             const confirmRes = await gitControlPlane.onRequestPost({ request: confirmReq, env: options.env });
             const confirmData: any = await confirmRes.json().catch(() => ({}));
             if (confirmData.success && confirmData.fork) {
