@@ -454,11 +454,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const keyBase64 = String(body.keyBase64 || '').trim();
     if (!keyType || !keyBase64) return failure('keyType and keyBase64 are required.', 400);
     try {
+      // Match the "<type> <base64>" prefix, ignoring any trailing comment.
+      // NOTE: D1 rejects long LIKE patterns ("LIKE or GLOB pattern too complex"),
+      // and an SSH key base64 exceeds that limit — so we use a LIKE-free substr
+      // prefix match. `.bind()` is positional; the prefix value is bound twice.
+      const keyPrefix = `${keyType} ${keyBase64}`;
       const actor = await db.prepare(`
         SELECT id FROM users
-        WHERE ssh_public_key = ? OR ssh_public_key LIKE ?
+        WHERE ssh_public_key = ?
+           OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' '
         LIMIT 1
-      `).bind(`${keyType} ${keyBase64}`, `${keyType} ${keyBase64} %`).first();
+      `).bind(keyPrefix, keyPrefix, keyPrefix).first();
       if (!actor) return failure('SSH public key is not registered.', 401);
       return Response.json({ success: true, actorUserId: (actor as any).id });
     } catch (error: any) {
@@ -486,11 +492,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     try {
+      // LIKE-free prefix match (D1 rejects long LIKE patterns; see gateway-identify-ssh-key).
+      const keyPrefix = `${keyType} ${keyBase64}`;
       const actor = await db.prepare(`
         SELECT id, username FROM users
-        WHERE ssh_public_key = ? OR ssh_public_key LIKE ?
+        WHERE ssh_public_key = ?
+           OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' '
         LIMIT 1
-      `).bind(`${keyType} ${keyBase64}`, `${keyType} ${keyBase64} %`).first();
+      `).bind(keyPrefix, keyPrefix, keyPrefix).first();
       if (!actor) return failure('SSH public key is not registered.', 401);
 
       const repository = await db.prepare(`
