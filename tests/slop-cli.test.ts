@@ -21,8 +21,8 @@ import {
 } from '../bin/slop.ts';
 
 const createdWorktrees: string[] = [];
-const trackedFork = (slugOrArgs?: string | string[], options?: any) => {
-  const result = handleFork(slugOrArgs, options);
+const trackedFork = async (slugOrArgs?: string | string[], options?: any) => {
+  const result = await handleFork(slugOrArgs, { local: true, ...(options || {}) });
   if (result.success && result.data?.worktreePath) createdWorktrees.push(result.data.worktreePath);
   return result;
 };
@@ -55,8 +55,8 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop fork <slug>', () => {
-    it('should fork default slug (nate/dronehunter) into isolated worktree', () => {
-      const res = trackedFork();
+    it('should fork default slug (nate/dronehunter) into isolated worktree', async () => {
+      const res = await trackedFork();
       expect(res.success).toBe(true);
       expect(res.command).toBe('fork');
       expect(res.data.slug).toBe('nate/dronehunter');
@@ -76,27 +76,27 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(engineInstructions).toContainEqual(expect.stringContaining('Cursor / VS Code'));
     }, 15_000);
 
-    it('should fork custom app slug into isolated worktree', () => {
-      const res = trackedFork('nate/certified-mailer');
+    it('should fork custom app slug into isolated worktree', async () => {
+      const res = await trackedFork('nate/certified-mailer');
       expect(res.success).toBe(true);
       expect(res.data.slug).toBe('nate/certified-mailer');
       expect(res.data.appId).toBe('certified-mailer');
     });
 
-    it('should reject unknown titles without inventing a starter project', () => {
-      const res = handleFork('nate/unknown-title');
+    it('should reject unknown titles without inventing a starter project', async () => {
+      const res = await handleFork('nate/unknown-title', { local: true });
       expect(res.success).toBe(false);
       expect(res.message).toContain('no placeholder fork was created');
       expect(existsSync(res.data.worktreePath)).toBe(false);
     });
 
-    it('should succeed when forking an empty canonical repository without fabricating source files', () => {
+    it('should succeed when forking an empty canonical repository without fabricating source files', async () => {
       const emptyCanonicalDir = join(tmpdir(), `test-empty-canonical-${Date.now().toString(36)}`);
       mkdirSync(emptyCanonicalDir, { recursive: true });
       execSync(`git init "${emptyCanonicalDir}"`, { stdio: 'pipe' });
 
       try {
-        const res = trackedFork(emptyCanonicalDir);
+        const res = await trackedFork(emptyCanonicalDir);
         expect(res.success).toBe(true);
         expect(res.command).toBe('fork');
         expect(res.data.isEmptyRepo).toBe(true);
@@ -122,13 +122,13 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       }
     });
 
-    it('should scaffold starter template when user explicitly passes --template flag against empty repo', () => {
+    it('should scaffold starter template when user explicitly passes --template flag against empty repo', async () => {
       const emptyCanonicalDir = join(tmpdir(), `test-empty-template-${Date.now().toString(36)}`);
       mkdirSync(emptyCanonicalDir, { recursive: true });
       execSync(`git init "${emptyCanonicalDir}"`, { stdio: 'pipe' });
 
       try {
-        const res = trackedFork([emptyCanonicalDir, '--template=dronehunter']);
+        const res = await trackedFork([emptyCanonicalDir, '--template=dronehunter']);
         expect(res.success).toBe(true);
         expect(res.data.templateApplied).toBe('dronehunter');
 
@@ -144,13 +144,13 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       }
     });
 
-    it('should scaffold minimal starter when user explicitly passes --template minimal against empty repo', () => {
+    it('should scaffold minimal starter when user explicitly passes --template minimal against empty repo', async () => {
       const emptyCanonicalDir = join(tmpdir(), `test-empty-minimal-${Date.now().toString(36)}`);
       mkdirSync(emptyCanonicalDir, { recursive: true });
       execSync(`git init "${emptyCanonicalDir}"`, { stdio: 'pipe' });
 
       try {
-        const res = trackedFork([emptyCanonicalDir, '--template=minimal']);
+        const res = await trackedFork([emptyCanonicalDir, '--template=minimal']);
         expect(res.success).toBe(true);
         expect(res.data.templateApplied).toBe('minimal');
 
@@ -165,14 +165,14 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       }
     });
 
-    it('should truthfully fork an empty repo named dronehunter with NO --template and scaffold ONLY when --template is passed', () => {
+    it('should truthfully fork an empty repo named dronehunter with NO --template and scaffold ONLY when --template is passed', async () => {
       const emptyDronehunterDir = join(tmpdir(), `test-empty-dh-${Date.now().toString(36)}`, 'dronehunter');
       mkdirSync(emptyDronehunterDir, { recursive: true });
       execSync(`git init "${emptyDronehunterDir}"`, { stdio: 'pipe' });
 
       try {
         // Without --template: must NOT auto-scaffold just because the repo is named dronehunter
-        const resEmpty = trackedFork(emptyDronehunterDir);
+        const resEmpty = await trackedFork(emptyDronehunterDir);
         expect(resEmpty.success).toBe(true);
         expect(resEmpty.data.isEmptyRepo).toBe(true);
         expect(resEmpty.data.templateApplied).toBeNull();
@@ -187,7 +187,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         expect(existsSync(join(emptyWorktree, 'README.md'))).toBe(false);
 
         // With explicit --template dronehunter: must scaffold
-        const resScaffolded = trackedFork([emptyDronehunterDir, '--template=dronehunter']);
+        const resScaffolded = await trackedFork([emptyDronehunterDir, '--template=dronehunter']);
         expect(resScaffolded.success).toBe(true);
         expect(resScaffolded.data.templateApplied).toBe('dronehunter');
 
@@ -203,7 +203,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       }
     });
 
-    it('should preserve content when forking an existing content repository', () => {
+    it('should preserve content when forking an existing content repository', async () => {
       const contentCanonicalDir = join(tmpdir(), `test-content-repo-${Date.now().toString(36)}`);
       mkdirSync(contentCanonicalDir, { recursive: true });
       execSync(`git init "${contentCanonicalDir}"`, { stdio: 'pipe' });
@@ -212,7 +212,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       execSync(`git -C "${contentCanonicalDir}" add -A && git -C "${contentCanonicalDir}" -c user.name=Test -c user.email=test@test.com commit -m "initial commit"`, { stdio: 'pipe' });
 
       try {
-        const res = trackedFork(contentCanonicalDir);
+        const res = await trackedFork(contentCanonicalDir);
         expect(res.success).toBe(true);
         expect(res.data.isEmptyRepo).toBe(false);
         expect(res.data.templateApplied).toBeNull();
@@ -364,7 +364,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   describe('runSlopCli router', () => {
     it('should route all commands cleanly', async () => {
       expect((await runSlopCli(['init', 'test-app'])).success).toBe(true);
-      const routedFork = await runSlopCli(['fork', 'nate/dronehunter']);
+      const routedFork = await runSlopCli(['fork', 'nate/dronehunter', '--local']);
       if (routedFork.success && routedFork.data?.worktreePath) createdWorktrees.push(routedFork.data.worktreePath);
       expect(routedFork.success).toBe(true);
       expect((await runSlopCli(['mod'])).command).toBe('mod');
