@@ -14,7 +14,6 @@ export interface CheckoutModalProps {
     authorAvatar?: string;
     price?: string | number;
   };
-  onSuccess?: (licenseKey: string) => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, app }) => {

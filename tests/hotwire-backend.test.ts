@@ -474,7 +474,7 @@ describe('6. Batch Window Querying, Resolution & Maker Leaderboard', () => {
       }
     ];
 
-    const leaderboard = buildMakerLeaderboard(makers);
+    const leaderboard = buildMakerLeaderboard(makers, new Date('2026-08-28T12:00:00Z'));
     expect(leaderboard).toHaveLength(2);
     expect(leaderboard[0].username).toBe('bob');
     expect(leaderboard[0].badgeInfo.tier).toBe('Hot Streak');

@@ -7,7 +7,7 @@ import {
   MessageSquare,
   Edit3,
   ExternalLink,
-  Database,
+  GitBranch,
   Network,
   Bot,
   CreditCard,
@@ -40,7 +40,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const isAppOwned = isOwned(app.id);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'sqlite' | 'code' | 'console'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments'>('preview');
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
   // Modals state
@@ -50,17 +50,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   // Comment state
   const [comments, setComments] = useState<AppComment[]>(app.comments || []);
   const [newCommentText, setNewCommentText] = useState('');
-
-  // Live SQL query state for SQLite tab
-  const [customSqlQuery, setCustomSqlQuery] = useState('SELECT id, score, player_name FROM high_scores;');
-  const [sqlResults, setSqlResults] = useState<{ columns: string[]; rows: any[][] }>({
-    columns: ['id', 'score', 'player_name', 'accuracy'],
-    rows: [
-      ['rec-981', 12400, 'Nate M.', '94.2%'],
-      ['rec-982', 10850, 'Josh M.', '91.8%'],
-      ['rec-983', 9400, 'Sam A.', '88.5%']
-    ]
-  });
 
   // Fetch comments from Cloudflare D1
   useEffect(() => {
@@ -92,8 +81,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     const cleanText = newCommentText.trim();
     setNewCommentText('');
 
+    const tempCommentId = `c-${Date.now()}`;
     const commentObj: AppComment = {
-      id: `c-${Date.now()}`,
+      id: tempCommentId,
       author: `@${user.username}`,
       avatar: user.avatar || '⚡',
       time: 'Just now',
@@ -103,11 +93,11 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
       isMaker: user.username === 'nate' || user.username === 'josh'
     };
 
-    setComments([commentObj, ...comments]);
+    setComments(prev => [commentObj, ...prev]);
     playSuccessChime();
 
     try {
-      await fetch('/api/comments', {
+      const res = await fetch('/api/comments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -117,24 +107,21 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           text: cleanText
         })
       });
-    } catch {}
-  };
-
-
-
-  const handleRunSqlQuery = (e: React.FormEvent) => {
-    e.preventDefault();
-    playClickSound();
-    if (customSqlQuery.toLowerCase().includes('select')) {
-      setSqlResults({
-        columns: ['id', 'score', 'player_name', 'accuracy'],
-        rows: [
-          ['rec-981', 12400, 'Nate M.', '94.2%'],
-          ['rec-982', 10850, 'Josh M.', '91.8%'],
-          ['rec-983', 9400, 'Sam A.', '88.5%'],
-          [`rec-${Math.floor(100 + Math.random() * 900)}`, Math.floor(5000 + Math.random() * 10000), 'Player 1', '90.0%']
-        ]
-      });
+      const data = await res.json().catch(() => null);
+      // Require positive confirmation: a 2xx alone is not proof of persistence.
+      // Anything short of success:true with a canonical comment is treated as failure
+      // so the optimistic comment is rolled back rather than left as if it saved.
+      if (!res.ok || !data || data.success !== true || !data.comment) {
+        throw new Error(data?.error || `Failed to post comment (Status ${res.status})`);
+      }
+      setComments(prev => prev.map(c => c.id === tempCommentId ? data.comment : c));
+    } catch (err: any) {
+      setComments(prev => prev.filter(c => c.id !== tempCommentId));
+      showAlert(
+        err?.message || 'Unable to post comment. Please try again.',
+        'Comment Failed',
+        'error'
+      );
     }
   };
 
@@ -192,12 +179,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             </a>
           </div>
           <button
-            onClick={() => { setActiveTab('sqlite'); playClickSound(); }}
-            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'sqlite' ? 'btn-w95-primary' : ''}`}
-          >
-            <Database size={13} /> Storage &amp; DB
-          </button>
-          <button
             onClick={() => { setActiveTab('screenshots'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'screenshots' ? 'btn-w95-primary' : ''}`}
           >
@@ -233,7 +214,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded border border-green-300 font-bold">
-                  ● Concurrency Governor: Active (2 / 10 Max)
+                  ● Client-Side Sandbox
                 </span>
                 <button
                   onClick={() => setShowLineageModal(true)}
@@ -251,61 +232,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         )}
 
-        {/* TAB 2: Storage & DB Inspector */}
-        {activeTab === 'sqlite' && (
-          <div className="h-full flex flex-col space-y-3 font-mono text-xs">
-            <div className="bg-slate-50 p-3 border border-slate-300 rounded flex items-center justify-between">
-              <div>
-                <span className="text-slate-500">Storage / Persistence: </span>
-                <strong className="text-blue-900">{app.sqliteDatabase || 'Runtime / Storage Independent'}</strong>
-              </div>
-              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded font-bold text-[10px]">
-                {app.sqliteDatabase ? 'Local SQLite (Demo Query Engine)' : 'Runtime Independent'}
-              </span>
-            </div>
-
-            <form onSubmit={handleRunSqlQuery} className="flex gap-2">
-              <input
-                type="text"
-                value={customSqlQuery}
-                onChange={(e) => setCustomSqlQuery(e.target.value)}
-                className="flex-1 bg-white border border-gray-400 p-2 text-xs font-mono outline-none"
-              />
-              <button type="submit" className="btn-w95 px-3 py-1 font-bold">
-                Run Query
-              </button>
-            </form>
-
-            <div className="flex-1 overflow-auto border border-gray-300 bg-white">
-              <div className="bg-gray-100 border-b border-gray-300 px-2 py-1 flex items-center justify-between text-[11px]">
-                <span className="font-bold text-gray-700">Query Inspector Output</span>
-                <span className="text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded font-bold text-[10px]">
-                  Simulated Query Engine
-                </span>
-              </div>
-              <table className="w-full text-left text-xs">
-                <thead className="bg-gray-50 border-b border-gray-300 sticky top-0">
-                  <tr>
-                    {sqlResults.columns.map((col, i) => (
-                      <th key={i} className="p-2 font-bold text-gray-700">{col}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {sqlResults.rows.map((row, i) => (
-                    <tr key={i} className="hover:bg-blue-50">
-                      {row.map((cell, j) => (
-                        <td key={j} className="p-2 font-mono text-gray-800">{cell}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: Screenshots */}
+        {/* TAB 2: Screenshots */}
         {activeTab === 'screenshots' && (
           <div className="h-full flex flex-col items-center justify-center p-2">
             <img
@@ -445,7 +372,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             rel="noopener noreferrer"
             className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
           >
-            <Database size={12} /> View on GITSMITH
+            <GitBranch size={12} /> View on GITSMITH
           </a>
         </div>
       </div>
@@ -652,13 +579,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         isOpen={showCheckoutModal}
         onClose={() => setShowCheckoutModal(false)}
         app={app}
-        onSuccess={(licenseKey) => {
-          showAlert(
-            `Payment Succeeded! License key minted:\n\n🔑 ${licenseKey}\n\nYour purchase has been saved to your Shelf with automated 70/20/10 lineage royalty distribution.`,
-            "License Registered",
-            "success"
-          );
-        }}
       />
     </div>
   );
