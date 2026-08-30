@@ -428,17 +428,22 @@ function AppInner() {
       {/* Floating Application Windows */}
 
       {/* 0. SETUP.EXE — 1-Click Fork Quickstart Wizard */}
-      <RetroWindow
-        windowState={windows.setup}
-        isActive={activeWindowId === 'setup'}
-        onFocus={() => focusWindow('setup')}
-        onClose={() => closeWindow('setup')}
-        onMinimize={() => minimizeWindow('setup')}
-        onToggleMaximize={() => toggleMaximizeWindow('setup')}
-        onMove={(x, y) => updateWindowPosition('setup', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('setup', w, h, x, y)}
+      <ErrorBoundary
+        key={`setup-${windows.setup.isOpen}`}
+        fallbackTitle="SETUP.EXE"
+        onDismiss={() => closeWindow('setup')}
+        resetKeys={[windows.setup.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="SETUP.EXE" onDismiss={() => closeWindow('setup')}>
+        <RetroWindow
+          windowState={windows.setup}
+          isActive={activeWindowId === 'setup'}
+          onFocus={() => focusWindow('setup')}
+          onClose={() => closeWindow('setup')}
+          onMinimize={() => minimizeWindow('setup')}
+          onToggleMaximize={() => toggleMaximizeWindow('setup')}
+          onMove={(x, y) => updateWindowPosition('setup', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('setup', w, h, x, y)}
+        >
           <SetupWizardView
             onOpenSandbox={() => {
               openWindow('hotwire');
@@ -450,21 +455,26 @@ function AppInner() {
               openWindow('gitsmith');
             }}
           />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 0. Marketing / About Readme */}
-      <RetroWindow
-        windowState={windows.mktg}
-        isActive={activeWindowId === 'mktg'}
-        onFocus={() => focusWindow('mktg')}
-        onClose={() => closeWindow('mktg')}
-        onMinimize={() => minimizeWindow('mktg')}
-        onToggleMaximize={() => toggleMaximizeWindow('mktg')}
-        onMove={(x, y) => updateWindowPosition('mktg', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('mktg', w, h, x, y)}
+      <ErrorBoundary
+        key={`mktg-${windows.mktg.isOpen}`}
+        fallbackTitle="README_FIRST.TXT"
+        onDismiss={() => closeWindow('mktg')}
+        resetKeys={[windows.mktg.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="README_FIRST.TXT" onDismiss={() => closeWindow('mktg')}>
+        <RetroWindow
+          windowState={windows.mktg}
+          isActive={activeWindowId === 'mktg'}
+          onFocus={() => focusWindow('mktg')}
+          onClose={() => closeWindow('mktg')}
+          onMinimize={() => minimizeWindow('mktg')}
+          onToggleMaximize={() => toggleMaximizeWindow('mktg')}
+          onMove={(x, y) => updateWindowPosition('mktg', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('mktg', w, h, x, y)}
+        >
           <MarketingWindow
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
@@ -475,74 +485,94 @@ function AppInner() {
             onOpenWhitepapers={() => openWindow('papers')}
             onDismiss={() => closeWindow('mktg')}
           />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 0.5 CHAT IRC Chatroom Window */}
-      <RetroWindow
-        windowState={windows.chat}
-        isActive={activeWindowId === 'chat'}
-        onFocus={() => focusWindow('chat')}
-        onClose={() => closeWindow('chat')}
-        onMinimize={() => minimizeWindow('chat')}
-        onToggleMaximize={() => toggleMaximizeWindow('chat')}
-        onMove={(x, y) => updateWindowPosition('chat', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('chat', w, h, x, y)}
+      <ErrorBoundary
+        key={`chat-${windows.chat.isOpen}`}
+        fallbackTitle="CHAT"
+        onDismiss={() => closeWindow('chat')}
+        resetKeys={[windows.chat.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="CHAT" onDismiss={() => closeWindow('chat')}>
+        <RetroWindow
+          windowState={windows.chat}
+          isActive={activeWindowId === 'chat'}
+          onFocus={() => focusWindow('chat')}
+          onClose={() => closeWindow('chat')}
+          onMinimize={() => minimizeWindow('chat')}
+          onToggleMaximize={() => toggleMaximizeWindow('chat')}
+          onMove={(x, y) => updateWindowPosition('chat', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('chat', w, h, x, y)}
+        >
           <ChatView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 1. Terminal DOS Shell */}
-      <RetroWindow
-        windowState={windows.terminal}
-        isActive={activeWindowId === 'terminal'}
-        onFocus={() => focusWindow('terminal')}
-        onClose={() => closeWindow('terminal')}
-        onMinimize={() => minimizeWindow('terminal')}
-        onToggleMaximize={() => toggleMaximizeWindow('terminal')}
-        onMove={(x, y) => updateWindowPosition('terminal', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('terminal', w, h, x, y)}
+      <ErrorBoundary
+        key={`terminal-${windows.terminal.isOpen}`}
+        fallbackTitle="TERMINAL.EXE"
+        onDismiss={() => closeWindow('terminal')}
+        resetKeys={[windows.terminal.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="TERMINAL.EXE" onDismiss={() => closeWindow('terminal')}>
+        <RetroWindow
+          windowState={windows.terminal}
+          isActive={activeWindowId === 'terminal'}
+          onFocus={() => focusWindow('terminal')}
+          onClose={() => closeWindow('terminal')}
+          onMinimize={() => minimizeWindow('terminal')}
+          onToggleMaximize={() => toggleMaximizeWindow('terminal')}
+          onMove={(x, y) => updateWindowPosition('terminal', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('terminal', w, h, x, y)}
+        >
           <TerminalView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 2.5 Editorial Lab — Nate's Software & Benchmark Reviews */}
-      <RetroWindow
-        windowState={windows.editorial}
-        isActive={activeWindowId === 'editorial'}
-        onFocus={() => focusWindow('editorial')}
-        onClose={() => closeWindow('editorial')}
-        onMinimize={() => minimizeWindow('editorial')}
-        onToggleMaximize={() => toggleMaximizeWindow('editorial')}
-        onMove={(x, y) => updateWindowPosition('editorial', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('editorial', w, h, x, y)}
+      <ErrorBoundary
+        key={`editorial-${windows.editorial.isOpen}`}
+        fallbackTitle="EDITORIAL LAB"
+        onDismiss={() => closeWindow('editorial')}
+        resetKeys={[windows.editorial.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="EDITORIAL LAB" onDismiss={() => closeWindow('editorial')}>
+        <RetroWindow
+          windowState={windows.editorial}
+          isActive={activeWindowId === 'editorial'}
+          onFocus={() => focusWindow('editorial')}
+          onClose={() => closeWindow('editorial')}
+          onMinimize={() => minimizeWindow('editorial')}
+          onToggleMaximize={() => toggleMaximizeWindow('editorial')}
+          onMove={(x, y) => updateWindowPosition('editorial', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('editorial', w, h, x, y)}
+        >
           <EditorialView
             onOpenApp={(appId) => {
               const targetApp = getApp(appId);
               if (targetApp) openWindow(targetApp.id as any);
             }}
           />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 2. Hotwire Drops */}
-      <RetroWindow
-        windowState={windows.hotwire}
-        isActive={activeWindowId === 'hotwire'}
-        onFocus={() => focusWindow('hotwire')}
-        onClose={() => closeWindow('hotwire')}
-        onMinimize={() => minimizeWindow('hotwire')}
-        onToggleMaximize={() => toggleMaximizeWindow('hotwire')}
-        onMove={(x, y) => updateWindowPosition('hotwire', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('hotwire', w, h, x, y)}
+      <ErrorBoundary
+        key={`hotwire-${windows.hotwire.isOpen}`}
+        fallbackTitle="HOTWIRE"
+        onDismiss={() => closeWindow('hotwire')}
+        resetKeys={[windows.hotwire.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="HOTWIRE" onDismiss={() => closeWindow('hotwire')}>
+        <RetroWindow
+          windowState={windows.hotwire}
+          isActive={activeWindowId === 'hotwire'}
+          onFocus={() => focusWindow('hotwire')}
+          onClose={() => closeWindow('hotwire')}
+          onMinimize={() => minimizeWindow('hotwire')}
+          onToggleMaximize={() => toggleMaximizeWindow('hotwire')}
+          onMove={(x, y) => updateWindowPosition('hotwire', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('hotwire', w, h, x, y)}
+        >
           <HotwireView
             onOpenApp={(appId) => {
               playClickSound();
@@ -554,120 +584,155 @@ function AppInner() {
               setEditingApp(app || null);
             }}
           />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 3. Slopshop AI Speed Shop */}
-      <RetroWindow
-        windowState={windows.slopshop}
-        isActive={activeWindowId === 'slopshop'}
-        onFocus={() => focusWindow('slopshop')}
-        onClose={() => closeWindow('slopshop')}
-        onMinimize={() => minimizeWindow('slopshop')}
-        onToggleMaximize={() => toggleMaximizeWindow('slopshop')}
-        onMove={(x, y) => updateWindowPosition('slopshop', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('slopshop', w, h, x, y)}
+      <ErrorBoundary
+        key={`slopshop-${windows.slopshop.isOpen}`}
+        fallbackTitle="SLOPSHOP"
+        onDismiss={() => closeWindow('slopshop')}
+        resetKeys={[windows.slopshop.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="SLOPSHOP" onDismiss={() => closeWindow('slopshop')}>
+        <RetroWindow
+          windowState={windows.slopshop}
+          isActive={activeWindowId === 'slopshop'}
+          onFocus={() => focusWindow('slopshop')}
+          onClose={() => closeWindow('slopshop')}
+          onMinimize={() => minimizeWindow('slopshop')}
+          onToggleMaximize={() => toggleMaximizeWindow('slopshop')}
+          onMove={(x, y) => updateWindowPosition('slopshop', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('slopshop', w, h, x, y)}
+        >
           <SlopshopView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 4. Rig.exe Runtime HUD */}
-      <RetroWindow
-        windowState={windows.rig}
-        isActive={activeWindowId === 'rig'}
-        onFocus={() => focusWindow('rig')}
-        onClose={() => closeWindow('rig')}
-        onMinimize={() => minimizeWindow('rig')}
-        onToggleMaximize={() => toggleMaximizeWindow('rig')}
-        onMove={(x, y) => updateWindowPosition('rig', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('rig', w, h, x, y)}
+      <ErrorBoundary
+        key={`rig-${windows.rig.isOpen}`}
+        fallbackTitle="RIG.EXE"
+        onDismiss={() => closeWindow('rig')}
+        resetKeys={[windows.rig.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="RIG.EXE" onDismiss={() => closeWindow('rig')}>
+        <RetroWindow
+          windowState={windows.rig}
+          isActive={activeWindowId === 'rig'}
+          onFocus={() => focusWindow('rig')}
+          onClose={() => closeWindow('rig')}
+          onMinimize={() => minimizeWindow('rig')}
+          onToggleMaximize={() => toggleMaximizeWindow('rig')}
+          onMove={(x, y) => updateWindowPosition('rig', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('rig', w, h, x, y)}
+        >
           <RigRuntimeView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 5. Inbox Merge Discussions */}
-      <RetroWindow
-        windowState={windows.inbox}
-        isActive={activeWindowId === 'inbox'}
-        onFocus={() => focusWindow('inbox')}
-        onClose={() => closeWindow('inbox')}
-        onMinimize={() => minimizeWindow('inbox')}
-        onToggleMaximize={() => toggleMaximizeWindow('inbox')}
-        onMove={(x, y) => updateWindowPosition('inbox', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('inbox', w, h, x, y)}
+      <ErrorBoundary
+        key={`inbox-${windows.inbox.isOpen}`}
+        fallbackTitle="INBOX"
+        onDismiss={() => closeWindow('inbox')}
+        resetKeys={[windows.inbox.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="INBOX" onDismiss={() => closeWindow('inbox')}>
+        <RetroWindow
+          windowState={windows.inbox}
+          isActive={activeWindowId === 'inbox'}
+          onFocus={() => focusWindow('inbox')}
+          onClose={() => closeWindow('inbox')}
+          onMinimize={() => minimizeWindow('inbox')}
+          onToggleMaximize={() => toggleMaximizeWindow('inbox')}
+          onMove={(x, y) => updateWindowPosition('inbox', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('inbox', w, h, x, y)}
+        >
           <InboxView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 6. Dyno Workstation Speedometer */}
-      <RetroWindow
-        windowState={windows.dyno}
-        isActive={activeWindowId === 'dyno'}
-        onFocus={() => focusWindow('dyno')}
-        onClose={() => closeWindow('dyno')}
-        onMinimize={() => minimizeWindow('dyno')}
-        onToggleMaximize={() => toggleMaximizeWindow('dyno')}
-        onMove={(x, y) => updateWindowPosition('dyno', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('dyno', w, h, x, y)}
+      <ErrorBoundary
+        key={`dyno-${windows.dyno.isOpen}`}
+        fallbackTitle="DYNO"
+        onDismiss={() => closeWindow('dyno')}
+        resetKeys={[windows.dyno.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="DYNO" onDismiss={() => closeWindow('dyno')}>
+        <RetroWindow
+          windowState={windows.dyno}
+          isActive={activeWindowId === 'dyno'}
+          onFocus={() => focusWindow('dyno')}
+          onClose={() => closeWindow('dyno')}
+          onMinimize={() => minimizeWindow('dyno')}
+          onToggleMaximize={() => toggleMaximizeWindow('dyno')}
+          onMove={(x, y) => updateWindowPosition('dyno', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('dyno', w, h, x, y)}
+        >
           <DynoView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 7. Technical White Papers */}
-      <RetroWindow
-        windowState={windows.papers}
-        isActive={activeWindowId === 'papers'}
-        onFocus={() => focusWindow('papers')}
-        onClose={() => closeWindow('papers')}
-        onMinimize={() => minimizeWindow('papers')}
-        onToggleMaximize={() => toggleMaximizeWindow('papers')}
-        onMove={(x, y) => updateWindowPosition('papers', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('papers', w, h, x, y)}
+      <ErrorBoundary
+        key={`papers-${windows.papers.isOpen}`}
+        fallbackTitle="WHITE PAPERS"
+        onDismiss={() => closeWindow('papers')}
+        resetKeys={[windows.papers.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="WHITE PAPERS" onDismiss={() => closeWindow('papers')}>
+        <RetroWindow
+          windowState={windows.papers}
+          isActive={activeWindowId === 'papers'}
+          onFocus={() => focusWindow('papers')}
+          onClose={() => closeWindow('papers')}
+          onMinimize={() => minimizeWindow('papers')}
+          onToggleMaximize={() => toggleMaximizeWindow('papers')}
+          onMove={(x, y) => updateWindowPosition('papers', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('papers', w, h, x, y)}
+        >
           <WhitePapersView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 8. User Profile & My Shelf */}
-      <RetroWindow
-        windowState={windows.profile}
-        isActive={activeWindowId === 'profile'}
-        onFocus={() => focusWindow('profile')}
-        onClose={() => closeWindow('profile')}
-        onMinimize={() => minimizeWindow('profile')}
-        onToggleMaximize={() => toggleMaximizeWindow('profile')}
-        onMove={(x, y) => updateWindowPosition('profile', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('profile', w, h, x, y)}
+      <ErrorBoundary
+        key={`profile-${windows.profile.isOpen}`}
+        fallbackTitle="PROFILE"
+        onDismiss={() => closeWindow('profile')}
+        resetKeys={[windows.profile.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="PROFILE" onDismiss={() => closeWindow('profile')}>
+        <RetroWindow
+          windowState={windows.profile}
+          isActive={activeWindowId === 'profile'}
+          onFocus={() => focusWindow('profile')}
+          onClose={() => closeWindow('profile')}
+          onMinimize={() => minimizeWindow('profile')}
+          onToggleMaximize={() => toggleMaximizeWindow('profile')}
+          onMove={(x, y) => updateWindowPosition('profile', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('profile', w, h, x, y)}
+        >
           <ProfileView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* 9. Gitsmith GitHub-Style Forge */}
-      <RetroWindow
-        windowState={windows.gitsmith}
-        isActive={activeWindowId === 'gitsmith'}
-        onFocus={() => focusWindow('gitsmith')}
-        onClose={() => closeWindow('gitsmith')}
-        onMinimize={() => minimizeWindow('gitsmith')}
-        onToggleMaximize={() => toggleMaximizeWindow('gitsmith')}
-        onMove={(x, y) => updateWindowPosition('gitsmith', x, y)}
-        onResize={(w, h, x, y) => updateWindowSize('gitsmith', w, h, x, y)}
+      <ErrorBoundary
+        key={`gitsmith-${windows.gitsmith.isOpen}`}
+        fallbackTitle="GITSMITH"
+        onDismiss={() => closeWindow('gitsmith')}
+        resetKeys={[windows.gitsmith.isOpen]}
       >
-        <ErrorBoundary fallbackTitle="GITSMITH" onDismiss={() => closeWindow('gitsmith')}>
+        <RetroWindow
+          windowState={windows.gitsmith}
+          isActive={activeWindowId === 'gitsmith'}
+          onFocus={() => focusWindow('gitsmith')}
+          onClose={() => closeWindow('gitsmith')}
+          onMinimize={() => minimizeWindow('gitsmith')}
+          onToggleMaximize={() => toggleMaximizeWindow('gitsmith')}
+          onMove={(x, y) => updateWindowPosition('gitsmith', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('gitsmith', w, h, x, y)}
+        >
           <GitsmithView />
-        </ErrorBoundary>
-      </RetroWindow>
+        </RetroWindow>
+      </ErrorBoundary>
 
       {/* Pop-Up Start Menu */}
       <StartMenu

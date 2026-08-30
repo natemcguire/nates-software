@@ -142,17 +142,9 @@ describe('ErrorBoundary Component', () => {
     expect(onReset).toHaveBeenCalled();
   });
 
-  it('calls onDismiss callback when handleDismiss is invoked', () => {
+  it('calls onDismiss and resets state when handleDismiss is invoked', () => {
     const onDismiss = vi.fn();
     const boundary = new ErrorBoundary({ onDismiss });
-
-    boundary.handleDismiss();
-    expect(onDismiss).toHaveBeenCalled();
-  });
-
-  it('falls back to handleReset when handleDismiss is invoked without onDismiss', () => {
-    const onReset = vi.fn();
-    const boundary = new ErrorBoundary({ onReset });
     boundary.setState = vi.fn();
 
     boundary.handleDismiss();
@@ -161,7 +153,104 @@ describe('ErrorBoundary Component', () => {
       error: null,
       errorInfo: null
     });
+    expect(onDismiss).toHaveBeenCalled();
+  });
+
+  it('resets state when resetKeys change on update', () => {
+    const onReset = vi.fn();
+    const boundary = new ErrorBoundary({ resetKeys: [false], onReset });
+    boundary.state = {
+      hasError: true,
+      error: new Error('Window crashed'),
+      errorInfo: null
+    };
+    boundary.setState = vi.fn();
+
+    // Prop update with different resetKeys (e.g. window reopened isOpen: true)
+    boundary.componentDidUpdate({ resetKeys: [true] });
+
+    expect(boundary.setState).toHaveBeenCalledWith({
+      hasError: false,
+      error: null,
+      errorInfo: null
+    });
     expect(onReset).toHaveBeenCalled();
+  });
+
+  it('does not reset state when resetKeys have not changed', () => {
+    const boundary = new ErrorBoundary({ resetKeys: [true] });
+    boundary.state = {
+      hasError: true,
+      error: new Error('Window crashed'),
+      errorInfo: null
+    };
+    boundary.setState = vi.fn();
+
+    boundary.componentDidUpdate({ resetKeys: [true] });
+
+    expect(boundary.setState).not.toHaveBeenCalled();
+  });
+
+  it('isolates window-chrome failures so individual window failure does not hit root boundary', () => {
+    const windowBoundary = new ErrorBoundary({
+      fallbackTitle: 'SETUP.EXE',
+      onDismiss: vi.fn()
+    });
+    windowBoundary.state = {
+      hasError: true,
+      error: new Error('RetroWindow chrome crashed'),
+      errorInfo: null
+    };
+
+    const windowHtml = renderToString(windowBoundary.render() as React.ReactElement);
+    expect(windowHtml).toContain('SETUP.EXE — Application Error');
+    expect(windowHtml).toContain('RetroWindow chrome crashed');
+    expect(windowHtml).not.toContain('Restart Web OS');
+  });
+
+  it('catches provider-level throw at top-level boundary (AlertProvider or App root)', () => {
+    const rootBoundary = new ErrorBoundary({
+      isRoot: true,
+      fallbackTitle: "Nate's Software Web OS"
+    });
+    rootBoundary.state = {
+      hasError: true,
+      error: new Error('AlertProvider context initialization failed'),
+      errorInfo: null
+    };
+
+    const html = renderToString(rootBoundary.render() as React.ReactElement);
+    expect(html).toContain('Restart Web OS');
+    expect(html).toContain('Software Web OS — Application Error');
+    expect(html).toContain('AlertProvider context initialization failed');
+  });
+
+  it('allows a dismissed window to reopen and render fresh content', () => {
+    let isOpen = true;
+    const boundary = new ErrorBoundary({
+      fallbackTitle: 'HOTWIRE',
+      onDismiss: () => { isOpen = false; }
+    });
+
+    // 1. Crash state
+    boundary.state = {
+      hasError: true,
+      error: new Error('Simulated runtime error in Hotwire'),
+      errorInfo: null
+    };
+
+    // 2. User dismisses window
+    boundary.handleDismiss();
+    expect(isOpen).toBe(false);
+
+    // 3. Reopening window mounts fresh ErrorBoundary
+    const freshBoundary = new ErrorBoundary({
+      fallbackTitle: 'HOTWIRE',
+      children: <div data-testid="hotwire-view">Fresh Hotwire Drops</div>
+    });
+    const freshHtml = renderToString(freshBoundary.render() as React.ReactElement);
+    expect(freshHtml).toContain('Fresh Hotwire Drops');
+    expect(freshHtml).not.toContain('Application Error');
   });
 });
 

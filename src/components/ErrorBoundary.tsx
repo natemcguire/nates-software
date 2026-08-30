@@ -9,6 +9,7 @@ export interface ErrorBoundaryProps {
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
   fallback?: ReactNode | ((error: Error, reset: () => void) => ReactNode);
   isRoot?: boolean;
+  resetKeys?: any[];
 }
 
 export interface ErrorBoundaryState {
@@ -40,6 +41,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.props.onError?.(error, errorInfo);
   }
 
+  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
+    if (this.state.hasError && this.props.resetKeys && prevProps.resetKeys) {
+      const hasChanged = this.props.resetKeys.some(
+        (key, index) => !Object.is(key, prevProps.resetKeys?.[index])
+      );
+      if (hasChanged) {
+        this.handleReset();
+      }
+    }
+  }
+
   handleReset = (): void => {
     this.setState({
       hasError: false,
@@ -50,11 +62,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   };
 
   handleDismiss = (): void => {
-    if (this.props.onDismiss) {
-      this.props.onDismiss();
-    } else {
-      this.handleReset();
-    }
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null
+    });
+    this.props.onDismiss?.();
   };
 
   handleReloadPage = (): void => {
@@ -176,7 +189,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
 
     return (
-      <div className="h-full w-full flex items-center justify-center p-3 bg-[#ece9d8] overflow-auto">
+      <div className="fixed inset-0 bg-black/25 flex items-center justify-center p-4 z-40">
         {panelContent}
       </div>
     );
