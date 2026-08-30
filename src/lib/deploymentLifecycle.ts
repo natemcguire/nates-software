@@ -223,6 +223,32 @@ export function parseManifestOverride(
   }
 }
 
+function isRealBuildCommand(cmd: string | undefined): boolean {
+  if (!cmd || typeof cmd !== 'string') return false;
+  const trimmed = cmd.trim();
+  if (!trimmed) return false;
+  if (trimmed === ':' || trimmed === 'true' || trimmed === 'exit 0') return false;
+  if (/^echo(\s+|$)/i.test(trimmed)) return false;
+  if (/^exit\s+0$/i.test(trimmed)) return false;
+  return true;
+}
+
+function isStaticServeCommand(cmd: string | undefined): boolean {
+  if (!cmd || typeof cmd !== 'string') return false;
+  const trimmed = cmd.trim().toLowerCase();
+  return (
+    trimmed.startsWith('npx serve') ||
+    trimmed.startsWith('serve ') ||
+    trimmed === 'serve' ||
+    trimmed.startsWith('npx http-server') ||
+    trimmed.startsWith('http-server') ||
+    trimmed.startsWith('npx live-server') ||
+    trimmed.startsWith('live-server') ||
+    trimmed.startsWith('npx browser-sync') ||
+    trimmed.startsWith('browser-sync')
+  );
+}
+
 /**
  * RIG runtime detection: inspects repository file list and contents to produce a deployment plan.
  */
@@ -232,6 +258,8 @@ export function detectRigRuntime(
 ): DeploymentPlanResult {
   const normalizedFiles = files.map(f => f.replace(/^\/+/, '').trim());
   const fileSet = new Set(normalizedFiles.map(f => f.toLowerCase()));
+  const hasStaticEntry = fileSet.has('index.html') || fileSet.has('public/index.html') || fileSet.has('dist/index.html');
+  const staticEntry = fileSet.has('index.html') ? 'index.html' : (fileSet.has('dist/index.html') ? 'dist/index.html' : 'public/index.html');
 
   // 1. Check for optional manifest override
   const manifestCandidates = ['slop.json', 'deploy.json', 'rig.json', 'app.json', 'manifest.json'];
@@ -284,7 +312,7 @@ export function detectRigRuntime(
     };
   }
 
-  // 3. Node.js (package.json) Detection
+  // 3. Node.js (package.json) Detection vs Static Web with package.json
   if (fileSet.has('package.json')) {
     const pkgContent = getContent('package.json');
     let pkg: any = {};
@@ -292,12 +320,46 @@ export function detectRigRuntime(
       try { pkg = JSON.parse(pkgContent); } catch {}
     }
 
-    const hasBuildScript = Boolean(pkg?.scripts?.build);
-    const hasStartScript = Boolean(pkg?.scripts?.start);
-    const mainFile = pkg?.main || (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : 'dist/index.js'));
+    const rawBuild = typeof pkg?.scripts?.build === 'string' ? pkg.scripts.build : undefined;
+    const rawStart = typeof pkg?.scripts?.start === 'string' ? pkg.scripts.start : undefined;
+    const hasBuildScript = isRealBuildCommand(rawBuild);
+    const hasStartScript = Boolean(rawStart && rawStart.trim().length > 0 && !isStaticServeCommand(rawStart));
+    const mainField = typeof pkg?.main === 'string' ? pkg.main.trim() : '';
+    const mainIsHtml = mainField.toLowerCase().endsWith('.html') || mainField.toLowerCase().endsWith('.htm');
+
+    // If repo has index.html and no real build script and no real Node server start script (e.g. dronehunter),
+    // and no standalone server file (server.js, etc.), classify as STATIC!
+    if (hasStaticEntry && !hasBuildScript && (!hasStartScript || isStaticServeCommand(rawStart))) {
+      const hasServerFile = !mainIsHtml && (fileSet.has('server.js') || fileSet.has('server.mjs') || fileSet.has('server.ts') || fileSet.has('app.js'));
+      if (!hasServerFile) {
+        const defaultPlan: DeploymentPlan = {
+          detectedType: 'static',
+          buildCommand: undefined,
+          startCommand: 'static-pages-runtime',
+          port: 80,
+          healthEndpoint: '/',
+          memoryMb: 128,
+          entrypointFile: staticEntry,
+          manifestApplied: false,
+          inferredFrom: ['package.json', staticEntry]
+        };
+
+        const finalPlan = applyManifest(defaultPlan, manifestOverrides, manifestFile);
+        return {
+          success: true,
+          isDeployable: true,
+          detectedType: 'static',
+          plan: finalPlan,
+          reasons: [`Static web entrypoint found at '${staticEntry}' with no Node build/server script required.`]
+        };
+      }
+    }
+
+    const mainCandidate = mainField || (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : (fileSet.has('app.js') ? 'app.js' : 'dist/index.js')));
+    const mainFile = mainIsHtml ? (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : (fileSet.has('app.js') ? 'app.js' : 'index.js'))) : mainCandidate;
 
     const buildCmd = hasBuildScript ? 'npm run build' : undefined;
-    const startCmd = hasStartScript ? 'npm start' : `node ${mainFile}`;
+    const startCmd = hasStartScript ? 'npm start' : (mainIsHtml ? 'static-pages-runtime' : `node ${mainFile}`);
 
     const defaultPlan: DeploymentPlan = {
       detectedType: 'node',
