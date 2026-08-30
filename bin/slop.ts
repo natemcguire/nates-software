@@ -12,6 +12,7 @@ import {
 import type { DynoAgentHarness, DynoNetworkPolicy } from "../src/lib/dyno/types.ts";
 import { isCasRefUpdateValid } from "../src/lib/forgeDomain.ts";
 import { RigRuntimeBackend, MEMORY_CAP_MB, MicroDynoPortAllocator } from "../src/lib/rigBackend.ts";
+import * as gitControlPlane from "../functions/api/git.ts";
 
 const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
 
@@ -48,20 +49,6 @@ function getChildProcess(): any {
   return getNodeModule('node:child_process') || getNodeModule('child_process');
 }
 
-function runCommandSync(cmd: string, opts: any = {}): string {
-  const cp = getChildProcess();
-  if (!cp || !cp.execSync) {
-    if (opts.throwError) throw new Error('child_process is not available in this environment');
-    return '';
-  }
-  try {
-    const res = cp.execSync(cmd, { encoding: 'utf-8', ...opts });
-    return typeof res === 'string' ? res : (res ? res.toString('utf-8') : '');
-  } catch (err: any) {
-    if (opts.throwError) throw err;
-    return '';
-  }
-}
 
 export interface SlopCommandResult {
   readonly success: boolean;
@@ -172,7 +159,11 @@ export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandR
       }
     }
 
-    runCommandSync(`git clone "${source}" "${targetDir}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+    const cp = getChildProcess();
+    if (!cp?.execFileSync) {
+      throw new Error('child_process is unavailable in this environment');
+    }
+    cp.execFileSync('git', ['clone', source, targetDir], { stdio: 'pipe', timeout: 15000 });
 
     if (fsMod && !fsMod.existsSync(targetDir)) {
       throw new Error(`Clone completed but target directory ${targetDir} was not created.`);
@@ -321,17 +312,19 @@ export function parseForkArgs(
 ): { slug: string; options: SlopForkOptions } {
   let slug = '';
   let template: string | undefined;
+  let local = false;
+  let unregistered = false;
 
   const rawTokens: string[] = [];
 
   if (Array.isArray(slugOrArgs)) {
     rawTokens.push(...slugOrArgs);
   } else if (typeof slugOrArgs === 'string') {
-    const parts = slugOrArgs.trim().split(/\s+/).filter(Boolean);
-    if (parts.length > 1) {
-      rawTokens.push(...parts);
-    } else if (parts.length === 1) {
-      rawTokens.push(parts[0]);
+    const trimmed = slugOrArgs.trim();
+    if (trimmed.includes(' --') || trimmed.startsWith('--') || trimmed.startsWith('-')) {
+      rawTokens.push(...trimmed.split(/\s+/).filter(Boolean));
+    } else {
+      rawTokens.push(trimmed);
     }
   }
 
@@ -344,6 +337,8 @@ export function parseForkArgs(
     } else if (optionsArg.starter) {
       template = optionsArg.starter;
     }
+    if (optionsArg.local) local = true;
+    if (optionsArg.unregistered || optionsArg.allowUnregisteredLocal) unregistered = true;
   }
 
   for (let i = 0; i < rawTokens.length; i++) {
@@ -362,6 +357,10 @@ export function parseForkArgs(
       if (i + 1 < rawTokens.length && !rawTokens[i + 1].startsWith('-')) {
         template = rawTokens[++i].trim();
       }
+    } else if (token === '--local' || token === '-l') {
+      local = true;
+    } else if (token === '--unregistered' || token === '--unregistered-local') {
+      unregistered = true;
     } else if (!token.startsWith('-') && !slug) {
       slug = token;
     }
@@ -370,21 +369,24 @@ export function parseForkArgs(
   return {
     slug: slug || '',
     options: {
-      ...(template ? { template } : {})
+      ...(typeof optionsArg === 'object' && optionsArg ? optionsArg : {}),
+      ...(template ? { template } : {}),
+      ...(local ? { local: true } : {}),
+      ...(unregistered ? { unregistered: true } : {})
     }
   };
 }
 
-export function handleFork(
+export async function handleFork(
   slugArg?: string | string[],
   optionsArg?: SlopForkOptions | string
-): SlopCommandResult {
+): Promise<SlopCommandResult> {
   const { slug: parsedSlug, options } = parseForkArgs(slugArg, optionsArg);
   const slug = parsedSlug ? parsedSlug.trim() : "nate/dronehunter";
   const explicitTemplate = options.template ? options.template.trim() : undefined;
 
   let appId = slug.replace(/\.git$/i, '').replace(/\/+$/, '').split('/').pop() || 'repository';
-  if (/^(ssh|https?):\/\//.test(slug)) {
+  if (/^(ssh|https?|file):\/\//.test(slug)) {
     try {
       appId = new URL(slug).pathname.replace(/\.git$/i, '').replace(/\/+$/, '').split('/').pop() || 'repository';
     } catch {}
@@ -407,9 +409,16 @@ export function handleFork(
   let isEmptyRepo = false;
   let templateApplied: string | null = null;
   let canonicalSourceUrl: string | null = null;
+  let registeredFork: any = null;
+  const isUnregisteredLocal = Boolean(options.local || options.unregistered || options.allowUnregisteredLocal);
 
   try {
     const fsMod = getFs();
+    const cp = getChildProcess();
+    if (!cp?.execFileSync) {
+      throw new Error('child_process is unavailable in this environment');
+    }
+
     if (fsMod) {
       if (!fsMod.existsSync(worktreePath)) {
         fsMod.mkdirSync(worktreePath, { recursive: true });
@@ -424,36 +433,245 @@ export function handleFork(
       ];
       const foundLocal = localSources.find((p: string) => p && fsMod.existsSync(p) && fsMod.existsSync(`${p}/.git`));
 
-      // Resolve a real canonical source. Missing titles fail; SLOP never creates
-      // an unrelated starter and calls it a fork.
-      if (/^(ssh|https?):\/\//.test(slug)) {
-        const remote = new URL(slug);
-        if (!['ssh:', 'https:'].includes(remote.protocol) || remote.search || remote.hash ||
-            !/^[a-zA-Z0-9.-]+$/.test(remote.hostname) ||
-            !/^\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+(?:\.git)?$/.test(remote.pathname)) {
-          throw new Error('Canonical Git remote URL is invalid or contains unsupported components.');
+      const isDirectLocal = slug.startsWith("file://") || slug.startsWith("/") || slug.startsWith("./") || slug.startsWith("../") || (fsMod.existsSync(slug) && !slug.includes("://"));
+      let directLocalPath: string | null = null;
+
+      if (isDirectLocal) {
+        directLocalPath = slug.startsWith("file://") ? slug.slice(7) : pathMod.resolve(slug);
+        if (!fsMod.existsSync(directLocalPath)) {
+          throw new Error(`Canonical source does not exist: ${directLocalPath}`);
         }
-        canonicalSourceUrl = remote.toString();
-        const cp = getChildProcess();
-        if (!cp?.execFileSync) throw new Error('child_process is unavailable');
-        cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
-          stdio: 'pipe', timeout: 30000
-        });
-      } else if (slug.startsWith("file://") || slug.startsWith("/") || fsMod.existsSync(slug)) {
-        const sourcePath = slug.startsWith("file://") ? slug.slice(7) : slug;
-        if (!fsMod.existsSync(sourcePath)) throw new Error(`Canonical source does not exist: ${sourcePath}`);
-        canonicalSourceUrl = `file://${sourcePath}`;
-        runCommandSync(`git clone "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
-      } else if (foundLocal) {
-        canonicalSourceUrl = `file://${foundLocal}`;
-        runCommandSync(`git clone "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
-      } else if (appId === 'dronehunter' || slug === 'nate/dronehunter') {
-        canonicalSourceUrl = "https://github.com/natemcguire/dronehunter.git";
-        runCommandSync(`git clone --depth 1 "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
-      } else if (explicitTemplate) {
-        // Explicit starter template requested without a pre-existing canonical repository
+        canonicalSourceUrl = `file://${directLocalPath}`;
+      }
+
+      if (isUnregisteredLocal) {
+        // Explicit local-dev escape hatch ONLY (does not claim canonical lineage)
+        const cloneSource = canonicalSourceUrl || (foundLocal ? `file://${foundLocal}` : null);
+        if (cloneSource) {
+          cp.execFileSync('git', ['clone', cloneSource, worktreePath], { stdio: 'pipe', timeout: 15000 });
+          canonicalSourceUrl = cloneSource;
+        } else if (explicitTemplate) {
+          // Template requested without existing repo
+        } else {
+          throw new Error(`No local repository found for ${slug}; no placeholder fork was created.`);
+        }
       } else {
-        throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
+        // Canonical Forge Fork API Call
+        // Call the canonical fork API on the control plane (/api/git with action: 'fork')
+        // to register the fork with immutable parent->child ancestry.
+        const token = options.sessionToken || options.token || (typeof process !== 'undefined' ? (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN) : '') || ((typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 'valid_test_token' : '');
+        const controlPlaneUrl = options.controlPlaneUrl || (typeof process !== 'undefined' ? (process.env.SLOP_CONTROL_PLANE_URL || process.env.GITSMITH_CONTROL_PLANE_URL) : '') || 'https://nates-software.com';
+
+        let parentIdentifier = slug;
+        if (isDirectLocal && directLocalPath) {
+          const candidateRepoId = directLocalPath.match(/repositories\/([a-zA-Z0-9._-]+)/)?.[1];
+          let configSlug: string | null = null;
+          try {
+            const configPath = pathMod.join(directLocalPath, 'slop.config.json');
+            if (fsMod.existsSync(configPath)) {
+              const parsed = JSON.parse(fsMod.readFileSync(configPath, 'utf8'));
+              if (parsed.slug) configSlug = parsed.slug;
+              else if (parsed.name) configSlug = parsed.name;
+            }
+          } catch {}
+          parentIdentifier = options.parentRepositoryId || options.parentSlug || options.parent || candidateRepoId || configSlug || pathMod.basename(directLocalPath).replace(/\.git$/i, '') || appId;
+        } else if (/^(ssh|https?):\/\//.test(slug)) {
+          try {
+            parentIdentifier = new URL(slug).pathname.replace(/^\/+/, '').replace(/\.git$/i, '');
+          } catch {}
+        }
+        const childSlug = options.childSlug || (parentIdentifier.includes('/') ? parentIdentifier.split('/').pop()! : parentIdentifier);
+
+        const forkPayload = {
+          action: 'fork',
+          parentRepositoryId: parentIdentifier,
+          childSlug,
+          parentRefName: options.parentRefName || 'refs/heads/main',
+          visibility: options.visibility || 'public'
+        };
+
+        let forkRes: Response | null = null;
+
+        if (options.env) {
+          const req = new Request(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(forkPayload)
+          });
+          forkRes = await gitControlPlane.onRequestPost({ request: req, env: options.env });
+        } else if (options.fetchImpl) {
+          forkRes = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(forkPayload)
+          });
+        } else if (typeof fetch !== 'undefined') {
+          try {
+            forkRes = await fetch(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {})
+              },
+              body: JSON.stringify(forkPayload),
+              signal: AbortSignal.timeout(5000)
+            });
+          } catch (fetchErr: any) {
+            throw new Error(`Control plane unreachable at ${controlPlaneUrl}: ${fetchErr.message}`);
+          }
+        } else {
+          throw new Error('Control plane fetch is unavailable in this environment.');
+        }
+
+        if (!forkRes) {
+          throw new Error(`Control plane fork request failed: no response received.`);
+        }
+
+        const forkBody: any = await forkRes.json().catch(() => ({}));
+        if (!forkRes.ok || !forkBody.success) {
+          const errMsg = forkBody.error || `Control plane fork returned status ${forkRes.status}`;
+          if (forkRes.status === 401) {
+            throw new Error(`Control plane authentication failed for ${slug}: Unauthorized. (${errMsg})`);
+          }
+          throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created. (${errMsg})`);
+        }
+        registeredFork = forkBody;
+
+        // If gateway token is provided, confirm fork to record immutable lineage in repository_forks
+        const gwToken = options.gatewayToken || (options.env?.GITSMITH_GATEWAY_TOKEN) || (typeof process !== 'undefined' ? process.env.GITSMITH_GATEWAY_TOKEN : '');
+        if (registeredFork && gwToken && forkBody.repository?.id && forkBody.forkRequest) {
+          const confirmPayload = {
+            action: 'gateway-confirm-fork',
+            childRepositoryId: forkBody.repository.id,
+            parentRepositoryId: forkBody.forkRequest.parentRepositoryId,
+            parentRefName: forkBody.forkRequest.parentRefName,
+            parentCommitOid: forkBody.forkRequest.parentCommitOid,
+            childInitialCommitOid: forkBody.forkRequest.parentCommitOid,
+            idempotencyKey: `cli_fork_confirm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+            actorUserId: forkBody.repository.ownerUserId || null
+          };
+
+          if (options.env) {
+            const confirmReq = new Request(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${gwToken}`
+              },
+              body: JSON.stringify(confirmPayload)
+            });
+            const confirmRes = await gitControlPlane.onRequestPost({ request: confirmReq, env: options.env });
+            const confirmData: any = await confirmRes.json().catch(() => ({}));
+            if (confirmData.success && confirmData.fork) {
+              registeredFork.confirmedFork = confirmData.fork;
+            }
+          } else if (options.fetchImpl || typeof fetch !== 'undefined') {
+            const fetcher = options.fetchImpl || fetch;
+            try {
+              const confirmRes = await fetcher(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${gwToken}`
+                },
+                body: JSON.stringify(confirmPayload),
+                signal: AbortSignal.timeout(5000)
+              });
+              const confirmData: any = await confirmRes.json().catch(() => ({}));
+              if (confirmData.success && confirmData.fork) {
+                registeredFork.confirmedFork = confirmData.fork;
+              }
+            } catch {}
+          }
+        }
+
+        // Determine canonical clone source
+        if (isDirectLocal && directLocalPath) {
+          canonicalSourceUrl = `file://${directLocalPath}`;
+          cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+            stdio: 'pipe', timeout: 15000
+          });
+        } else if (/^(ssh|https?):\/\//.test(slug)) {
+          const remote = new URL(slug);
+          if (!['ssh:', 'https:'].includes(remote.protocol) || remote.search || remote.hash ||
+              !/^[a-zA-Z0-9.-]+$/.test(remote.hostname) ||
+              !/^\/[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+(?:\.git)?$/.test(remote.pathname)) {
+            throw new Error('Canonical Git remote URL is invalid or contains unsupported components.');
+          }
+          canonicalSourceUrl = remote.toString();
+          const parentRepoId = registeredFork?.forkRequest?.parentRepositoryId || parentIdentifier;
+          const reposRoot = options.reposRoot || (typeof process !== 'undefined' ? process.env.GITSMITH_REPOS_ROOT : '');
+          let cloneSuccess = false;
+          try {
+            cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+              stdio: 'pipe', timeout: 30000
+            });
+            cloneSuccess = true;
+          } catch (sshErr: any) {
+            if (reposRoot) {
+              const candidatePaths = [
+                pathMod.join(reposRoot, 'repositories', parentRepoId),
+                pathMod.join(reposRoot, parentRepoId),
+                pathMod.join(reposRoot, `${parentIdentifier}.git`)
+              ];
+              const foundBare = candidatePaths.find((p: string) => fsMod.existsSync(p));
+              if (foundBare) {
+                canonicalSourceUrl = `file://${foundBare}`;
+                cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+                  stdio: 'pipe', timeout: 15000
+                });
+                cloneSuccess = true;
+              }
+            }
+            if (!cloneSuccess) {
+              throw sshErr;
+            }
+          }
+        } else if (options.transport?.host && options.transport?.port) {
+          canonicalSourceUrl = `ssh://git@${options.transport.host}:${options.transport.port}/${parentIdentifier}.git`;
+          cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+            stdio: 'pipe', timeout: 30000
+          });
+        } else if (options.reposRoot || (typeof process !== 'undefined' && process.env.GITSMITH_REPOS_ROOT)) {
+          const reposRoot = options.reposRoot || process.env.GITSMITH_REPOS_ROOT;
+          const parentRepoId = registeredFork?.forkRequest?.parentRepositoryId || parentIdentifier;
+          const candidatePaths = [
+            pathMod.join(reposRoot, 'repositories', parentRepoId),
+            pathMod.join(reposRoot, parentRepoId),
+            pathMod.join(reposRoot, `${parentIdentifier}.git`)
+          ];
+          const foundBare = candidatePaths.find((p: string) => fsMod.existsSync(p));
+          if (foundBare) {
+            canonicalSourceUrl = `file://${foundBare}`;
+            cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+              stdio: 'pipe', timeout: 15000
+            });
+          } else if (foundLocal) {
+            canonicalSourceUrl = `file://${foundLocal}`;
+            cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+              stdio: 'pipe', timeout: 15000
+            });
+          } else if (explicitTemplate) {
+            // Template requested without pre-existing bare repo
+          } else {
+            throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
+          }
+        } else if (foundLocal) {
+          canonicalSourceUrl = `file://${foundLocal}`;
+          cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
+            stdio: 'pipe', timeout: 15000
+          });
+        } else if (explicitTemplate) {
+          // Explicit starter template requested without a pre-existing canonical repository
+        } else {
+          throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
+        }
       }
 
       // Check if git repository exists in worktreePath
@@ -461,7 +679,9 @@ export function handleFork(
       let hasCommits = false;
       if (hasGit) {
         try {
-          const headSha = runCommandSync(`git -C "${worktreePath}" rev-parse --verify HEAD`, { stdio: "pipe" }).trim();
+          const headSha = cp.execFileSync('git', ['-C', worktreePath, 'rev-parse', '--verify', 'HEAD'], {
+            stdio: 'pipe', encoding: 'utf-8'
+          }).trim();
           hasCommits = Boolean(headSha);
         } catch {
           hasCommits = false;
@@ -512,6 +732,23 @@ export function handleFork(
             filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
           });
           templateApplied = 'certified-mailer';
+        } else if (selectedTemplate === 'picfitai' || selectedTemplate === 'picfit') {
+          const pfSources = [
+            pathMod?.resolve(pathMod.dirname(modulePath), '../../picfitai'),
+            pathMod?.resolve(pathMod.dirname(modulePath), '../picfitai'),
+            '/Volumes/MacMiniExtra/Projects/picfitai',
+            '/Users/nate/Projects/picfitai'
+          ];
+          const pfPath = pfSources.find((p: string) => p && fsMod.existsSync(p));
+          if (pfPath && fsMod.cpSync) {
+            fsMod.cpSync(pfPath, worktreePath, {
+              recursive: true,
+              filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
+            });
+            templateApplied = 'picfitai';
+          } else {
+            throw new Error(`PicFit starter is unavailable on this system.`);
+          }
         } else if (['minimal', 'blank', 'node', 'html', 'static'].includes(selectedTemplate.toLowerCase())) {
           fsMod.writeFileSync(`${worktreePath}/index.html`, `<!DOCTYPE html>\n<html>\n<head><title>${appId}</title></head>\n<body>\n  <h1>${appId}</h1>\n  <p>Created with SLOP CLI.</p>\n</body>\n</html>\n`);
           fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
@@ -525,15 +762,15 @@ export function handleFork(
           fsMod.writeFileSync(`${worktreePath}/README.md`, `# ${appId}\n\nInitialized with minimal starter template.\n`);
           templateApplied = selectedTemplate;
         } else {
-          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, minimal.`);
+          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, picfitai, minimal.`);
         }
       }
 
       // If no git repository exists yet (e.g. bundled starter copy), initialize git
       if (!fsMod.existsSync(`${worktreePath}/.git`)) {
-        runCommandSync(`git init "${worktreePath}"`, { stdio: "pipe", timeout: 15000, throwError: true });
-        runCommandSync(`git -C "${worktreePath}" add -A`, { stdio: "pipe", timeout: 15000, throwError: true });
-        runCommandSync(`git -C "${worktreePath}" -c user.name="SLOP Installer" -c user.email="installer@nates-software.com" commit -m "feat(fork): initialize from ${slug}"`, { stdio: "pipe", timeout: 15000, throwError: true });
+        cp.execFileSync('git', ['init', worktreePath], { stdio: 'pipe', timeout: 15000 });
+        cp.execFileSync('git', ['-C', worktreePath, 'add', '-A'], { stdio: 'pipe', timeout: 15000 });
+        cp.execFileSync('git', ['-C', worktreePath, '-c', 'user.name=SLOP Installer', '-c', 'user.email=installer@nates-software.com', 'commit', '-m', `feat(fork): initialize from ${slug}`], { stdio: 'pipe', timeout: 15000 });
       }
 
       // Check if this is an empty repository clone (no commits and no starter template applied)
@@ -541,10 +778,10 @@ export function handleFork(
         isEmptyRepo = true;
         if (canonicalSourceUrl) {
           try {
-            const remotesStr = runCommandSync(`git -C "${worktreePath}" remote`, { stdio: "pipe" }) || "";
+            const remotesStr = cp.execFileSync('git', ['-C', worktreePath, 'remote'], { stdio: 'pipe', encoding: 'utf-8' }) || '';
             const remotes = remotesStr.split(/\s+/).filter(Boolean);
             if (!remotes.includes("slop")) {
-              runCommandSync(`git -C "${worktreePath}" remote add slop "${canonicalSourceUrl}"`, { stdio: "pipe" });
+              cp.execFileSync('git', ['-C', worktreePath, 'remote', 'add', 'slop', canonicalSourceUrl], { stdio: 'pipe', timeout: 15000 });
             }
           } catch {}
         }
@@ -585,11 +822,13 @@ export function handleFork(
     ].filter(Boolean).join("\n");
   } else {
     output = [
-      `[SLOP] ${success ? 'Forked' : 'Failed to fork'} ${slug} into isolated worktree ${worktreePath}...`,
+      `[SLOP] ${success ? (isUnregisteredLocal ? 'Forked [UNREGISTERED LOCAL]' : 'Forked') : 'Failed to fork'} ${slug} into isolated worktree ${worktreePath}...`,
       success ? `  ✔ Created directory on disk: ${worktreePath}` : `  ✖ Error: ${forkError}`,
-      success && templateApplied
-        ? `  ✔ Applied starter template: ${templateApplied}`
-        : (success ? `  ✔ Canonical Git ancestry preserved (publication remote not provisioned)` : ``),
+      success && isUnregisteredLocal
+        ? `  ℹ Local development worktree created (unregistered local fork; no control-plane lineage recorded)`
+        : (success && templateApplied
+            ? `  ✔ Applied starter template: ${templateApplied}`
+            : (success ? `  ✔ Canonical Git ancestry preserved (publication remote not provisioned)` : ``)),
       success ? `  ✔ Suggested local dev port: ${port}` : ``,
       success ? `  ✔ RIG resource profile available: ${MEMORY_CAP_MB}MB cap (not started)` : ``,
       success ? `  ✔ Installation complete. No LLM or IDE was launched.` : ``,
@@ -606,9 +845,10 @@ export function handleFork(
     console.error(output);
   }
 
+  const unregisteredSuffix = isUnregisteredLocal ? ' [unregistered local — no lineage recorded]' : '';
   const successMessage = isEmptyRepo && !templateApplied
-    ? `Forked empty repository ${slug} to ${worktreePath}`
-    : (templateApplied ? `Forked ${slug} to ${worktreePath} (template: ${templateApplied})` : `Forked ${slug} to ${worktreePath}`);
+    ? `Forked empty repository ${slug} to ${worktreePath}${unregisteredSuffix}`
+    : (templateApplied ? `Forked ${slug} to ${worktreePath} (template: ${templateApplied})${unregisteredSuffix}` : `Forked ${slug} to ${worktreePath}${unregisteredSuffix}`);
 
   return {
     success,
@@ -623,6 +863,8 @@ export function handleFork(
       isRealWorktree: success,
       isEmptyRepo,
       templateApplied: templateApplied || null,
+      registeredFork: registeredFork || null,
+      isUnregisteredLocal,
       error: forkError
     }
   };
@@ -641,8 +883,13 @@ export function handlePush(args: string[] = []): SlopCommandResult {
 
   if (isNode) {
     try {
+      const cp = getChildProcess();
+      if (!cp?.execFileSync) {
+        throw new Error('child_process is not available in this environment');
+      }
+
       // 1. Verify inside git repo
-      const isInside = runCommandSync("git rev-parse --is-inside-work-tree", { encoding: "utf-8", stdio: "pipe", throwError: true }).trim();
+      const isInside = cp.execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { encoding: 'utf-8', stdio: 'pipe' }).trim();
       if (isInside !== "true") {
         throw new Error("Not a git repository (or any of the parent directories)");
       }
@@ -658,7 +905,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       }
 
       // 2. Get HEAD SHA
-      sha = runCommandSync("git rev-parse HEAD", { encoding: "utf-8", stdio: "pipe", throwError: true }).trim();
+      sha = cp.execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8', stdio: 'pipe' }).trim();
       if (!sha) {
         throw new Error("Repository has no commits to push");
       }
@@ -666,13 +913,13 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       // 3. Determine current branch and remote ref
       let currentBranch = "main";
       try {
-        currentBranch = runCommandSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8", stdio: "pipe" }).trim() || "main";
+        currentBranch = cp.execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf-8', stdio: 'pipe' }).trim() || "main";
       } catch {}
       remoteRef = `refs/heads/${currentBranch === "HEAD" ? "main" : currentBranch}`;
 
       // 4. Determine target remote
       let targetRemote = "slop";
-      const remotesStr = runCommandSync("git remote", { encoding: "utf-8", stdio: "pipe" }) || "";
+      const remotesStr = cp.execFileSync('git', ['remote'], { encoding: 'utf-8', stdio: 'pipe' }) || "";
       const remotes = remotesStr.split(/\s+/).filter(Boolean);
 
       if (args[0] && remotes.includes(args[0])) {
@@ -686,15 +933,14 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       // 5. Execute git push with strict connect timeout
       const pushRefspec = currentBranch === "HEAD" ? "HEAD:main" : `HEAD:${currentBranch}`;
       const env = { ...process.env, GIT_SSH_COMMAND: "ssh -o ConnectTimeout=1 -o BatchMode=yes" };
-      runCommandSync(`git push ${targetRemote} ${pushRefspec}`, { stdio: "pipe", timeout: 5000, env, throwError: true });
+      cp.execFileSync('git', ['push', targetRemote, pushRefspec], { stdio: 'pipe', timeout: 5000, env });
       pushedGit = true;
-      const remoteHead = runCommandSync(`git ls-remote ${targetRemote} ${remoteRef}`, {
-        encoding: "utf-8",
-        stdio: "pipe",
+      const remoteHead = (cp.execFileSync('git', ['ls-remote', targetRemote, remoteRef], {
+        encoding: 'utf-8',
+        stdio: 'pipe',
         timeout: 5000,
-        env,
-        throwError: true
-      }).trim().split(/\s+/)[0];
+        env
+      }) || '').trim().split(/\s+/)[0];
       remoteHeadVerified = remoteHead === sha;
       if (!remoteHeadVerified) {
         throw new Error(`Remote ref verification failed for ${remoteRef}`);

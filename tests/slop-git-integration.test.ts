@@ -181,8 +181,8 @@ describe('Local Bare Repository Git Integration', () => {
     expect(savedConfig.price).toBe(25);
   });
 
-  it('should fork a project into an isolated real worktree with git repository initialized', () => {
-    const forkRes = handleFork(workRepoPath);
+  it('should fork a project into an isolated real worktree with git repository initialized', async () => {
+    const forkRes = await handleFork(workRepoPath, { local: true });
 
     expect(forkRes.success).toBe(true);
     expect(forkRes.command).toBe('fork');
@@ -200,19 +200,19 @@ describe('Local Bare Repository Git Integration', () => {
     rmSync(worktreePath, { recursive: true, force: true });
   });
 
-  it('never fabricates a placeholder when canonical fork source is missing', () => {
-    const forkRes = handleFork('nate/not-a-real-title');
+  it('never fabricates a placeholder when canonical fork source is missing', async () => {
+    const forkRes = await handleFork('nate/not-a-real-title', { local: true });
     expect(forkRes.success).toBe(false);
     expect(forkRes.message).toContain('no placeholder fork was created');
     expect(existsSync(forkRes.data.worktreePath)).toBe(false);
   });
 
-  it('should truthfully fork an empty canonical repository without fabricating source', () => {
+  it('should truthfully fork an empty canonical repository without fabricating source', async () => {
     const emptyRepoDir = join(testRootDir, 'empty-canonical-repo');
     mkdirSync(emptyRepoDir, { recursive: true });
     execSync(`git init "${emptyRepoDir}"`, { stdio: 'pipe' });
 
-    const forkRes = handleFork(emptyRepoDir);
+    const forkRes = await handleFork(emptyRepoDir, { local: true });
     try {
       expect(forkRes.success).toBe(true);
       expect(forkRes.command).toBe('fork');
@@ -236,12 +236,12 @@ describe('Local Bare Repository Git Integration', () => {
     }
   });
 
-  it('should scaffold explicit template into empty canonical repository when requested', () => {
+  it('should scaffold explicit template into empty canonical repository when requested', async () => {
     const emptyRepoDir = join(testRootDir, 'empty-canonical-template-repo');
     mkdirSync(emptyRepoDir, { recursive: true });
     execSync(`git init "${emptyRepoDir}"`, { stdio: 'pipe' });
 
-    const forkRes = handleFork([emptyRepoDir, '--template=dronehunter']);
+    const forkRes = await handleFork([emptyRepoDir, '--template=dronehunter', '--local']);
     try {
       expect(forkRes.success).toBe(true);
       expect(forkRes.data.templateApplied).toBe('dronehunter');
@@ -259,13 +259,13 @@ describe('Local Bare Repository Git Integration', () => {
     }
   });
 
-  it('should truthfully clone empty repo named dronehunter without fabricating files unless --template is passed', () => {
+  it('should truthfully clone empty repo named dronehunter without fabricating files unless --template is passed', async () => {
     const emptyDronehunterDir = join(testRootDir, 'test-empty-dh-repo', 'dronehunter');
     mkdirSync(emptyDronehunterDir, { recursive: true });
     execSync(`git init "${emptyDronehunterDir}"`, { stdio: 'pipe' });
 
     // Without --template: must NOT fabricate files even though named dronehunter
-    const forkResEmpty = handleFork(emptyDronehunterDir);
+    const forkResEmpty = await handleFork(emptyDronehunterDir, { local: true });
     try {
       expect(forkResEmpty.success).toBe(true);
       expect(forkResEmpty.data.isEmptyRepo).toBe(true);
@@ -285,7 +285,7 @@ describe('Local Bare Repository Git Integration', () => {
     }
 
     // With --template dronehunter: must scaffold
-    const forkResTmpl = handleFork([emptyDronehunterDir, '--template=dronehunter']);
+    const forkResTmpl = await handleFork([emptyDronehunterDir, '--template=dronehunter', '--local']);
     try {
       expect(forkResTmpl.success).toBe(true);
       expect(forkResTmpl.data.templateApplied).toBe('dronehunter');

@@ -31,7 +31,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(drone.appId).toBe('dronehunter');
       expect(drone.name).toBe('DroneHunter 95');
       expect(drone.slug).toBe('nate/dronehunter');
-      expect(drone.repoUrl).toContain('github.com/natemcguire/dronehunter.git');
+      expect(drone.repoUrl).toBe('');
       expect(drone.sshRemote).toBe('');
       expect(drone.defaultPort).toBe(3004);
       expect(drone.sqliteDatabase).toBeUndefined();
@@ -41,8 +41,9 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(mailer.appId).toBe('certified-mailer');
       expect(mailer.slug).toBe('nate/certified-mailer');
 
-      expect(getAppCoordinate('wallart').slug).toBe('nate/wallart');
-      expect(getAppCoordinate('american-gardener').slug).toBe('nate/american-gardener');
+      const picfit = getAppCoordinate('picfitai');
+      expect(picfit.appId).toBe('picfitai');
+      expect(picfit.slug).toBe('nate/picfitai');
     });
 
     it('should handle custom repository coordinates cleanly', () => {
@@ -71,8 +72,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
     it('should preserve backward-compatible WORKTREE_CONFIGS', () => {
       expect(WORKTREE_CONFIGS.dronehunter.defaultPort).toBe(3004);
       expect(WORKTREE_CONFIGS['certified-mailer'].defaultPort).toBe(3005);
-      expect(WORKTREE_CONFIGS.wallart.defaultPort).toBe(3002);
-      expect(WORKTREE_CONFIGS['american-gardener'].defaultPort).toBe(4173);
+      expect(WORKTREE_CONFIGS.picfitai.defaultPort).toBe(3006);
     });
   });
 
@@ -98,8 +98,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       const mailerPresets = getFeaturePresets('certified-mailer');
       expect(mailerPresets.length).toBeGreaterThanOrEqual(3);
 
-      expect(getFeaturePresets('wallart').length).toBeGreaterThanOrEqual(1);
-      expect(getFeaturePresets('american-gardener').length).toBeGreaterThanOrEqual(1);
+      const picfitPresets = getFeaturePresets('picfitai');
+      expect(picfitPresets.length).toBeGreaterThanOrEqual(3);
     });
   });
 
@@ -186,7 +186,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
 
       expect(manifest.localAgent.command).toBe('slop mod refs/features/dh-radar/v1.0.0');
       expect(plan.steps[1].command).toContain(manifest.localAgent.command);
-      expect(plan.singleLineCommand).toBe('slop fork "https://github.com/natemcguire/dronehunter.git"');
+      expect(plan.singleLineCommand).toBe('slop fork "nate/dronehunter"');
       expect(plan.singleLineCommand).not.toContain('slop dyno');
     });
 
@@ -199,7 +199,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
         agent: 'agy'
       });
 
-      expect(plan.singleLineCommand).toBe('slop fork "https://github.com/natemcguire/dronehunter.git"');
+      expect(plan.singleLineCommand).toBe('slop fork "nate/dronehunter"');
       expect(plan.singleLineCommand).not.toContain('agy');
       expect(plan.worktreeDir).toBe('<worktree-path-printed-by-slop>');
       expect(plan.steps[1].command).toContain('git switch -c feature/dh-radar');
@@ -218,7 +218,7 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       });
 
       expect(plan.steps[0].title).toContain('Install into a Verified Local Worktree');
-      expect(plan.steps[0].command).toBe('slop fork "https://github.com/natemcguire/certified-mailer.git"');
+      expect(plan.steps[0].command).toBe('slop fork "nate/certified-mailer"');
       expect(plan.steps[0].requiredEvidence).toBeDefined();
 
       expect(plan.steps[1].title).toContain('Claude');

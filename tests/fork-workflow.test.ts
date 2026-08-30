@@ -61,8 +61,8 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
   });
 
   // Step 3: slop clone, fork, and push with truthful failure handling
-  it('Step 3: should create a structured local fork without contacting the remote gateway', () => {
-    const forkRes = handleFork('nate/dronehunter');
+  it('Step 3: should create a structured local fork without contacting the remote gateway', async () => {
+    const forkRes = await handleFork('nate/dronehunter', { local: true });
     try {
       expect(forkRes.success).toBe(true);
       expect(forkRes.command).toBe('fork');

@@ -194,12 +194,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   try {
     const user = await getSessionUser(request, env);
 
-    // 1. Single Repository Detail Query (by ID or owner + slug)
-    if (repositoryId || (ownerParam && slugParam)) {
+    // 1. Single Repository Detail Query (by ID or owner + slug or slug alone)
+    if (repositoryId || (ownerParam && slugParam) || (slugParam && !isListExplicit)) {
       let repository: any = null;
       if (repositoryId) {
         repository = await repositoryAccess(db, repositoryId, user?.id);
-      } else {
+      } else if (ownerParam && slugParam) {
         const repoRow = await db.prepare(`
           SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
                  r.slug, r.visibility, r.object_format AS objectFormat,
@@ -213,6 +213,40 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             AND r.slug = ?
         `).bind(user?.id || '', user?.id || '', ownerParam, ownerParam, slugParam).first();
         repository = repoRow;
+      } else if (slugParam) {
+        if (slugParam.includes('/')) {
+          const parts = slugParam.replace(/^\/+|\/+$/g, '').split('/');
+          const owner = parts[0];
+          const slug = parts.slice(1).join('/');
+          const repoRow = await db.prepare(`
+            SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+                   r.slug, r.visibility, r.object_format AS objectFormat,
+                   r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
+                   r.created_at AS createdAt, r.updated_at AS updatedAt,
+                   CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+            FROM repositories r
+            LEFT JOIN repository_members m
+              ON m.repository_id = r.id AND m.user_id = ?
+            WHERE (r.owner_user_id = ? OR r.owner_user_id = (SELECT id FROM users WHERE username = ?))
+              AND r.slug = ?
+          `).bind(user?.id || '', user?.id || '', owner, owner, slug).first();
+          repository = repoRow;
+        } else {
+          const repoRow = await db.prepare(`
+            SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+                   r.slug, r.visibility, r.object_format AS objectFormat,
+                   r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
+                   r.created_at AS createdAt, r.updated_at AS updatedAt,
+                   CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+            FROM repositories r
+            LEFT JOIN repository_members m
+              ON m.repository_id = r.id AND m.user_id = ?
+            WHERE r.slug = ?
+            ORDER BY (CASE WHEN r.owner_user_id = ? THEN 0 ELSE 1 END), r.created_at ASC
+            LIMIT 1
+          `).bind(user?.id || '', user?.id || '', slugParam, user?.id || '').first();
+          repository = repoRow;
+        }
       }
 
       if (!repository) return failure('Repository not found.', 404);
@@ -1537,19 +1571,68 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
   // --- Action: fork (Phase 1: Session-authenticated fork request) ---
   if (action === 'fork') {
-    const parentRepositoryId = String(body.parentRepositoryId || '').trim();
-    const childSlug = String(body.childSlug || body.slug || '').trim();
+    let rawParentId = String(body.parentRepositoryId || body.parentSlug || body.parent || body.slug || '').trim();
+    if (/^(ssh|https?|file):\/\//.test(rawParentId)) {
+      try {
+        rawParentId = new URL(rawParentId).pathname.replace(/^\/+/, '').replace(/\.git$/i, '');
+      } catch {}
+    }
+    if (!rawParentId) return failure('parentRepositoryId is required.', 400);
+
+    let childSlug = String(body.childSlug || '').trim();
+    if (!childSlug && body.slug && body.parentRepositoryId && body.slug !== body.parentRepositoryId) {
+      childSlug = String(body.slug).trim();
+    }
+    if (childSlug.includes('/')) {
+      childSlug = childSlug.split('/').pop()!;
+    }
     const parentRefName = String(body.parentRefName || 'refs/heads/main').trim();
     const visibility = ['public', 'unlisted', 'private'].includes(body.visibility) ? body.visibility : 'public';
 
-    if (!parentRepositoryId) return failure('parentRepositoryId is required.', 400);
-
-    const slugVal = validateRepositorySlug(childSlug);
-    if (!slugVal.valid) return failure(slugVal.error!, 400);
-
     try {
-      const parent = await repositoryAccess(db, parentRepositoryId, actor.id);
+      let parent = await repositoryAccess(db, rawParentId, actor.id);
+      if (!parent && rawParentId.includes('/')) {
+        const parts = rawParentId.replace(/^\/+|\/+$/g, '').split('/');
+        const owner = parts[0];
+        const slug = parts.slice(1).join('/');
+        parent = await db.prepare(`
+          SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+                 r.slug, r.visibility, r.object_format AS objectFormat,
+                 r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
+                 r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+          FROM repositories r
+          LEFT JOIN repository_members m
+            ON m.repository_id = r.id AND m.user_id = ?
+          WHERE (r.owner_user_id = ? OR r.owner_user_id = (SELECT id FROM users WHERE username = ?))
+            AND r.slug = ?
+        `).bind(actor.id, actor.id, owner, owner, slug).first();
+      }
+      if (!parent) {
+        parent = await db.prepare(`
+          SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+                 r.slug, r.visibility, r.object_format AS objectFormat,
+                 r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
+                 r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+          FROM repositories r
+          LEFT JOIN repository_members m
+            ON m.repository_id = r.id AND m.user_id = ?
+          WHERE r.slug = ?
+          ORDER BY (CASE WHEN r.owner_user_id = ? THEN 0 ELSE 1 END), r.created_at ASC
+          LIMIT 1
+        `).bind(actor.id, actor.id, rawParentId, actor.id).first();
+      }
+
       if (!parent) return failure('Parent repository not found.', 404);
+      const parentRepositoryId = (parent as any).id;
+
+      if (!childSlug) {
+        childSlug = (parent as any).slug;
+      }
+      const slugVal = validateRepositorySlug(childSlug);
+      if (!slugVal.valid) return failure(slugVal.error!, 400);
+
       if ((parent as any).status !== 'active') {
         return failure(`Parent repository must be active to fork (current: ${(parent as any).status}).`, 409);
       }
