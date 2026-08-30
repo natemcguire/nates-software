@@ -13,10 +13,22 @@ The registry is written atomically with mode `0600`. RIG application storage rem
 
 ## Secrets and services
 
-The launch scripts read credentials from macOS Keychain services rather than files or plist environment variables:
+The launch scripts read credentials from macOS Keychain services directly into process environment variables (`RIG_GATEWAY_SERVICE_SECRET`, `TUNNEL_TOKEN`) rather than files, plist environment variables, or process argv:
 
-- `com.nates-software.rig.gateway`
-- `com.nates-software.rig.tunnel`
+- `com.nates-software.rig.gateway`: RIG gateway service secret (loaded in `run-rig-gateway.sh`)
+- `com.nates-software.rig.tunnel`: Cloudflare tunnel token (loaded in `run-rig-tunnel.sh` — never in argv)
+
+To rotate or update credentials in Keychain:
+
+```bash
+# Rotate RIG service secret
+security add-generic-password -a "${USER}" -s com.nates-software.rig.gateway -w "<new-secret>" -U
+launchctl kickstart -k "gui/$(id -u)/com.nates-software.rig-gateway"
+
+# Rotate Cloudflare tunnel token
+security add-generic-password -a "${USER}" -s com.nates-software.rig.tunnel -w "<new-token>" -U
+launchctl kickstart -k "gui/$(id -u)/com.nates-software.rig-tunnel"
+```
 
 Installed user launch agents:
 
