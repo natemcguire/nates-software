@@ -1,10 +1,14 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import * as inboxApi from '../functions/api/inbox';
 import { AuthProvider } from '../src/context/AuthContext';
 import { InboxView } from '../src/views/InboxView';
 import { calculateFolderCounts, conversationForThread, filterThreadsByCategory, formatProposalStatus, InboxThread } from '../src/lib/inboxDomain';
+import { initBareRepo } from '../src/lib/gitsmith/gitStorage';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 
 const authHeaders = { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' };
@@ -15,7 +19,46 @@ const ownMessage = (id: string, extra: Record<string, unknown> = {}) => ({
 
 describe('INBOX.EXE live-mode integrity', () => {
   let ctx: TestD1Context;
-  beforeEach(async () => { ctx = await createTestD1Database({ foreignKeys: true }); });
+  let tempDir: string;
+  let reposRoot: string;
+
+  beforeEach(async () => {
+    ctx = await createTestD1Database({ foreignKeys: true });
+    tempDir = path.join('/tmp', `gitsmith-inbox-test-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
+    reposRoot = path.join(tempDir, 'repos');
+    fs.mkdirSync(reposRoot, { recursive: true });
+    process.env.GITSMITH_REPOS_ROOT = reposRoot;
+  });
+
+  afterEach(() => {
+    if (tempDir && fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  function setupTestRepo(storageKey: string) {
+    const initRes = initBareRepo(reposRoot, { storageKey, objectFormat: 'sha1', defaultRef: 'refs/heads/main' });
+    const workTree = path.join(tempDir, `wt-${Math.random().toString(36).substring(2, 7)}`);
+    fs.mkdirSync(workTree, { recursive: true });
+    execFileSync('git', ['init', workTree], { stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['config', 'user.email', 'tester@nates.software'], { cwd: workTree, stdio: 'pipe' });
+
+    fs.writeFileSync(path.join(workTree, 'file.txt'), 'base content\n');
+    execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'initial'], { cwd: workTree, stdio: 'pipe' });
+    const baseOid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+
+    fs.writeFileSync(path.join(workTree, 'file.txt'), 'base content\nfeature content\n');
+    execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['commit', '-m', 'feature'], { cwd: workTree, stdio: 'pipe' });
+    const headOid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+
+    execFileSync('git', ['remote', 'add', 'origin', initRes.repoPath], { cwd: workTree, stdio: 'pipe' });
+    execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workTree, stdio: 'pipe' });
+
+    return { baseOid, headOid };
+  }
 
   async function insertMessage(row: Record<string, unknown>) {
     await ctx.d1.prepare(`INSERT INTO inbox_messages
@@ -28,11 +71,11 @@ describe('INBOX.EXE live-mode integrity', () => {
   }
 
   const get = (url = 'http://localhost/api/inbox', authenticated = true) => inboxApi.onRequestGet({
-    request: new Request(url, authenticated ? { headers: authHeaders } : undefined), env: { DB: ctx.d1 }
+    request: new Request(url, authenticated ? { headers: authHeaders } : undefined), env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
   });
   const post = (body: unknown) => inboxApi.onRequestPost({
     request: new Request('http://localhost/api/inbox', { method: 'POST', headers: authHeaders, body: JSON.stringify(body) }),
-    env: { DB: ctx.d1 }
+    env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
   });
 
   it('computes folders from authoritative thread categories', () => {
@@ -189,18 +232,40 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect(await ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('proposal').first('is_merged')).toBe(0);
   });
 
-  it('approves one exact owned preview attempt idempotently without claiming it landed', async () => {
-    const resultOid = '4'.repeat(40);
+  it('fails closed and rejects approval with 409 when repository storage is missing or unavailable', async () => {
     await ctx.d1.prepare(`INSERT INTO repositories
       (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
-      VALUES ('repo-inbox','dronehunter','usr_nate','nate/inbox-test','private','refs/heads/main','repos/inbox','active')`).run();
+      VALUES ('repo-missing','dronehunter','usr_nate','nate/missing-repo','private','refs/heads/main','repositories/nonexistent','active')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-missing','repo-missing','refs/heads/main','usr_sam','preview_ready','missing-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-missing','job-missing',1,?,?,'tool-v1','policy-v1','preview_ready')`)
+      .bind('1'.repeat(40), '2'.repeat(40)).run();
+    await insertMessage(ownMessage('missing-prop', { message_kind: 'proposal', feature_ref: 'refs/features/x/v1', merge_attempt_id: 'attempt-missing' }));
+
+    const res = await post({ action: 'approve', messageId: 'missing-prop' });
+    expect(res.status).toBe(409);
+    const data: any = await res.json();
+    expect(data.success).toBe(false);
+    expect(data.error).toContain('unavailable for lineage verification');
+    expect(await ctx.d1.prepare('SELECT count(*) AS count FROM merge_approvals WHERE merge_attempt_id=?').bind('attempt-missing').first('count')).toBe(0);
+    expect(await ctx.d1.prepare("SELECT count(*) AS count FROM forge_outbox_events WHERE aggregate_id=?").bind('attempt-missing').first('count')).toBe(0);
+  });
+
+  it('approves one exact owned preview attempt idempotently without claiming it landed', async () => {
+    const { baseOid, headOid } = setupTestRepo('repositories/repo-inbox');
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES ('repo-inbox','dronehunter','usr_nate','nate/inbox-test','private','refs/heads/main','repositories/repo-inbox','active')`).run();
     await ctx.d1.prepare(`INSERT INTO merge_jobs
       (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
       VALUES ('job-inbox','repo-inbox','refs/heads/main','usr_sam','preview_ready','inbox-test')`).run();
     await ctx.d1.prepare(`INSERT INTO merge_attempts
       (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
       VALUES ('attempt-inbox','job-inbox',1,? ,?,'tool-v1','policy-v1','preview_ready')`)
-      .bind('3'.repeat(40), resultOid).run();
+      .bind(baseOid, headOid).run();
     await insertMessage(ownMessage('proposal', { message_kind: 'proposal', feature_ref: 'refs/features/x/v1', merge_attempt_id: 'attempt-inbox' }));
 
     expect((await post({ action: 'approve', messageId: 'proposal' })).status).toBe(200);
@@ -210,21 +275,21 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect(await ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-inbox').first('status')).toBe('landing');
     expect(await ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('proposal').first('is_merged')).toBe(0);
     const data: any = await (await get()).json();
-    expect(data.threads[0]).toMatchObject({ approvalStatus: 'approved', mergeStatus: 'approved', isMerged: false, casNewSha: resultOid });
+    expect(data.threads[0]).toMatchObject({ approvalStatus: 'approved', mergeStatus: 'approved', isMerged: false, casNewSha: headOid });
   });
 
   it('does not allow a queued approval to be reversed while GITSMITH may be landing it', async () => {
-    const resultOid = 'b'.repeat(40);
+    const { baseOid, headOid } = setupTestRepo('repositories/repo-locked');
     await ctx.d1.prepare(`INSERT INTO repositories
       (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
-      VALUES ('repo-locked','dronehunter','usr_nate','nate/locked-test','private','refs/heads/main','repos/locked','active')`).run();
+      VALUES ('repo-locked','dronehunter','usr_nate','nate/locked-test','private','refs/heads/main','repositories/repo-locked','active')`).run();
     await ctx.d1.prepare(`INSERT INTO merge_jobs
       (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
       VALUES ('job-locked','repo-locked','refs/heads/main','usr_sam','preview_ready','locked-test')`).run();
     await ctx.d1.prepare(`INSERT INTO merge_attempts
       (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
       VALUES ('attempt-locked','job-locked',1,?,?,'tool','policy','preview_ready')`)
-      .bind('a'.repeat(40), resultOid).run();
+      .bind(baseOid, headOid).run();
     await insertMessage(ownMessage('locked-proposal', { message_kind: 'proposal', merge_attempt_id: 'attempt-locked' }));
 
     expect((await post({ action: 'approve', messageId: 'locked-proposal' })).status).toBe(200);

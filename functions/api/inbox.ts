@@ -380,18 +380,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (decision === 'rejected' && rawComment.length < 3) return jsonError('A meaningful rejection comment is required', 400);
 
       // Server-side guard: verify that the proposal is not divergent before approving
+      // Fail closed: return conflict/error UNLESS the repository exists AND getProposalDiff confirms a fast-forward
       if (decision === 'approved') {
         const reposRoot = env.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
         const storageKey = proposal.storageKey || `repositories/${proposal.repositoryId}`;
         const pathRes = resolveRepoPath(reposRoot, storageKey);
-        if (pathRes.valid && pathRes.resolvedPath && fs.existsSync(pathRes.resolvedPath)) {
-          const diffResult = getProposalDiff(reposRoot, storageKey, proposal.inputTargetOid, proposal.resultCommitOid);
-          if (!diffResult.success) {
-            return jsonError(`Cannot approve proposal: ${diffResult.error || 'Failed to verify Git lineage'}`, 409);
-          }
-          if (diffResult.diverged || !diffResult.isFastForward) {
-            return jsonError('Cannot approve divergent proposal: branch is not a fast-forward descendant of target (rebase or merge required)', 409);
-          }
+        if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+          return jsonError(`Cannot approve proposal: Repository storage '${storageKey}' does not exist or is unavailable for lineage verification`, 409);
+        }
+        const diffResult = getProposalDiff(reposRoot, storageKey, proposal.inputTargetOid, proposal.resultCommitOid);
+        if (!diffResult.success) {
+          return jsonError(`Cannot approve proposal: ${diffResult.error || 'Failed to verify Git lineage'}`, 409);
+        }
+        if (diffResult.diverged || !diffResult.isFastForward) {
+          return jsonError('Cannot approve divergent proposal: branch is not a fast-forward descendant of target (rebase or merge required)', 409);
         }
       }
       const existing = await env.DB.prepare(`

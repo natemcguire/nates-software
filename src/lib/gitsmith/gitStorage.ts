@@ -1042,7 +1042,8 @@ export function getProposalDiff(
   reposRoot: string,
   storageKey: string,
   baseRefOrOid: string,
-  headRefOrOid: string
+  headRefOrOid: string,
+  options?: { maxBuffer?: number }
 ): ProposalDiffResult {
   const emptyDiff = (error?: string): ProposalDiffResult => ({
     success: false,
@@ -1192,22 +1193,40 @@ export function getProposalDiff(
   // 5. Unified diff (three-dot diff relative to merge base, or direct diff)
   let unifiedDiff = '';
   const diffTarget = mergeBaseOid ? `${mergeBaseOid}..${headOid}` : `${baseOid}..${headOid}`;
+  const maxDiffBuffer = options?.maxBuffer ?? (20 * 1024 * 1024);
   try {
     unifiedDiff = execFileSync('git', ['diff', '-u', diffTarget, '--'], {
       cwd: repoPath,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      maxBuffer: 10 * 1024 * 1024
+      maxBuffer: maxDiffBuffer
     });
-  } catch {
+  } catch (err1: any) {
     try {
       unifiedDiff = execFileSync('git', ['diff', '-u', `${baseOid}...${headOid}`, '--'], {
         cwd: repoPath,
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
-        maxBuffer: 10 * 1024 * 1024
+        maxBuffer: maxDiffBuffer
       });
-    } catch {}
+    } catch (err2: any) {
+      const err = err2 || err1;
+      const isBufferExceeded =
+        err?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ||
+        err?.code === 'ENOBUFS' ||
+        err1?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ||
+        err1?.code === 'ENOBUFS' ||
+        String(err?.message || '').includes('maxBuffer') ||
+        String(err?.message || '').includes('ENOBUFS') ||
+        String(err1?.message || '').includes('maxBuffer') ||
+        String(err1?.message || '').includes('ENOBUFS');
+
+      const errorMessage = isBufferExceeded
+        ? 'Diff generation failed: diff output exceeded maximum buffer limit.'
+        : `Diff generation failed: ${err?.message || err1?.message || 'Git diff command failed.'}`;
+
+      return emptyDiff(errorMessage);
+    }
   }
 
   // 6. Numstat for file counts and line additions/deletions
@@ -1216,7 +1235,8 @@ export function getProposalDiff(
     const numstatOut = execFileSync('git', ['diff', '--numstat', diffTarget, '--'], {
       cwd: repoPath,
       encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxDiffBuffer
     }).trim();
     if (numstatOut) {
       for (const line of numstatOut.split('\n')) {

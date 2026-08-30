@@ -212,6 +212,16 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(fs.existsSync(injectedRefFile)).toBe(false);
     });
 
+    it('returns an honest error when diff exceeds maxBuffer limit (no fake-success empty diff)', () => {
+      // Execute diff with a tiny buffer (10 bytes) that cannot hold the full unified diff
+      const result = getProposalDiff(reposRoot, storageKey, commit1Oid, commit3Oid, { maxBuffer: 10 });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('diff output exceeded maximum buffer limit');
+      expect(result.unifiedDiff).toBe('');
+      expect(result.files).toHaveLength(0);
+      expect(result.commits).toHaveLength(0);
+    });
+
     it('returns an honest error when base ref is missing or invalid (no fake-success empty diff)', () => {
       const badBaseRes = getProposalDiff(reposRoot, storageKey, 'refs/heads/nonexistent_base', commit3Oid);
       expect(badBaseRes.success).toBe(false);
@@ -404,6 +414,47 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       const outboxEvent = await ctx.d1.prepare("SELECT * FROM forge_outbox_events WHERE aggregate_id='attempt-pr-div'").first();
       expect(outboxEvent).toBeNull();
       const attemptRow: any = await ctx.d1.prepare("SELECT status FROM merge_attempts WHERE id='attempt-pr-div'").first();
+      expect(attemptRow.status).toBe('preview_ready');
+    });
+
+    it('server-side rejects approval attempt when repo path is invalid or unavailable (fail closed)', async () => {
+      // Seed a proposal whose repository storage path does not exist on disk
+      await ctx.d1.prepare(`INSERT INTO repositories
+        (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+        VALUES ('repo-pr-missing','dronehunter','usr_nate','nate/missing','public','refs/heads/main','repositories/nonexistent-disk-path','active')`).run();
+
+      await ctx.d1.prepare(`INSERT INTO merge_jobs
+        (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+        VALUES ('job-pr-missing','repo-pr-missing','refs/heads/main','usr_sam','preview_ready','pr-missing-1')`).run();
+
+      await ctx.d1.prepare(`INSERT INTO merge_attempts
+        (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+        VALUES ('attempt-pr-missing','job-pr-missing',1,?,?,'tool-v1','policy-v1','preview_ready')`).bind(commit1Oid, commit3Oid).run();
+
+      await ctx.d1.prepare(`INSERT INTO inbox_messages
+        (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
+        VALUES ('proposal:attempt-pr-missing','usr_nate','usr_sam','feat: missing repo PR','Missing Repo PR','Please review','refs/heads/feature',?,0,1,'proposal','attempt-pr-missing')`)
+        .bind(commit3Oid).run();
+
+      const approveReq = new Request('http://localhost/api/inbox', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          action: 'approve',
+          messageId: 'proposal:attempt-pr-missing',
+          comment: 'Attempting to approve proposal with missing repo.'
+        })
+      });
+      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+      expect(approveRes.status).toBe(409);
+      const approveData: any = await approveRes.json();
+      expect(approveData.success).toBe(false);
+      expect(approveData.error).toContain('unavailable for lineage verification');
+
+      // Verify no outbox event and attempt was not approved
+      const outboxEvent = await ctx.d1.prepare("SELECT * FROM forge_outbox_events WHERE aggregate_id='attempt-pr-missing'").first();
+      expect(outboxEvent).toBeNull();
+      const attemptRow: any = await ctx.d1.prepare("SELECT status FROM merge_attempts WHERE id='attempt-pr-missing'").first();
       expect(attemptRow.status).toBe('preview_ready');
     });
 
