@@ -12,7 +12,9 @@ import {
   isValidGitOid,
   isGitOidCompatibleWithObjectFormat,
   buildRepositoryStorageKey,
-  constantTimeTokenCompare
+  constantTimeTokenCompare,
+  isValidRefPolicies,
+  selectRefPolicy
 } from '../../src/lib/forgeDomain';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
@@ -424,7 +426,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       if (!actor) return failure('SSH public key is not registered.', 401);
 
       const repository = await db.prepare(`
-        SELECT r.id, r.storage_key AS storageKey, r.status, r.visibility,
+        SELECT r.id, r.storage_key AS storageKey, r.status, r.visibility, r.default_ref AS defaultRef,
                CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
         FROM repositories r
         JOIN users owner_user ON owner_user.id = r.owner_user_id
@@ -442,15 +444,170 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure('SSH key is not authorized for this repository operation.', 403);
       }
 
+      const policies = await db.prepare(`
+        SELECT ref_pattern AS refPattern, require_signed_commits AS requireSignedCommits,
+               require_passing_build AS requirePassingBuild, minimum_approvals AS minimumApprovals,
+               allow_force_push AS allowForcePush, allow_delete AS allowDelete
+        FROM repository_ref_policies
+        WHERE repository_id = ?
+      `).bind((repository as any).id).all();
+      if (!policies || !Array.isArray(policies.results) || !isValidRefPolicies(policies.results)) {
+        return failure('Failed to load repository ref policies.', 500);
+      }
+      const refPolicies = policies.results;
+
+      // TODO: Plug in richer branch protection / ref policy evaluation rules here.
+
       return Response.json({
         success: true,
         actorUserId: (actor as any).id,
         repositoryId: (repository as any).id,
         storageKey: (repository as any).storageKey,
+        defaultRef: (repository as any).defaultRef || 'refs/heads/main',
+        memberRole: role,
+        refPolicies,
         operation
       });
     } catch (error: any) {
       return failure(`SSH authorization failed: ${error?.message || 'unknown database error'}`, 500);
+    }
+  }
+
+  if (action === 'gateway-check-ref-policy') {
+    const gwAuth = await verifyGatewayAuth(request, env, db);
+    if (!gwAuth.authorized) return gwAuth.errorResponse!;
+
+    const repositoryId = String(body.repositoryId || '').trim();
+    const actorUserId = String(body.actorUserId || '').trim();
+    if (!repositoryId || !actorUserId) {
+      return failure('repositoryId and actorUserId are required.', 400);
+    }
+
+    try {
+      const repository = await db.prepare(`
+        SELECT id, default_ref AS defaultRef, status, owner_user_id AS ownerUserId
+        FROM repositories
+        WHERE id = ?
+        LIMIT 1
+      `).bind(repositoryId).first();
+
+      if (!repository) return failure('Repository not found.', 404);
+      if ((repository as any).status !== 'active') return failure('Repository is not active.', 409);
+
+      const member = await db.prepare(`
+        SELECT role FROM repository_members WHERE repository_id = ? AND user_id = ? LIMIT 1
+      `).bind(repositoryId, actorUserId).first();
+
+      const memberRole = (repository as any).ownerUserId === actorUserId
+        ? 'owner'
+        : String((member as any)?.role || '');
+
+      const mayWrite = ['writer', 'maintainer', 'owner'].includes(memberRole);
+      if (!mayWrite) {
+        return Response.json({
+          success: true,
+          allowed: false,
+          reason: 'User is not authorized to write to this repository.'
+        });
+      }
+
+      const defaultRef = (repository as any).defaultRef || 'refs/heads/main';
+
+      const policies = await db.prepare(`
+        SELECT ref_pattern AS refPattern, require_signed_commits AS requireSignedCommits,
+               require_passing_build AS requirePassingBuild, minimum_approvals AS minimumApprovals,
+               allow_force_push AS allowForcePush, allow_delete AS allowDelete
+        FROM repository_ref_policies
+        WHERE repository_id = ?
+      `).bind(repositoryId).all();
+      if (!policies || !Array.isArray(policies.results) || !isValidRefPolicies(policies.results)) {
+        return failure('Failed to load repository ref policies.', 500);
+      }
+      const refPolicies = policies.results;
+
+      // TODO: Plug in richer repository_ref_policies table rules (e.g. required signers, minimum approvals, CI build checks) here.
+
+      const updates: Array<{ refName: string; oldOid?: string | null; newOid?: string | null; isFastForward?: boolean; isDelete?: boolean }> =
+        Array.isArray(body.updates)
+          ? body.updates
+          : (body.refName
+              ? [{
+                  refName: body.refName,
+                  oldOid: body.oldOid ?? null,
+                  newOid: body.newOid ?? null,
+                  isFastForward: body.isFastForward,
+                  isDelete: body.isDelete
+                }]
+              : []);
+
+      for (const update of updates) {
+        const refName = String(update.refName || '').trim();
+        const isDelete = update.isDelete !== undefined ? Boolean(update.isDelete) : (update.newOid === null || /^0+$/.test(update.newOid || ''));
+        const isCreate = update.oldOid === null || /^0+$/.test(update.oldOid || '');
+        const isFastForward = update.isFastForward !== false;
+
+        const normalizedDefaultRef = defaultRef.startsWith('refs/') ? defaultRef : `refs/heads/${defaultRef}`;
+        const isDefaultBranch = refName === normalizedDefaultRef || refName === defaultRef;
+        const matchingPolicy = selectRefPolicy(refPolicies, refName);
+        const isProtected = isDefaultBranch || Boolean(matchingPolicy);
+
+        if (isProtected) {
+          if (matchingPolicy) {
+            if (Boolean(matchingPolicy.requireSignedCommits)) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `protected ref requires signed commits which this gateway cannot verify`
+              });
+            }
+            if (Boolean(matchingPolicy.requirePassingBuild)) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `protected ref requires passing build which this gateway cannot verify`
+              });
+            }
+            if (typeof matchingPolicy.minimumApprovals === 'number' && matchingPolicy.minimumApprovals > 0) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `protected ref requires approvals which this gateway cannot verify`
+              });
+            }
+          }
+
+          if (isDelete) {
+            const allowDelete = matchingPolicy ? Boolean(matchingPolicy.allowDelete) : false;
+            if (!allowDelete) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `deletion of protected ref ${refName} is prohibited`
+              });
+            }
+          }
+          if (!isCreate && !isDelete && !isFastForward) {
+            const allowForce = matchingPolicy ? Boolean(matchingPolicy.allowForcePush) : false;
+            if (!allowForce) {
+              return Response.json({
+                success: true,
+                allowed: false,
+                reason: `non-fast-forward update to protected ref ${refName} is prohibited`
+              });
+            }
+          }
+        }
+      }
+
+      return Response.json({
+        success: true,
+        allowed: true,
+        defaultRef,
+        memberRole,
+        refPolicies
+      });
+    } catch (error: any) {
+      return failure(`Ref policy check failed: ${error?.message || 'unknown database error'}`, 500);
     }
   }
 

@@ -84,10 +84,24 @@ describe('GITSMITH Repository Provisioning & Two-Phase Fork Lifecycle', () => {
         owner: 'nate', slug: 'real-app', operation: 'write'
       });
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({
+      expect(await response.json()).toEqual(expect.objectContaining({
         success: true, actorUserId: 'usr_nate', repositoryId: 'repo_ssh',
-        storageKey: 'repositories/repo_ssh', operation: 'write'
+        storageKey: 'repositories/repo_ssh', operation: 'write',
+        defaultRef: 'refs/heads/main', memberRole: 'owner',
+        refPolicies: []
+      }));
+    });
+
+    it('fails closed when repository_ref_policies query throws or fails', async () => {
+      await ctx.d1.prepare('DROP TABLE repository_ref_policies').run();
+      const response = await gatewayRequest({
+        action: 'gateway-authorize-ssh', keyType, keyBase64,
+        owner: 'nate', slug: 'real-app', operation: 'write'
       });
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('SSH authorization failed');
     });
 
     it('rejects unknown keys and invalid gateway credentials', async () => {

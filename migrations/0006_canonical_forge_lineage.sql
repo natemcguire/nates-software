@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS repository_ref_policies (
     repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     ref_pattern TEXT NOT NULL,
     require_signed_commits INTEGER NOT NULL DEFAULT 0 CHECK (require_signed_commits IN (0, 1)),
-    require_passing_build INTEGER NOT NULL DEFAULT 1 CHECK (require_passing_build IN (0, 1)),
+    require_passing_build INTEGER NOT NULL DEFAULT 0 CHECK (require_passing_build IN (0, 1)),
     minimum_approvals INTEGER NOT NULL DEFAULT 0 CHECK (minimum_approvals >= 0),
     allow_force_push INTEGER NOT NULL DEFAULT 0 CHECK (allow_force_push IN (0, 1)),
     allow_delete INTEGER NOT NULL DEFAULT 0 CHECK (allow_delete IN (0, 1)),
