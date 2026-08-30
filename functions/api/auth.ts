@@ -1,12 +1,30 @@
 // POST /api/auth?action=register
 // POST /api/auth?action=login
 // POST /api/auth?action=logout
+// POST /api/auth?action=claim-credentials
 // GET  /api/auth?action=me
 
 import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
 
+// Constant-time string comparison using SHA-256 digest XOR to prevent timing leaks
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) {
+    return false;
+  }
+  const enc = new TextEncoder();
+  const aHash = await crypto.subtle.digest('SHA-256', enc.encode(a));
+  const bHash = await crypto.subtle.digest('SHA-256', enc.encode(b));
+  const aBytes = new Uint8Array(aHash);
+  const bBytes = new Uint8Array(bHash);
+  let diff = 0;
+  for (let i = 0; i < 32; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
+
 // Web Crypto PBKDF2 Password Hashing (100,000 rounds)
-async function hashPassword(password: string, saltHex: string): Promise<string> {
+export async function hashPassword(password: string, saltHex: string): Promise<string> {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -39,7 +57,7 @@ async function hashPassword(password: string, saltHex: string): Promise<string> 
     .join('');
 }
 
-function generateSalt(): string {
+export function generateSalt(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes)
@@ -47,7 +65,7 @@ function generateSalt(): string {
     .join('');
 }
 
-function generateSessionToken(): string {
+export function generateSessionToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return Array.from(bytes)
@@ -106,6 +124,116 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       body = await request.json();
     } catch {}
 
+    if (action === 'claim-credentials' || action === 'set-initial-password') {
+      const { username, newPassword, password, token, bootstrapToken } = body;
+      const cleanUser = (username || '').toLowerCase().trim();
+      const passToSet = newPassword || password;
+      const providedToken = (
+        token ||
+        bootstrapToken ||
+        request.headers.get('x-bootstrap-token') ||
+        (request.headers.get('authorization')?.startsWith('Bearer ')
+          ? request.headers.get('authorization')?.slice(7).trim()
+          : '') ||
+        ''
+      ).trim();
+
+      if (!cleanUser || !passToSet) {
+        return Response.json({ success: false, error: 'Username and new password are required' }, { status: 400 });
+      }
+
+      if (typeof passToSet !== 'string' || passToSet.length < 8) {
+        return Response.json({ success: false, error: 'Password must be at least 8 characters' }, { status: 400 });
+      }
+
+      const expectedToken = (
+        (env && env.OWNER_BOOTSTRAP_TOKEN) ||
+        (typeof process !== 'undefined' && process.env ? process.env.OWNER_BOOTSTRAP_TOKEN : '') ||
+        ''
+      ).trim();
+
+      if (!expectedToken) {
+        return Response.json({ success: false, error: 'Owner bootstrap token is not configured on server' }, { status: 403 });
+      }
+
+      if (!providedToken) {
+        return Response.json({ success: false, error: 'Bootstrap token is required' }, { status: 403 });
+      }
+
+      const isTokenValid = await timingSafeEqual(providedToken, expectedToken);
+      if (!isTokenValid) {
+        return Response.json({ success: false, error: 'Invalid bootstrap token' }, { status: 403 });
+      }
+
+      if (!env || !env.DB) {
+        return Response.json({ success: false, error: 'Authentication database unavailable' }, { status: 503 });
+      }
+
+      const user = await env.DB.prepare(`
+        SELECT * FROM users WHERE username = ?
+      `).bind(cleanUser).first();
+
+      if (!user) {
+        return Response.json({ success: false, error: 'User not found' }, { status: 404 });
+      }
+
+      if (user.password_hash !== 'seeded_super_admin' && user.password_hash !== 'seeded_bot') {
+        return Response.json({
+          success: false,
+          error: 'Account credentials have already been claimed or are not eligible for bootstrap claim'
+        }, { status: 400 });
+      }
+
+      const salt = generateSalt();
+      const hash = await hashPassword(passToSet, salt);
+
+      const updateResult = await env.DB.prepare(`
+        UPDATE users
+        SET password_hash = ?, salt = ?, ssh_public_key = NULL
+        WHERE username = ? AND password_hash IN ('seeded_super_admin', 'seeded_bot')
+      `).bind(hash, salt, cleanUser).run();
+
+      if (updateResult && updateResult.meta && updateResult.meta.changes === 0) {
+        return Response.json({
+          success: false,
+          error: 'Account credentials could not be updated or were already claimed'
+        }, { status: 409 });
+      }
+
+      const sessionToken = generateSessionToken();
+      const expiresAt = Date.now() + 30 * 24 * 3600 * 1000;
+
+      await env.DB.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, ?, ?)
+      `).bind(await hashSessionToken(sessionToken), user.id, expiresAt).run();
+
+      await env.DB.prepare(`
+        UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind(user.id).run();
+
+      return Response.json({
+        success: true,
+        authenticated: true,
+        token: sessionToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          displayName: user.display_name,
+          avatar: user.avatar_url,
+          bio: user.bio,
+          role: user.role,
+          isSuperAdmin: user.role === 'super_admin',
+          isBot: user.role === 'bot'
+        },
+        message: 'Credentials claimed successfully'
+      }, {
+        headers: {
+          'Set-Cookie': sessionCookie(request, sessionToken)
+        }
+      });
+    }
+
     if (action === 'register') {
       const { username, password, displayName, avatar = '👤', bio = '' } = body;
 
@@ -129,7 +257,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const salt = generateSalt();
       const hash = await hashPassword(password, salt);
       const userId = `usr_${cleanUser}_${Date.now().toString(36)}`;
-      const role = cleanUser === 'nate' ? 'super_admin' : 'user';
+      const role = 'user';
 
       if (env && env.DB) {
         const existing = await env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(cleanUser).first();
@@ -161,7 +289,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             avatar,
             bio,
             role,
-            isSuperAdmin: role === 'super_admin'
+            isSuperAdmin: false
           }
         }, {
           headers: {
@@ -190,20 +318,21 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
         }
 
-        // Strictly verify password using PBKDF2 Web Crypto
-        let isValid = false;
-        if (user.salt && user.password_hash && user.password_hash !== 'seeded_super_admin' && user.password_hash !== 'seeded_bot') {
-          const testHash = await hashPassword(password, user.salt);
-          isValid = testHash === user.password_hash;
-        } else if (user.salt && (user.password_hash === 'seeded_super_admin' || user.password_hash === 'seeded_bot')) {
-          // If legacy placeholder hash exists, re-hash password on first authorized credential setup
-          // Do not allow arbitrary bypass in production
-          if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) {
-            isValid = password === 'adminPassword123' || password === 'admin123' || password === 'testpass';
-          }
+        // Placeholder accounts cannot log in directly until claimed via credential bootstrap
+        if (user.password_hash === 'seeded_super_admin' || user.password_hash === 'seeded_bot') {
+          return Response.json({
+            success: false,
+            error: 'Account not yet activated — set your initial password via credential claim'
+          }, { status: 403 });
         }
 
-        if (!isValid) {
+        if (!user.salt || !user.password_hash) {
+          return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
+        }
+
+        // Strictly verify password using PBKDF2 Web Crypto
+        const testHash = await hashPassword(password, user.salt);
+        if (testHash !== user.password_hash) {
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
         }
 
