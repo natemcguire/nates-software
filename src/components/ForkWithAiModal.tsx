@@ -32,10 +32,15 @@ const PROMPT_PRESETS: Record<string, string[]> = {
     'Add a printable evidence timeline that labels every observation as user-entered and unverified.',
     'Add encrypted local export and import for correspondence journals.'
   ],
-  picfitai: [
-    'Add custom streetwear wardrobe racks and high-resolution lookbook PDF exports.',
-    'Refactor the outfit synthesis pipeline to call Google Gemini 2.5 Flash Vision API with realistic fabric drape.',
-    'Add a configurable user credit ledger with Stripe webhook signature validation; document the chosen storage adapter.'
+  wallart: [
+    'Add a new art treatment while preserving tenant isolation and durable queue behavior.',
+    'Add an inspectable print manifest without exposing private source photographs.',
+    'Add a tenant-scoped gallery filter with accessibility and keyboard navigation tests.'
+  ],
+  'american-gardener': [
+    'Add weather-aware planting recommendations using the repository-owned observation model.',
+    'Add a crop maturity forecast using growing-degree-day targets and local sensor history.',
+    'Add a portable private backup for garden plans without exporting household purchasing data.'
   ]
 };
 

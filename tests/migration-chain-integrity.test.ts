@@ -36,7 +36,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0017_picfit_truthful_listing.sql',
         '0018_ephemeral_terminal_sessions.sql',
         '0019_forge_outbox_leasing.sql',
-        '0020_dyno_certified_evaluations.sql'
+        '0020_dyno_certified_evaluations.sql',
+        '0021_active_project_catalog.sql'
       ]);
     });
 
@@ -203,12 +204,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         SELECT a.id, a.name, a.creator_id, u.username
         FROM app_listings a
         JOIN users u ON a.creator_id = u.id
+        WHERE a.listing_status = 'active'
         ORDER BY a.id
       `).all();
 
-      expect(apps.results?.length).toBe(3);
-      expect(apps.results?.map((a: any) => a.id)).toEqual(['certified-mailer', 'dronehunter', 'picfitai']);
-      expect((apps.results as any[])?.find((a: any) => a.id === 'picfitai')?.name).toBe('PicFit');
+      expect(apps.results?.length).toBe(4);
+      expect(apps.results?.map((a: any) => a.id)).toEqual(['american-gardener', 'certified-mailer', 'dronehunter', 'wallart']);
       apps.results?.forEach((a: any) => {
         expect(a.creator_id).toBe('usr_nate');
         expect(a.username).toBe('nate');

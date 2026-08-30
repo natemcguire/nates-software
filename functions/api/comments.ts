@@ -46,7 +46,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   if (text.length > MAX_COMMENT_LENGTH) return json({ success: false, error: `text must be ${MAX_COMMENT_LENGTH} characters or fewer` }, 400);
 
   try {
-    const app = await env.DB.prepare('SELECT id FROM app_listings WHERE id = ?').bind(appId).first();
+    const app = await env.DB.prepare("SELECT id FROM app_listings WHERE id = ? AND listing_status = 'active'").bind(appId).first();
     if (!app) return json({ success: false, error: 'App listing not found.' }, 404);
     const commentId = `c_${crypto.randomUUID().replaceAll('-', '')}`;
     await env.DB.prepare(`INSERT INTO comments (id, app_id, user_id, text, upvotes)

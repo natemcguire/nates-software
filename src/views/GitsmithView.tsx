@@ -169,36 +169,31 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
     ]
   },
   {
-    id: 'picfitai',
-    name: 'picfitai',
-    owner: 'nate',
-    avatar: '✨',
-    description: 'Private in-browser image crop, resize, compression, format conversion, and download utility.',
-    stars: null,
-    forks: null,
-    language: 'TypeScript / Canvas API',
-    license: 'MIT Image Utility',
-    sqlitePath: 'No database required',
-    branch: 'main',
-    lastCommit: {
-      sha: '4d88e01',
-      message: 'feat(studio): add validated crop, resize, and local export pipeline',
-      author: 'nate',
-      time: '1h ago',
-      verified: false
-    },
-    tags: ['Images', 'Crop', 'Resize', 'Compression', 'Browser'],
-    source: 'showcase',
-    visibility: 'public',
-    status: 'bundled',
-    liveUrl: 'https://picfitai.nates-software.com',
-    liveAppUrl: 'https://picfitai.nates-software.com',
+    id: 'wallart', name: 'wallart', owner: 'nate', avatar: '🖼️',
+    description: 'Private multi-tenant photo-to-art studio with durable generation queues, tenant isolation, and print variants.',
+    stars: null, forks: null, language: 'TypeScript / Cloudflare Workers', license: 'Private Shareware',
+    sqlitePath: 'Application-owned D1 and private R2', branch: 'main',
+    lastCommit: { sha: 'current', message: 'feat(studio): durable tenant-isolated photo-to-art workflow', author: 'nate', time: 'local project', verified: false },
+    tags: ['Wall Art', 'Cloudflare', 'D1', 'R2', 'Queues', 'Tenant Isolation'], source: 'showcase', visibility: 'private', status: 'gitsmith',
     files: [
-      { name: 'src', type: 'dir' },
-      { name: 'src/PicFitStudio.tsx', type: 'file', size: '28.4 KB', content: `export function PicFitStudio() {\n  return <main aria-label="PicFit image studio" />;\n}` },
-      { name: 'src/picfitDomain.ts', type: 'file', size: '14.2 KB', content: `export const MAX_CANVAS_PIXELS = 32_000_000;\nexport type OutputFormat = 'image/jpeg' | 'image/png' | 'image/webp';` },
-      { name: 'package.json', type: 'file', size: '1.2 KB', content: `{ "name": "picfit", "private": true, "type": "module" }` },
-      { name: 'README.md', type: 'file', size: '3.1 KB', content: `# PicFit\n\nCrop, resize, compress, convert, and download images locally in your browser.` }
+      { name: 'worker', type: 'dir' },
+      { name: 'worker/index.ts', type: 'file', size: '24 KB', content: `// Tenant-scoped routes, queues, cron recovery, and private object access.` },
+      { name: 'db/schema.ts', type: 'file', size: '18 KB', content: `// Tenants, assets, jobs, credentials, and audit events.` },
+      { name: 'README.md', type: 'file', size: '9 KB', content: `# WallArt Studio\n\nPrivate photo-to-art workspace using D1, R2, Queues, Durable Objects, Images, and user-owned model credentials.` }
+    ]
+  },
+  {
+    id: 'american-gardener', name: 'american-gardener', owner: 'nate', avatar: '🌱',
+    description: 'Private local garden operations dashboard for crop timing, GDD targets, DLI observations, inventory, and Home Assistant snapshots.',
+    stars: null, forks: null, language: 'JavaScript / SQLite', license: 'Private Local-First Shareware',
+    sqlitePath: 'Application-owned local SQLite (private and ignored)', branch: 'main',
+    lastCommit: { sha: 'local', message: 'feat(garden): unify garden operations and observation dashboard', author: 'nate', time: 'local project', verified: false },
+    tags: ['Gardening', 'SQLite', 'Home Assistant', 'GDD', 'DLI', 'Local-First'], source: 'showcase', visibility: 'private', status: 'local-source',
+    files: [
+      { name: 'dashboard', type: 'dir' },
+      { name: 'scripts/dashboard-server.js', type: 'file', size: '8 KB', content: `// Loopback-only dashboard server backed by application-owned SQLite.` },
+      { name: 'scripts/home-assistant-sync.js', type: 'file', size: '12 KB', content: `// Read-only Home Assistant garden observation snapshot adapter.` },
+      { name: 'README.md', type: 'file', size: '5 KB', content: `# American Gardener\n\nPrivate garden inventory, crop, light, and weather operations software. Household data is never bundled.` }
     ]
   }
 ];

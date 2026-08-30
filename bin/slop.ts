@@ -163,6 +163,7 @@ export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandR
         `/Volumes/MacMiniExtra/Projects/${appId}`,
         `/Users/nate/Projects/${appId}`
       ];
+      if (appId === 'american-gardener') localSources.unshift('/Volumes/MacMiniExtra/Projects/gardening', '/Users/nate/Projects/gardening');
       const foundLocal = localSources.find(p => p && getFs()?.existsSync(p));
       if (foundLocal) {
         source = `file://${foundLocal}`;
@@ -449,9 +450,6 @@ export function handleFork(
       } else if (appId === 'dronehunter' || slug === 'nate/dronehunter') {
         canonicalSourceUrl = "https://github.com/natemcguire/dronehunter.git";
         runCommandSync(`git clone --depth 1 "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
-      } else if (appId === 'picfitai') {
-        canonicalSourceUrl = "https://github.com/natemcguire/picfitai.git";
-        runCommandSync(`git clone --depth 1 "${canonicalSourceUrl}" "${worktreePath}"`, { stdio: "pipe", timeout: 30000, throwError: true });
       } else if (explicitTemplate) {
         // Explicit starter template requested without a pre-existing canonical repository
       } else {
@@ -514,28 +512,6 @@ export function handleFork(
             filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
           });
           templateApplied = 'certified-mailer';
-        } else if (selectedTemplate === 'picfitai' || selectedTemplate === 'picfit') {
-          const pfSources = [
-            pathMod?.resolve(pathMod.dirname(modulePath), '../../picfitai'),
-            pathMod?.resolve(pathMod.dirname(modulePath), '../picfitai'),
-            '/Volumes/MacMiniExtra/Projects/picfitai',
-            '/Users/nate/Projects/picfitai'
-          ];
-          const pfPath = pfSources.find((p: string) => p && fsMod.existsSync(p));
-          if (pfPath && fsMod.cpSync) {
-            fsMod.cpSync(pfPath, worktreePath, {
-              recursive: true,
-              filter: (src: string) => !src.includes('/.git') && !src.includes('/node_modules')
-            });
-          } else {
-            runCommandSync(`git clone --depth 1 "https://github.com/natemcguire/picfitai.git" "${worktreePath}/.pf-temp"`, { stdio: "pipe", timeout: 30000, throwError: true });
-            fsMod.cpSync(`${worktreePath}/.pf-temp`, worktreePath, {
-              recursive: true,
-              filter: (src: string) => !src.includes('/.git') && !src.includes('/.pf-temp')
-            });
-            try { fsMod.rmSync(`${worktreePath}/.pf-temp`, { recursive: true, force: true }); } catch {}
-          }
-          templateApplied = 'picfitai';
         } else if (['minimal', 'blank', 'node', 'html', 'static'].includes(selectedTemplate.toLowerCase())) {
           fsMod.writeFileSync(`${worktreePath}/index.html`, `<!DOCTYPE html>\n<html>\n<head><title>${appId}</title></head>\n<body>\n  <h1>${appId}</h1>\n  <p>Created with SLOP CLI.</p>\n</body>\n</html>\n`);
           fsMod.writeFileSync(`${worktreePath}/package.json`, JSON.stringify({
@@ -549,7 +525,7 @@ export function handleFork(
           fsMod.writeFileSync(`${worktreePath}/README.md`, `# ${appId}\n\nInitialized with minimal starter template.\n`);
           templateApplied = selectedTemplate;
         } else {
-          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, picfitai, minimal.`);
+          throw new Error(`Unknown starter template "${selectedTemplate}". Available templates: dronehunter, certified-mailer, minimal.`);
         }
       }
 

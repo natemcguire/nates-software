@@ -34,13 +34,13 @@ const STARTERS: StarterApp[] = [
     suggestedPrompt: 'Add California Tenant Security Deposit statutory demand templates and CSV batch export.'
   },
   {
-    id: 'picfitai',
-    name: 'PicFit',
-    avatar: '✨',
-    tagline: 'Private browser-based crop, resize, compression, and format export studio.',
-    price: '$20.00',
-    category: 'Image Utility',
-    suggestedPrompt: 'Add reusable export presets while keeping image processing local to the browser.'
+    id: 'wallart',
+    name: 'WallArt Studio',
+    avatar: '🖼️',
+    tagline: 'Private multi-tenant photo-to-art studio with durable generation and print workflows.',
+    price: '$59.00',
+    category: 'Creative Studio',
+    suggestedPrompt: 'Add a new art treatment while preserving tenant isolation and durable job semantics.'
   }
 ];
 

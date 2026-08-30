@@ -23,13 +23,13 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     it('should strictly contain real shareware titles', () => {
       expect(INITIAL_APPS.length).toBe(4);
       const appIds = INITIAL_APPS.map(a => a.id);
-      expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'picfitai', 'wallart']);
+      expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'american-gardener', 'wallart']);
     });
 
     it('should have matching GITSMITH repositories with valid owners and files', () => {
-      expect(GITSMITH_REPOS.length).toBe(3);
+      expect(GITSMITH_REPOS.length).toBe(4);
       GITSMITH_REPOS.forEach(repo => {
-        expect(['dronehunter', 'certified-mailer', 'picfitai']).toContain(repo.id);
+        expect(['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']).toContain(repo.id);
         expect(repo.files.length).toBeGreaterThanOrEqual(2);
         expect(repo.owner).toBe('nate');
       });
@@ -227,7 +227,8 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' });
       expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
       expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
-      expect(resolveAppRoute('picfitai.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'picfitai', title: 'PicFit' });
+      expect(resolveAppRoute('american-gardener.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'american-gardener', title: 'American Gardener' });
+      expect(resolveAppRoute('wallart.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'wallart', title: 'WallArt Canvas Pro' });
     });
 
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {

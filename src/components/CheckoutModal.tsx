@@ -24,7 +24,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
 
   let priceCents = 1500;
   if (app.id === 'certified-mailer') priceCents = 2500;
-  if (app.id === 'picfitai') priceCents = 2000;
+  if (app.id === 'american-gardener') priceCents = 2500;
+  if (app.id === 'wallart') priceCents = 5900;
 
   const makerCents = Math.floor(priceCents * 0.70);
   const lineageCents = Math.floor(priceCents * 0.20);

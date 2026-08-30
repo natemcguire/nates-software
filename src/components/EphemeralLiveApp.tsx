@@ -3,7 +3,6 @@ import { AppListing } from '../data/mockData';
 import { ExternalLink, Shield } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 import { CertifiedMailerStudio } from './CertifiedMailerStudio';
-import { PicFitStudio } from './PicFitStudio';
 import { WallArtStudio } from './WallArtStudio';
 
 interface EphemeralLiveAppProps {
@@ -25,7 +24,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         </div>
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
-          {app.id === 'wallart' || app.id === 'picfitai' || app.id === 'certified-mailer' || app.id === 'dronehunter' ? (
+          {app.id === 'wallart' || app.id === 'certified-mailer' || app.id === 'dronehunter' ? (
             <span className="bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-600 flex items-center gap-1 font-bold">
               <Shield size={11} /> {app.id === 'dronehunter' ? 'Local Canvas Runtime' : 'Client-Side Sandbox'}
             </span>
@@ -61,10 +60,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         ) : app.id === 'certified-mailer' ? (
           <div className="flex-1 overflow-hidden">
             <CertifiedMailerStudio />
-          </div>
-        ) : app.id === 'picfitai' ? (
-          <div className="flex-1 overflow-hidden">
-            <PicFitStudio />
           </div>
         ) : app.id === 'wallart' ? (
           <div className="flex-1 overflow-hidden">

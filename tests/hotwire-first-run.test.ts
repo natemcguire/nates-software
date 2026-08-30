@@ -49,7 +49,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const dropIds = data.drops.map((d: any) => d.id);
       expect(dropIds).toContain('dronehunter');
       expect(dropIds).toContain('certified-mailer');
-      expect(dropIds).toContain('picfitai');
+      expect(dropIds).toContain('american-gardener');
 
       // Verify none of the items carry fabricated unpersisted demo tags
       data.drops.forEach((d: any) => {
@@ -209,7 +209,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const response = await upvoteApi.onRequestPost({
         request: new Request('http://localhost/api/upvote', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ appId: 'picfitai', voterKey: 'invented-voter' })
+          body: JSON.stringify({ appId: 'wallart', voterKey: 'invented-voter' })
         }),
         env: { DB: ctx.d1 }
       });
@@ -231,7 +231,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should successfully increment upvotes for existing D1 drops', async () => {
-      const initial = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('picfitai').first();
+      const initial = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('wallart').first();
       const initialCount = (initial as any).upvotes;
 
       const req = new Request('http://localhost/api/upvote', {
@@ -240,7 +240,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
           'Content-Type': 'application/json',
           Authorization: 'Bearer test_token_nate'
         },
-        body: JSON.stringify({ appId: 'picfitai', voterKey: 'ignored-caller-value' })
+        body: JSON.stringify({ appId: 'wallart', voterKey: 'ignored-caller-value' })
       });
 
       const res = await upvoteApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
@@ -250,7 +250,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.upvotes).toBe(initialCount + 1);
 
       // Verify in DB
-      const updated = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('picfitai').first();
+      const updated = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('wallart').first();
       expect((updated as any).upvotes).toBe(initialCount + 1);
     });
 

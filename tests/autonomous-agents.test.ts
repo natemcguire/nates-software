@@ -26,7 +26,7 @@ describe('Hosted RIG and Autonomous Agents Runtime', () => {
 
   it('should reclaim idle environments to preserve pool ports', () => {
     const manager = new HostedRigManager();
-    const env = manager.provisionEnvironment({ appId: 'picfitai', ttlMinutes: 10 });
+    const env = manager.provisionEnvironment({ appId: 'wallart', ttlMinutes: 10 });
     
     // Artificially age lastActiveAt
     env.lastActiveAt = new Date(Date.now() - 20 * 60 * 1000).toISOString();
@@ -98,12 +98,12 @@ describe('Hosted RIG and Autonomous Agents Runtime', () => {
       summary: 'Automatically adds covering indexes to user_id and optimizes WAL checkpoints.',
       featureRef: 'refs/features/opt/sqlite-indexes',
       casNewSha: '8f4a21e',
-      targetAppIds: ['dronehunter', 'certified-mailer', 'picfitai']
+      targetAppIds: ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']
     });
 
-    expect(report.targetsCount).toBe(3);
-    expect(report.dispatchedCount).toBe(3);
-    expect(report.proposals.length).toBe(3);
+    expect(report.targetsCount).toBe(4);
+    expect(report.dispatchedCount).toBe(4);
+    expect(report.proposals.length).toBe(4);
     expect(report.proposals[0].targetAppId).toBe('dronehunter');
     expect(report.proposals[0].status).toBe('pending');
   });

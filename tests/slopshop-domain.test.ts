@@ -41,9 +41,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(mailer.appId).toBe('certified-mailer');
       expect(mailer.slug).toBe('nate/certified-mailer');
 
-      const picfit = getAppCoordinate('picfitai');
-      expect(picfit.appId).toBe('picfitai');
-      expect(picfit.slug).toBe('nate/picfitai');
+      expect(getAppCoordinate('wallart').slug).toBe('nate/wallart');
+      expect(getAppCoordinate('american-gardener').slug).toBe('nate/american-gardener');
     });
 
     it('should handle custom repository coordinates cleanly', () => {
@@ -72,7 +71,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
     it('should preserve backward-compatible WORKTREE_CONFIGS', () => {
       expect(WORKTREE_CONFIGS.dronehunter.defaultPort).toBe(3004);
       expect(WORKTREE_CONFIGS['certified-mailer'].defaultPort).toBe(3005);
-      expect(WORKTREE_CONFIGS.picfitai.defaultPort).toBe(3006);
+      expect(WORKTREE_CONFIGS.wallart.defaultPort).toBe(3002);
+      expect(WORKTREE_CONFIGS['american-gardener'].defaultPort).toBe(4173);
     });
   });
 
@@ -98,8 +98,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       const mailerPresets = getFeaturePresets('certified-mailer');
       expect(mailerPresets.length).toBeGreaterThanOrEqual(3);
 
-      const picfitPresets = getFeaturePresets('picfitai');
-      expect(picfitPresets.length).toBeGreaterThanOrEqual(3);
+      expect(getFeaturePresets('wallart').length).toBeGreaterThanOrEqual(1);
+      expect(getFeaturePresets('american-gardener').length).toBeGreaterThanOrEqual(1);
     });
   });
 

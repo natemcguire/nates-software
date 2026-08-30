@@ -25,7 +25,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     // Verify app exists
-    const app = await env.DB.prepare('SELECT id, upvotes FROM app_listings WHERE id = ?').bind(cleanAppId).first();
+    const app = await env.DB.prepare("SELECT id, upvotes FROM app_listings WHERE id = ? AND listing_status = 'active'").bind(cleanAppId).first();
     if (!app) {
       return Response.json({ success: false, error: 'App listing not found' }, { status: 404 });
     }

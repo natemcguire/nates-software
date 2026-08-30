@@ -38,7 +38,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     `;
 
     const queryParams: any[] = [];
-    const whereClauses: string[] = [];
+    const whereClauses: string[] = [`a.listing_status = 'active'`];
 
     if (batchFilter.type === 'today' && batchFilter.windowStart && batchFilter.windowEnd) {
       whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
@@ -85,6 +85,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           SELECT a.creator_id, a.created_at, u.id, u.username, u.display_name AS displayName, u.avatar_url AS avatar, u.bio
           FROM app_listings a
           JOIN users u ON a.creator_id = u.id
+          WHERE a.listing_status = 'active'
           ORDER BY a.created_at ASC
         `).all();
         
