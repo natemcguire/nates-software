@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   validateForkOrigin,
   createMergeJob,
@@ -61,9 +63,13 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
   // Step 3: slop clone, fork, and push with truthful failure handling
   it('Step 3: should create a structured local fork without contacting the remote gateway', () => {
     const forkRes = handleFork('nate/dronehunter');
-    expect(forkRes.success).toBe(true);
-    expect(forkRes.command).toBe('fork');
-    expect(forkRes.data.worktreePath).toContain('/tmp/slop-dronehunter-');
+    try {
+      expect(forkRes.success).toBe(true);
+      expect(forkRes.command).toBe('fork');
+      expect(forkRes.data.worktreePath).toContain(`${tmpdir()}/slop-dronehunter-`);
+    } finally {
+      if (forkRes.success) rmSync(forkRes.data.worktreePath, { recursive: true, force: true });
+    }
   }, 15_000);
 
   // Step 5: Merge-job state machine transitions

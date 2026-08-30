@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { afterEach, describe, it, expect } from 'vitest';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   handleInit,
   handleFork,
@@ -16,6 +17,17 @@ import {
   runSlopCli,
   getEngineStartInstructions
 } from '../bin/slop.ts';
+
+const createdWorktrees: string[] = [];
+const trackedFork = (slug?: string) => {
+  const result = handleFork(slug);
+  if (result.success && result.data?.worktreePath) createdWorktrees.push(result.data.worktreePath);
+  return result;
+};
+
+afterEach(() => {
+  for (const worktree of createdWorktrees.splice(0)) rmSync(worktree, { recursive: true, force: true });
+});
 
 describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
 
@@ -42,14 +54,14 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
 
   describe('slop fork <slug>', () => {
     it('should fork default slug (nate/dronehunter) into isolated worktree', () => {
-      const res = handleFork();
+      const res = trackedFork();
       expect(res.success).toBe(true);
       expect(res.command).toBe('fork');
       expect(res.data.slug).toBe('nate/dronehunter');
       expect(res.data.appId).toBe('dronehunter');
       expect(res.data.port).toBeGreaterThanOrEqual(3001);
       expect(res.data.memoryCapMb).toBe(256);
-      expect(res.data.worktreePath).toContain('/tmp/slop-dronehunter-');
+      expect(res.data.worktreePath).toContain(`${tmpdir()}/slop-dronehunter-`);
       expect(existsSync(`${res.data.worktreePath}/index.html`)).toBe(true);
       expect(existsSync(`${res.data.worktreePath}/assets/drone.png`)).toBe(true);
       expect(existsSync(`${res.data.worktreePath}/server.mjs`)).toBe(true);
@@ -63,7 +75,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
     }, 15_000);
 
     it('should fork custom app slug into isolated worktree', () => {
-      const res = handleFork('nate/certified-mailer');
+      const res = trackedFork('nate/certified-mailer');
       expect(res.success).toBe(true);
       expect(res.data.slug).toBe('nate/certified-mailer');
       expect(res.data.appId).toBe('certified-mailer');
@@ -215,7 +227,9 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   describe('runSlopCli router', () => {
     it('should route all commands cleanly', async () => {
       expect((await runSlopCli(['init', 'test-app'])).success).toBe(true);
-      expect((await runSlopCli(['fork', 'nate/dronehunter'])).success).toBe(true);
+      const routedFork = await runSlopCli(['fork', 'nate/dronehunter']);
+      if (routedFork.success && routedFork.data?.worktreePath) createdWorktrees.push(routedFork.data.worktreePath);
+      expect(routedFork.success).toBe(true);
       expect((await runSlopCli(['mod'])).command).toBe('mod');
       expect((await runSlopCli(['test'])).success).toBe(true);
       expect((await runSlopCli(['push'])).command).toBe('push');

@@ -76,6 +76,17 @@ export const ENGINE_CHOICES = [
   { key: "4", id: "cursor", label: "Cursor / VS Code", binary: "cursor", args: ["."] },
 ] as const;
 
+export function getSlopWorktreeRoot(): string {
+  const pathMod = getPath();
+  const osMod = getOs();
+  const configured = typeof process !== 'undefined' ? String(process.env.SLOP_WORKTREE_ROOT || '').trim() : '';
+  const root = configured || String(osMod?.tmpdir?.() || '/tmp');
+  if (!pathMod?.isAbsolute(root) || pathMod.parse(root).root === pathMod.resolve(root)) {
+    throw new Error('SLOP worktree root must be an absolute non-root directory.');
+  }
+  return pathMod.resolve(root);
+}
+
 export function getEngineStartInstructions(worktreePath: string): string[] {
   return ENGINE_CHOICES.map(engine =>
     `  ${engine.key}. ${engine.label.padEnd(20)} cd "${worktreePath}" && ${engine.binary}${engine.args.length ? ` ${engine.args.join(" ")}` : ""}`
@@ -302,7 +313,8 @@ export function handleFork(slugArg?: string): SlopCommandResult {
   }
   appId = appId.replace(/[^a-zA-Z0-9._-]/g, '-');
   const worktreeId = `slop-${appId}-${Date.now().toString(36)}`;
-  const worktreePath = `/tmp/${worktreeId}`;
+  const pathMod = getPath();
+  const worktreePath = pathMod.join(getSlopWorktreeRoot(), worktreeId);
 
   const rig = new RigRuntimeBackend();
   let port = 3004;
