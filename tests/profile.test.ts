@@ -64,7 +64,7 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
       expect(maskLicenseKey('NSW-CERTMAIL-4401-90B1', 'certified-mailer')).toBe('NSW-CERTMAIL-••••-90B1');
       expect(maskLicenseKey('UNKNOWN-RAW-KEY-ABC4', 'test')).toBe('NSW-TE-••••-ABC4');
       expect(maskLicenseKey('', 'dronehunter')).toBe('NSW-DR-••••-0000');
-      expect(maskLicenseKey(undefined, 'picfitai')).toBe('NSW-PI-••••-0000');
+      expect(maskLicenseKey(undefined, 'wallart')).toBe('NSW-WA-••••-0000');
     });
 
     it('should extract last 4 characters safely', () => {
