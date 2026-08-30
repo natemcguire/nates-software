@@ -146,6 +146,19 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                   LIVE D1 DROP
                 </span>
               )}
+              {app.hasCanonicalRepo && app.repoSlug ? (
+                <span className="bg-blue-100 text-blue-900 border border-blue-300 font-mono text-[10px] px-1.5 py-0.2 rounded flex items-center gap-1 font-bold" title={`Canonical GITSMITH Repo: ${app.repoSlug}`}>
+                  <GitBranch size={10} className="text-blue-700 shrink-0" />
+                  <span>{app.repoSlug}</span>
+                  {app.repoHeadCommitOid && (
+                    <span className="text-blue-600 font-normal">#{app.repoHeadCommitOid.slice(0, 7)}</span>
+                  )}
+                </span>
+              ) : (
+                <span className="bg-gray-200 text-gray-600 border border-gray-400 font-mono text-[10px] px-1.5 py-0.2 rounded" title="Source repository not yet on GITSMITH forge">
+                  not yet on forge
+                </span>
+              )}
               <span className="text-gray-500 text-xs font-medium">by @{app.author || app.creator}</span>
             </div>
             <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
@@ -367,7 +380,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             <ExternalLink size={12} /> Launch Live App &rarr;
           </a>
           <a
-            href={`https://gitsmith.nates-software.com?repo=${app.id}`}
+            href={`https://gitsmith.nates-software.com?repo=${app.repoSlug || app.repoName || app.repositoryId || app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"

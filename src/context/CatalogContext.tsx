@@ -17,6 +17,7 @@ export interface CatalogContextType {
   isOwned: (appId: string) => boolean;
   refreshCatalog: (opts?: { sort?: string; batch?: string }) => Promise<void>;
   upvoteApp: (appId: string) => Promise<boolean>;
+  incrementForkCount: (appId: string) => void;
   submitDrop: (dropData: Partial<AppListing>) => Promise<{ success: boolean; id?: string; error?: string }>;
   recordPurchase: (appId: string, licenseKey: string) => void;
 }
@@ -108,6 +109,16 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               deploymentPlan: d.deploymentPlan || d.deploymentPlanJson,
               activeDeploymentId: d.activeDeploymentId,
               activeCommitOid: d.activeCommitOid,
+              repositoryId: d.repositoryId || null,
+              hasCanonicalRepo: Boolean(d.hasCanonicalRepo || d.repositoryId),
+              isRepoActive: Boolean(d.isRepoActive),
+              repoSlug: d.repoSlug || null,
+              repoName: d.repoName || null,
+              repoOwner: d.repoOwner || null,
+              repoHeadCommitOid: d.repoHeadCommitOid || null,
+              repoVisibility: d.repoVisibility || null,
+              repoStatus: d.repoStatus || null,
+              repoDefaultRef: d.repoDefaultRef || null,
               isDemo: false
             };
           });
@@ -243,6 +254,10 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [fetchAuthoritativeCatalog]);
 
+  const incrementForkCount = useCallback((appId: string) => {
+    setApps(prev => prev.map(a => a.id === appId ? { ...a, forkCount: (a.forkCount || 0) + 1, forks: (a.forks || 0) + 1 } : a));
+  }, []);
+
   const recordPurchase = useCallback((appId: string, _licenseKey: string) => {
     setShelfAppIds(prev => new Set(prev).add(appId));
   }, []);
@@ -264,6 +279,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isOwned,
         refreshCatalog: fetchAuthoritativeCatalog,
         upvoteApp,
+        incrementForkCount,
         submitDrop,
         recordPurchase
       }}

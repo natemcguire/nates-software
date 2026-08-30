@@ -1805,13 +1805,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
   // --- Action: fork (Phase 1: Session-authenticated fork request) ---
   if (action === 'fork') {
-    let rawParentId = String(body.parentRepositoryId || body.parentSlug || body.parent || body.slug || '').trim();
+    let rawParentId = String(body.parentRepositoryId || body.parentSlug || body.parent || body.slug || body.appId || '').trim();
     if (/^(ssh|https?|file):\/\//.test(rawParentId)) {
       try {
         rawParentId = new URL(rawParentId).pathname.replace(/^\/+/, '').replace(/\.git$/i, '');
       } catch {}
     }
-    if (!rawParentId) return failure('parentRepositoryId is required.', 400);
+    if (!rawParentId) return failure('parentRepositoryId or appId is required.', 400);
 
     let childSlug = String(body.childSlug || '').trim();
     if (!childSlug && body.slug && body.parentRepositoryId && body.slug !== body.parentRepositoryId) {
@@ -1820,7 +1820,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (childSlug.includes('/')) {
       childSlug = childSlug.split('/').pop()!;
     }
-    const parentRefName = String(body.parentRefName || 'refs/heads/main').trim();
     const visibility = ['public', 'unlisted', 'private'].includes(body.visibility) ? body.visibility : 'public';
 
     try {
@@ -1857,9 +1856,68 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           LIMIT 1
         `).bind(actor.id, actor.id, rawParentId, actor.id).first();
       }
+      if (!parent && body.appId) {
+        const rawAppId = String(body.appId).trim();
+        parent = await db.prepare(`
+          SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+                 r.slug, r.visibility, r.object_format AS objectFormat,
+                 r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
+                 r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+          FROM repositories r
+          LEFT JOIN repository_members m
+            ON m.repository_id = r.id AND m.user_id = ?
+          WHERE r.id = (SELECT repository_id FROM app_listings WHERE id = ?)
+             OR r.app_id = ?
+             OR r.slug = ?
+          ORDER BY (CASE WHEN r.status = 'active' THEN 0 ELSE 1 END), r.created_at ASC
+          LIMIT 1
+        `).bind(actor.id, actor.id, rawAppId, rawAppId, rawAppId).first();
+      }
+      if (!parent) {
+        parent = await db.prepare(`
+          SELECT r.id, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+                 r.slug, r.visibility, r.object_format AS objectFormat,
+                 r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
+                 r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
+          FROM repositories r
+          LEFT JOIN repository_members m
+            ON m.repository_id = r.id AND m.user_id = ?
+          WHERE r.id = (SELECT repository_id FROM app_listings WHERE id = ?)
+             OR r.app_id = ?
+          ORDER BY (CASE WHEN r.status = 'active' THEN 0 ELSE 1 END), r.created_at ASC
+          LIMIT 1
+        `).bind(actor.id, actor.id, rawParentId, rawParentId).first();
+      }
 
       if (!parent) return failure('Parent repository not found.', 404);
       const parentRepositoryId = (parent as any).id;
+
+      // Cross-validate appId ↔ parentRepositoryId
+      if (body.appId) {
+        const rawAppId = String(body.appId).trim();
+        if (rawAppId) {
+          let isLinked = false;
+          if ((parent as any).appId === rawAppId || (parent as any).slug === rawAppId) {
+            isLinked = true;
+          } else {
+            const linkedListing = await db.prepare(`
+              SELECT id FROM app_listings
+              WHERE id = ? AND repository_id = ?
+            `).bind(rawAppId, parentRepositoryId).first();
+            if (linkedListing) {
+              isLinked = true;
+            }
+          }
+
+          if (!isLinked) {
+            return failure('Provided appId does not match the parent repository.', 400);
+          }
+        }
+      }
+
+      const parentRefName = String(body.parentRefName || (parent as any).defaultRef || 'refs/heads/main').trim();
 
       if (!childSlug) {
         childSlug = (parent as any).slug;
@@ -1983,6 +2041,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         visibility
       });
 
+      const resolvedParentAppId = (parent as any).appId || null;
+
       await db.batch([
         db.prepare(`
           INSERT INTO repositories (
@@ -2000,7 +2060,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         db.prepare(`
           INSERT INTO forge_outbox_events (id, aggregate_type, aggregate_id, event_type, payload, attempts, created_at)
           VALUES (?, 'fork', ?, 'repository.fork_requested', ?, 0, CURRENT_TIMESTAMP)
-        `).bind(outboxEventId, childRepositoryId, forkPayload)
+        `).bind(outboxEventId, childRepositoryId, forkPayload),
+        db.prepare(`
+          UPDATE app_listings
+          SET forks = COALESCE(forks, 0) + 1
+          WHERE id = (
+            SELECT id FROM app_listings
+            WHERE repository_id = ? OR id = ? OR id = ?
+            ORDER BY (CASE WHEN repository_id = ? THEN 0 WHEN id = ? THEN 1 ELSE 2 END)
+            LIMIT 1
+          )
+        `).bind(parentRepositoryId, resolvedParentAppId || '', (parent as any).slug || '', parentRepositoryId, resolvedParentAppId || '')
       ]);
 
       return Response.json({

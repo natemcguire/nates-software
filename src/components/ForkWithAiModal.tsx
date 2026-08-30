@@ -1,24 +1,38 @@
 import React, { useState } from 'react';
-import { Bot, Copy, Check, Sparkles } from 'lucide-react';
+import { Bot, Copy, Check, Sparkles, GitFork, AlertTriangle, Network } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
+import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
+import { AppListing } from '../data/mockData';
 
 export interface ForkWithAiModalProps {
   isOpen: boolean;
   onClose: () => void;
-  app: {
+  app: Partial<AppListing> & {
     id: string;
     name: string;
-    version: string;
+    version?: string;
     author?: string;
     creator?: string;
     avatar?: string;
     creatorAvatar?: string;
     authorAvatar?: string;
     price?: string | number;
+    repositoryId?: string | null;
+    hasCanonicalRepo?: boolean;
+    isRepoActive?: boolean;
+    repoSlug?: string | null;
+    repoName?: string | null;
+    repoOwner?: string | null;
+    repoHeadCommitOid?: string | null;
+    repoVisibility?: 'public' | 'unlisted' | 'private' | null;
+    repoStatus?: string | null;
+    repoDefaultRef?: string | null;
+    [key: string]: any;
   };
   onLaunchTerminal?: (cmd: string) => void;
+  onForkSuccess?: (forkData: any) => void;
 }
 
 const PROMPT_PRESETS: Record<string, string[]> = {
@@ -48,32 +62,112 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   isOpen,
   onClose,
   app,
-  onLaunchTerminal
+  onLaunchTerminal,
+  onForkSuccess
 }) => {
-  const { user } = useAuth();
+  const { user, openAuthModal } = useAuth();
+  const { incrementForkCount } = useCatalog();
   const { showAlert } = useAlert();
 
-  const makerHandle = user?.username || 'josh';
+  const [isForking, setIsForking] = useState(false);
+  const [forkError, setForkError] = useState<string | null>(null);
+  const [forkResult, setForkResult] = useState<any | null>(null);
+  const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const [copiedWorktreeCmd, setCopiedWorktreeCmd] = useState(false);
+
   const suggestedPrompts = PROMPT_PRESETS[app.id] || [
     `Implement a new local-first feature for ${app.name}; keep the storage adapter configurable and document its persistence boundary.`
   ];
-
   const [customPrompt, setCustomPrompt] = useState(suggestedPrompts[0]);
-  const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
-  const [copiedCmd, setCopiedCmd] = useState(false);
 
   if (!isOpen) return null;
 
-  const getCommandForTool = () => {
-    return `slop fork nate/${app.id}`;
+  const makerHandle = user?.username || 'guest';
+  const hasCanonicalRepo = Boolean(app.hasCanonicalRepo || app.repositoryId || (app.repoSlug && app.isRepoActive));
+  const isRepoActive = app.isRepoActive ?? (app.repoStatus === 'active' || hasCanonicalRepo);
+  const canPerformRealFork = hasCanonicalRepo && isRepoActive;
+
+  // Real repo identity derived from canonical projection or honest fallback
+  const resolvedRepoSlug = app.repoSlug || (app.repoName ? `${app.author || app.creator || 'nate'}/${app.repoName}` : null);
+  const cliForkTarget = resolvedRepoSlug || `${app.author || app.creator || 'nate'}/${app.id}`;
+
+  const getCliCommand = () => {
+    return `slop fork ${cliForkTarget}`;
   };
 
   const handleCopyCommand = () => {
     playSuccessChime();
-    navigator.clipboard.writeText(getCommandForTool());
+    navigator.clipboard.writeText(getCliCommand());
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
-    showAlert("Install command copied. When the fork is ready, SLOP will ask which LLM or IDE to start—nothing launches automatically.", "Install Command Copied", "success");
+    showAlert(`CLI command copied: ${getCliCommand()}`, "Command Copied", "success");
+  };
+
+  const handleRealFork = async () => {
+    if (!user) {
+      playClickSound();
+      showAlert("You must be signed in to fork this project onto the GITSMITH forge.", "Sign In Required", "warning");
+      openAuthModal('login');
+      return;
+    }
+
+    if (!canPerformRealFork) {
+      playClickSound();
+      showAlert(
+        "This project isn't on the forge yet (no canonical repository). It can't be forked until its source is pushed.",
+        "Cannot Fork",
+        "warning"
+      );
+      return;
+    }
+
+    setIsForking(true);
+    setForkError(null);
+    playClickSound();
+
+    try {
+      const parentIdentifier = app.repositoryId || app.repoSlug || app.id;
+      const res = await fetch('/api/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'fork',
+          parentRepositoryId: parentIdentifier,
+          appId: app.id,
+          childSlug: app.repoName || app.id,
+          parentRefName: app.repoDefaultRef || 'refs/heads/main'
+        })
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.success) {
+        setForkResult(data);
+        incrementForkCount(app.id);
+        playSuccessChime();
+        if (onForkSuccess) {
+          onForkSuccess(data);
+        }
+      } else {
+        const errorMsg = data?.error || `Fork failed (HTTP ${res.status})`;
+        setForkError(errorMsg);
+        showAlert(errorMsg, "Fork Failed", "error");
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Network error during fork creation.';
+      setForkError(errorMsg);
+      showAlert(errorMsg, "Fork Error", "error");
+    } finally {
+      setIsForking(false);
+    }
+  };
+
+  const handleClose = () => {
+    playClickSound();
+    setForkResult(null);
+    setForkError(null);
+    onClose();
   };
 
   return (
@@ -86,7 +180,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
             <span>1-CLICK FORK &amp; CODE WITH AI — {app.name}</span>
           </div>
           <button
-            onClick={() => { playClickSound(); onClose(); }}
+            onClick={handleClose}
             className="w-4 h-4 bg-w95-gray border border-t-white border-l-white border-b-black border-r-black text-black font-bold flex items-center justify-center text-[10px] hover:bg-red-700 hover:text-white"
           >
             ✕
@@ -94,116 +188,254 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
         </div>
 
         <div className="p-4 bg-w95-gray space-y-3">
-          {/* Header Metadata */}
-          <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="text-3xl bg-gray-50 p-1 rounded border border-gray-300">
-                {app.creatorAvatar || app.authorAvatar || '🎯'}
-              </span>
-              <div>
-                <div className="font-bold text-sm text-gray-900">{app.name}</div>
-                <div className="text-gray-500 text-[11px] font-mono">
-                  Base: @{app.author || app.creator || 'nate'} &rarr; Fork: @{makerHandle}
+          {/* Success View after Real Fork */}
+          {forkResult ? (
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-4 space-y-3">
+              <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+                <Check size={18} className="text-emerald-600 shrink-0" />
+                <span>⚡ Fork Provisioned on GITSMITH Forge!</span>
+              </div>
+
+              <p className="text-gray-700 text-xs">
+                A real server-side fork repository has been registered in D1 with immutable lineage tracking and outbox event dispatch.
+              </p>
+
+              <div className="bg-slate-950 text-slate-100 p-3 rounded font-mono text-xs space-y-2 border border-slate-800">
+                <div className="flex items-center justify-between text-[11px] border-b border-slate-800 pb-1">
+                  <span className="text-slate-400">Child Repository:</span>
+                  <span className="text-emerald-400 font-bold">
+                    @{user?.username || 'you'}/{forkResult.repository?.slug || app.repoName || app.id}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] border-b border-slate-800 pb-1">
+                  <span className="text-slate-400">Fork Status:</span>
+                  <span className="text-amber-400 uppercase font-bold">
+                    {forkResult.repository?.status || 'provisioning'}
+                  </span>
+                </div>
+                {forkResult.forkRequest?.parentCommitOid && (
+                  <div className="flex items-center justify-between text-[11px] border-b border-slate-800 pb-1">
+                    <span className="text-slate-400">Lineage Snapshot:</span>
+                    <span className="text-sky-300">
+                      #{forkResult.forkRequest.parentCommitOid.slice(0, 8)} (Depth {forkResult.forkRequest.depth || 1})
+                    </span>
+                  </div>
+                )}
+                <div className="pt-1">
+                  <div className="text-slate-400 text-[10px] mb-1">Clone &amp; Worktree Command:</div>
+                  <div className="bg-black/60 p-2 rounded text-emerald-300 text-[11px] flex items-center justify-between">
+                    <code>slop fork {user?.username || 'nate'}/{forkResult.repository?.slug || app.repoName || app.id}</code>
+                    <button
+                      onClick={() => {
+                        playSuccessChime();
+                        navigator.clipboard.writeText(`slop fork ${user?.username || 'nate'}/${forkResult.repository?.slug || app.repoName || app.id}`);
+                        setCopiedWorktreeCmd(true);
+                        setTimeout(() => setCopiedWorktreeCmd(false), 2000);
+                      }}
+                      className="bg-emerald-800 hover:bg-emerald-700 text-white px-2 py-0.5 rounded text-[10px] ml-2 font-bold shrink-0"
+                    >
+                      {copiedWorktreeCmd ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="text-right font-mono text-[11px]">
-              <div className="text-emerald-800 font-bold">70% Maker Royalty</div>
-              <div className="text-gray-500">Storage declared by each app</div>
-            </div>
-          </div>
-
-          {/* Goal / Prompt Selector */}
-          <div>
-            <label className="block text-gray-800 font-bold mb-1">Select AI Coding Goal or Prompt:</label>
-            <div className="space-y-1">
-              {suggestedPrompts.map((p, idx) => (
+              <div className="flex justify-end pt-2">
                 <button
-                  key={idx}
-                  onClick={() => {
-                    playClickSound();
-                    setCustomPrompt(p);
-                  }}
-                  className={`w-full text-left p-2 border flex items-center gap-2 text-xs transition-colors ${
-                    customPrompt === p
-                      ? 'bg-blue-50 border-2 border-t-black border-l-black border-b-white border-r-white font-bold text-blue-900 shadow-inner'
-                      : 'bg-white border-t-white border-l-white border-b-black border-r-black hover:bg-gray-100 text-gray-800'
-                  }`}
+                  onClick={handleClose}
+                  className="btn-w95 btn-w95-primary px-5 py-1.5 font-bold text-xs"
                 >
-                  <Sparkles size={12} className="text-amber-500 shrink-0" />
-                  <span className="line-clamp-1">{p}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tool Tabs */}
-          <div className="space-y-1">
-            <div className="flex gap-1 border-b border-gray-400 pb-1">
-              {[
-                { id: 'claude', name: 'Claude Code', icon: '🟣' },
-                { id: 'agy', name: 'Antigravity (AGY)', icon: '⚡' },
-                { id: 'cursor', name: 'Cursor / VS Code', icon: '🧠' },
-                { id: 'terminal', name: 'SLOP CLI', icon: '💻' }
-              ].map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => { playClickSound(); setActiveTool(t.id as any); }}
-                  className={`px-2.5 py-1 text-xs font-bold border-t border-l border-r rounded-t flex items-center gap-1 ${
-                    activeTool === t.id
-                      ? 'bg-slate-900 text-cyan-300 border-slate-700'
-                      : 'bg-w95-gray text-gray-700 border-gray-400 hover:bg-gray-200'
-                  }`}
-                >
-                  <span>{t.icon}</span>
-                  <span>{t.name}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Terminal Command Output */}
-            <div className="bg-slate-950 text-slate-100 p-2.5 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
-              <div className="text-emerald-300 whitespace-pre-wrap break-all leading-relaxed bg-black/60 p-2 rounded border border-slate-800 select-text">
-                {getCommandForTool()}
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-slate-500 text-[10px]">
-                  Installs first, then prompts to start {activeTool === 'terminal' ? 'an engine later' : activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : 'Cursor'}.
-                </span>
-                <button
-                  onClick={handleCopyCommand}
-                  className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
-                >
-                  {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copiedCmd ? 'Copied!' : 'Copy Install Command'}</span>
+                  Done
                 </button>
               </div>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Header Metadata */}
+              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-3xl bg-gray-50 p-1 rounded border border-gray-300">
+                    {app.creatorAvatar || app.authorAvatar || '🎯'}
+                  </span>
+                  <div>
+                    <div className="font-bold text-sm text-gray-900">{app.name}</div>
+                    <div className="text-gray-500 text-[11px] font-mono">
+                      Base: @{app.author || app.creator || 'nate'} &rarr; Fork: @{makerHandle}
+                    </div>
+                  </div>
+                </div>
 
-          {/* Action Buttons Footer */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-300 flex-wrap gap-2">
-            <button
-              onClick={() => { playClickSound(); onClose(); }}
-              className="btn-w95 px-4 py-1 text-xs"
-            >
-              Cancel
-            </button>
+                <div className="text-right font-mono text-[11px]">
+                  <div className="text-emerald-800 font-bold">70% Maker Royalty</div>
+                  {resolvedRepoSlug ? (
+                    <div className="text-blue-800 font-bold flex items-center gap-1 justify-end">
+                      <Network size={11} className="text-blue-600" />
+                      <span>{resolvedRepoSlug}</span>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">Storage declared by app</div>
+                  )}
+                </div>
+              </div>
 
-            <div className="flex items-center gap-2">
-              {onLaunchTerminal && <span className="text-[10px] text-gray-600 max-w-48">Use a native terminal with Git and Node installed. TERMINAL.EXE is a browser command console, not a host shell.</span>}
+              {/* Honest Forge Linkage Banner */}
+              {!canPerformRealFork ? (
+                <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded text-xs space-y-1.5 text-amber-900">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                    <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                    <span>No Canonical Repository on Forge Yet</span>
+                  </div>
+                  <p className="text-amber-950 text-[11px] leading-relaxed">
+                    This project isn't on the forge yet (no canonical repository). It can't be forked until its source is pushed.
+                  </p>
+                  <div className="text-[10px] text-amber-800 font-mono flex items-center gap-2">
+                    <span>Forge State: <strong className="text-amber-900">unlinked (repository_id is null)</strong></span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 p-2.5 rounded text-xs flex items-center justify-between text-blue-900">
+                  <div className="flex items-center gap-2">
+                    <GitFork size={14} className="text-blue-700 shrink-0" />
+                    <div>
+                      <span className="font-bold">Canonical Forge Repo:</span>{' '}
+                      <span className="font-mono">{resolvedRepoSlug}</span>
+                      {app.repoHeadCommitOid && (
+                        <span className="text-blue-600 font-mono text-[10px] ml-1.5">
+                          (#{app.repoHeadCommitOid.slice(0, 7)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold">
+                    READY TO FORK
+                  </span>
+                </div>
+              )}
 
-              <button
-                onClick={handleCopyCommand}
-                className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow"
-              >
-                <Bot size={13} />
-                <span>Install, Then Choose Engine</span>
-              </button>
-            </div>
-          </div>
+              {forkError && (
+                <div className="bg-red-50 border border-red-300 p-2 text-red-800 text-xs font-mono rounded">
+                  ⚠️ Error: {forkError}
+                </div>
+              )}
+
+              {/* Goal / Prompt Selector */}
+              <div>
+                <label className="block text-gray-800 font-bold mb-1">Select AI Coding Goal or Prompt:</label>
+                <div className="space-y-1">
+                  {suggestedPrompts.map((p, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        playClickSound();
+                        setCustomPrompt(p);
+                      }}
+                      className={`w-full text-left p-2 border flex items-center gap-2 text-xs transition-colors ${
+                        customPrompt === p
+                          ? 'bg-blue-50 border-2 border-t-black border-l-black border-b-white border-r-white font-bold text-blue-900 shadow-inner'
+                          : 'bg-white border-t-white border-l-white border-b-black border-r-black hover:bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      <Sparkles size={12} className="text-amber-500 shrink-0" />
+                      <span className="line-clamp-1">{p}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+                {/* Tool Selector Tabs & Command */}
+                <div className="space-y-1">
+                  <div className="flex gap-1 border-b border-gray-400 pb-1">
+                    {[
+                      { id: 'claude', name: 'Claude Code', icon: '🟣' },
+                      { id: 'agy', name: 'Antigravity (AGY)', icon: '⚡' },
+                      { id: 'cursor', name: 'Cursor / VS Code', icon: '🧠' },
+                      { id: 'terminal', name: 'SLOP CLI', icon: '💻' }
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => { playClickSound(); setActiveTool(t.id as any); }}
+                        className={`px-2 py-0.5 text-[11px] font-bold border-t border-l border-r rounded-t flex items-center gap-1 ${
+                          activeTool === t.id
+                            ? 'bg-slate-900 text-cyan-300 border-slate-700'
+                            : 'bg-w95-gray text-gray-700 border-gray-400 hover:bg-gray-200'
+                        }`}
+                      >
+                        <span>{t.icon}</span>
+                        <span>{t.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Terminal Command Output */}
+                  <div className="bg-slate-950 text-slate-100 p-2.5 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
+                    <div className="text-emerald-300 whitespace-pre-wrap break-all leading-relaxed bg-black/60 p-2 rounded border border-slate-800 select-text">
+                      {getCliCommand()}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-slate-500 text-[10px]">
+                        {resolvedRepoSlug
+                          ? `Target: @${resolvedRepoSlug} · Engine: ${activeTool === 'terminal' ? 'SLOP' : activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : 'Cursor'}`
+                          : `Offline demo target (@${app.author || 'nate'}/${app.id})`}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {onLaunchTerminal && (
+                          <button
+                            onClick={() => {
+                              playClickSound();
+                              onLaunchTerminal(getCliCommand());
+                            }}
+                            className="bg-slate-700 hover:bg-slate-600 text-cyan-200 border border-slate-500 px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                            title="Launch in embedded terminal"
+                          >
+                            <span>Run</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={handleCopyCommand}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2.5 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
+                        >
+                          {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
+                          <span>{copiedCmd ? 'Copied!' : 'Copy CLI Command'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              {/* Action Buttons Footer */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-300 flex-wrap gap-2">
+                <button
+                  onClick={handleClose}
+                  className="btn-w95 px-4 py-1 text-xs"
+                >
+                  Cancel
+                </button>
+
+                <div className="flex items-center gap-2">
+                  {canPerformRealFork ? (
+                    <button
+                      onClick={handleRealFork}
+                      disabled={isForking}
+                      className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow"
+                    >
+                      <GitFork size={13} />
+                      <span>{isForking ? 'Creating Fork...' : '⚡ Fork with AI (Create Real Fork)'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      title="This project isn't on the forge yet (no canonical repository). It can't be forked until its source is pushed."
+                      className="btn-w95 opacity-60 cursor-not-allowed px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 text-gray-500"
+                    >
+                      <AlertTriangle size={13} />
+                      <span>Fork Unavailable (Not on Forge Yet)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

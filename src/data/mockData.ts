@@ -54,6 +54,16 @@ export interface AppListing {
   deploymentPlan?: any;
   activeDeploymentId?: string;
   activeCommitOid?: string;
+  repositoryId?: string | null;
+  hasCanonicalRepo?: boolean;
+  isRepoActive?: boolean;
+  repoSlug?: string | null;
+  repoName?: string | null;
+  repoOwner?: string | null;
+  repoHeadCommitOid?: string | null;
+  repoVisibility?: 'public' | 'unlisted' | 'private' | null;
+  repoStatus?: string | null;
+  repoDefaultRef?: string | null;
   binaries?: {
     web?: string;
     mac?: string;
