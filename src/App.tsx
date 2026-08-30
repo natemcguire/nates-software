@@ -1,6 +1,7 @@
 import { CatalogProvider, useCatalog } from './context/CatalogContext';
 import { AuthProvider } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 export interface ResolvedRoute {
   readonly type: 'standalone_app' | 'standalone_view' | 'desktop';
   readonly id?: string;
@@ -147,7 +148,9 @@ function AppInner() {
           </div>
         </div>
         <div className="flex-1 overflow-auto p-2">
-          <EphemeralLiveApp app={resolvedApp} />
+          <ErrorBoundary fallbackTitle={resolvedApp.name}>
+            <EphemeralLiveApp app={resolvedApp} />
+          </ErrorBoundary>
         </div>
       </div>
     );
@@ -171,28 +174,32 @@ function AppInner() {
         </a>
       </div>
       <div className="flex-1 overflow-hidden">
-        {component}
+        <ErrorBoundary fallbackTitle={title}>
+          {component}
+        </ErrorBoundary>
       </div>
 
       {editingApp && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
-            <PostEditorView
-              app={editingApp}
-              onSave={async (updatedApp) => {
-                const res = await submitDrop(updatedApp);
-                if (!res.success) {
-                  throw new Error(res.error || 'Server failed to persist drop');
-                }
-                playSuccessChime();
-                showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
-                setEditingApp(null);
-              }}
-              onCancel={() => {
-                playClickSound();
-                setEditingApp(null);
-              }}
-            />
+            <ErrorBoundary fallbackTitle="Post Editor" onDismiss={() => setEditingApp(null)}>
+              <PostEditorView
+                app={editingApp}
+                onSave={async (updatedApp) => {
+                  const res = await submitDrop(updatedApp);
+                  if (!res.success) {
+                    throw new Error(res.error || 'Server failed to persist drop');
+                  }
+                  playSuccessChime();
+                  showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
+                  setEditingApp(null);
+                }}
+                onCancel={() => {
+                  playClickSound();
+                  setEditingApp(null);
+                }}
+              />
+            </ErrorBoundary>
           </div>
         </div>
       )}
@@ -431,17 +438,19 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('setup', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('setup', w, h, x, y)}
       >
-        <SetupWizardView
-          onOpenSandbox={() => {
-            openWindow('hotwire');
-          }}
-          onOpenTerminal={() => {
-            openWindow('terminal');
-          }}
-          onOpenForge={() => {
-            openWindow('gitsmith');
-          }}
-        />
+        <ErrorBoundary fallbackTitle="SETUP.EXE" onDismiss={() => closeWindow('setup')}>
+          <SetupWizardView
+            onOpenSandbox={() => {
+              openWindow('hotwire');
+            }}
+            onOpenTerminal={() => {
+              openWindow('terminal');
+            }}
+            onOpenForge={() => {
+              openWindow('gitsmith');
+            }}
+          />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 0. Marketing / About Readme */}
@@ -455,16 +464,18 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('mktg', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('mktg', w, h, x, y)}
       >
-        <MarketingWindow
-          onOpenHotwire={() => openWindow('hotwire')}
-          onOpenSlopshop={() => openWindow('slopshop')}
-          onOpenRig={() => openWindow('rig')}
-          onOpenGitsmith={() => openWindow('gitsmith')}
-          onOpenInbox={() => openWindow('inbox')}
-          onOpenProfile={() => openWindow('profile')}
-          onOpenWhitepapers={() => openWindow('papers')}
-          onDismiss={() => closeWindow('mktg')}
-        />
+        <ErrorBoundary fallbackTitle="README_FIRST.TXT" onDismiss={() => closeWindow('mktg')}>
+          <MarketingWindow
+            onOpenHotwire={() => openWindow('hotwire')}
+            onOpenSlopshop={() => openWindow('slopshop')}
+            onOpenRig={() => openWindow('rig')}
+            onOpenGitsmith={() => openWindow('gitsmith')}
+            onOpenInbox={() => openWindow('inbox')}
+            onOpenProfile={() => openWindow('profile')}
+            onOpenWhitepapers={() => openWindow('papers')}
+            onDismiss={() => closeWindow('mktg')}
+          />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 0.5 CHAT IRC Chatroom Window */}
@@ -478,7 +489,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('chat', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('chat', w, h, x, y)}
       >
-        <ChatView />
+        <ErrorBoundary fallbackTitle="CHAT" onDismiss={() => closeWindow('chat')}>
+          <ChatView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 1. Terminal DOS Shell */}
@@ -492,7 +505,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('terminal', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('terminal', w, h, x, y)}
       >
-        <TerminalView />
+        <ErrorBoundary fallbackTitle="TERMINAL.EXE" onDismiss={() => closeWindow('terminal')}>
+          <TerminalView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 2.5 Editorial Lab — Nate's Software & Benchmark Reviews */}
@@ -506,12 +521,14 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('editorial', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('editorial', w, h, x, y)}
       >
-        <EditorialView
-          onOpenApp={(appId) => {
-            const targetApp = getApp(appId);
-            if (targetApp) openWindow(targetApp.id as any);
-          }}
-        />
+        <ErrorBoundary fallbackTitle="EDITORIAL LAB" onDismiss={() => closeWindow('editorial')}>
+          <EditorialView
+            onOpenApp={(appId) => {
+              const targetApp = getApp(appId);
+              if (targetApp) openWindow(targetApp.id as any);
+            }}
+          />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 2. Hotwire Drops */}
@@ -525,17 +542,19 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('hotwire', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('hotwire', w, h, x, y)}
       >
-        <HotwireView
-          onOpenApp={(appId) => {
-            playClickSound();
-            const targetApp = getApp(appId);
-            if (targetApp) openWindow(targetApp.id as any);
-          }}
-          onOpenPostEditor={(app) => {
-            playClickSound();
-            setEditingApp(app || null);
-          }}
-        />
+        <ErrorBoundary fallbackTitle="HOTWIRE" onDismiss={() => closeWindow('hotwire')}>
+          <HotwireView
+            onOpenApp={(appId) => {
+              playClickSound();
+              const targetApp = getApp(appId);
+              if (targetApp) openWindow(targetApp.id as any);
+            }}
+            onOpenPostEditor={(app) => {
+              playClickSound();
+              setEditingApp(app || null);
+            }}
+          />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 3. Slopshop AI Speed Shop */}
@@ -549,7 +568,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('slopshop', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('slopshop', w, h, x, y)}
       >
-        <SlopshopView />
+        <ErrorBoundary fallbackTitle="SLOPSHOP" onDismiss={() => closeWindow('slopshop')}>
+          <SlopshopView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 4. Rig.exe Runtime HUD */}
@@ -563,7 +584,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('rig', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('rig', w, h, x, y)}
       >
-        <RigRuntimeView />
+        <ErrorBoundary fallbackTitle="RIG.EXE" onDismiss={() => closeWindow('rig')}>
+          <RigRuntimeView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 5. Inbox Merge Discussions */}
@@ -577,7 +600,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('inbox', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('inbox', w, h, x, y)}
       >
-        <InboxView />
+        <ErrorBoundary fallbackTitle="INBOX" onDismiss={() => closeWindow('inbox')}>
+          <InboxView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 6. Dyno Workstation Speedometer */}
@@ -591,7 +616,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('dyno', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('dyno', w, h, x, y)}
       >
-        <DynoView />
+        <ErrorBoundary fallbackTitle="DYNO" onDismiss={() => closeWindow('dyno')}>
+          <DynoView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 7. Technical White Papers */}
@@ -605,7 +632,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('papers', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('papers', w, h, x, y)}
       >
-        <WhitePapersView />
+        <ErrorBoundary fallbackTitle="WHITE PAPERS" onDismiss={() => closeWindow('papers')}>
+          <WhitePapersView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 8. User Profile & My Shelf */}
@@ -619,7 +648,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('profile', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('profile', w, h, x, y)}
       >
-        <ProfileView />
+        <ErrorBoundary fallbackTitle="PROFILE" onDismiss={() => closeWindow('profile')}>
+          <ProfileView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* 9. Gitsmith GitHub-Style Forge */}
@@ -633,7 +664,9 @@ function AppInner() {
         onMove={(x, y) => updateWindowPosition('gitsmith', x, y)}
         onResize={(w, h, x, y) => updateWindowSize('gitsmith', w, h, x, y)}
       >
-        <GitsmithView />
+        <ErrorBoundary fallbackTitle="GITSMITH" onDismiss={() => closeWindow('gitsmith')}>
+          <GitsmithView />
+        </ErrorBoundary>
       </RetroWindow>
 
       {/* Pop-Up Start Menu */}
@@ -647,22 +680,24 @@ function AppInner() {
       {editingApp && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
-            <PostEditorView
-              app={editingApp}
-              onSave={async (updatedApp) => {
-                const res = await submitDrop(updatedApp);
-                if (!res.success) {
-                  throw new Error(res.error || 'Server failed to persist drop');
-                }
-                playSuccessChime();
-                showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
-                setEditingApp(null);
-              }}
-              onCancel={() => {
-                playClickSound();
-                setEditingApp(null);
-              }}
-            />
+            <ErrorBoundary fallbackTitle="Post Editor" onDismiss={() => setEditingApp(null)}>
+              <PostEditorView
+                app={editingApp}
+                onSave={async (updatedApp) => {
+                  const res = await submitDrop(updatedApp);
+                  if (!res.success) {
+                    throw new Error(res.error || 'Server failed to persist drop');
+                  }
+                  playSuccessChime();
+                  showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
+                  setEditingApp(null);
+                }}
+                onCancel={() => {
+                  playClickSound();
+                  setEditingApp(null);
+                }}
+              />
+            </ErrorBoundary>
           </div>
         </div>
       )}
@@ -683,11 +718,13 @@ export default App;
 
 export function App() {
   return (
-    <AuthProvider>
-      <CatalogProvider>
-        <AppInner />
-        <AuthModal />
-      </CatalogProvider>
-    </AuthProvider>
+    <ErrorBoundary isRoot fallbackTitle="Nate's Software Web OS">
+      <AuthProvider>
+        <CatalogProvider>
+          <AppInner />
+          <AuthModal />
+        </CatalogProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
