@@ -9,7 +9,6 @@
 // 6. Real promotion inserts deployment_revisions row and sets app_listings.deployment_state='active'.
 // 7. Fail-closed deployment: records honest failure evidence in D1; NEVER fakes active or success.
 
-import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import { requireAuth } from './_auth';
 import {
@@ -18,18 +17,159 @@ import {
   AppDeploymentState,
   APP_DEPLOYMENT_STATES
 } from '../../src/lib/deploymentLifecycle';
-import {
-  listCommitFiles,
-  readCommitFileContent,
-  hasGitObject,
-  archiveAuthoritativeCommit
-} from '../../src/lib/gitsmith/gitStorage';
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 
 const digest = (value: Buffer | string): string =>
   `sha256:${createHash('sha256').update(value).digest('hex')}`;
+
+interface CommitVerification {
+  exists: boolean;
+  files: string[];
+  manifestContents: Record<string, string>;
+  error?: string;
+}
+
+const DEFAULT_MANIFEST_CANDIDATES = [
+  'slop.json', 'deploy.json', 'rig.json', 'app.json', 'manifest.json',
+  'package.json', 'Dockerfile', 'dockerfile', 'requirements.txt',
+  'pyproject.toml', 'Cargo.toml', 'go.mod', 'wrangler.toml', 'index.html', 'index.htm'
+];
+
+async function verifySourceCommit(
+  env: any,
+  storageKey: string,
+  commitOid: string,
+  manifestCandidates: string[] = DEFAULT_MANIFEST_CANDIDATES
+): Promise<CommitVerification> {
+  // Priority 1: Delegate to live GITSMITH gateway if configured
+  if (env?.GITSMITH_GATEWAY_URL && env?.GITSMITH_GATEWAY_TOKEN) {
+    const gatewayUrl = new URL('/api/gateway/verify-commit', env.GITSMITH_GATEWAY_URL);
+    const gatewayFetch: typeof fetch = env.__GITSMITH_GATEWAY_FETCH || fetch;
+    try {
+      const res = await gatewayFetch(gatewayUrl.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${env.GITSMITH_GATEWAY_TOKEN}`
+        },
+        body: JSON.stringify({
+          storageKey,
+          commitOid,
+          manifestCandidates
+        })
+      });
+
+      if (!res.ok) {
+        const errBody: any = await res.json().catch(() => ({}));
+        return {
+          exists: false,
+          files: [],
+          manifestContents: {},
+          error: errBody?.error || `GITSMITH gateway returned HTTP ${res.status}`
+        };
+      }
+
+      const data: any = await res.json();
+      if (data?.success && data?.exists) {
+        return {
+          exists: true,
+          files: Array.isArray(data.files) ? data.files : [],
+          manifestContents: typeof data.manifestContents === 'object' && data.manifestContents ? data.manifestContents : {}
+        };
+      }
+
+      return {
+        exists: false,
+        files: [],
+        manifestContents: {},
+        error: data?.error || `Commit ${commitOid.slice(0, 8)} not found on GITSMITH gateway.`
+      };
+    } catch (fetchErr: any) {
+      return {
+        exists: false,
+        files: [],
+        manifestContents: {},
+        error: `GITSMITH gateway unreachable: ${fetchErr?.message || 'network error'}`
+      };
+    }
+  }
+
+  // Priority 2: Fallback to local filesystem only if reposRoot is explicitly configured (for local dev / offline unit tests)
+  const reposRoot = env?.GITSMITH_REPOS_ROOT || (typeof process !== 'undefined' ? process.env?.GITSMITH_REPOS_ROOT : undefined);
+  if (reposRoot) {
+    try {
+      const { hasGitObject, listCommitFiles, readCommitFileContent } = await import('../../src/lib/gitsmith/gitStorage');
+      if (hasGitObject(reposRoot, storageKey, commitOid)) {
+        const files = listCommitFiles(reposRoot, storageKey, commitOid);
+        const manifestContents: Record<string, string> = {};
+        for (const file of manifestCandidates) {
+          const matched = files.find(f => f.toLowerCase() === file.toLowerCase() || f.toLowerCase().endsWith(`/${file.toLowerCase()}`));
+          if (matched) {
+            const content = readCommitFileContent(reposRoot, storageKey, commitOid, matched);
+            if (content !== null) manifestContents[matched] = content;
+          }
+        }
+        return { exists: true, files, manifestContents };
+      }
+    } catch {}
+  }
+
+  return {
+    exists: false,
+    files: [],
+    manifestContents: {},
+    error: 'GITSMITH gateway is not configured and no local repository exists'
+  };
+}
+
+async function fetchSourceArchive(
+  env: any,
+  storageKey: string,
+  commitOid: string
+): Promise<{ archive: Buffer | null; error?: string }> {
+  // Priority 1: Fetch archive from live GITSMITH gateway
+  if (env?.GITSMITH_GATEWAY_URL && env?.GITSMITH_GATEWAY_TOKEN) {
+    const gatewayUrl = new URL('/api/gateway/archive', env.GITSMITH_GATEWAY_URL);
+    gatewayUrl.searchParams.set('storageKey', storageKey);
+    gatewayUrl.searchParams.set('commitOid', commitOid);
+    const gatewayFetch: typeof fetch = env.__GITSMITH_GATEWAY_FETCH || fetch;
+    try {
+      const res = await gatewayFetch(gatewayUrl.toString(), {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${env.GITSMITH_GATEWAY_TOKEN}`
+        }
+      });
+      if (!res.ok) {
+        const errBody: any = await res.json().catch(() => ({}));
+        return {
+          archive: null,
+          error: errBody?.error || `GITSMITH gateway returned HTTP ${res.status} when retrieving source archive.`
+        };
+      }
+      const arrayBuf = await res.arrayBuffer();
+      return { archive: Buffer.from(arrayBuf) };
+    } catch (err: any) {
+      return { archive: null, error: `GITSMITH gateway unreachable: ${err?.message || 'network error'}` };
+    }
+  }
+
+  // Priority 2: Fallback to local filesystem if reposRoot is explicitly configured
+  const reposRoot = env?.GITSMITH_REPOS_ROOT || (typeof process !== 'undefined' ? process.env?.GITSMITH_REPOS_ROOT : undefined);
+  if (reposRoot) {
+    try {
+      const { archiveAuthoritativeCommit } = await import('../../src/lib/gitsmith/gitStorage');
+      const archive = archiveAuthoritativeCommit(reposRoot, storageKey, commitOid);
+      return { archive };
+    } catch (err: any) {
+      return { archive: null, error: err?.message || 'Failed to archive local commit.' };
+    }
+  }
+
+  return { archive: null, error: 'GITSMITH gateway is not configured and no local repository exists' };
+}
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -149,14 +289,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return json({ success: false, error: 'Forbidden: you do not own this application listing' }, 403);
     }
 
-    const reposRoot = env?.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
-
     // Action: Plan only
     if (action === 'plan') {
       let files: string[] = Array.isArray(body.files) ? body.files : [];
       let fileContents: Record<string, string> = typeof body.fileContents === 'object' && body.fileContents !== null ? body.fileContents : {};
 
-      // If no files provided in request, read committed tree from canonical repo
+      // If no files provided in request, read committed tree from canonical repo on gateway
       if (files.length === 0) {
         const repository = await env.DB.prepare(`
           SELECT r.id, r.storage_key, rf.commit_oid AS headCommitOid
@@ -167,14 +305,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
         if (repository && repository.headCommitOid) {
           const storageKey = repository.storage_key || `repositories/${repository.id}`;
-          files = listCommitFiles(reposRoot, storageKey, repository.headCommitOid);
-          const manifestCandidates = ['package.json', 'Dockerfile', 'requirements.txt', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'slop.json', 'deploy.json', 'rig.json', 'app.json', 'manifest.json', 'wrangler.toml'];
-          for (const m of manifestCandidates) {
-            const found = files.find(f => f.toLowerCase() === m.toLowerCase() || f.toLowerCase().endsWith(`/${m.toLowerCase()}`));
-            if (found) {
-              const content = readCommitFileContent(reposRoot, storageKey, repository.headCommitOid, found);
-              if (content !== null) fileContents[found] = content;
-            }
+          const verified = await verifySourceCommit(env, storageKey, repository.headCommitOid);
+          if (verified.exists) {
+            files = verified.files;
+            fileContents = verified.manifestContents;
           }
         }
       }
@@ -204,7 +338,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (action === 'deploy' || action === 'promote') {
       const timestamp = new Date().toISOString();
 
-      // Step 1: Check canonical GITSMITH repository & commit on disk
+      // Step 1: Check canonical GITSMITH repository & commit in D1
       const repository = await env.DB.prepare(`
         SELECT r.id, r.slug, r.status, r.default_ref, r.storage_key,
                rf.commit_oid AS headCommitOid
@@ -216,8 +350,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const storageKey = repository?.storage_key || `repositories/${repository?.id}`;
       const commitOid = repository?.headCommitOid;
 
-      if (!repository || !commitOid || !hasGitObject(reposRoot, storageKey, commitOid)) {
-        // No canonical GITSMITH repo/commit exists -> remain draft / fail closed
+      if (!repository || !commitOid) {
+        // No canonical GITSMITH repo/commit in database -> remain draft / fail closed
         const errorMsg = `No deployable revision exists for ${appListing.name}. Source has not been imported into GITSMITH and built by RIG.`;
         const evidence = {
           stage: 'source_verification',
@@ -244,11 +378,42 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
+      // Step 2: Verify source commit & committed tree strictly via GATEWAY
+      const sourceVerify = await verifySourceCommit(env, storageKey, commitOid);
+
+      if (!sourceVerify.exists) {
+        // Commit does not exist on gateway disk -> remain draft / fail closed
+        const errorMsg = `No deployable revision exists for ${appListing.name}. Source has not been imported into GITSMITH and built by RIG.`;
+        const evidence = {
+          stage: 'source_verification',
+          timestamp,
+          details: sourceVerify.error || 'A canonical repository and commit must exist in GITSMITH before candidate build.',
+          repositoryId: repository.id,
+          commitOid
+        };
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'draft',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(evidence), appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'draft',
+          error: errorMsg,
+          evidence
+        }, 422);
+      }
+
       targetRepoId = repository.id;
       targetCommitOid = commitOid;
 
-      // Step 2: Detect project type & build plan strictly from committed tree
-      const committedFiles = listCommitFiles(reposRoot, storageKey, commitOid);
+      // Step 3: Detect project type & build plan from committed files and manifest contents
+      const committedFiles = sourceVerify.files;
 
       if (committedFiles.length === 0) {
         const errorMsg = `Deployment failed for ${appListing.name}: No committed files found in repository tree at ${commitOid.slice(0, 8)}.`;
@@ -278,24 +443,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
-      const manifestFilesToRead = [
-        'slop.json', 'deploy.json', 'rig.json', 'app.json', 'manifest.json',
-        'package.json', 'Dockerfile', 'dockerfile', 'requirements.txt',
-        'pyproject.toml', 'Cargo.toml', 'go.mod', 'wrangler.toml'
-      ];
-
-      const committedContents: Record<string, string> = {};
-      for (const file of manifestFilesToRead) {
-        const matched = committedFiles.find(f => f.toLowerCase() === file.toLowerCase() || f.toLowerCase().endsWith(`/${file.toLowerCase()}`));
-        if (matched) {
-          const content = readCommitFileContent(reposRoot, storageKey, commitOid, matched);
-          if (content !== null) {
-            committedContents[matched] = content;
-          }
-        }
-      }
-
-      const detection = detectRigRuntime(committedFiles, committedContents);
+      const detection = detectRigRuntime(committedFiles, sourceVerify.manifestContents);
 
       if (!detection.isDeployable || !detection.plan) {
         const errorMsg = `Deployment failed for ${appListing.name}: Unsupported project type.`;
@@ -329,11 +477,40 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const plan = detection.plan;
       targetPlan = plan;
 
-      // Step 3: Transition to building state & record build run
+      // Step 4: Fetch source archive from gateway & transition to building state
       const buildRunId = `br_${crypto.randomUUID().replace(/-/g, '')}`;
       activeBuildRunId = buildRunId;
       const runnerImageDigest = env?.RIG_VERIFICATION_IMAGE_DIGEST || 'node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e';
-      const sourceArchive = archiveAuthoritativeCommit(reposRoot, storageKey, commitOid);
+
+      const archiveResult = await fetchSourceArchive(env, storageKey, commitOid);
+      if (!archiveResult.archive) {
+        const errorMsg = `Deployment failed for ${appListing.name}: Unable to fetch source archive from GITSMITH gateway (${archiveResult.error || 'unknown error'}).`;
+        const evidence = {
+          stage: 'source_archive',
+          timestamp,
+          details: archiveResult.error || 'Authoritative source archive could not be retrieved.',
+          repositoryId: repository.id,
+          commitOid
+        };
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(evidence), appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'failed',
+          error: errorMsg,
+          evidence
+        }, 422);
+      }
+
+      const sourceArchive = archiveResult.archive;
       const sourceManifestDigest = digest(sourceArchive);
 
       await env.DB.prepare(`
@@ -360,13 +537,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         WHERE id = ?
       `).bind(plan.detectedType, JSON.stringify(plan), commitOid, appId).run();
 
-      // Step 4: Execute candidate build via RIG gateway (or injected executor)
+      // Step 5: Execute candidate build via RIG gateway (or injected executor)
       let buildResult: any;
 
       if (typeof env?.__RIG_DEPLOY_EXECUTOR === 'function') {
         buildResult = await env.__RIG_DEPLOY_EXECUTOR({
           appId,
           repositoryId: repository.id,
+          storageKey,
           commitOid,
           sourceArchive,
           plan,
@@ -385,31 +563,34 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           body: JSON.stringify({
             appId,
             repositoryId: repository.id,
+            storageKey,
             commitOid,
             plan,
             sourceArchiveBase64: sourceArchive.toString('base64'),
-            runnerImageDigest
+            runnerImageDigest,
+            gitsmithGatewayUrl: env.GITSMITH_GATEWAY_URL,
+            gitsmithGatewayToken: env.GITSMITH_GATEWAY_TOKEN
           })
         }).catch((err: any) => ({ ok: false, status: 503, json: async () => ({ error: err?.message || 'Gateway unreachable' }) }));
 
-        if (!gatewayRes.ok) {
-          const errBody = await gatewayRes.json().catch(() => ({ error: `RIG gateway returned ${gatewayRes.status}` }));
+        const gData = await gatewayRes.json().catch(() => null);
+        if (gData?.result) {
+          buildResult = gData.result;
+        } else {
+          const errMsg = gData?.error || `RIG gateway returned ${gatewayRes.status}`;
           buildResult = {
             success: false,
             exitCode: 1,
-            output: errBody?.error || `RIG gateway returned ${gatewayRes.status}`,
+            output: errMsg,
             artifactDigest: '',
             artifactKind: 'bundle',
-            smokeCheck: { passed: false, statusCode: gatewayRes.status, durationMs: 0, error: errBody?.error },
+            smokeCheck: { passed: false, statusCode: gatewayRes.status, durationMs: 0, error: errMsg },
             durationMs: 0,
-            error: errBody?.error || 'RIG gateway build failed'
+            error: errMsg
           };
-        } else {
-          const gData = await gatewayRes.json();
-          buildResult = gData.result;
         }
       } else {
-        // Direct local execution using deployExecutor
+        // Direct local execution using deployExecutor (fallback for local dev if RIG_GATEWAY_URL not set)
         const { executeRigDeployBuild } = await import('../../src/lib/rig/deployExecutor');
         buildResult = await executeRigDeployBuild({
           appId,

@@ -7,7 +7,7 @@ import { GitsmithGatewayService } from './gatewayService.ts';
 import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 import { GatewayHealthChecker } from './health.ts';
 import { constantTimeTokenCompare } from '../forgeDomain.ts';
-import { archiveAuthoritativeCommit, getProposalDiff } from './gitStorage.ts';
+import { archiveAuthoritativeCommit, getProposalDiff, inspectCommitTree } from './gitStorage.ts';
 
 export interface CreateServerOptions {
   service?: GitsmithGatewayService;
@@ -78,15 +78,22 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return constantTimeTokenCompare(token, config.gatewayToken);
     };
 
-    // Authenticated immutable source export for the RIG verification worker.
-    if (req.method === 'GET' && url.pathname === '/api/gateway/archive') {
+    // Authenticated immutable source export for RIG and deploy workers.
+    if ((req.method === 'GET' || req.method === 'POST') && (url.pathname === '/api/gateway/archive' || url.pathname === '/v1/archive')) {
       if (!verifyToken()) {
         res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ success: false, error: 'Unauthorized: Valid gateway token required.' }));
         return;
       }
-      const storageKey = String(url.searchParams.get('storageKey') || '').trim();
-      const commitOid = String(url.searchParams.get('commitOid') || '').trim();
+      let storageKey = String(url.searchParams.get('storageKey') || '').trim();
+      let commitOid = String(url.searchParams.get('commitOid') || '').trim();
+      if (req.method === 'POST' && (!storageKey || !commitOid)) {
+        try {
+          const body = await readJsonBody();
+          if (body?.storageKey) storageKey = String(body.storageKey).trim();
+          if (body?.commitOid) commitOid = String(body.commitOid).trim();
+        } catch {}
+      }
       try {
         const archive = archiveAuthoritativeCommit(config.reposRoot, storageKey, commitOid);
         res.writeHead(200, {
@@ -99,6 +106,61 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       } catch (error: any) {
         res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ success: false, error: error?.message || 'Commit archive not found.' }));
+      }
+      return;
+    }
+
+    // Authenticated commit inspection & verification for deploy pipeline
+    if (
+      (req.method === 'POST' || req.method === 'GET') &&
+      (url.pathname === '/api/gateway/verify-commit' || url.pathname === '/v1/verify-commit' || url.pathname === '/api/gateway/tree' || url.pathname === '/v1/tree')
+    ) {
+      if (!verifyToken()) {
+        res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Valid gateway token required.' }));
+        return;
+      }
+
+      let storageKey = '';
+      let commitOid = '';
+      let manifestCandidates: string[] | undefined;
+
+      if (req.method === 'GET') {
+        storageKey = String(url.searchParams.get('storageKey') || '').trim();
+        commitOid = String(url.searchParams.get('commitOid') || '').trim();
+        const manifestsQuery = url.searchParams.get('manifests') || url.searchParams.get('manifestCandidates');
+        if (manifestsQuery) {
+          manifestCandidates = manifestsQuery.split(',').map(s => s.trim()).filter(Boolean);
+        }
+      } else {
+        try {
+          const body = await readJsonBody();
+          storageKey = String(body?.storageKey || '').trim();
+          commitOid = String(body?.commitOid || '').trim();
+          if (Array.isArray(body?.manifestCandidates)) {
+            manifestCandidates = body.manifestCandidates.map((s: any) => String(s).trim()).filter(Boolean);
+          }
+        } catch (e: any) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ success: false, error: 'Invalid JSON request body.' }));
+          return;
+        }
+      }
+
+      if (!storageKey || !commitOid) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'storageKey and commitOid are required.' }));
+        return;
+      }
+
+      try {
+        const result = inspectCommitTree(config.reposRoot, storageKey, commitOid, manifestCandidates);
+        const statusCode = result.success && result.exists ? 200 : 404;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
+        res.end(JSON.stringify(result));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: err?.message || 'Failed to inspect commit tree.' }));
       }
       return;
     }

@@ -8,6 +8,7 @@ import {
   readAuthoritativeRef,
   archiveAuthoritativeCommit,
   hasGitObject,
+  inspectCommitTree,
   updateAuthoritativeRefCas,
   cloneOrFetchForFork,
   validateStorageKey,
@@ -16,6 +17,7 @@ import {
   getRepoObjectFormat
 } from '../src/lib/gitsmith/gitStorage';
 import { GitsmithGatewayService } from '../src/lib/gitsmith/gatewayService';
+import { createGatewayServer } from '../src/lib/gitsmith/server';
 import {
   ForgeOutboxDispatcher,
   calculateBackoffSeconds
@@ -891,6 +893,153 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
       expect(calculateBackoffSeconds(4, 2, 300)).toBe(16);
       expect(calculateBackoffSeconds(5, 2, 300)).toBe(32);
       expect(calculateBackoffSeconds(10, 2, 300)).toBe(300); // Capped at max 300s
+    });
+  });
+
+  // =========================================================================
+  // 11. COMMITTED TREE INSPECTION & DEPLOY VERIFICATION ENDPOINTS
+  // =========================================================================
+  describe('11. Committed Tree Inspection & Deploy Verification Endpoints', () => {
+    it('inspects committed tree and extracts manifest contents directly', () => {
+      const initRes = initBareRepo(tempRoot, {
+        storageKey: 'repositories/app_deploy_test',
+        objectFormat: 'sha1',
+        defaultRef: 'refs/heads/main'
+      });
+      expect(initRes.success).toBe(true);
+
+      const wt = path.join(tempRoot, 'wt_deploy_test');
+      fs.mkdirSync(wt, { recursive: true });
+      execFileSync('git', ['init', wt], { stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: wt, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.email', 'test@nates.software'], { cwd: wt, stdio: 'pipe' });
+
+      fs.writeFileSync(path.join(wt, 'index.html'), '<html><body>Hello Deploy</body></html>');
+      fs.writeFileSync(path.join(wt, 'package.json'), JSON.stringify({ name: 'deploy-app', version: '1.0.0' }));
+      fs.writeFileSync(path.join(wt, 'app.js'), 'console.log("ready");');
+
+      execFileSync('git', ['add', '.'], { cwd: wt, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', 'initial tree'], { cwd: wt, stdio: 'pipe' });
+      const commitOid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: wt, encoding: 'utf8' }).trim();
+      execFileSync('git', ['push', initRes.repoPath, 'HEAD:refs/heads/main'], { cwd: wt, stdio: 'pipe' });
+
+      // 1. inspectCommitTree on valid repo + commit
+      const inspectRes = inspectCommitTree(tempRoot, 'repositories/app_deploy_test', commitOid);
+      expect(inspectRes.success).toBe(true);
+      expect(inspectRes.exists).toBe(true);
+      expect(inspectRes.commitOid).toBe(commitOid);
+      expect(inspectRes.files).toContain('index.html');
+      expect(inspectRes.files).toContain('package.json');
+      expect(inspectRes.files).toContain('app.js');
+      expect(inspectRes.manifestContents?.['index.html']).toBe('<html><body>Hello Deploy</body></html>');
+      expect(JSON.parse(inspectRes.manifestContents?.['package.json'] || '{}').name).toBe('deploy-app');
+
+      // 2. inspectCommitTree on non-existent commit
+      const fakeOid = 'a'.repeat(40);
+      const missingCommit = inspectCommitTree(tempRoot, 'repositories/app_deploy_test', fakeOid);
+      expect(missingCommit.success).toBe(false);
+      expect(missingCommit.exists).toBe(false);
+      expect(missingCommit.error).toContain('does not exist in repository');
+
+      // 3. inspectCommitTree on non-existent repository
+      const missingRepo = inspectCommitTree(tempRoot, 'repositories/non_existent_repo', commitOid);
+      expect(missingRepo.success).toBe(false);
+      expect(missingRepo.exists).toBe(false);
+      expect(missingRepo.error).toContain('does not exist');
+    });
+
+    it('serves authenticated /api/gateway/verify-commit and /v1/verify-commit via HTTP', async () => {
+      const initRes = initBareRepo(tempRoot, {
+        storageKey: 'repositories/http_verify_test',
+        objectFormat: 'sha1',
+        defaultRef: 'refs/heads/main'
+      });
+
+      const wt = path.join(tempRoot, 'wt_http_test');
+      fs.mkdirSync(wt, { recursive: true });
+      execFileSync('git', ['init', wt], { stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: wt, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.email', 'test@nates.software'], { cwd: wt, stdio: 'pipe' });
+
+      fs.writeFileSync(path.join(wt, 'index.html'), '<h1>HTTP Verify</h1>');
+      execFileSync('git', ['add', '.'], { cwd: wt, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', 'http verify commit'], { cwd: wt, stdio: 'pipe' });
+      const commitOid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: wt, encoding: 'utf8' }).trim();
+      execFileSync('git', ['push', initRes.repoPath, 'HEAD:refs/heads/main'], { cwd: wt, stdio: 'pipe' });
+
+      const config = {
+        reposRoot: tempRoot,
+        controlPlaneUrl: 'http://localhost:8788',
+        gatewayToken: GATEWAY_SECRET
+      };
+
+      const server = createGatewayServer(config);
+      await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+      const address = server.address() as any;
+      const port = address.port;
+
+      try {
+        // Unauthenticated request should be rejected with 401
+        const unauthRes = await fetch(`http://127.0.0.1:${port}/api/gateway/verify-commit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storageKey: 'repositories/http_verify_test', commitOid })
+        });
+        expect(unauthRes.status).toBe(401);
+
+        // Authenticated POST /api/gateway/verify-commit
+        const authPostRes = await fetch(`http://127.0.0.1:${port}/api/gateway/verify-commit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          },
+          body: JSON.stringify({ storageKey: 'repositories/http_verify_test', commitOid })
+        });
+        expect(authPostRes.status).toBe(200);
+        const postData: any = await authPostRes.json();
+        expect(postData.success).toBe(true);
+        expect(postData.exists).toBe(true);
+        expect(postData.files).toContain('index.html');
+        expect(postData.manifestContents['index.html']).toBe('<h1>HTTP Verify</h1>');
+
+        // Authenticated GET /v1/verify-commit
+        const authGetRes = await fetch(`http://127.0.0.1:${port}/v1/verify-commit?storageKey=repositories/http_verify_test&commitOid=${commitOid}`, {
+          headers: {
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          }
+        });
+        expect(authGetRes.status).toBe(200);
+        const getData: any = await authGetRes.json();
+        expect(getData.success).toBe(true);
+        expect(getData.exists).toBe(true);
+
+        // Non-existent commit should return 404
+        const missingCommitRes = await fetch(`http://127.0.0.1:${port}/api/gateway/verify-commit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          },
+          body: JSON.stringify({ storageKey: 'repositories/http_verify_test', commitOid: 'b'.repeat(40) })
+        });
+        expect(missingCommitRes.status).toBe(404);
+        const missingData: any = await missingCommitRes.json();
+        expect(missingData.exists).toBe(false);
+
+        // Archive endpoint GET /v1/archive
+        const archiveRes = await fetch(`http://127.0.0.1:${port}/v1/archive?storageKey=repositories/http_verify_test&commitOid=${commitOid}`, {
+          headers: {
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          }
+        });
+        expect(archiveRes.status).toBe(200);
+        expect(archiveRes.headers.get('Content-Type')).toBe('application/x-tar');
+        const archiveBuf = await archiveRes.arrayBuffer();
+        expect(archiveBuf.byteLength).toBeGreaterThan(0);
+      } finally {
+        await new Promise<void>(resolve => server.close(() => resolve()));
+      }
     });
   });
 });
