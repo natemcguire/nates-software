@@ -96,6 +96,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         return Response.json({
           success: true,
           authenticated: true,
+          expiresAt: session.expires_at,
           user: {
             id: session.id,
             username: session.username,

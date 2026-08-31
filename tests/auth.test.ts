@@ -607,6 +607,8 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
 
       expect(validateData.success).toBe(true);
       expect(validateData.authenticated).toBe(true);
+      expect(validateData.expiresAt).toBe(storedSession.expires_at);
+      expect(typeof validateData.expiresAt).toBe('number');
       expect(validateData.user.username).toBe('nate');
       expect(validateData.user.id).toBe('usr_nate');
     });

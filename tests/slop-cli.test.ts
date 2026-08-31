@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
-import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync, symlinkSync, statSync, lstatSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
+import { Readable } from 'node:stream';
 import {
   handleInit,
   handleFork,
@@ -20,6 +21,7 @@ import {
   writeStoredCredentials,
   deleteStoredCredentials,
   getCredentialsFilePath,
+  resolveControlPlaneUrl,
   printHelp,
   runSlopCli,
   getEngineStartInstructions
@@ -551,6 +553,156 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       });
 
       expect(capturedAuthHeader).toBe(`Bearer ${rawToken}`);
+    });
+
+    it('should NEVER return sessionToken or raw token in handleLogin result data', async () => {
+      const ctx = await createTestD1Database({ foreignKeys: true });
+      const rawToken = generateSessionToken();
+      const expiresAt = Date.now() + 3600 * 1000;
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(await hashSessionToken(rawToken), expiresAt).run();
+
+      const res = await handleLogin(['--token', rawToken], { env: { DB: ctx.d1 } });
+      expect(res.success).toBe(true);
+      expect(res.data.sessionToken).toBeUndefined();
+      expect(res.data.token).toBeUndefined();
+      expect(res.data.user).toBeUndefined();
+      expect(JSON.stringify(res.data)).not.toContain(rawToken);
+      expect(JSON.stringify(res)).not.toContain(rawToken);
+      expect(res.data).toEqual({
+        authenticated: true,
+        username: 'nate',
+        expiresAt
+      });
+    });
+
+    it('should reject writing over a pre-existing symlink at the credentials path', () => {
+      const credPath = getCredentialsFilePath();
+      const credDir = dirname(credPath);
+      mkdirSync(credDir, { recursive: true });
+
+      const decoyFile = join(tempHome, 'decoy-target.txt');
+      writeFileSync(decoyFile, 'sensitive decoy content');
+      symlinkSync(decoyFile, credPath);
+
+      expect(() => {
+        writeStoredCredentials({
+          sessionToken: 'attacker-token',
+          username: 'attacker',
+          expiresAt: Date.now() + 3600 * 1000
+        });
+      }).toThrow(/symbolic link/i);
+
+      // Decoy file remains untouched
+      expect(readFileSync(decoyFile, 'utf8')).toBe('sensitive decoy content');
+    });
+
+    it('should reject writeStoredCredentials when the credentials directory is a symlink', () => {
+      const credPath = getCredentialsFilePath();
+      const credDir = dirname(credPath);
+      const parentDir = dirname(credDir);
+      mkdirSync(parentDir, { recursive: true });
+
+      const fakeTargetDir = join(tempHome, 'fake-target-dir');
+      mkdirSync(fakeTargetDir, { recursive: true });
+      symlinkSync(fakeTargetDir, credDir);
+
+      expect(() => {
+        writeStoredCredentials({
+          sessionToken: 'attacker-token',
+          username: 'attacker',
+          expiresAt: Date.now() + 3600 * 1000
+        });
+      }).toThrow(/symbolic link/i);
+    });
+
+    it('should write credentials with 0600 file permissions and 0700 dir permissions', () => {
+      writeStoredCredentials({
+        sessionToken: 'secure-token-perm',
+        username: 'nate',
+        expiresAt: Date.now() + 3600 * 1000
+      });
+
+      const credPath = getCredentialsFilePath();
+      const credDir = dirname(credPath);
+
+      const fileStat = statSync(credPath);
+      const dirStat = statSync(credDir);
+
+      // POSIX permission mask check (0600 file, 0700 dir)
+      if (process.platform !== 'win32') {
+        expect(fileStat.mode & 0o777).toBe(0o600);
+        expect(dirStat.mode & 0o777).toBe(0o700);
+      }
+      expect(fileStat.isFile()).toBe(true);
+      expect(lstatSync(credPath).isSymbolicLink()).toBe(false);
+    });
+
+    it('should store the real server session expiry timestamp, not a synthesized 90 days', async () => {
+      const ctx = await createTestD1Database({ foreignKeys: true });
+      const rawToken = generateSessionToken();
+      // Specific expiry: 14 days in future
+      const realExpiry = Date.now() + 14 * 24 * 3600 * 1000;
+
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(await hashSessionToken(rawToken), realExpiry).run();
+
+      const res = await handleLogin(['--token', rawToken], { env: { DB: ctx.d1 } });
+      expect(res.success).toBe(true);
+      expect(res.data.expiresAt).toBe(realExpiry);
+
+      const creds = readStoredCredentials();
+      expect(creds?.expiresAt).toBe(realExpiry);
+    });
+
+    it('should reject http:// control-plane URL by default in login and fork', async () => {
+      const insecureUrl = 'http://attacker-controlled.com';
+
+      const loginRes = await handleLogin(['--token', 'any-token'], { controlPlaneUrl: insecureUrl });
+      expect(loginRes.success).toBe(false);
+      expect(loginRes.message).toContain('HTTPS is required');
+
+      const forkRes = await handleFork('nate/dronehunter', { controlPlaneUrl: insecureUrl, local: false });
+      expect(forkRes.success).toBe(false);
+      expect(forkRes.message).toContain('HTTPS is required');
+    });
+
+    it('should permit http:// control-plane URL when SLOP_INSECURE=1 is set', () => {
+      const origInsecure = process.env.SLOP_INSECURE;
+      try {
+        process.env.SLOP_INSECURE = '1';
+        const resolved = resolveControlPlaneUrl('http://localhost:8787');
+        expect(resolved).toBe('http://localhost:8787');
+      } finally {
+        if (origInsecure !== undefined) process.env.SLOP_INSECURE = origInsecure;
+        else delete process.env.SLOP_INSECURE;
+      }
+    });
+
+    it('should read CLI token from non-TTY stdin stream when no flags or env are provided', async () => {
+      const ctx = await createTestD1Database({ foreignKeys: true });
+      const rawToken = generateSessionToken();
+      const expiresAt = Date.now() + 3600 * 1000;
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(await hashSessionToken(rawToken), expiresAt).run();
+
+      const pipedStdin = Readable.from([`${rawToken}\n`]);
+
+      const res = await handleLogin([], {
+        stdin: pipedStdin,
+        isTTY: false,
+        env: { DB: ctx.d1 }
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.username).toBe('nate');
+      expect(readStoredCredentials()?.sessionToken).toBe(rawToken);
     });
   });
 
