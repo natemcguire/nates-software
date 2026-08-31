@@ -558,6 +558,308 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         expect(text).toBe('# Gateway Spec Content\n');
         expect(mockGatewayFetch).toHaveBeenCalledTimes(1);
       });
+
+      // =========================================================================
+      // PROXY BOUNDED READ TESTS (DoS MEDIUM FIX)
+      // =========================================================================
+      describe('PROXY Bounded Stream Reader & Size Enforcement', () => {
+        function createMockStream(chunkSize: number, totalChunks: number) {
+          let chunksRead = 0;
+          let cancelled = false;
+          let cancelReason: any = null;
+
+          const stream = new ReadableStream({
+            pull(controller) {
+              if (chunksRead < totalChunks) {
+                chunksRead++;
+                const chunk = new Uint8Array(chunkSize);
+                chunk.fill(0x61); // 'a'
+                controller.enqueue(chunk);
+              } else {
+                controller.close();
+              }
+            },
+            cancel(reason) {
+              cancelled = true;
+              cancelReason = reason;
+            }
+          });
+
+          return {
+            stream,
+            getChunksRead: () => chunksRead,
+            isCancelled: () => cancelled,
+            getCancelReason: () => cancelReason
+          };
+        }
+
+        it('helper: readBoundedBody successfully reads stream within byte limits', async () => {
+          const smallContent = new TextEncoder().encode('Hello bounded world');
+          const res = new Response(smallContent, {
+            status: 200,
+            headers: { 'Content-Length': String(smallContent.length) }
+          });
+
+          const result = await repoFileApi.readBoundedBody(res, 1024);
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(new TextDecoder().decode(result.bytes)).toBe('Hello bounded world');
+          }
+        });
+
+        it('helper: readBoundedBody fast-rejects if Content-Length header exceeds limit', async () => {
+          const mockStream = createMockStream(1024, 10);
+          const res = new Response(mockStream.stream, {
+            status: 200,
+            headers: { 'Content-Length': '2048' }
+          });
+
+          const result = await repoFileApi.readBoundedBody(res, 1024);
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.status).toBe(413);
+            expect(result.error).toContain('exceeds maximum allowed limit');
+          }
+          expect(mockStream.isCancelled()).toBe(true);
+          expect(mockStream.getChunksRead()).toBe(0);
+        });
+
+        it('helper: readBoundedBody cancels stream and returns 413 when total read exceeds limit', async () => {
+          // 50 chunks of 100 KiB = 5 MiB > limit of 250 KiB
+          const mockStream = createMockStream(100 * 1024, 50);
+          const res = new Response(mockStream.stream, {
+            status: 200
+            // No Content-Length header
+          });
+
+          const result = await repoFileApi.readBoundedBody(res, 250 * 1024);
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.status).toBe(413);
+          }
+          expect(mockStream.isCancelled()).toBe(true);
+          // Should have stopped after chunk 3 (300 KiB > 250 KiB), NOT read all 50 chunks
+          expect(mockStream.getChunksRead()).toBeLessThanOrEqual(4);
+          expect(mockStream.getChunksRead()).toBeGreaterThanOrEqual(3);
+        });
+
+        it('helper: readBoundedBody catches lying Content-Length via streaming bound', async () => {
+          // Claims 50 bytes, but emits 50 * 100 KiB
+          const mockStream = createMockStream(100 * 1024, 50);
+          const res = new Response(mockStream.stream, {
+            status: 200,
+            headers: { 'Content-Length': '50' }
+          });
+
+          const result = await repoFileApi.readBoundedBody(res, 250 * 1024);
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.status).toBe(413);
+          }
+          expect(mockStream.isCancelled()).toBe(true);
+          expect(mockStream.getChunksRead()).toBeLessThanOrEqual(4);
+        });
+
+        it('proxy: gateway response whose body exceeds the cap returns 413 and cancels reader early', async () => {
+          // 50 chunks of 100 KiB = 5 MiB stream (maxGatewayBlobBytes for spec.md is ~389 KiB)
+          const mockStream = createMockStream(100 * 1024, 50);
+          const mockGatewayFetch = vi.fn(async () => {
+            return new Response(mockStream.stream, {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(413);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toContain('exceeds maximum allowed limit');
+
+          // Assert reader was cancelled and we did NOT buffer the whole 5 MiB stream
+          expect(mockStream.isCancelled()).toBe(true);
+          expect(mockStream.getChunksRead()).toBeLessThan(10);
+        });
+
+        it('proxy: gateway response with Content-Length header over cap fast-rejects with 413', async () => {
+          const mockStream = createMockStream(100 * 1024, 50);
+          const mockGatewayFetch = vi.fn(async () => {
+            return new Response(mockStream.stream, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': '10485760' // 10 MiB > ~389 KiB
+              }
+            });
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(413);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toContain('exceeds maximum allowed limit');
+          expect(mockStream.isCancelled()).toBe(true);
+          expect(mockStream.getChunksRead()).toBeLessThanOrEqual(1);
+        });
+
+        it('proxy: lying Content-Length header is still caught and rejected with 413 via streaming bound', async () => {
+          // Lying Content-Length: 100 bytes, but body emits 50 * 100 KiB
+          const mockStream = createMockStream(100 * 1024, 50);
+          const mockGatewayFetch = vi.fn(async () => {
+            return new Response(mockStream.stream, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': '100'
+              }
+            });
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(413);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toContain('exceeds maximum allowed limit');
+          expect(mockStream.isCancelled()).toBe(true);
+          expect(mockStream.getChunksRead()).toBeLessThan(10);
+        });
+
+        it('proxy: fallback /tree path enforces bounded streaming read and returns 413 on over-cap stream', async () => {
+          const mockTreeStream = createMockStream(100 * 1024, 50); // 5 MiB stream > 768 KiB
+          const mockGatewayFetch = vi.fn(async (url: string) => {
+            if (url.includes('/api/gateway/blob')) {
+              return new Response(JSON.stringify({ success: false, error: 'Endpoint not implemented' }), {
+                status: 501,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            if (url.includes('/api/gateway/tree')) {
+              return new Response(mockTreeStream.stream, {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            return new Response('Not found', { status: 404 });
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(413);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toContain('exceeds maximum allowed limit');
+          expect(mockTreeStream.isCancelled()).toBe(true);
+          expect(mockTreeStream.getChunksRead()).toBeLessThan(12);
+        });
+
+        it('proxy: fallback /tree path successfully returns valid small markdown', async () => {
+          const mockGatewayFetch = vi.fn(async (url: string) => {
+            if (url.includes('/api/gateway/blob')) {
+              return new Response(JSON.stringify({ success: false, error: 'Endpoint not implemented' }), {
+                status: 501,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            if (url.includes('/api/gateway/tree')) {
+              return new Response(JSON.stringify({
+                success: true,
+                manifestContents: {
+                  'spec.md': '# Spec From Tree Fallback\n'
+                }
+              }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            return new Response('Not found', { status: 404 });
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(200);
+          const text = await res.text();
+          expect(text).toBe('# Spec From Tree Fallback\n');
+        });
+
+        it('proxy: normal small binary image via gateway returns 200 unchanged', async () => {
+          const mockGatewayFetch = vi.fn(async () => {
+            return new Response(JSON.stringify({
+              success: true,
+              storageKey: `repositories/${publicRepoId}`,
+              commitOid: publicCommitOid,
+              path: 'screenshots/hero.png',
+              base64: samplePngBuffer.toString('base64')
+            }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=screenshots/hero.png`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(200);
+          expect(res.headers.get('Content-Type')).toBe('image/png');
+          const arrayBuf = await res.arrayBuffer();
+          expect(Buffer.compare(Buffer.from(arrayBuf), samplePngBuffer)).toBe(0);
+        });
+      });
     });
   });
 });

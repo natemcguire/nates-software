@@ -67,6 +67,87 @@ function sanitizeLogMessage(msg: unknown, sensitiveTokens: (string | undefined |
   return str;
 }
 
+/**
+ * Reads a response body up to maxBytes using streaming chunks.
+ * Fast-rejects if Content-Length header is present and exceeds maxBytes.
+ * Enforces bounded streaming read: cancels reader as soon as accumulated bytes exceed maxBytes.
+ */
+export async function readBoundedBody(
+  res: Response,
+  maxBytes: number
+): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; status: 413; error: string }> {
+  // 1. Fast-reject early if Content-Length header is present and exceeds cap
+  const clHeader = res.headers?.get?.('content-length');
+  if (clHeader) {
+    const cl = parseInt(clHeader, 10);
+    if (Number.isFinite(cl) && cl > maxBytes) {
+      if (res.body && typeof res.body.cancel === 'function') {
+        try {
+          await res.body.cancel();
+        } catch {}
+      }
+      return { ok: false, status: 413, error: 'File size exceeds maximum allowed limit' };
+    }
+  }
+
+  // 2. Empty/missing body
+  if (!res.body) {
+    return { ok: true, bytes: new Uint8Array(0) };
+  }
+
+  // 3. Streaming bounded read (the enforcement boundary)
+  if (typeof res.body.getReader === 'function') {
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (value) {
+          const chunkBytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+          totalBytes += chunkBytes.byteLength;
+          if (totalBytes > maxBytes) {
+            try {
+              await reader.cancel('Payload too large');
+            } catch {}
+            return { ok: false, status: 413, error: 'File size exceeds maximum allowed limit' };
+          }
+          chunks.push(chunkBytes);
+        }
+      }
+    } catch (err) {
+      try {
+        await reader.cancel('Stream read error');
+      } catch {}
+      throw err;
+    }
+
+    const combined = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { ok: true, bytes: combined };
+  }
+
+  // Fallback for environments / mocks where res.body is not a ReadableStream
+  if (typeof (res as any).arrayBuffer === 'function') {
+    const ab = await res.arrayBuffer();
+    const bytes = new Uint8Array(ab);
+    if (bytes.byteLength > maxBytes) {
+      return { ok: false, status: 413, error: 'File size exceeds maximum allowed limit' };
+    }
+    return { ok: true, bytes };
+  }
+
+  return { ok: true, bytes: new Uint8Array(0) };
+}
+
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }): Promise<Response> => {
   try {
     const url = new URL(request.url);
@@ -164,6 +245,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const storageKey = repoRow.storageKey || `repositories/${repoRow.id}`;
     const maxAllowedBytes = getMaxFileSizeBytes(filePath);
+    // Base64 + JSON overhead cap for blob responses
+    const maxGatewayBlobBytes = Math.ceil(maxAllowedBytes * 1.36) + 32 * 1024;
     let fileBytes: Buffer | Uint8Array | null = null;
 
     // 5. Priority 1: Delegate to live token-gated GITSMITH gateway if configured
@@ -188,18 +271,31 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         });
 
         if (res.status === 404) {
+          if (res.body && typeof res.body.cancel === 'function') {
+            try { await res.body.cancel(); } catch {}
+          }
           return jsonError('File not found in repository', 404);
         }
 
         if (res.status === 413) {
+          if (res.body && typeof res.body.cancel === 'function') {
+            try { await res.body.cancel(); } catch {}
+          }
           return jsonError('File size exceeds maximum allowed limit', 413);
         }
 
         if (res.status === 400) {
+          if (res.body && typeof res.body.cancel === 'function') {
+            try { await res.body.cancel(); } catch {}
+          }
           return jsonError('Invalid file request', 400);
         }
 
         if (!res.ok) {
+          if (res.body && typeof res.body.cancel === 'function') {
+            try { await res.body.cancel(); } catch {}
+          }
+
           // If gateway doesn't support /blob yet, fallback to /tree for text files
           if (filePath.endsWith('.md') || filePath.endsWith('.json') || filePath.endsWith('.txt')) {
             const gatewayTreeUrl = new URL('/api/gateway/tree', env.GITSMITH_GATEWAY_URL);
@@ -215,7 +311,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             });
 
             if (treeRes.ok) {
-              const treeData: any = await treeRes.json().catch(() => ({}));
+              const maxGatewayTreeBytes = maxAllowedBytes + 512 * 1024;
+              const boundedTree = await readBoundedBody(treeRes, maxGatewayTreeBytes);
+              if (!boundedTree.ok) {
+                return jsonError(boundedTree.error, boundedTree.status);
+              }
+
+              const treeText = new TextDecoder().decode(boundedTree.bytes);
+              let treeData: any = null;
+              try {
+                treeData = JSON.parse(treeText);
+              } catch {}
+
               if (treeData?.manifestContents && typeof treeData.manifestContents[filePath] === 'string') {
                 const textContent = treeData.manifestContents[filePath];
                 const textBuf = Buffer.from(textContent, 'utf8');
@@ -224,6 +331,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                 }
                 fileBytes = textBuf;
               }
+            } else {
+              if (treeRes.body && typeof treeRes.body.cancel === 'function') {
+                try { await treeRes.body.cancel(); } catch {}
+              }
             }
           }
 
@@ -231,16 +342,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             return jsonError('Failed to retrieve file from repository gateway', 502);
           }
         } else {
-          // Check Content-Length header if present
-          const cl = res.headers.get('content-length');
-          if (cl) {
-            const clNum = parseInt(cl, 10);
-            if (Number.isFinite(clNum) && clNum > maxAllowedBytes * 2) {
-              return jsonError('File size exceeds maximum allowed limit', 413);
-            }
+          // Bounded streaming read for blob response (enforcement boundary)
+          const boundedBlob = await readBoundedBody(res, maxGatewayBlobBytes);
+          if (!boundedBlob.ok) {
+            return jsonError(boundedBlob.error, boundedBlob.status);
           }
 
-          const data: any = await res.json().catch(() => ({}));
+          const blobText = new TextDecoder().decode(boundedBlob.bytes);
+          let data: any = null;
+          try {
+            data = JSON.parse(blobText);
+          } catch {}
+
           if (data?.success && typeof data.base64 === 'string') {
             const decoded = Buffer.from(data.base64, 'base64');
             if (decoded.length > maxAllowedBytes) {
