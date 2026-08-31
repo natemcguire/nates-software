@@ -3,7 +3,7 @@
 -- 1. A user can have multiple registered SSH keys in user_ssh_keys.
 -- 2. key_prefix is unique across all users (a public key maps to exactly one user).
 -- 3. Backfills existing non-empty users.ssh_public_key entries into user_ssh_keys.
--- 4. Preserves users.ssh_public_key column as a fallback and for single-key legacy compatibility.
+-- 4. user_ssh_keys is the SOLE authoritative store consulted at auth time.
 
 PRAGMA foreign_keys = ON;
 
@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS user_ssh_keys (
   key_base64 TEXT NOT NULL,        -- the base64 blob only (no type prefix, no comment)
   key_prefix TEXT NOT NULL,        -- '<key_type> <key_base64>' — the exact match string the gateway sends, for fast lookup
   label TEXT,                      -- human label, e.g. 'laptop', 'agent'
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  CHECK (key_prefix = key_type || ' ' || key_base64)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_ssh_keys_prefix ON user_ssh_keys(key_prefix);
@@ -24,7 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_user_ssh_keys_user ON user_ssh_keys(user_id);
 WITH raw_keys AS (
   SELECT
     id AS user_id,
-    trim(ssh_public_key) AS raw_key
+    trim(replace(replace(replace(ssh_public_key, char(9), ' '), char(10), ' '), char(13), ' ')) AS raw_key
   FROM users
   WHERE ssh_public_key IS NOT NULL AND trim(ssh_public_key) != ''
 ),
@@ -44,9 +45,10 @@ parsed AS (
       ELSE rem
     END AS key_base64
   FROM token1
-  WHERE key_type != '' AND rem != ''
+  WHERE key_type IN ('ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')
+    AND rem != ''
 )
-INSERT INTO user_ssh_keys (
+INSERT OR IGNORE INTO user_ssh_keys (
   id,
   user_id,
   key_type,
@@ -63,4 +65,14 @@ SELECT
   key_type || ' ' || key_base64,
   'migrated',
   CURRENT_TIMESTAMP
-FROM parsed;
+FROM parsed
+WHERE length(key_base64) <= 16384
+  AND length(key_base64) > 0
+  AND key_base64 NOT GLOB '*[^A-Za-z0-9+/=]*';
+
+-- Fail-closed guard: ensure every legacy user key with non-empty ssh_public_key landed in user_ssh_keys
+CREATE TABLE _ssh_backfill_guard(x INTEGER CHECK(x = 0));
+INSERT INTO _ssh_backfill_guard SELECT COUNT(*) FROM users u
+  WHERE u.ssh_public_key IS NOT NULL AND trim(u.ssh_public_key) != ''
+    AND NOT EXISTS (SELECT 1 FROM user_ssh_keys k WHERE k.user_id = u.id);
+DROP TABLE _ssh_backfill_guard;

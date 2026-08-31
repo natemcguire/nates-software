@@ -42,6 +42,17 @@ describe('SSH key lookup (D1 LIKE-free prefix match)', () => {
       `INSERT INTO users (id, username, display_name, role, ssh_public_key, created_at)
        VALUES (?, ?, ?, 'maker', ?, CURRENT_TIMESTAMP)`
     ).bind(userId, username, username, storedKey).run();
+
+    const parts = storedKey.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const keyType = parts[0];
+      const keyBase64 = parts[1];
+      const label = parts.slice(2).join(' ') || null;
+      await ctx.d1.prepare(
+        `INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+      ).bind(`key_${userId}`, userId, keyType, keyBase64, `${keyType} ${keyBase64}`, label).run();
+    }
   }
 
   it('identifies a key STORED WITH A TRAILING COMMENT via a base64 that would break the old LIKE query', async () => {

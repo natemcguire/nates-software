@@ -19,7 +19,7 @@ function gwRequest(body: any) {
   });
 }
 
-describe('Multi-SSH-Key Support Suite', () => {
+describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => {
   let ctx: TestD1Context;
   let env: any;
 
@@ -29,9 +29,9 @@ describe('Multi-SSH-Key Support Suite', () => {
   });
 
   // =========================================================================
-  // 1. MIGRATION 0028 & BACKFILL
+  // 1. MIGRATION 0028, BACKFILL HARDENING & FAIL-CLOSED GUARD
   // =========================================================================
-  describe('1. Migration 0028 & Legacy Backfill', () => {
+  describe('1. Migration 0028, Backfill Hardening & Self-Consistency CHECK', () => {
     it('backfills seed users with legacy ssh_public_key into user_ssh_keys', async () => {
       const rows = await ctx.d1.prepare(`
         SELECT id, user_id, key_type, key_base64, key_prefix, label
@@ -48,8 +48,7 @@ describe('Multi-SSH-Key Support Suite', () => {
       expect(row.label).toBe('migrated');
     });
 
-    it('executes migration 0028 on a database with custom legacy keys and properly splits them', async () => {
-      // Create a database with migrations up to 0027
+    it('executes migration 0028 on a database with custom legacy keys (comment-bearing, tab-separated, multi-space)', async () => {
       const legacyMigrations = CANONICAL_MIGRATIONS.slice(
         0,
         CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
@@ -59,17 +58,16 @@ describe('Multi-SSH-Key Support Suite', () => {
         migrations: legacyMigrations
       });
 
-      // Insert custom users with various key formats
+      // Insert custom users with various whitespace and comment formats
       await legacyCtx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
         VALUES
           ('usr_alice', 'alice', 'Alice User', 'maker', 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCalice alice@workstation'),
-          ('usr_bob', 'bob', 'Bob User', 'maker', 'ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbob'),
-          ('usr_carol', 'carol', 'Carol User', 'maker', '   ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIcarol carol@laptop   '),
+          ('usr_bob', 'bob', 'Bob User', 'maker', 'ecdsa-sha2-nistp256\tAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbob\t\tbob@machine'),
+          ('usr_carol', 'carol', 'Carol User', 'maker', '   ssh-ed25519   AAAAC3NzaC1lZDI1NTE5AAAAIcarol   carol@laptop   '),
           ('usr_empty', 'empty', 'Empty User', 'maker', '')
       `).run();
 
-      // Execute migration 0028
       const migrationSql = fs.readFileSync(
         path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
         'utf8'
@@ -93,7 +91,7 @@ describe('Multi-SSH-Key Support Suite', () => {
         label: 'migrated'
       });
 
-      // Bob (without comment)
+      // Bob (tab-separated with comment)
       expect(keyMap.get('usr_bob')).toMatchObject({
         user_id: 'usr_bob',
         key_type: 'ecdsa-sha2-nistp256',
@@ -102,7 +100,7 @@ describe('Multi-SSH-Key Support Suite', () => {
         label: 'migrated'
       });
 
-      // Carol (with leading/trailing whitespace and comment)
+      // Carol (multi-space with leading/trailing whitespace and comment)
       expect(keyMap.get('usr_carol')).toMatchObject({
         user_id: 'usr_carol',
         key_type: 'ssh-ed25519',
@@ -116,18 +114,109 @@ describe('Multi-SSH-Key Support Suite', () => {
 
       expect(legacyCtx.runForeignKeyCheck()).toEqual([]);
     });
+
+    it('rerun of migration 0028 is idempotent (INSERT OR IGNORE)', async () => {
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      // Rerun on already-migrated database
+      await expect(ctx.d1.exec(migrationSql)).resolves.not.toThrow();
+
+      const nateKeys = await ctx.d1.prepare(`
+        SELECT id, key_prefix FROM user_ssh_keys WHERE user_id = 'usr_nate'
+      `).all();
+      expect(nateKeys.results?.length).toBe(1);
+    });
+
+    it('fail-closed guard passes for valid data and guard table is dropped', async () => {
+      const tables = ctx.getTableNames();
+      expect(tables).not.toContain('_ssh_backfill_guard');
+    });
+
+    it('fail-closed guard aborts migration if an unparseable legacy key is left unmigrated', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      // Insert an invalid legacy key type that will not match the parse filter
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES ('usr_corrupt', 'corrupt', 'Corrupt User', 'maker', 'unsupported-key-type AAAAC3NzaC1lZDI1NTE5AAAAI')
+      `).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      // Guard CHECK(x = 0) must trigger and fail the migration
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('enforces self-consistency CHECK on user_ssh_keys (key_prefix = key_type || " " || key_base64)', async () => {
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+          VALUES ('key_chk_fail', 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIBlob', 'ssh-rsa AAAAC3NzaC1lZDI1NTE5AAAAIBlob', 'bad')
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+    });
   });
 
   // =========================================================================
-  // 2. GIT ACTOR KEY RESOLUTION (gateway-identify-ssh-key & gateway-authorize-ssh)
+  // 2. SINGLE AUTHORITATIVE STORE GIT AUTH (git.ts)
   // =========================================================================
-  describe('2. Git Actor Key Resolution (git.ts)', () => {
+  describe('2. Single Authoritative Auth Store in git.ts (#1 & #2 Security Fix)', () => {
     const KEY_TYPE = 'ssh-ed25519';
+    const NATE_MIGRATED_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187';
     const MULTI_KEY_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIMultiKeyBlobForAgent123456789012345678';
-    const LEGACY_KEY_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAILegacyKeyBlobForMaker123456789012345678';
+    const SECOND_KEY_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAISecondKeyBlobForSam123456789012345678';
 
-    it('resolves actor via gateway-identify-ssh-key when key is ONLY in user_ssh_keys', async () => {
-      // User with NO legacy ssh_public_key
+    it('a backfilled legacy user authenticates via user_ssh_keys on both gateway actions', async () => {
+      // 1. Identify action
+      const identifyRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-identify-ssh-key',
+          keyType: KEY_TYPE,
+          keyBase64: NATE_MIGRATED_B64
+        }),
+        env
+      } as any);
+      const identifyData = await identifyRes.json();
+      expect(identifyRes.status).toBe(200);
+      expect(identifyData.success).toBe(true);
+      expect(identifyData.actorUserId).toBe('usr_nate');
+
+      // 2. Authorize action
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, visibility, storage_key, status)
+        VALUES ('repo_nate_auth', 'usr_nate', 'dronehunter', 'public', 'repositories/repo_nate_auth', 'active')
+      `).run();
+
+      const authRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-authorize-ssh',
+          keyType: KEY_TYPE,
+          keyBase64: NATE_MIGRATED_B64,
+          owner: 'nate',
+          slug: 'dronehunter',
+          operation: 'write'
+        }),
+        env
+      } as any);
+      const authData = await authRes.json();
+      expect(authRes.status).toBe(200);
+      expect(authData.success).toBe(true);
+      expect(authData.actorUserId).toBe('usr_nate');
+      expect(authData.memberRole).toBe('owner');
+    });
+
+    it('resolves actor via gateway-identify-ssh-key when key is registered in user_ssh_keys', async () => {
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
         VALUES ('usr_multikey_only', 'multikey_user', 'Multikey User', 'maker', NULL)
@@ -153,91 +242,179 @@ describe('Multi-SSH-Key Support Suite', () => {
       expect(data.actorUserId).toBe('usr_multikey_only');
     });
 
-    it('resolves actor via gateway-identify-ssh-key when key is ONLY in legacy users.ssh_public_key (fallback intact)', async () => {
-      // User with legacy ssh_public_key but NO user_ssh_keys row
+    it('REMOVED migrated key returns 401 from BOTH gateway actions (Proves #1 False Revocation Fixed)', async () => {
+      // Usr_nate has migrated key in user_ssh_keys and users.ssh_public_key
+      const sessionToken = 'tok_nate_removal_test';
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(await hashSessionToken(sessionToken), Date.now() + 100000).run();
+
+      // Nate removes his migrated key via profile API
+      const removeReq = new Request('http://localhost/api/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({
+          action: 'remove-ssh-key',
+          id: 'key_migrated_usr_nate'
+        })
+      });
+      const removeRes = await profileApi.onRequestPost({ request: removeReq, env: { DB: ctx.d1 } });
+      const removeData = await removeRes.json();
+      expect(removeRes.status).toBe(200);
+      expect(removeData.removed).toBe(true);
+
+      // Verify users.ssh_public_key was ALSO cleared
+      const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
+      expect((userRow as any).ssh_public_key).toBeNull();
+
+      // 1. Identify action MUST return 401
+      const identifyRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-identify-ssh-key',
+          keyType: KEY_TYPE,
+          keyBase64: NATE_MIGRATED_B64
+        }),
+        env
+      } as any);
+      expect(identifyRes.status).toBe(401);
+      const identifyData = await identifyRes.json();
+      expect(identifyData.error).toContain('SSH public key is not registered.');
+
+      // 2. Authorize action MUST return 401
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, visibility, storage_key, status)
+        VALUES ('repo_nate_auth_revoked', 'usr_nate', 'dronehunter', 'public', 'repositories/repo_nate_auth_revoked', 'active')
+      `).run();
+
+      const authRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-authorize-ssh',
+          keyType: KEY_TYPE,
+          keyBase64: NATE_MIGRATED_B64,
+          owner: 'nate',
+          slug: 'dronehunter',
+          operation: 'write'
+        }),
+        env
+      } as any);
+      expect(authRes.status).toBe(401);
+      const authData = await authRes.json();
+      expect(authData.error).toContain('SSH public key is not registered.');
+    });
+
+    it('rejects a key present ONLY in legacy users.ssh_public_key (Single Store Enforced, No Fallback)', async () => {
+      // Legacy user inserted after migration, present only in users.ssh_public_key
+      const UNMIGRATED_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIUnmigratedLegacyKeyNotInNewTable123456';
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
-        VALUES ('usr_legacy_only', 'legacy_user', 'Legacy User', 'maker', ?)
-      `).bind(`${KEY_TYPE} ${LEGACY_KEY_B64} user@legacy`).run();
+        VALUES ('usr_unmigrated', 'unmigrated', 'Unmigrated User', 'maker', ?)
+      `).bind(`${KEY_TYPE} ${UNMIGRATED_B64} unmigrated@host`).run();
+
+      const identifyRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-identify-ssh-key',
+          keyType: KEY_TYPE,
+          keyBase64: UNMIGRATED_B64
+        }),
+        env
+      } as any);
+      expect(identifyRes.status).toBe(401);
+
+      const authRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-authorize-ssh',
+          keyType: KEY_TYPE,
+          keyBase64: UNMIGRATED_B64,
+          owner: 'unmigrated',
+          slug: 'test-repo',
+          operation: 'read'
+        }),
+        env
+      } as any);
+      expect(authRes.status).toBe(401);
+    });
+
+    it('resolves exact owner unambiguously with NO cross-store wrong-user resolution possible', async () => {
+      // Sam owns SECOND_KEY_B64 in user_ssh_keys
+      await ctx.d1.prepare(`
+        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+        VALUES ('key_sam_exact', 'usr_sam', ?, ?, ?, 'sam-laptop')
+      `).bind(KEY_TYPE, SECOND_KEY_B64, `${KEY_TYPE} ${SECOND_KEY_B64}`).run();
 
       const res = await gitPost({
         request: gwRequest({
           action: 'gateway-identify-ssh-key',
           keyType: KEY_TYPE,
-          keyBase64: LEGACY_KEY_B64
+          keyBase64: SECOND_KEY_B64
         }),
         env
       } as any);
 
       const data = await res.json();
       expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.actorUserId).toBe('usr_legacy_only');
+      expect(data.actorUserId).toBe('usr_sam');
     });
 
-    it('authorizes repository operation via gateway-authorize-ssh with a key in user_ssh_keys', async () => {
-      await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role, ssh_public_key)
-        VALUES ('usr_repo_owner', 'repoowner', 'Repo Owner', 'maker', NULL)
-      `).run();
+    it('rejects malformed / oversized / unsupported-type identify requests with 400', async () => {
+      // 1. Unsupported key type
+      const unsupportedRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-identify-ssh-key',
+          keyType: 'ssh-dss',
+          keyBase64: MULTI_KEY_B64
+        }),
+        env
+      } as any);
+      expect(unsupportedRes.status).toBe(400);
+      const unsupportedData = await unsupportedRes.json();
+      expect(unsupportedData.error).toContain('Unsupported SSH public key type.');
 
-      await ctx.d1.prepare(`
-        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
-        VALUES ('key_owner_1', 'usr_repo_owner', ?, ?, ?, 'primary-mac')
-      `).bind(KEY_TYPE, MULTI_KEY_B64, `${KEY_TYPE} ${MULTI_KEY_B64}`).run();
+      // 2. Malformed non-base64
+      const malformedRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-identify-ssh-key',
+          keyType: 'ssh-ed25519',
+          keyBase64: 'INVALID!!BASE64^^'
+        }),
+        env
+      } as any);
+      expect(malformedRes.status).toBe(400);
+      const malformedData = await malformedRes.json();
+      expect(malformedData.error).toContain('Malformed SSH public key');
 
-      await ctx.d1.prepare(`
-        INSERT INTO repositories (id, owner_user_id, slug, visibility, storage_key, status)
-        VALUES ('repo_test_auth', 'usr_repo_owner', 'test-repo', 'private', 'repositories/repo_test_auth', 'active')
-      `).run();
+      // 3. Oversized (> 16384 chars)
+      const oversizedRes = await gitPost({
+        request: gwRequest({
+          action: 'gateway-identify-ssh-key',
+          keyType: 'ssh-ed25519',
+          keyBase64: 'A'.repeat(16385)
+        }),
+        env
+      } as any);
+      expect(oversizedRes.status).toBe(400);
+      const oversizedData = await oversizedRes.json();
+      expect(oversizedData.error).toContain('Malformed SSH public key');
+    });
 
+    it('rejects malformed / unsupported authorize requests with 400', async () => {
       const res = await gitPost({
         request: gwRequest({
           action: 'gateway-authorize-ssh',
-          keyType: KEY_TYPE,
+          keyType: 'invalid-type',
           keyBase64: MULTI_KEY_B64,
-          owner: 'repoowner',
-          slug: 'test-repo',
-          operation: 'write'
-        }),
-        env
-      } as any);
-
-      const data = await res.json();
-      expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.actorUserId).toBe('usr_repo_owner');
-      expect(data.memberRole).toBe('owner');
-      expect(data.repositoryId).toBe('repo_test_auth');
-    });
-
-    it('authorizes repository operation via gateway-authorize-ssh with a legacy key fallback', async () => {
-      await ctx.d1.prepare(`
-        INSERT INTO users (id, username, display_name, role, ssh_public_key)
-        VALUES ('usr_legacy_owner', 'legacyowner', 'Legacy Owner', 'maker', ?)
-      `).bind(`${KEY_TYPE} ${LEGACY_KEY_B64} legacy@host`).run();
-
-      await ctx.d1.prepare(`
-        INSERT INTO repositories (id, owner_user_id, slug, visibility, storage_key, status)
-        VALUES ('repo_legacy_auth', 'usr_legacy_owner', 'legacy-repo', 'private', 'repositories/repo_legacy_auth', 'active')
-      `).run();
-
-      const res = await gitPost({
-        request: gwRequest({
-          action: 'gateway-authorize-ssh',
-          keyType: KEY_TYPE,
-          keyBase64: LEGACY_KEY_B64,
-          owner: 'legacyowner',
-          slug: 'legacy-repo',
+          owner: 'nate',
+          slug: 'dronehunter',
           operation: 'read'
         }),
         env
       } as any);
-
+      expect(res.status).toBe(400);
       const data = await res.json();
-      expect(res.status).toBe(200);
-      expect(data.success).toBe(true);
-      expect(data.actorUserId).toBe('usr_legacy_owner');
+      expect(data.error).toContain('Unsupported SSH public key type.');
     });
 
     it('rejects unregistered key with 401 on both gateway actions', async () => {
@@ -387,7 +564,7 @@ describe('Multi-SSH-Key Support Suite', () => {
         },
         body: JSON.stringify({
           action: 'add-ssh-key',
-          keyType: 'ssh-dss', // Disallowed type
+          keyType: 'ssh-dss',
           keyBase64: 'AAAAC3NzaC1lZDI1NTE5AAAAIInvalidKey12345'
         })
       });
@@ -413,11 +590,10 @@ describe('Multi-SSH-Key Support Suite', () => {
       const res = await profileApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
       expect(res.status).toBe(400);
       const data = await res.json();
-      expect(data.error).toContain('Malformed SSH public key base64 blob.');
+      expect(data.error).toContain('Malformed SSH public key');
     });
 
     it('rejects duplicate key_prefix with 409 conflict without leaking owner', async () => {
-      // Register a key for usr_nate first
       const keyBlob = 'AAAAC3NzaC1lZDI1NTE5AAAAIDuplicateTestKeyBlob12345678901';
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
@@ -441,17 +617,22 @@ describe('Multi-SSH-Key Support Suite', () => {
       expect(res.status).toBe(409);
       const data = await res.json();
       expect(data.error).toBe('This SSH key is already registered.');
-      // Ensure error does not reveal usr_nate's identity
       expect(JSON.stringify(data)).not.toContain('usr_nate');
       expect(JSON.stringify(data)).not.toContain('nate');
     });
 
-    it('allows a user to remove their own key via remove-ssh-key', async () => {
+    it('allows a user to remove their own key via remove-ssh-key and clears users.ssh_public_key', async () => {
       const keyId = 'key_to_delete_nate';
+      const keyPrefix = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeleteMe';
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
-        VALUES (?, 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIDeleteMe', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeleteMe', 'temp')
-      `).bind(keyId).run();
+        VALUES (?, 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIDeleteMe', ?, 'temp')
+      `).bind(keyId, keyPrefix).run();
+
+      // Also set on users.ssh_public_key with a comment
+      await ctx.d1.prepare(`
+        UPDATE users SET ssh_public_key = ? WHERE id = 'usr_nate'
+      `).bind(`${keyPrefix} nate@temp`).run();
 
       const req = new Request('http://localhost/api/profile', {
         method: 'POST',
@@ -473,10 +654,12 @@ describe('Multi-SSH-Key Support Suite', () => {
 
       const exists = await ctx.d1.prepare('SELECT id FROM user_ssh_keys WHERE id = ?').bind(keyId).first();
       expect(exists).toBeNull();
+
+      const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
+      expect((userRow as any).ssh_public_key).toBeNull();
     });
 
     it('prevents a user from deleting another user key (scoped deletion)', async () => {
-      // Nate owns a key
       const nateKeyId = 'key_owned_by_nate';
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
@@ -499,19 +682,23 @@ describe('Multi-SSH-Key Support Suite', () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.removed).toBe(false); // 0 rows affected
+      expect(data.removed).toBe(false);
 
-      // Verify Nate's key is still present in storage
       const stillExists = await ctx.d1.prepare('SELECT id FROM user_ssh_keys WHERE id = ?').bind(nateKeyId).first();
       expect(stillExists).not.toBeNull();
     });
 
-    it('supports key removal via DELETE /api/profile', async () => {
+    it('supports key removal via DELETE /api/profile and clears users.ssh_public_key', async () => {
       const keyId = 'key_delete_via_http_verb';
+      const keyPrefix = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHttpVerbDelete';
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
-        VALUES (?, 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIHttpVerbDelete', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHttpVerbDelete', 'http-del')
-      `).bind(keyId).run();
+        VALUES (?, 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIHttpVerbDelete', ?, 'http-del')
+      `).bind(keyId, keyPrefix).run();
+
+      await ctx.d1.prepare(`
+        UPDATE users SET ssh_public_key = ? WHERE id = 'usr_nate'
+      `).bind(keyPrefix).run();
 
       const req = new Request(`http://localhost/api/profile?id=${keyId}`, {
         method: 'DELETE',
@@ -526,9 +713,12 @@ describe('Multi-SSH-Key Support Suite', () => {
 
       const exists = await ctx.d1.prepare('SELECT id FROM user_ssh_keys WHERE id = ?').bind(keyId).first();
       expect(exists).toBeNull();
+
+      const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
+      expect((userRow as any).ssh_public_key).toBeNull();
     });
 
-    it('preserves legacy single sshKey profile update path', async () => {
+    it('legacy profile sshKey update writes through to user_ssh_keys', async () => {
       const req = new Request('http://localhost/api/profile', {
         method: 'POST',
         headers: {
@@ -548,8 +738,67 @@ describe('Multi-SSH-Key Support Suite', () => {
       expect(data.user.displayName).toBe('Nate McGuire (Updated)');
       expect(data.user.sshKey).toContain('AAAAC3NzaC1lZDI1NTE5AAAAILegacyProfileUpdateKey12345');
 
+      // Verify written to users.ssh_public_key
       const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
       expect((userRow as any).ssh_public_key).toContain('AAAAC3NzaC1lZDI1NTE5AAAAILegacyProfileUpdateKey12345');
+
+      // Verify written through to user_ssh_keys
+      const keyRow = await ctx.d1.prepare('SELECT * FROM user_ssh_keys WHERE user_id = ?').bind('usr_nate').first();
+      expect(keyRow).not.toBeNull();
+      expect((keyRow as any).key_prefix).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILegacyProfileUpdateKey12345');
+    });
+
+    it('legacy profile sshKey update collides (409) on another user registered key', async () => {
+      // Nate already has a key in user_ssh_keys
+      const nateKeyBlob = 'AAAAC3NzaC1lZDI1NTE5AAAAINateRegisteredKeyForCollision12345';
+      await ctx.d1.prepare(`
+        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+        VALUES ('key_nate_coll', 'usr_nate', 'ssh-ed25519', ?, ?, 'primary')
+      `).bind(nateKeyBlob, `ssh-ed25519 ${nateKeyBlob}`).run();
+
+      // Sam tries to update profile sshKey with Nate's key
+      const req = new Request('http://localhost/api/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${secondUserToken}`
+        },
+        body: JSON.stringify({
+          displayName: 'Sam Altman',
+          sshKey: `ssh-ed25519 ${nateKeyBlob} sam@stolen`
+        })
+      });
+      const res = await profileApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(409);
+      const data = await res.json();
+      expect(data.error).toBe('This SSH key is already registered.');
+      expect(JSON.stringify(data)).not.toContain('usr_nate');
+      expect(JSON.stringify(data)).not.toContain('nate');
+    });
+
+    it('legacy profile sshKey update with empty string clears user_ssh_keys and users.ssh_public_key', async () => {
+      const req = new Request('http://localhost/api/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionToken}`
+        },
+        body: JSON.stringify({
+          displayName: 'Nate McGuire (No Key)',
+          sshKey: ''
+        })
+      });
+      const res = await profileApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+
+      const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
+      expect((userRow as any).ssh_public_key).toBeNull();
+
+      const keys = await ctx.d1.prepare('SELECT * FROM user_ssh_keys WHERE user_id = ?').bind('usr_nate').all();
+      expect(keys.results?.length).toBe(0);
     });
   });
 });

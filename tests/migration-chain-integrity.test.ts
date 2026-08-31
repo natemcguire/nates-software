@@ -982,6 +982,15 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       ).rejects.toThrow(/UNIQUE constraint failed/);
     });
 
+    it('should enforce self-consistency CHECK constraint on user_ssh_keys (key_prefix = key_type || " " || key_base64)', async () => {
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+          VALUES ('key_mismatch', 'usr_sam', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIValidBase64', 'ssh-rsa AAAAC3NzaC1lZDI1NTE5AAAAIValidBase64', 'bad')
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+    });
+
     it('should support multi-SSH-key storage and backfill existing keys (migration 0028)', async () => {
       // 1. Verify seed user usr_nate's legacy ssh_public_key was backfilled
       const nateKeys = await ctx.d1.prepare(`
