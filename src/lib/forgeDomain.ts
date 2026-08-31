@@ -126,6 +126,75 @@ export function isValidGitRef(ref: unknown): boolean {
   return validateGitRef(ref).valid;
 }
 
+export const MAX_TEXT_FILE_BYTES = 256 * 1024; // 256 KiB
+export const MAX_IMAGE_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB
+export const MAX_DEFAULT_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB
+
+/**
+ * Returns the maximum allowed byte size for a given file path based on its extension.
+ * Text/markdown/spec files capped at 256 KiB; images and binaries capped at 2 MiB.
+ */
+export function getMaxFileSizeBytes(filePath: string): number {
+  if (typeof filePath !== 'string') return MAX_DEFAULT_FILE_BYTES;
+  const lastDot = filePath.lastIndexOf('.');
+  if (lastDot !== -1) {
+    const ext = filePath.slice(lastDot).toLowerCase();
+    if (['.md', '.markdown', '.txt', '.json', '.yaml', '.yml', '.html', '.htm', '.css', '.js', '.mjs', '.ts'].includes(ext)) {
+      return MAX_TEXT_FILE_BYTES;
+    }
+    if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.avif', '.bmp'].includes(ext)) {
+      return MAX_IMAGE_FILE_BYTES;
+    }
+  }
+  return MAX_DEFAULT_FILE_BYTES;
+}
+
+/**
+ * Validates a repository relative file path for safe Git lookups.
+ * Rejects: non-strings, empty strings, null bytes, ALL backslashes, leading slashes, Windows drive prefixes,
+ * CLI option flags, path traversal (..) and empty/current-dir (.) segments.
+ */
+export function validateRepoFilePath(filePath: unknown): { valid: boolean; error?: string } {
+  if (typeof filePath !== 'string' || !filePath.trim()) {
+    return { valid: false, error: 'File path must be a non-empty string.' };
+  }
+
+  const clean = filePath.trim();
+
+  // No null bytes
+  if (clean.includes('\0')) {
+    return { valid: false, error: 'File path cannot contain null bytes.' };
+  }
+
+  // Reject ANY backslash (Windows path separator / escaping attempts)
+  if (clean.includes('\\')) {
+    return { valid: false, error: 'File path cannot contain backslashes.' };
+  }
+
+  // Reject absolute paths, leading slashes, Windows drive prefixes, CLI option flags
+  if (clean.startsWith('/') || clean.startsWith('-') || /^[a-zA-Z]:/.test(clean)) {
+    return { valid: false, error: 'Absolute paths, leading slashes, and option flags are forbidden.' };
+  }
+
+  // Split by '/' and verify all segments
+  const segments = clean.split('/');
+  for (const segment of segments) {
+    if (segment === '' || segment === '.' || segment === '..') {
+      return { valid: false, error: 'Path traversal and empty segments are forbidden.' };
+    }
+  }
+
+  if (clean.includes('..')) {
+    return { valid: false, error: 'Path traversal is forbidden.' };
+  }
+
+  return { valid: true };
+}
+
+export function isValidRepoFilePath(filePath: unknown): boolean {
+  return validateRepoFilePath(filePath).valid;
+}
+
 /**
  * Generates an immutable, id-based storage key for a repository.
  */

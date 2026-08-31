@@ -1,8 +1,13 @@
 // Public proxy Pages Function for retrieving committed repository files (e.g. spec.md, screenshots, business.md)
 // Authoritative Git storage is token-gated on the GITSMITH gateway; this endpoint securely proxies
 // reads for PUBLIC repositories only, fail-closed against path traversal and private repo access.
+// Bound to the public default_ref tip only; no historical OID parameter accepted.
 
-import { isValidGitOid } from '../../src/lib/forgeDomain';
+import {
+  isValidGitOid,
+  validateRepoFilePath,
+  getMaxFileSizeBytes
+} from '../../src/lib/forgeDomain';
 
 const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -49,11 +54,24 @@ function jsonError(error: string, status: number): Response {
   });
 }
 
+function sanitizeLogMessage(msg: unknown, sensitiveTokens: (string | undefined | null)[] = []): string {
+  let str = typeof msg === 'string' ? msg : (msg instanceof Error ? msg.message : String(msg ?? ''));
+  str = str.replace(/bearer\s+[a-zA-Z0-9._~+/-]+=*/gi, 'Bearer [REDACTED]');
+  str = str.replace(/authorization:\s*[^\r\n,]+/gi, 'authorization: [REDACTED]');
+  for (const token of sensitiveTokens) {
+    if (token && typeof token === 'string' && token.length > 3) {
+      str = str.replaceAll(token, '[REDACTED]');
+    }
+  }
+  str = str.replace(/(https?:\/\/)[^/@\s]+@/g, '$1[REDACTED]@');
+  return str;
+}
+
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }): Promise<Response> => {
   try {
     const url = new URL(request.url);
 
-    // 1. Validate requested file path (Security: fail-closed against traversal, absolute paths, null bytes)
+    // 1. Validate requested file path (Security: fail-closed against traversal, absolute paths, backslashes, null bytes)
     const rawPath = url.searchParams.get('path') || url.searchParams.get('file') || url.searchParams.get('filePath');
     if (!rawPath || typeof rawPath !== 'string') {
       return jsonError('File path is required', 400);
@@ -64,36 +82,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError('File path cannot be empty', 400);
     }
 
-    // Reject leading slashes, absolute paths, Windows drive paths, backslashes, CLI flag injection, null bytes
-    if (
-      filePath.startsWith('/') ||
-      filePath.startsWith('\\') ||
-      filePath.startsWith('-') ||
-      filePath.includes('\0') ||
-      /^[a-zA-Z]:/.test(filePath)
-    ) {
-      return jsonError('Invalid file path: absolute paths and leading slashes are forbidden', 400);
-    }
-
-    // Split segments and verify no segment is '..' or '.'
-    const segments = filePath.split(/[/\\]+/);
-    for (const segment of segments) {
-      if (segment === '..' || segment === '.') {
-        return jsonError('Path traversal is forbidden', 400);
-      }
-    }
-
-    if (filePath.includes('..')) {
-      return jsonError('Path traversal is forbidden', 400);
+    const pathVal = validateRepoFilePath(filePath);
+    if (!pathVal.valid) {
+      return jsonError(pathVal.error || 'Invalid file path', 400);
     }
 
     // 2. Parse repo identification parameters
+    // Note: caller-supplied commitOid is deliberately REMOVED entirely per security policy:
+    // this endpoint serves ONLY the current public default_ref tip resolved server-side from D1.
     let repoId = url.searchParams.get('repoId') || url.searchParams.get('repositoryId') || url.searchParams.get('id');
     let owner = url.searchParams.get('owner');
     let slug = url.searchParams.get('slug');
     const repoParam = url.searchParams.get('repo') || url.searchParams.get('repoSlug');
-    const refParam = url.searchParams.get('ref');
-    const commitOidParam = url.searchParams.get('commitOid') || url.searchParams.get('oid') || url.searchParams.get('commit');
 
     if (repoParam && !owner && !slug) {
       if (repoParam.includes('/')) {
@@ -114,7 +114,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     }
 
     // 3. Resolve repository and commit OID from D1
-    // PUBLIC repos only (visibility='public') — reject private/unlisted with 404 to avoid leaking existence
+    // PUBLIC repos only (visibility='public' AND status='active') — reject private/unlisted/inactive with 404
     let repoRow: any = null;
 
     if (repoId) {
@@ -122,54 +122,48 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         SELECT r.id, r.storage_key AS storageKey, r.visibility, r.default_ref AS defaultRef, r.status,
                rf.commit_oid AS refCommitOid
         FROM repositories r
-        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(?, r.default_ref, 'refs/heads/main')
+        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
         WHERE (r.id = ? OR r.app_id = ?)
         LIMIT 1
-      `).bind(refParam || null, repoId, repoId).first();
+      `).bind(repoId, repoId).first();
     } else if (owner && slug) {
       repoRow = await env.DB.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.visibility, r.default_ref AS defaultRef, r.status,
                rf.commit_oid AS refCommitOid
         FROM repositories r
         JOIN users u ON u.id = r.owner_user_id
-        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(?, r.default_ref, 'refs/heads/main')
+        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
         WHERE u.username = ? AND r.slug = ?
         LIMIT 1
-      `).bind(refParam || null, owner, slug).first();
+      `).bind(owner, slug).first();
     } else if (slug) {
       repoRow = await env.DB.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.visibility, r.default_ref AS defaultRef, r.status,
                rf.commit_oid AS refCommitOid
         FROM repositories r
-        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(?, r.default_ref, 'refs/heads/main')
+        LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
         WHERE r.slug = ? OR r.app_id = ?
         LIMIT 1
-      `).bind(refParam || null, slug, slug).first();
+      `).bind(slug, slug).first();
     }
 
     if (!repoRow) {
       return jsonError('Repository not found', 404);
     }
 
-    // Fail-closed: Only serve public repos
-    if (repoRow.visibility !== 'public') {
+    // Fail-closed: Only serve active public repos
+    if (repoRow.visibility !== 'public' || repoRow.status !== 'active') {
       return jsonError('Repository not found', 404);
     }
 
-    // 4. Resolve commit OID
-    let targetCommitOid: string = '';
-    if (commitOidParam) {
-      if (!isValidGitOid(commitOidParam) || commitOidParam.startsWith('-')) {
-        return jsonError('Invalid commit OID format', 400);
-      }
-      targetCommitOid = commitOidParam.trim();
-    } else if (repoRow.refCommitOid) {
-      targetCommitOid = repoRow.refCommitOid;
-    } else {
+    // 4. Resolve commit OID from DB default ref ONLY
+    const targetCommitOid = repoRow.refCommitOid;
+    if (!targetCommitOid || !isValidGitOid(targetCommitOid) || targetCommitOid.startsWith('-')) {
       return jsonError('No commit found for repository ref', 404);
     }
 
     const storageKey = repoRow.storageKey || `repositories/${repoRow.id}`;
+    const maxAllowedBytes = getMaxFileSizeBytes(filePath);
     let fileBytes: Buffer | Uint8Array | null = null;
 
     // 5. Priority 1: Delegate to live token-gated GITSMITH gateway if configured
@@ -194,7 +188,15 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         });
 
         if (res.status === 404) {
-          return jsonError(`File '${filePath}' not found in repository`, 404);
+          return jsonError('File not found in repository', 404);
+        }
+
+        if (res.status === 413) {
+          return jsonError('File size exceeds maximum allowed limit', 413);
+        }
+
+        if (res.status === 400) {
+          return jsonError('Invalid file request', 400);
         }
 
         if (!res.ok) {
@@ -215,7 +217,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             if (treeRes.ok) {
               const treeData: any = await treeRes.json().catch(() => ({}));
               if (treeData?.manifestContents && typeof treeData.manifestContents[filePath] === 'string') {
-                fileBytes = Buffer.from(treeData.manifestContents[filePath], 'utf8');
+                const textContent = treeData.manifestContents[filePath];
+                const textBuf = Buffer.from(textContent, 'utf8');
+                if (textBuf.length > maxAllowedBytes) {
+                  return jsonError('File size exceeds maximum allowed limit', 413);
+                }
+                fileBytes = textBuf;
               }
             }
           }
@@ -224,15 +231,29 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             return jsonError('Failed to retrieve file from repository gateway', 502);
           }
         } else {
+          // Check Content-Length header if present
+          const cl = res.headers.get('content-length');
+          if (cl) {
+            const clNum = parseInt(cl, 10);
+            if (Number.isFinite(clNum) && clNum > maxAllowedBytes * 2) {
+              return jsonError('File size exceeds maximum allowed limit', 413);
+            }
+          }
+
           const data: any = await res.json().catch(() => ({}));
           if (data?.success && typeof data.base64 === 'string') {
-            fileBytes = Buffer.from(data.base64, 'base64');
+            const decoded = Buffer.from(data.base64, 'base64');
+            if (decoded.length > maxAllowedBytes) {
+              return jsonError('File size exceeds maximum allowed limit', 413);
+            }
+            fileBytes = decoded;
           } else {
             return jsonError('Invalid gateway payload', 502);
           }
         }
       } catch (fetchErr: any) {
-        return jsonError(`Repository gateway unreachable: ${fetchErr?.message || 'network error'}`, 502);
+        console.error('Repository gateway fetch failure:', sanitizeLogMessage(fetchErr, [env.GITSMITH_GATEWAY_TOKEN]));
+        return jsonError('Repository gateway unreachable', 502);
       }
     }
 
@@ -242,8 +263,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       if (reposRoot) {
         try {
           const { readCommitFileBuffer } = await import('../../src/lib/gitsmith/gitStorage');
-          fileBytes = readCommitFileBuffer(reposRoot, storageKey, targetCommitOid, filePath);
-        } catch {}
+          fileBytes = readCommitFileBuffer(reposRoot, storageKey, targetCommitOid, filePath, maxAllowedBytes);
+        } catch (storageErr: any) {
+          if (storageErr?.code === 'ERR_FILE_TOO_LARGE') {
+            return jsonError('File size exceeds maximum allowed limit', 413);
+          }
+        }
       }
     }
 
@@ -251,10 +276,14 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       if (!env.GITSMITH_GATEWAY_URL && !(env.GITSMITH_REPOS_ROOT || (typeof process !== 'undefined' && process.env?.GITSMITH_REPOS_ROOT))) {
         return jsonError('Repository storage is not configured', 500);
       }
-      return jsonError(`File '${filePath}' not found in repository`, 404);
+      return jsonError('File not found in repository', 404);
     }
 
-    // 7. Format and return HTTP response with correct MIME type and cache controls
+    // 7. Hard size check and return HTTP response with correct MIME type and cache controls
+    if (fileBytes.length > maxAllowedBytes) {
+      return jsonError('File size exceeds maximum allowed limit', 413);
+    }
+
     const contentType = getMimeType(filePath);
 
     return new Response(fileBytes, {
@@ -268,6 +297,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     });
   } catch (err: any) {
-    return jsonError(err?.message || 'Internal server error while reading repository file', 500);
+    console.error('Unhandled repo-file proxy error:', sanitizeLogMessage(err, [env?.GITSMITH_GATEWAY_TOKEN]));
+    return jsonError('Internal server error', 500);
   }
 };

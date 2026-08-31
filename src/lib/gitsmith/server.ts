@@ -6,7 +6,7 @@ import type { GatewayConfig } from './types.ts';
 import { GitsmithGatewayService } from './gatewayService.ts';
 import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 import { GatewayHealthChecker } from './health.ts';
-import { constantTimeTokenCompare } from '../forgeDomain.ts';
+import { constantTimeTokenCompare, validateRepoFilePath, getMaxFileSizeBytes } from '../forgeDomain.ts';
 import { archiveAuthoritativeCommit, getProposalDiff, inspectCommitTree, readCommitFileBase64, readCommitFileBuffer } from './gitStorage.ts';
 
 export interface CreateServerOptions {
@@ -219,9 +219,17 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
         return;
       }
 
+      const pathVal = validateRepoFilePath(filePath);
+      if (!pathVal.valid) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: pathVal.error || 'Invalid file path.' }));
+        return;
+      }
+
       try {
+        const maxLimit = getMaxFileSizeBytes(filePath);
         if (url.pathname === '/api/gateway/raw' || url.pathname === '/v1/raw') {
-          const buf = readCommitFileBuffer(config.reposRoot, storageKey, commitOid, filePath);
+          const buf = readCommitFileBuffer(config.reposRoot, storageKey, commitOid, filePath, maxLimit);
           if (!buf) {
             res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
             res.end(JSON.stringify({ success: false, error: `File '${filePath}' not found in commit ${commitOid.slice(0, 8)}.` }));
@@ -251,7 +259,7 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
           });
           res.end(buf);
         } else {
-          const base64 = readCommitFileBase64(config.reposRoot, storageKey, commitOid, filePath);
+          const base64 = readCommitFileBase64(config.reposRoot, storageKey, commitOid, filePath, maxLimit);
           if (base64 === null) {
             res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
             res.end(JSON.stringify({ success: false, error: `File '${filePath}' not found in commit ${commitOid.slice(0, 8)}.` }));
@@ -270,6 +278,11 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
           }));
         }
       } catch (err: any) {
+        if (err?.code === 'ERR_FILE_TOO_LARGE') {
+          res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ success: false, error: 'File size exceeds maximum allowed limit.' }));
+          return;
+        }
         res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ success: false, error: err?.message || 'Failed to read commit file.' }));
       }

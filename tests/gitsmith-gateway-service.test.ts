@@ -1059,6 +1059,14 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
         expect(rawRes.headers.get('Content-Type')).toContain('text/html');
         const rawText = await rawRes.text();
         expect(rawText).toBe('<h1>HTTP Verify</h1>');
+
+        // Backslash rejection in gateway blob/raw
+        const backslashRes = await fetch(`http://127.0.0.1:${port}/api/gateway/blob?storageKey=repositories/http_verify_test&commitOid=${commitOid}&path=sub\\index.html`, {
+          headers: {
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          }
+        });
+        expect(backslashRes.status).toBe(400);
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
