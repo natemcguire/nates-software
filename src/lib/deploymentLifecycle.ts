@@ -30,10 +30,13 @@ export const APP_DEPLOYMENT_STATES: readonly AppDeploymentState[] = [
   'client_demo'
 ] as const;
 
+// NB: there is no 'deploying' state. The build AND deploy stages both surface as
+// 'building' (prod's deployment_state CHECK has no 'deploying' value); the deploy
+// vs build stage is discriminated by the build_runs CodeBuild project, not app state.
 export const DEPLOYMENT_STATE_TRANSITIONS: Readonly<Record<AppDeploymentState, readonly AppDeploymentState[]>> = {
   draft: ['source_ready', 'building', 'failed', 'retired', 'client_demo'],
   source_ready: ['building', 'failed', 'retired', 'draft'],
-  building: ['deployable', 'failed', 'retired'],
+  building: ['deployable', 'active', 'failed', 'retired'],
   deployable: ['active', 'building', 'failed', 'retired'],
   active: ['building', 'deployable', 'failed', 'retired'],
   failed: ['source_ready', 'building', 'draft', 'retired'],
@@ -652,6 +655,7 @@ export function getHonestDeploymentMessage(
       ]
     };
   }
+
 
   if (state === 'retired') {
     return {

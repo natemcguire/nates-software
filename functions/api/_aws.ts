@@ -8,6 +8,8 @@ export const DEFAULT_AWS_REGION = 'us-east-2';
 export const DEFAULT_AWS_ACCOUNT_ID = '777772815966';
 export const DEFAULT_AWS_S3_BUILD_BUCKET = 'nsw-build-sources-777772815966';
 export const DEFAULT_AWS_CODEBUILD_PROJECT = 'nsw-build';
+export const DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT = 'nsw-deploy';
+export const DEFAULT_CF_ACCOUNT_ID = '4219a576830c72b0e6e4ca358e61473a';
 
 export const APP_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const COMMIT_OID_REGEX = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
@@ -150,6 +152,7 @@ export async function startCodeBuild(
   env: any,
   params: {
     projectName?: string;
+    project?: string;
     envOverrides: Record<string, string>;
   }
 ): Promise<{
@@ -161,6 +164,12 @@ export async function startCodeBuild(
   status?: number;
 }> {
   if (params.envOverrides) {
+    if (params.envOverrides.APP_ID && !APP_ID_REGEX.test(params.envOverrides.APP_ID)) {
+      return {
+        success: false,
+        error: `Invalid APP_ID '${params.envOverrides.APP_ID}': must match ^[a-z0-9][a-z0-9-]{0,62}$`
+      };
+    }
     if (params.envOverrides.ECR_REPO) {
       const parts = params.envOverrides.ECR_REPO.split('/');
       const appIdPart = parts.length > 1 ? parts[1] : parts[0];
@@ -181,7 +190,7 @@ export async function startCodeBuild(
 
   const creds = getAwsCredentials(env);
   const region = creds.region || DEFAULT_AWS_REGION;
-  const projectName = params.projectName || env?.AWS_CODEBUILD_PROJECT || DEFAULT_AWS_CODEBUILD_PROJECT;
+  const projectName = params.projectName || params.project || env?.AWS_CODEBUILD_PROJECT || DEFAULT_AWS_CODEBUILD_PROJECT;
   const url = `https://codebuild.${region}.amazonaws.com/`;
 
   const envList: CodeBuildEnvOverride[] = Object.entries(params.envOverrides).map(([name, value]) => ({

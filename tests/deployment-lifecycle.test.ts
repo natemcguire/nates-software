@@ -134,6 +134,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(isValidDeploymentState('source_ready')).toBe(true);
       expect(isValidDeploymentState('building')).toBe(true);
       expect(isValidDeploymentState('deployable')).toBe(true);
+      expect(isValidDeploymentState('deploying')).toBe(false);
       expect(isValidDeploymentState('active')).toBe(true);
       expect(isValidDeploymentState('failed')).toBe(true);
       expect(isValidDeploymentState('retired')).toBe(true);
@@ -147,6 +148,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(canTransitionDeploymentState('draft', 'source_ready')).toBe(true);
       expect(canTransitionDeploymentState('source_ready', 'building')).toBe(true);
       expect(canTransitionDeploymentState('building', 'deployable')).toBe(true);
+      expect(canTransitionDeploymentState('building', 'active')).toBe(true);
       expect(canTransitionDeploymentState('building', 'failed')).toBe(true);
       expect(canTransitionDeploymentState('deployable', 'active')).toBe(true);
       expect(canTransitionDeploymentState('active', 'retired')).toBe(true);
@@ -155,7 +157,14 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       // Illegal jumps: draft cannot jump directly to active without build and promotion
       expect(canTransitionDeploymentState('draft', 'active')).toBe(false);
       expect(canTransitionDeploymentState('draft', 'deployable')).toBe(false);
-      expect(canTransitionDeploymentState('building', 'active')).toBe(false);
+      // building -> active is LEGAL: the deploy stage (nsw-deploy) runs under
+      // 'building' and promotes straight to 'active' on smoke success.
+      expect(canTransitionDeploymentState('building', 'active')).toBe(true);
+
+      // 'deploying' is not a valid state, so transitions to/from it must return false
+      expect(canTransitionDeploymentState('building', 'deploying' as any)).toBe(false);
+      expect(canTransitionDeploymentState('deploying' as any, 'active')).toBe(false);
+      expect(canTransitionDeploymentState('deploying' as any, 'failed')).toBe(false);
     });
 
     it('should enforce CHECK constraints on app_listings deployment_state in D1', async () => {
@@ -1002,6 +1011,8 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         GITSMITH_REPOS_ROOT: reposRoot,
         AWS_ACCESS_KEY_ID: 'test-akid',
         AWS_SECRET_ACCESS_KEY: 'test-secret',
+        AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy',
+        CF_ACCOUNT_ID: '4219a576830c72b0e6e4ca358e61473a',
         __AWS_FETCH: mockAwsFetch
       };
 
@@ -1017,31 +1028,39 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(data.deploymentState).toBe('building');
       expect(data.codeBuildId).toBe('nsw-build:cm-build-uuid-1234');
 
-      // Verify lazy finalize on GET /api/deploy
+      // Verify lazy finalize on GET /api/deploy: candidate build SUCCEEDED + verified digest -> triggers nsw-deploy -> stays building
       const getRes = await deployApi.onRequestGet({
         request: new Request('https://nates-software.com/api/deploy?appId=certified-mailer-app'),
         env: testEnv
       });
       const getData: any = await getRes.json();
       expect(getData.success).toBe(true);
-      expect(getData.deploymentState).toBe('deployable');
+      expect(getData.deploymentState).toBe('building');
 
-      // Verify D1 records: deployable state, active_deployment_id is NULL (never fakes active without serve)
+      // Verify D1 records: building state (deploy stage runs under building), origin_kind is cf_container, active_deployment_id is NULL (never fakes active without serve)
       const app = await ctx.d1.prepare(`
-        SELECT deployment_state, active_deployment_id, deployment_error FROM app_listings WHERE id = 'certified-mailer-app'
+        SELECT deployment_state, origin_kind, active_deployment_id, deployment_error FROM app_listings WHERE id = 'certified-mailer-app'
       `).first<any>();
 
-      expect(app.deployment_state).toBe('deployable');
+      expect(app.deployment_state).toBe('building');
+      expect(app.origin_kind).toBe('cf_container');
       expect(app.active_deployment_id).toBeNull();
       expect(app.deployment_error).toBeNull();
 
-      // Verify build_runs was recorded as passed with real digest
+      // Verify candidate build_run was recorded as passed with real digest
       const buildRun = await ctx.d1.prepare(`
-        SELECT status, exit_code, result_digest FROM build_runs WHERE repository_id = 'repo_cm_1'
-      `).first<any>();
+        SELECT status, exit_code, result_digest FROM build_runs WHERE id = ?
+      `).bind(data.buildRunId).first<any>();
       expect(buildRun.status).toBe('passed');
       expect(buildRun.exit_code).toBe(0);
       expect(buildRun.result_digest).toBe('sha256:python_artifact_digest_123');
+
+      // Verify deploy build_run was created with status running
+      const deployRun = await ctx.d1.prepare(`
+        SELECT status, build_command, runner_image_digest FROM build_runs WHERE build_command = 'nsw-deploy'
+      `).first<any>();
+      expect(deployRun).toBeDefined();
+      expect(deployRun.status).toBe('running');
     });
 
     it('should refuse activation and fail closed when R2 STORAGE is absent, leaving no healthy revision and deployment_state=failed', async () => {
