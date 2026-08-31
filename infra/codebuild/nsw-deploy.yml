@@ -1,0 +1,78 @@
+version: 0.2
+# Deploy runner: takes a built image (ECR) and deploys a per-app Cloudflare
+# Container Worker. Handles the image as DATA only (never runs it). The CF API
+# token comes from SSM SecureString — it is NEVER present in nsw-build (which
+# runs untrusted code). Env from control plane: APP_ID, COMMIT_OID, ECR_REPO,
+# CF_ACCOUNT_ID, INSTANCE_TYPE (default 'lite'), PROCFILE_PORT (default 8080).
+env:
+  variables:
+    WRANGLER_VERSION: "4.99.0"
+    CONTAINERS_PKG_VERSION: "0.3.7"
+  parameter-store:
+    CLOUDFLARE_API_TOKEN: /nsw/cf-deploy-token
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - npm install -g wrangler@${WRANGLER_VERSION}
+      - wrangler --version
+  pre_build:
+    commands:
+      - echo "ECR login + pull built image..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+      - export SRC="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}:${COMMIT_OID}"
+      - docker pull --platform linux/amd64 "$SRC"
+      - echo "Push image to Cloudflare managed registry..."
+      - docker tag "$SRC" "${APP_ID}:${COMMIT_OID}"
+      - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler containers push "${APP_ID}:${COMMIT_OID}"
+  build:
+    commands:
+      - echo "Generate per-app container Worker + deploy..."
+      - mkdir -p /tmp/appworker/src
+      - export CF_IMAGE="registry.cloudflare.com/${CF_ACCOUNT_ID}/${APP_ID}:${COMMIT_OID}"
+      - |
+        cat > /tmp/appworker/wrangler.jsonc <<JSON
+        {
+          "name": "nsw-app-${APP_ID}",
+          "main": "src/index.ts",
+          "compatibility_date": "2024-09-23",
+          "account_id": "${CF_ACCOUNT_ID}",
+          "workers_dev": true,
+          "containers": [ { "class_name": "AppContainer", "image": "${CF_IMAGE}", "instance_type": "${INSTANCE_TYPE:-lite}", "max_instances": 3 } ],
+          "durable_objects": { "bindings": [ { "name": "APP_CONTAINER", "class_name": "AppContainer" } ] },
+          "migrations": [ { "tag": "v1", "new_sqlite_classes": ["AppContainer"] } ]
+        }
+        JSON
+      - |
+        cat > /tmp/appworker/src/index.ts <<'TS'
+        import { Container, getContainer } from "@cloudflare/containers";
+        export class AppContainer extends Container {
+          defaultPort = 8080;
+          sleepAfter = "10m";
+          envVars = { PORT: "8080" };
+        }
+        export default {
+          async fetch(request: Request, env: any): Promise<Response> {
+            return getContainer(env.APP_CONTAINER, "default").fetch(request);
+          }
+        };
+        TS
+      - cd /tmp/appworker
+      - echo '{"name":"appworker","private":true}' > package.json
+      - npm install @cloudflare/containers@${CONTAINERS_PKG_VERSION}
+      - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler deploy 2>&1 | tee /tmp/deploy.log
+      - export WORKER_URL=$(grep -oE 'https://nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
+      - echo "DEPLOYED_WORKER_URL=${WORKER_URL}"
+      # Runtime smoke: poll the worker URL until 200 (container provisions in minutes)
+      - |
+        for i in $(seq 1 40); do
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${WORKER_URL}/" || echo 000)
+          echo "smoke attempt $i: HTTP $code"
+          if [ "$code" = "200" ]; then echo "SMOKE_OK"; break; fi
+          sleep 10
+        done
+      - 'echo "{\"worker_url\":\"${WORKER_URL}\"}" > /tmp/deploy-result.json'
+artifacts:
+  files: [ deploy-result.json ]
+  base-directory: /tmp
