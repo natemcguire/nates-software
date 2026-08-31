@@ -181,6 +181,7 @@ export interface PRDiffData {
   readonly success: boolean;
   readonly proposalId?: string;
   readonly repositorySlug?: string;
+  readonly repositoryOwnerId?: string;
   readonly targetRef?: string;
   readonly featureRef?: string;
   readonly baseOid: string;
@@ -196,6 +197,12 @@ export interface PRDiffData {
   readonly totalDeletions: number;
   readonly filesChanged: number;
   readonly unifiedDiff: string;
+  readonly grantableBps?: number;
+  readonly grantable_bps?: number;
+  readonly grantedBps?: number;
+  readonly granted_bps?: number;
+  readonly remainingGrantableBps?: number;
+  readonly remaining_grantable_bps?: number;
   readonly error?: string;
 }
 

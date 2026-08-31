@@ -46,6 +46,7 @@ export const InboxView: React.FC = () => {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [reviewComment, setReviewComment] = useState('');
+  const [rewardPercent, setRewardPercent] = useState<string>('0');
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
@@ -144,6 +145,7 @@ export const InboxView: React.FC = () => {
     }
     setPrActiveTab('conversation');
     setCollapsedFiles(new Set());
+    setRewardPercent('0');
   }, [selectedThreadId, fetchProposalDiff]);
 
   const toggleFileCollapse = (filePath: string) => {
@@ -165,10 +167,17 @@ export const InboxView: React.FC = () => {
     setActionSuccess(null);
 
     try {
+      const numericPct = parseFloat(rewardPercent) || 0;
+      const grantBps = decision === 'approve' && numericPct > 0 ? Math.round(numericPct * 100) : 0;
       const res = await fetch('/api/inbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: decision, messageId: id, comment: reviewComment })
+        body: JSON.stringify({
+          action: decision,
+          messageId: id,
+          comment: reviewComment,
+          grantBps: grantBps > 0 ? grantBps : undefined
+        })
       });
       const data = await res.json();
 
@@ -182,6 +191,7 @@ export const InboxView: React.FC = () => {
         } : t)));
         setActionSuccess(data.message || 'Proposal approval recorded.');
         setReviewComment('');
+        setRewardPercent('0');
         if (decision === 'approve') window.setTimeout(() => fetchInbox(), 750);
         setTimeout(() => setActionSuccess(null), 4000);
       } else {
@@ -740,42 +750,88 @@ export const InboxView: React.FC = () => {
                           </p>
 
                           {/* Review Actions */}
-                          {(status.canApprove || status.canReject) && (
-                            <div className="space-y-2 pt-1 border-t border-gray-300">
-                              <textarea
-                                value={reviewComment}
-                                onChange={e => setReviewComment(e.target.value)}
-                                maxLength={2000}
-                                placeholder="Leave a review comment (required when requesting changes)..."
-                                className="w-full min-h-16 p-2 border border-gray-400 bg-white text-xs rounded"
-                              />
-                              <div className="flex justify-between items-center">
-                                <div className="text-[10px] text-gray-500 max-w-[280px]">
-                                  Approving records an immutable review and enqueues exact CAS landing.
-                                </div>
-                                <div className="flex gap-2">
-                                  {status.canReject && (
-                                    <button
-                                      onClick={() => handleReviewProposal(selectedThread.id, 'reject')}
-                                      disabled={Boolean(actionPending) || reviewComment.trim().length < 3}
-                                      className="btn-w95 px-3 py-1.5 flex items-center gap-1 font-bold text-red-800 disabled:opacity-50"
-                                    >
-                                      <XCircle size={12} /> Request Changes
-                                    </button>
-                                  )}
-                                  {status.canApprove && (
-                                    <button
-                                      onClick={() => handleReviewProposal(selectedThread.id, 'approve')}
-                                      disabled={Boolean(actionPending)}
-                                      className="btn-w95 btn-w95-primary px-3 py-1.5 flex items-center gap-1 font-bold shadow-md disabled:opacity-50"
-                                    >
-                                      <GitPullRequest size={12} /> Approve Exact OID
-                                    </button>
-                                  )}
+                          {(status.canApprove || status.canReject) && (() => {
+                            const grantableBps = diffData?.grantableBps ?? diffData?.grantable_bps ?? 0;
+                            const grantedBps = diffData?.grantedBps ?? diffData?.granted_bps ?? 0;
+                            const remainingBps = diffData?.remainingGrantableBps ?? diffData?.remaining_grantable_bps ?? Math.max(0, grantableBps - grantedBps);
+                            const remainingPercentFormatted = (remainingBps / 100).toFixed(remainingBps % 100 === 0 ? 0 : 2);
+                            const numericRewardPercent = parseFloat(rewardPercent) || 0;
+
+                            return (
+                              <div className="space-y-2 pt-1 border-t border-gray-300">
+                                <textarea
+                                  value={reviewComment}
+                                  onChange={e => setReviewComment(e.target.value)}
+                                  maxLength={2000}
+                                  placeholder="Leave a review comment (required when requesting changes)..."
+                                  className="w-full min-h-16 p-2 border border-gray-400 bg-white text-xs rounded"
+                                />
+
+                                {/* Contributor Reward Grant Control */}
+                                {status.canApprove && (
+                                  <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="font-bold text-gray-800 flex items-center gap-1.5">
+                                        <span>Reward contributor</span>
+                                        <span className="text-[10px] font-normal text-gray-600">
+                                          (Pool headroom: <b>{remainingPercentFormatted}%</b> · {remainingBps} bps remaining)
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max={remainingBps / 100}
+                                          step="1"
+                                          value={rewardPercent}
+                                          onChange={e => setRewardPercent(e.target.value)}
+                                          placeholder="0"
+                                          className="w-16 px-1.5 py-0.5 border border-gray-400 text-right text-xs bg-white rounded font-mono"
+                                        />
+                                        <span className="font-bold text-gray-700 text-xs">%</span>
+                                      </div>
+                                    </div>
+                                    {numericRewardPercent > 0 && (
+                                      <div className="text-[11px] text-blue-950 bg-blue-100/70 p-2 rounded border border-blue-300 space-y-1">
+                                        <p className="leading-relaxed">
+                                          Permanent — this contributor earns {numericRewardPercent}% of every future sale of this app, forever. It's carved from your share; ancestors and the protocol pool are untouched. Once the contribution lands, this can't be undone.
+                                        </p>
+                                        <p className="text-[10px] text-gray-600">
+                                          The % set at first approval is final for this attempt (replays cannot change it).
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="flex justify-between items-center">
+                                  <div className="text-[10px] text-gray-500 max-w-[280px]">
+                                    Approving records an immutable review and enqueues exact CAS landing.
+                                  </div>
+                                  <div className="flex gap-2">
+                                    {status.canReject && (
+                                      <button
+                                        onClick={() => handleReviewProposal(selectedThread.id, 'reject')}
+                                        disabled={Boolean(actionPending) || reviewComment.trim().length < 3}
+                                        className="btn-w95 px-3 py-1.5 flex items-center gap-1 font-bold text-red-800 disabled:opacity-50"
+                                      >
+                                        <XCircle size={12} /> Request Changes
+                                      </button>
+                                    )}
+                                    {status.canApprove && (
+                                      <button
+                                        onClick={() => handleReviewProposal(selectedThread.id, 'approve')}
+                                        disabled={Boolean(actionPending)}
+                                        className="btn-w95 btn-w95-primary px-3 py-1.5 flex items-center gap-1 font-bold shadow-md disabled:opacity-50"
+                                      >
+                                        <GitPullRequest size={12} /> Approve Exact OID
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       );
                     })()}
