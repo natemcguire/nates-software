@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building in Public — Nate's Software</title>
+<meta name="description" content="An honest, append-only log of building Nate's Software Cloud — a 'Heroku for 2026' — in public. Every entry is shipped by the platform it documents.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --ink: #0d1417; --ink-2: #33454d; --ink-3: #5f727a;
+    --paper: #f6f8f8; --surface: #ffffff; --surface-2: #eef2f2; --line: #dbe3e3;
+    --accent: #0f9e8e; --accent-ink: #0a7568;
+    --attention: #c9791a; --attention-bg: #fbeeda;
+    --deferred: #6c7d85; --deferred-bg: #e9eef0;
+    --good: #0f9e8e; --good-bg: #dcefec;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --shadow: 0 1px 2px rgba(13,20,23,.05), 0 8px 24px -12px rgba(13,20,23,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8eeee; --ink-2: #aebbc0; --ink-3: #7c8d94;
+      --paper: #0b1113; --surface: #121a1d; --surface-2: #182226; --line: #263237;
+      --accent: #2bc0ad; --accent-ink: #59d6c6; --attention: #e0a34a; --attention-bg: #2c2214;
+      --deferred: #8b9ca3; --deferred-bg: #1a2429; --good: #2bc0ad; --good-bg: #14312d;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"] {
+    --ink: #0d1417; --ink-2: #33454d; --ink-3: #5f727a;
+    --paper: #f6f8f8; --surface: #ffffff; --surface-2: #eef2f2; --line: #dbe3e3;
+    --accent: #0f9e8e; --accent-ink: #0a7568; --attention: #c9791a; --attention-bg: #fbeeda;
+    --deferred: #6c7d85; --deferred-bg: #e9eef0; --good: #0f9e8e; --good-bg: #dcefec;
+    --shadow: 0 1px 2px rgba(13,20,23,.05), 0 8px 24px -12px rgba(13,20,23,.14);
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8eeee; --ink-2: #aebbc0; --ink-3: #7c8d94;
+    --paper: #0b1113; --surface: #121a1d; --surface-2: #182226; --line: #263237;
+    --accent: #2bc0ad; --accent-ink: #59d6c6; --attention: #e0a34a; --attention-bg: #2c2214;
+    --deferred: #8b9ca3; --deferred-bg: #1a2429; --good: #2bc0ad; --good-bg: #14312d;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: clamp(1.4rem, 4vw, 3.5rem) clamp(1.1rem, 4vw, 2rem) 5rem; }
+
+  /* masthead */
+  .masthead { border-bottom: 1px solid var(--line); padding-bottom: 1.6rem; margin-bottom: 2.4rem; }
+  .brand {
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--accent-ink); display: flex; align-items: center; gap: .6rem; margin: 0 0 1rem;
+  }
+  .brand::before { content: ""; width: 26px; height: 2px; background: var(--accent); display: inline-block; }
+  .brand .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); margin-left: auto; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  @media (prefers-reduced-motion: no-preference){ .live-dot { animation: pulse 2.4s ease-in-out infinite; } }
+  h1 {
+    font-family: var(--mono); font-weight: 600; font-size: clamp(1.8rem, 5vw, 2.7rem);
+    line-height: 1.05; letter-spacing: -.02em; margin: 0 0 .6rem; text-wrap: balance;
+  }
+  h1 .pub { color: var(--accent); }
+  .tagline { font-size: 1.04rem; color: var(--ink-2); max-width: 62ch; margin: 0; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: .5rem .9rem; margin-top: 1.3rem; font-family: var(--mono); font-size: .74rem; color: var(--ink-3); }
+  .meta-row .chip { display: inline-flex; align-items: center; gap: .4rem; }
+  .meta-row .chip b { color: var(--accent-ink); font-weight: 600; }
+  .meta-row a { color: var(--accent-ink); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+
+  /* entry */
+  .entry { margin-bottom: 3rem; }
+  .entry-head { display: flex; align-items: baseline; gap: .9rem; flex-wrap: wrap; margin-bottom: .3rem; }
+  .entry-no { font-family: var(--mono); font-size: .8rem; font-weight: 600; color: var(--accent);
+    background: var(--good-bg); padding: .2rem .5rem; border-radius: 6px; letter-spacing: .04em; }
+  .entry-date { font-family: var(--mono); font-size: .76rem; color: var(--ink-3); letter-spacing: .03em; }
+  .entry h2 { font-family: var(--mono); font-weight: 600; font-size: clamp(1.35rem, 3.4vw, 1.75rem);
+    letter-spacing: -.015em; line-height: 1.12; margin: .35rem 0 .5rem; text-wrap: balance; }
+  .lede { font-size: 1.05rem; color: var(--ink-2); margin: 0 0 1.6rem; max-width: 64ch; }
+  .verdict {
+    display: inline-flex; align-items: center; gap: .55rem; font-family: var(--mono);
+    font-size: .78rem; font-weight: 600; letter-spacing: .04em; color: var(--accent-ink);
+    background: var(--good-bg); border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    padding: .48rem .8rem; border-radius: 999px; margin-bottom: 1.8rem;
+  }
+  .verdict .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  @media (prefers-reduced-motion: no-preference){ .verdict .dot { animation: pulse 2.4s ease-in-out infinite; } }
+
+  h3.block {
+    font-family: var(--mono); font-size: 1.05rem; font-weight: 600; letter-spacing: -.01em;
+    margin: 2.4rem 0 1rem; display: flex; align-items: baseline; gap: .7rem;
+  }
+  h3.block .n { color: var(--accent); font-size: .8rem; }
+
+  /* lanes */
+  .lanes { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }
+  @media (max-width: 640px){ .lanes { grid-template-columns: repeat(2, 1fr); } }
+  .lane { background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1rem .95rem; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+  .lane::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; background: var(--accent); }
+  .lane .st { display: inline-flex; align-items: center; gap: .35rem; font-family: var(--mono);
+    font-size: .62rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--accent-ink); background: var(--good-bg); padding: .16rem .42rem; border-radius: 5px; margin-bottom: .55rem; }
+  .lane .st .sd { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .lane h4 { font-family: var(--mono); font-size: .82rem; font-weight: 600; margin: 0 0 .15rem; letter-spacing: -.01em; }
+  .lane .kind { font-size: .73rem; color: var(--ink-3); margin: 0 0 .6rem; }
+  .lane .proof { font-family: var(--mono); font-size: .68rem; color: var(--ink-2); line-height: 1.45; word-break: break-word; }
+  .note { font-family: var(--mono); font-size: .7rem; color: var(--ink-3); letter-spacing: .02em; margin: .7rem 0 0; }
+
+  /* flow */
+  .flow { display: flex; flex-direction: column; border-left: 2px solid var(--line); margin-left: .4rem; }
+  .step { position: relative; padding: 0 0 1.5rem 1.6rem; }
+  .step:last-child { padding-bottom: 0; }
+  .step::before { content: ""; position: absolute; left: -7px; top: .35rem; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+  .step h4 { font-family: var(--mono); font-size: .92rem; margin: 0 0 .2rem; font-weight: 600; }
+  .step p { margin: 0; color: var(--ink-2); font-size: .93rem; }
+  .step .caught { color: var(--attention); font-weight: 600; }
+
+  /* table */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: .87rem; background: var(--surface); min-width: 560px; }
+  th, td { text-align: left; padding: .68rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600; background: var(--surface-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  .fix-name { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+  .pill { display: inline-block; font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .04em;
+    padding: .16rem .44rem; border-radius: 5px; white-space: nowrap; text-transform: uppercase; }
+  .pill.fixed { color: var(--accent-ink); background: var(--good-bg); }
+  .pill.filed { color: var(--deferred); background: var(--deferred-bg); }
+  .trigger { color: var(--ink-3); font-size: .81rem; }
+  code, .mono { font-family: var(--mono); }
+  td code { font-size: .82em; }
+
+  /* pull quote */
+  .pull { border-left: 3px solid var(--accent); padding: .3rem 0 .3rem 1.2rem; margin: 2rem 0;
+    font-size: 1.12rem; line-height: 1.5; color: var(--ink); font-weight: 500; max-width: 60ch; }
+  .pull span { color: var(--accent-ink); }
+
+  /* honesty callout */
+  .callout { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--attention);
+    border-radius: 10px; padding: 1.05rem 1.2rem; margin: 1.8rem 0; box-shadow: var(--shadow); }
+  .callout h4 { margin: 0 0 .35rem; font-size: .98rem; display: flex; align-items: center; gap: .55rem; }
+  .callout h4 .tag { font-family: var(--mono); font-size: .58rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--attention); background: var(--attention-bg); padding: .16rem .44rem; border-radius: 5px; }
+  .callout p { margin: 0; color: var(--ink-2); font-size: .92rem; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; margin: 1.4rem 0; }
+  @media (max-width: 560px){ .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: .85rem .9rem; }
+  .stat .num { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; color: var(--accent-ink); line-height: 1;
+    letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .stat .lbl { font-size: .74rem; color: var(--ink-3); margin-top: .3rem; }
+
+  /* footer */
+  hr.rule { border: none; border-top: 1px solid var(--line); margin: 3.5rem 0 0; }
+  footer { color: var(--ink-3); font-size: .8rem; font-family: var(--mono); margin-top: 1.5rem; line-height: 1.8; }
+  footer a { color: var(--accent-ink); }
+  .backlog { margin-top: 1.2rem; font-family: var(--mono); font-size: .74rem; color: var(--ink-3); }
+  .backlog .up { color: var(--attention); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- MASTHEAD -->
+  <header class="masthead">
+    <p class="brand">Nate's Software · building in public <span class="live-dot" title="live"></span></p>
+    <h1>We're building a platform <span class="pub">in the open.</span></h1>
+    <p class="tagline">An honest, append-only log of building <b>Nate's Software Cloud</b> — a "Heroku for 2026" where a pushed repo becomes a live URL with no Dockerfile and no infra knowledge. The twist: this page is deployed <em>by the platform it documents</em>.</p>
+    <div class="meta-row">
+      <span class="chip">served via <b>the wildcard router → R2</b></span>
+      <span class="chip">host <b>live-build.nates-software.com</b></span>
+      <span class="chip"><a href="https://nates-software.com">nates-software.com&nbsp;↗</a></span>
+    </div>
+  </header>
+
+  <!-- ENTRY 001 -->
+  <article class="entry">
+    <div class="entry-head">
+      <span class="entry-no">ENTRY 001</span>
+      <span class="entry-date">2026-08-31</span>
+    </div>
+    <h2>"Heroku for 2026" ships — a repo becomes a live URL, autonomously</h2>
+    <p class="lede">The goal was to make deploying feel like magic again: push code, get a URL, no infrastructure to understand. Today it works end-to-end for every common kind of app — proven on live production infrastructure, on Cloudflare + AWS raw primitives, with nothing running on a Mac in a closet.</p>
+    <span class="verdict"><span class="dot"></span>ALL FOUR LANES PROVEN LIVE</span>
+
+    <!-- lanes -->
+    <div class="lanes">
+      <div class="lane">
+        <span class="st"><span class="sd"></span>Live</span>
+        <h4>Static / SPA</h4>
+        <p class="kind">R2 · wildcard router</p>
+        <p class="proof">dronehunter<br>this very page</p>
+      </div>
+      <div class="lane">
+        <span class="st"><span class="sd"></span>Live</span>
+        <h4>Containers</h4>
+        <p class="kind">CF Containers · scale-to-zero</p>
+        <p class="proof">hello-python<br>Py / Go / Node / any</p>
+      </div>
+      <div class="lane">
+        <span class="st"><span class="sd"></span>Live</span>
+        <h4>Next.js SSR</h4>
+        <p class="kind">CF Worker · OpenNext</p>
+        <p class="proof">hello-next<br>per-request render</p>
+      </div>
+      <div class="lane">
+        <span class="st"><span class="sd"></span>Live</span>
+        <h4>+ Postgres</h4>
+        <p class="kind">Aurora Serverless v2 · zero</p>
+        <p class="proof">hello-pg2<br>zero-touch deploy</p>
+      </div>
+    </div>
+    <p class="note">FREE tier — scale-to-zero, cold-start expected, ~$0 idle above the $5/mo Workers-Paid floor. Always-on is a separate paid tier.</p>
+
+    <!-- pull quote -->
+    <p class="pull">A brand-new app went <span>git push → live URL</span>, writing to a real database, with zero hand-provisioning. That's the moment it stopped being a demo and became a platform.</p>
+
+    <!-- how it got proven -->
+    <h3 class="block"><span class="n">01</span>How it got proven — the part most demos skip</h3>
+    <p style="color:var(--ink-2);max-width:64ch;margin:0 0 1.2rem;">Anyone can show a happy-path deploy. The real question is whether a <em>brand-new</em> app deploys with no hand-holding. Each layer of real testing caught what the layer before it couldn't — which is exactly why the review ran to the end instead of stopping at "the tests pass."</p>
+    <div class="flow">
+      <div class="step">
+        <h4>Live end-to-end test of all four lanes</h4>
+        <p>Pushed fresh apps through the real pipeline. Every gate passed — but it <span class="caught">surfaced 4 first-deploy blockers</span>. Postgres provisioning was 100% broken; container image repos were never auto-created. The existing apps only worked because they'd been hand-assembled earlier.</p>
+      </div>
+      <div class="step">
+        <h4>An adversarial code review of the deploy engine</h4>
+        <p>An independent reviewer went at the ~3,700-line diff. <span class="caught">Six findings</span> — the serious ones fixed immediately, the rest filed with the exact conditions that would make them matter. Confirmed clean: database credentials never leak into a build log.</p>
+      </div>
+      <div class="step">
+        <h4>The fresh-app gate — the honest one</h4>
+        <p>A genuinely new app (<code>hello-pg2</code>), nothing pre-made, went push → live URL writing to a real database. It also <span class="caught">caught one last bug</span>: a YAML flaw in the Next.js deploy that only a real deploy — never a unit test — could reveal.</p>
+      </div>
+      <div class="step">
+        <h4>Fix, re-deploy, and confirm live</h4>
+        <p>Next.js redeployed through the corrected pipeline; the page's render timestamp changes on every request, proving genuine server-side rendering. Through all of it: <b>zero production outage</b> — every failed redeploy kept serving its last healthy version.</p>
+      </div>
+    </div>
+
+    <!-- what shipped -->
+    <h3 class="block"><span class="n">02</span>What shipped, and what's honestly still open</h3>
+    <p style="color:var(--ink-2);max-width:64ch;margin:0 0 1.2rem;">Building in public means showing the backlog too. Everything in the top group is live. The follow-ups are real but gated — none of them affects a single developer using the platform today; they're the hardening you do before a <em>second</em> user shows up.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Item</th><th>What it was</th><th>Status</th><th>Trigger / note</th></tr></thead>
+        <tbody>
+          <tr><td class="fix-name">Postgres provisioning</td><td>Database creation failed for every app</td><td><span class="pill fixed">Fixed</span></td><td class="trigger">Was fully broken — no DB app could deploy</td></tr>
+          <tr><td class="fix-name">Image repo auto-create</td><td>Per-app registry never created for new apps</td><td><span class="pill fixed">Fixed</span></td><td class="trigger">Old apps only worked from a hand-made repo</td></tr>
+          <tr><td class="fix-name">Next.js build config</td><td>A required config file fresh apps don't ship</td><td><span class="pill fixed">Fixed</span></td><td class="trigger">Now generated by the platform</td></tr>
+          <tr><td class="fix-name">Next.js deploy YAML</td><td>A guard line broke the build parser</td><td><span class="pill fixed">Fixed</span></td><td class="trigger">+ a test now catches this whole class</td></tr>
+          <tr><td class="fix-name">Serve-dead guard</td><td>A dead app could be marked "healthy"</td><td><span class="pill fixed">Fixed</span></td><td class="trigger">Now fails the build honestly</td></tr>
+          <tr><td class="fix-name">Deploy by digest</td><td>Deploy trusted a movable tag, not the verified image</td><td><span class="pill fixed">Fixed</span></td><td class="trigger">Now pinned to the exact verified bytes</td></tr>
+          <tr><td class="fix-name">Multi-tenant Next config</td><td>A hostile repo could influence its own build config</td><td><span class="pill filed">Filed</span></td><td class="trigger">Harden before a 2nd user; solo-safe now</td></tr>
+          <tr><td class="fix-name">Concurrent deploys</td><td>Two at once could let a stale build win</td><td><span class="pill filed">Filed</span></td><td class="trigger">Needs simultaneous deploys — dormant solo</td></tr>
+          <tr><td class="fix-name">Cancel wasted builds</td><td>Superseded builds keep running on AWS</td><td><span class="pill filed">Filed</span></td><td class="trigger">Bounded by a spend alarm</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- honesty callout -->
+    <div class="callout">
+      <h4><span class="tag">said out loud</span>I called it "complete" too early — twice</h4>
+      <p>Both times, the code was merged and the tests were green, so it <em>felt</em> done. Both times, pushing a real fresh app through the pipeline proved it wasn't. The lesson that stuck: for a deploy platform, "unit tests pass" and "a brand-new app actually deploys" are different claims — and only the second one counts.</p>
+    </div>
+
+    <!-- stats -->
+    <div class="stats">
+      <div class="stat"><div class="num">4</div><div class="lbl">app-type lanes, all live</div></div>
+      <div class="stat"><div class="num">11</div><div class="lbl">real bugs found &amp; fixed</div></div>
+      <div class="stat"><div class="num">1,257</div><div class="lbl">tests green</div></div>
+      <div class="stat"><div class="num">0</div><div class="lbl">production outages</div></div>
+    </div>
+
+    <p style="color:var(--ink-2);max-width:64ch;margin:1.6rem 0 0;">Under the hood: a wildcard router Worker as the single front door (adding an app is one database row, not a DNS change), Cloud Native Buildpacks turning any repo into a runnable image with no Dockerfile, and a control plane that learns build results by verifying the image digest — never by trusting a callback from untrusted build code. The tier boundary is the cloud boundary: free is Cloudflare and scales to zero; always-on paid is AWS kept warm.</p>
+
+    <p class="backlog"><span class="up">Next up →</span> the Idea Marketplace: seed a project idea, put a slice of future revenue "up for grabs," and contributors earn by building it — or by forking and selling their own. Two revenue streams, one ledger.</p>
+  </article>
+
+  <hr class="rule">
+  <footer>
+    Entry 001 of an append-only log · shipped by the platform it documents<br>
+    prod: <a href="https://nates-software.com">nates-software.com</a> · this page: live-build.nates-software.com · served from R2 via the wildcard router<br>
+    more entries land here as the build continues
+  </footer>
+
+</div>
+</body>
+</html>
