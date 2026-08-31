@@ -55,7 +55,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   onOpenTerminal,
   onOpenForge
 }) => {
-  const { user } = useAuth();
+  const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -153,14 +153,40 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             </div>
 
             {/* Identity boundary */}
-            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between gap-3 font-mono">
-              <div>
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono">
+              <div className="space-y-0.5">
                 <div className="block text-gray-800 font-bold text-xs">Publishing Identity</div>
-                <div className="text-gray-500 text-[11px]">The local CLI confirms your authenticated maker with <code>slop login</code> before anything can be published or sold.</div>
+                <div className="text-gray-500 text-[11px]">Create your maker username to publish and sell — or log in if you already have one.</div>
               </div>
-              <div className="bg-gray-100 border border-gray-400 px-2 py-1 rounded text-blue-900 font-bold">
-                {user ? `Web session: @${user.username}` : 'CLI login required'}
-              </div>
+              {user ? (
+                <div className="bg-emerald-50 border border-emerald-400 px-2.5 py-1 rounded text-emerald-900 font-bold flex items-center gap-1.5 shrink-0 self-start sm:self-auto text-xs">
+                  <Check size={13} className="text-emerald-600 shrink-0" />
+                  <span>Signed in as @{user.username}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      openAuthModal('register');
+                    }}
+                    className="btn-w95 btn-w95-primary px-3 py-1 font-bold text-xs"
+                  >
+                    Create username
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      openAuthModal('login');
+                    }}
+                    className="btn-w95 px-3 py-1 font-bold text-xs text-gray-800"
+                  >
+                    Log in
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
