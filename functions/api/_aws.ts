@@ -1,6 +1,6 @@
 // Functions API: /api/_aws
 // SigV4 AWS Client Integration for Cloudflare Pages Functions
-// Supports: S3 PutObject, CodeBuild StartBuild/BatchGetBuilds, ECR DescribeImages
+// Supports: S3 PutObject, CodeBuild StartBuild/BatchGetBuilds, ECR CreateRepository/DescribeImages, RDS Data API, SSM Parameter Store
 
 import { AwsClient } from 'aws4fetch';
 
@@ -312,6 +312,114 @@ export async function batchGetCodeBuilds(
     return {
       success: false,
       error: `CodeBuild BatchGetBuilds network failure: ${err?.message || String(err)}`
+    };
+  }
+}
+
+export interface CreateEcrRepositoryOptions {
+  repositoryName: string;
+  registryId?: string;
+  imageTagMutability?: 'MUTABLE' | 'IMMUTABLE';
+  tags?: Array<{ Key: string; Value: string }>;
+}
+
+export interface CreateEcrRepositoryResult {
+  success: boolean;
+  repository?: any;
+  alreadyExists?: boolean;
+  error?: string;
+  status?: number;
+}
+
+/**
+ * Creates an ECR repository if it does not already exist using CreateRepository (JSON-1.1).
+ * Idempotent: treats RepositoryAlreadyExistsException as success.
+ */
+export async function createEcrRepository(
+  env: any,
+  params: CreateEcrRepositoryOptions
+): Promise<CreateEcrRepositoryResult> {
+  if (!params?.repositoryName) {
+    return {
+      success: false,
+      error: 'repositoryName is required'
+    };
+  }
+
+  const parts = params.repositoryName.split('/');
+  const appIdPart = parts.length > 1 ? parts[1] : parts[0];
+  if (!APP_ID_REGEX.test(appIdPart)) {
+    return {
+      success: false,
+      error: `Invalid repositoryName '${params.repositoryName}': appId component must match ^[a-z0-9][a-z0-9-]{0,62}$`
+    };
+  }
+
+  const creds = getAwsCredentials(env);
+  const region = creds.region || DEFAULT_AWS_REGION;
+  const registryId = params.registryId || env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID;
+  const url = `https://ecr.${region}.amazonaws.com/`;
+
+  const payload: any = {
+    repositoryName: params.repositoryName
+  };
+  if (registryId) {
+    payload.registryId = registryId;
+  }
+  if (params.imageTagMutability) {
+    payload.imageTagMutability = params.imageTagMutability;
+  }
+  if (params.tags) {
+    payload.tags = params.tags;
+  }
+
+  try {
+    const res = await awsFetch(env, {
+      service: 'ecr',
+      method: 'POST',
+      url,
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AmazonEC2ContainerRegistry_V20150921.CreateRepository'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data: any = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const errType = String(data?.__type || data?.code || '');
+      const errMsg = String(data?.message || data?.error || `ECR CreateRepository failed with HTTP ${res.status}`);
+
+      if (
+        errType.includes('RepositoryAlreadyExistsException') ||
+        errType.toLowerCase().includes('repositoryalreadyexists') ||
+        errMsg.toLowerCase().includes('already exists')
+      ) {
+        return {
+          success: true,
+          alreadyExists: true,
+          status: res.status
+        };
+      }
+
+      return {
+        success: false,
+        alreadyExists: false,
+        status: res.status,
+        error: data?.message || data?.error || errMsg
+      };
+    }
+
+    return {
+      success: true,
+      repository: data?.repository,
+      status: res.status
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `ECR CreateRepository network failure: ${err?.message || String(err)}`
     };
   }
 }
@@ -738,6 +846,7 @@ export interface ProvisionDatabaseResult {
  * 1. Idempotency guard: if SSM /nsw/apps/<id>/db-url exists, reuse it.
  * 2. Generate 32-char alphanumeric password.
  * 3. CREATE ROLE "app_<id>" LOGIN PASSWORD '<pw>'
+ * 3b. GRANT "app_<id>" TO CURRENT_USER
  * 4. CREATE DATABASE "app_<id>" OWNER "app_<id>"
  * 5. REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC
  * 6. REVOKE ALL ON SCHEMA public FROM PUBLIC; GRANT ALL ON SCHEMA public TO "app_<id>"
@@ -805,6 +914,25 @@ export async function provisionAppDatabase(
       success: false,
       retryable: false,
       error: 'Failed to create database role'
+    };
+  }
+
+  // Step 3b: GRANT "app_<id>" TO CURRENT_USER
+  // PostgreSQL requires the executing user to be a member of the role to set it as DB owner.
+  const grantRoleRes = await exec(`GRANT "${dbName}" TO CURRENT_USER`, 'postgres');
+  if (!grantRoleRes.success) {
+    if (grantRoleRes.isResuming) {
+      return {
+        success: false,
+        retryable: true,
+        isResuming: true,
+        error: 'Database cluster is resuming from paused state. Please retry shortly.'
+      };
+    }
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to grant role to CURRENT_USER'
     };
   }
 

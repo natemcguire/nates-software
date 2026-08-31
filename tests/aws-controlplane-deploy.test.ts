@@ -10,6 +10,7 @@ import {
   putS3SourceArchive,
   startCodeBuild,
   batchGetCodeBuilds,
+  createEcrRepository,
   describeEcrImages
 } from '../functions/api/_aws';
 
@@ -295,6 +296,95 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(res.repoMissing).toBe(true);
       expect(res.error).toBe('ECR repo nsw/missing-app not provisioned');
     });
+
+    it('signs ECR CreateRepository requests and creates repository', async () => {
+      const capturedRequests: Request[] = [];
+      const customFetch: typeof fetch = async (req) => {
+        capturedRequests.push(req as Request);
+        return Response.json({
+          repository: {
+            repositoryName: 'nsw/new-app',
+            registryId: '777772815966',
+            repositoryArn: 'arn:aws:ecr:us-east-2:777772815966:repository/nsw/new-app'
+          }
+        });
+      };
+
+      const res = await createEcrRepository(
+        { ...AWS_CREDS, __AWS_FETCH: customFetch },
+        {
+          repositoryName: 'nsw/new-app',
+          registryId: '777772815966'
+        }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.repository?.repositoryName).toBe('nsw/new-app');
+      expect(capturedRequests.length).toBe(1);
+
+      const req = capturedRequests[0];
+      expect(req.method).toBe('POST');
+      expect(req.headers.get('x-amz-target')).toBe('AmazonEC2ContainerRegistry_V20150921.CreateRepository');
+      expect(req.headers.get('authorization')).toContain('us-east-2/ecr/aws4_request');
+
+      const body = JSON.parse(await req.text());
+      expect(body.repositoryName).toBe('nsw/new-app');
+      expect(body.registryId).toBe('777772815966');
+    });
+
+    it('treats ECR RepositoryAlreadyExistsException as success (idempotent)', async () => {
+      const customFetch: typeof fetch = async () => {
+        return Response.json(
+          {
+            __type: 'RepositoryAlreadyExistsException',
+            message: "The repository with name 'nsw/existing-app' already exists in the registry with id '777772815966'"
+          },
+          { status: 400 }
+        );
+      };
+
+      const res = await createEcrRepository(
+        { ...AWS_CREDS, __AWS_FETCH: customFetch },
+        {
+          repositoryName: 'nsw/existing-app'
+        }
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.alreadyExists).toBe(true);
+    });
+
+    it('handles ECR CreateRepository errors (e.g. AccessDeniedException) gracefully', async () => {
+      const customFetch: typeof fetch = async () => {
+        return Response.json(
+          {
+            __type: 'AccessDeniedException',
+            message: 'User is not authorized to perform: ecr:CreateRepository'
+          },
+          { status: 400 }
+        );
+      };
+
+      const res = await createEcrRepository(
+        { ...AWS_CREDS, __AWS_FETCH: customFetch },
+        {
+          repositoryName: 'nsw/unauth-app'
+        }
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.alreadyExists).toBe(false);
+      expect(res.error).toContain('User is not authorized');
+    });
+
+    it('rejects invalid repositoryName in createEcrRepository', async () => {
+      const res = await createEcrRepository(
+        AWS_CREDS,
+        { repositoryName: 'nsw/INVALID_NAME!!' }
+      );
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('Invalid repositoryName');
+    });
   });
 
   // ==========================================================================
@@ -358,6 +448,16 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
           return new Response('', { status: 200 });
         }
 
+        // ECR CreateRepository
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({
+            repository: {
+              repositoryName: body.repositoryName,
+              registryId: '777772815966'
+            }
+          });
+        }
+
         // CodeBuild StartBuild
         if (target === 'CodeBuild_20161006.StartBuild') {
           return Response.json({
@@ -409,6 +509,18 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       const s3Put = awsCalls.find(c => c.method === 'PUT' && c.url.includes('.s3.'));
       expect(s3Put).toBeDefined();
       expect(s3Put?.url).toBe(`https://nsw-build-sources-777772815966.s3.us-east-2.amazonaws.com/${data.buildId}.tar`);
+
+      // Assert ECR CreateRepository was called for nsw/<app> BEFORE CodeBuild StartBuild
+      const ecrCreate = awsCalls.find(c => c.target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository');
+      expect(ecrCreate).toBeDefined();
+      expect(ecrCreate?.body.repositoryName).toBe(`nsw/${appId}`);
+      expect(ecrCreate?.body.registryId).toBe('777772815966');
+
+      const ecrIndex = awsCalls.findIndex(c => c.target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository');
+      const cbIndex = awsCalls.findIndex(c => c.target === 'CodeBuild_20161006.StartBuild');
+      expect(ecrIndex).toBeGreaterThan(-1);
+      expect(cbIndex).toBeGreaterThan(-1);
+      expect(ecrIndex).toBeLessThan(cbIndex);
 
       // Assert CodeBuild StartBuild was called with project nsw-build and exact env overrides
       const cbStart = awsCalls.find(c => c.target === 'CodeBuild_20161006.StartBuild');
@@ -496,6 +608,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
 
         if (req.method === 'PUT') {
           return new Response('', { status: 200 });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
         }
         if (target === 'CodeBuild_20161006.StartBuild') {
           return Response.json(
@@ -672,6 +787,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         { name: 'APP_ID', value: appId, type: 'PLAINTEXT' },
         { name: 'COMMIT_OID', value: commitOid, type: 'PLAINTEXT' },
         { name: 'ECR_REPO', value: `nsw/${appId}`, type: 'PLAINTEXT' },
+        { name: 'IMAGE_DIGEST', value: expectedDigest, type: 'PLAINTEXT' },
         { name: 'CF_ACCOUNT_ID', value: '4219a576830c72b0e6e4ca358e61473a', type: 'PLAINTEXT' },
         { name: 'INSTANCE_TYPE', value: 'lite', type: 'PLAINTEXT' }
       ]);
@@ -705,6 +821,82 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(evidence.status).toBe('running');
       expect(evidence.imageDigest).toBe(expectedDigest);
       expect(evidence.deployCodeBuildId).toBe('nsw-deploy:lazy-deploy-uuid-2222');
+    });
+
+    it('fails closed and refuses nsw-deploy dispatch when ECR returns a malformed image digest (Fix #1)', async () => {
+      const malformedAppId = 'malformed-digest-app';
+      const malformedCommit = 'c01234567890abcdef1234567890abcdef123456';
+      const malformedCodeBuildId = 'nsw-build:malformed-uuid-123';
+
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_malformed', 'malformed', 'Malformed Maker', 'user')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'Malformed App', 'Tag', 'Desc', 'usr_malformed', '1.0.0', 'MIT', '$0', 'None', '[]', '[]', '{}', 'building')
+      `).bind(malformedAppId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_malformed_1', ?, 'usr_malformed', ?, 'public', 'sha1', 'refs/heads/main', 'repositories/malformed', 'active')
+      `).bind(malformedAppId, malformedAppId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_malformed_1', 'repo_malformed_1', ?, 'release', 'running', ?, 'nsw-build', 'sha256:sourcemanifest123', CURRENT_TIMESTAMP)
+      `).bind(malformedCommit, malformedCodeBuildId).run();
+
+      let startBuildCalled = false;
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{ id: malformedCodeBuildId, buildStatus: 'SUCCEEDED', currentPhase: 'COMPLETED' }]
+          });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: `nsw/${malformedAppId}`,
+              imageDigest: 'not-a-valid-sha256-digest',
+              imageTags: [malformedCommit]
+            }]
+          });
+        }
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          startBuildCalled = true;
+          return Response.json({ build: { id: 'nsw-deploy:should-not-reach', buildStatus: 'IN_PROGRESS' } });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${malformedAppId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentError).toContain('Invalid ECR image digest format');
+      expect(startBuildCalled).toBe(false);
+
+      const buildRun = await ctx.d1.prepare(`SELECT status, exit_code FROM build_runs WHERE id = 'br_malformed_1'`).first<any>();
+      expect(buildRun.status).toBe('failed');
+      expect(buildRun.exit_code).toBe(1);
+
+      const listing = await ctx.d1.prepare(`SELECT deployment_state, deployment_error FROM app_listings WHERE id = ?`).bind(malformedAppId).first<any>();
+      expect(listing.deployment_state).toBe('failed');
+      expect(listing.deployment_error).toContain('Invalid ECR image digest format');
+    });
+
+    it('asserts infra/codebuild/nsw-deploy.yml validates IMAGE_DIGEST format and pulls by digest (Fix #1)', () => {
+      const filePath = path.resolve(__dirname, '../infra/codebuild/nsw-deploy.yml');
+      const content = fs.readFileSync(filePath, 'utf8');
+      expect(content).toContain('if ! echo "$IMAGE_DIGEST" | grep -qE \'^sha256:[0-9a-f]{64}$\'; then echo "BAD_IMAGE_DIGEST"; exit 1; fi');
+      expect(content).toContain('export SRC="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}@${IMAGE_DIGEST}"');
+      expect(content).toContain('docker pull --platform linux/amd64 "$SRC"');
     });
 
     it('lazy-finalizes deploy stage: remains in building state while nsw-deploy is IN_PROGRESS', async () => {
@@ -1219,6 +1411,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         if (req.method === 'PUT') {
           return new Response('', { status: 200 });
         }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
+        }
         if (target === 'CodeBuild_20161006.StartBuild') {
           return Response.json({
             build: {
@@ -1313,6 +1508,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         const req = input instanceof Request ? input : new Request(input, init);
         const target = req.headers.get('x-amz-target') || '';
         if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
+        }
         if (target === 'CodeBuild_20161006.StartBuild') {
           buildCount++;
           return Response.json({
@@ -1429,7 +1627,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         }
         if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
           return Response.json({
-            imageDetails: [{ registryId: '777772815966', repositoryName: `nsw/${appId}`, imageDigest: 'sha256:digestB_real', imageTags: [commitB] }]
+            imageDetails: [{ registryId: '777772815966', repositoryName: `nsw/${appId}`, imageDigest: `sha256:${'b'.repeat(64)}`, imageTags: [commitB] }]
           });
         }
         if (target === 'CodeBuild_20161006.StartBuild') {
@@ -1450,7 +1648,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
 
       const buildBFinal = await ctx.d1.prepare(`SELECT status, result_digest FROM build_runs WHERE id = ?`).bind(dataB.buildRunId).first<any>();
       expect(buildBFinal.status).toBe('passed');
-      expect(buildBFinal.result_digest).toBe('sha256:digestB_real');
+      expect(buildBFinal.result_digest).toBe(`sha256:${'b'.repeat(64)}`);
 
       const appFinal = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
       expect(appFinal.deployment_state).toBe('building');
@@ -1857,6 +2055,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         const req = input instanceof Request ? input : new Request(input, init);
         const target = req.headers.get('x-amz-target') || '';
         if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
+        }
         if (target === 'CodeBuild_20161006.StartBuild') {
           const body = JSON.parse(await req.clone().text());
           capturedOverrides = body.environmentVariablesOverride;
@@ -1991,6 +2192,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         const target = req.headers.get('x-amz-target') || '';
 
         if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
+        }
 
         if (target === 'CodeBuild_20161006.StartBuild') {
           const body = JSON.parse(await req.clone().text());
@@ -2150,6 +2354,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         const target = req.headers.get('x-amz-target') || '';
 
         if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
+        }
 
         if (target === 'CodeBuild_20161006.StartBuild') {
           const body = JSON.parse(await req.clone().text());
@@ -2301,6 +2508,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         const target = req.headers.get('x-amz-target') || '';
 
         if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({ repository: {} });
+        }
 
         if (target === 'CodeBuild_20161006.StartBuild') {
           const body = JSON.parse(await req.clone().text());
@@ -2341,7 +2551,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
             imageDetails: [{
               registryId: '777772815966',
               repositoryName: `nsw/${freshAppId}`,
-              imageDigest: 'sha256:freshfreshfresh',
+              imageDigest: `sha256:${'f'.repeat(64)}`,
               imageTags: [freshCommitOid]
             }]
           });
@@ -2633,6 +2843,234 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(getData.activeDeploymentId).toBe('rev_static_fail_r1');
       expect(getData.deploymentError).toBeNull();
       expect(getData.lastDeployError).toContain('Build failed');
+    });
+  });
+
+  // ==========================================================================
+  // 10. Phase 5: Finding 2 — ECR CreateRepository Container Provisioning
+  // ==========================================================================
+  describe('10. Finding 2 — ECR CreateRepository Container Provisioning', () => {
+    let makerToken: string;
+    const appId = 'ecr-prov-app';
+    const storageKey = `repositories/${appId}`;
+    let commitOid: string;
+
+    beforeEach(async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_ecr_maker', 'ecrmaker', 'ECR Maker', 'user')
+      `).run();
+      makerToken = 'token_ecr_123';
+      const tokenHash = await hashSessionToken(makerToken);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_ecr_maker', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const repo = createCommittedRepo(storageKey, {
+        'requirements.txt': 'Flask==3.0.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)\n',
+        'Procfile': 'web: python app.py\n'
+      });
+      commitOid = repo.commitOid;
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, deployment_state
+        ) VALUES (
+          ?, 'ECR App', 'Tag', 'Desc', 'usr_ecr_maker', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'draft'
+        )
+      `).bind(appId).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_ecr_1', ?, 'usr_ecr_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(appId, appId, storageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_ecr_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+    });
+
+    it('container-lane deploy dispatch calls CreateRepository for nsw/<app> before StartBuild and tolerates RepositoryAlreadyExistsException', async () => {
+      const awsCalls: { method: string; url: string; target: string; body: any }[] = [];
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        let body: any = null;
+        try {
+          const text = await req.clone().text();
+          if (text) body = JSON.parse(text);
+        } catch {}
+        awsCalls.push({ method: req.method, url: req.url, target, body });
+
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json(
+            {
+              __type: 'RepositoryAlreadyExistsException',
+              message: `The repository with name 'nsw/${appId}' already exists in the registry with id '777772815966'`
+            },
+            { status: 400 }
+          );
+        }
+
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({
+            build: {
+              id: 'nsw-build:ecr-build-1',
+              buildStatus: 'IN_PROGRESS'
+            }
+          });
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(202);
+      expect(data.success).toBe(true);
+      expect(data.deploymentState).toBe('building');
+      expect(data.codeBuildId).toBe('nsw-build:ecr-build-1');
+
+      // Verify CreateRepository was called before StartBuild
+      const ecrIndex = awsCalls.findIndex(c => c.target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository');
+      const cbIndex = awsCalls.findIndex(c => c.target === 'CodeBuild_20161006.StartBuild');
+      expect(ecrIndex).toBeGreaterThan(-1);
+      expect(cbIndex).toBeGreaterThan(-1);
+      expect(ecrIndex).toBeLessThan(cbIndex);
+      expect(awsCalls[ecrIndex].body.repositoryName).toBe(`nsw/${appId}`);
+    });
+
+    it('container-lane deploy fails with ecr_provisioning stage when CreateRepository fails with AccessDeniedException', async () => {
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json(
+            {
+              __type: 'AccessDeniedException',
+              message: 'User: arn:aws:iam::777772815966:user/nsw-control-plane is not authorized to perform: ecr:CreateRepository on resource: arn:aws:ecr:us-east-2:777772815966:repository/nsw/ecr-prov-app'
+            },
+            { status: 400 }
+          );
+        }
+
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({ build: { id: 'nsw-build:fail', buildStatus: 'IN_PROGRESS' } });
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(422);
+      expect(data.success).toBe(false);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.evidence?.stage).toBe('ecr_provisioning');
+      expect(data.evidence?.status).toBe('failed');
+      expect(data.evidence?.details).toContain('is not authorized to perform: ecr:CreateRepository');
+
+      const app = await ctx.d1.prepare(`SELECT deployment_state, deployment_evidence_json FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('failed');
+      const evidence = JSON.parse(app.deployment_evidence_json);
+      expect(evidence.stage).toBe('ecr_provisioning');
+    });
+
+    it('Next.js lane deploy dispatch does NOT call ECR CreateRepository (publishes to S3)', async () => {
+      const nextAppId = 'next-ecr-check-app';
+      const nextStorageKey = `repositories/${nextAppId}`;
+
+      const nextRepo = createCommittedRepo(nextStorageKey, {
+        'package.json': JSON.stringify({
+          name: 'next-app',
+          dependencies: { next: '14.2.5', react: '^18', 'react-dom': '^18' }
+        }),
+        'next.config.js': 'module.exports = {};\n',
+        'pages/index.js': 'export default function Home() { return <h1>Next App</h1>; }\n'
+      });
+      const nextCommitOid = nextRepo.commitOid;
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, deployment_state
+        ) VALUES (
+          ?, 'Next ECR Check App', 'Tag', 'Desc', 'usr_ecr_maker', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'draft'
+        )
+      `).bind(nextAppId).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_next_ecr_1', ?, 'usr_ecr_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(nextAppId, nextAppId, nextStorageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_next_ecr_1', 'refs/heads/main', ?)
+      `).bind(nextCommitOid).run();
+
+      const awsCalls: { method: string; url: string; target: string }[] = [];
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        awsCalls.push({ method: req.method, url: req.url, target });
+
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({ build: { id: 'nsw-build:next-build-1', buildStatus: 'IN_PROGRESS' } });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId: nextAppId })
+      });
+
+      const res = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(202);
+      expect(data.success).toBe(true);
+
+      // Verify NO CreateRepository calls were made for Next.js lane
+      const ecrCalls = awsCalls.filter(c => c.target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository');
+      expect(ecrCalls.length).toBe(0);
     });
   });
 });

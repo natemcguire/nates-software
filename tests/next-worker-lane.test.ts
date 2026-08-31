@@ -98,6 +98,36 @@ describe('Phase 2: Next.js (SSR) -> Cloudflare Worker Lane (origin_kind=worker)'
       const fileContent = fs.readFileSync(filePath, 'utf8');
       expect(NSW_DEPLOY_NEXT_BUILDSPEC).toBe(fileContent);
     });
+
+    it('NSW_DEPLOY_NEXT_BUILDSPEC contains SMOKE_OK=1, post-loop fail-closed exit guard, and NO_WORKER_URL guard (Fix #4)', () => {
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('SMOKE_OK=1');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('if [ "${SMOKE_OK:-0}" != "1" ]; then echo "SMOKE_FAILED: worker never returned 200"; exit 1; fi');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('if [ -z "$WORKER_URL" ]; then echo "NO_WORKER_URL: wrangler deploy produced no workers.dev URL"; exit 1; fi');
+    });
+
+    it('NSW_DEPLOY_NEXT_BUILDSPEC removes extracted wrangler configs and regenerates platform-owned wrangler.jsonc (Fix #2)', () => {
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('rm -f /tmp/app/wrangler.jsonc /tmp/app/wrangler.toml /tmp/app/wrangler.json');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('cat > /tmp/app/wrangler.jsonc <<JSON');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('"name": "nsw-app-${APP_ID}"');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('"main": ".open-next/worker.js"');
+    });
+
+    it('NSW_BUILD_NEXT_BUILDSPEC notes wrangler.jsonc is for dry-run size gate only and regenerated downstream (Fix #2)', () => {
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('# Platform writes wrangler.jsonc for the dry-run size gate only;');
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('# it is discarded and regenerated downstream in the trusted deploy stage.');
+    });
+
+    it('NSW_BUILD_NEXT_BUILDSPEC writes platform-owned open-next.config.ts before opennextjs-cloudflare build (Finding 4)', () => {
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('cat > open-next.config.ts <<TS');
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('import { defineCloudflareConfig } from "@opennextjs/cloudflare";');
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('export default defineCloudflareConfig({});');
+
+      const heredocPos = NSW_BUILD_NEXT_BUILDSPEC.indexOf('cat > open-next.config.ts <<TS');
+      const openNextBuildPos = NSW_BUILD_NEXT_BUILDSPEC.indexOf('npx opennextjs-cloudflare build');
+      expect(heredocPos).toBeGreaterThan(-1);
+      expect(openNextBuildPos).toBeGreaterThan(-1);
+      expect(heredocPos).toBeLessThan(openNextBuildPos);
+    });
   });
 
   // ==========================================================================

@@ -22,9 +22,10 @@ phases:
       - wrangler --version
   pre_build:
     commands:
+      - if ! echo "$IMAGE_DIGEST" | grep -qE '^sha256:[0-9a-f]{64}$'; then echo "BAD_IMAGE_DIGEST"; exit 1; fi
       - echo "ECR login + pull built image..."
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
-      - export SRC="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}:${COMMIT_OID}"
+      - export SRC="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}@${IMAGE_DIGEST}"
       - docker pull --platform linux/amd64 "$SRC"
       - echo "Push image to Cloudflare managed registry..."
       - docker tag "$SRC" "${APP_ID}:${COMMIT_OID}"
