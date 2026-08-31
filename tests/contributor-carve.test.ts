@@ -15,6 +15,123 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
   // 1. THE BYTE-IDENTICAL GUARANTEE (Zero behavior change when contributors absent/empty)
   // --------------------------------------------------------------------------
   describe('1. Byte-Identical Guarantee with Absent, Null, or Empty Contributors', () => {
+    it('produces an EXACT legacy result and snapshot shape with NO contributor keys for calculateAllocations({grossCents:100,currency:usd,sellerUserId:maker})', () => {
+      const res = calculateAllocations({
+        grossCents: 100,
+        currency: 'usd',
+        sellerUserId: 'maker'
+      });
+
+      // 1. Result envelope keys match legacy EXACTLY (no contributor keys)
+      const expectedResultKeys = [
+        'isRoot',
+        'lineagePolicy',
+        'grossCents',
+        'currency',
+        'makerCents',
+        'makerBasisPoints',
+        'lineageTotalCents',
+        'lineageTotalBasisPoints',
+        'protocolPoolCents',
+        'protocolPoolBasisPoints',
+        'allocations',
+        'snapshot',
+        'snapshotJson',
+        'conservationVerified'
+      ];
+      expect(Object.keys(res)).toEqual(expectedResultKeys);
+      expect(Object.keys(res)).not.toContain('contributorAllocations');
+      expect(Object.keys(res)).not.toContain('contributorTotalCents');
+      expect(Object.keys(res)).not.toContain('contributorTotalBasisPoints');
+
+      expect(res.contributorAllocations).toBeUndefined();
+      expect(res.contributorTotalCents).toBeUndefined();
+      expect(res.contributorTotalBasisPoints).toBeUndefined();
+
+      // 2. Snapshot envelope keys match legacy EXACTLY (no contributor keys)
+      const expectedSnapshotKeys = [
+        'snapshottedAt',
+        'lineagePolicy',
+        'isRoot',
+        'grossCents',
+        'currency',
+        'sellerUserId',
+        'repositoryId',
+        'makerCents',
+        'makerBasisPoints',
+        'lineageTotalCents',
+        'lineageTotalBasisPoints',
+        'protocolPoolCents',
+        'protocolPoolBasisPoints',
+        'ancestorCount',
+        'ancestorAllocations',
+        'allocations',
+        'conservationVerified'
+      ];
+      expect(Object.keys(res.snapshot)).toEqual(expectedSnapshotKeys);
+      expect(Object.keys(res.snapshot)).not.toContain('contributorCount');
+      expect(Object.keys(res.snapshot)).not.toContain('contributorAllocations');
+      expect(Object.keys(res.snapshot)).not.toContain('contributorTotalCents');
+      expect(Object.keys(res.snapshot)).not.toContain('contributorTotalBasisPoints');
+
+      expect(res.snapshot.contributorCount).toBeUndefined();
+      expect(res.snapshot.contributorAllocations).toBeUndefined();
+      expect(res.snapshot.contributorTotalCents).toBeUndefined();
+      expect(res.snapshot.contributorTotalBasisPoints).toBeUndefined();
+
+      // 3. Serialized snapshotJson and result JSON do NOT contain the string "contributor"
+      expect(res.snapshotJson).not.toContain('contributor');
+      expect(JSON.stringify(res)).not.toContain('contributor');
+
+      // 4. Validate exact values
+      expect(res.isRoot).toBe(true);
+      expect(res.makerCents).toBe(90);
+      expect(res.makerBasisPoints).toBe(9000);
+      expect(res.protocolPoolCents).toBe(10);
+      expect(res.protocolPoolBasisPoints).toBe(1000);
+      expect(res.allocations).toEqual([
+        {
+          sequence: 0,
+          role: 'maker',
+          recipientUserId: 'maker',
+          sourceRepositoryId: null,
+          lineageDepth: 0,
+          basisPoints: 9000,
+          amountCents: 90
+        },
+        {
+          sequence: 1,
+          role: 'protocol_pool',
+          recipientUserId: null,
+          sourceRepositoryId: null,
+          lineageDepth: null,
+          basisPoints: 1000,
+          amountCents: 10
+        }
+      ]);
+
+      const parsedSnapshot = JSON.parse(res.snapshotJson);
+      expect(parsedSnapshot).toEqual({
+        snapshottedAt: res.snapshot.snapshottedAt,
+        lineagePolicy: 'maker_70_lineage_20_pool_10',
+        isRoot: true,
+        grossCents: 100,
+        currency: 'usd',
+        sellerUserId: 'maker',
+        repositoryId: null,
+        makerCents: 90,
+        makerBasisPoints: 9000,
+        lineageTotalCents: 0,
+        lineageTotalBasisPoints: 0,
+        protocolPoolCents: 10,
+        protocolPoolBasisPoints: 1000,
+        ancestorCount: 0,
+        ancestorAllocations: [],
+        allocations: res.allocations,
+        conservationVerified: true
+      });
+    });
+
     it.each([
       [1500, 'usd', 'usr_nate', 'repo_root', []],
       [1, 'usd', 'usr_nate', null, []],
@@ -28,7 +145,7 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
         { userId: 'usr_anc3', repositoryId: 'repo_p3', depth: 3 }
       ]]
     ])(
-      'produces identical results for gross=%i with absent vs empty/null contributors',
+      'produces identical legacy envelopes for gross=%i with absent vs undefined vs null vs empty contributors',
       (grossCents, currency, sellerUserId, repositoryId, ancestors) => {
         const baseInput: AllocationCalculationInput = {
           grossCents,
@@ -43,6 +160,32 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
         const resNull = calculateAllocations({ ...baseInput, contributors: null });
         const resEmpty = calculateAllocations({ ...baseInput, contributors: [] });
 
+        for (const res of [resDefault, resUndefined, resNull, resEmpty]) {
+          // Envelope contains NO contributor properties
+          expect(Object.keys(res)).not.toContain('contributorAllocations');
+          expect(Object.keys(res)).not.toContain('contributorTotalCents');
+          expect(Object.keys(res)).not.toContain('contributorTotalBasisPoints');
+          expect(res.contributorAllocations).toBeUndefined();
+          expect(res.contributorTotalCents).toBeUndefined();
+          expect(res.contributorTotalBasisPoints).toBeUndefined();
+
+          expect(Object.keys(res.snapshot)).not.toContain('contributorCount');
+          expect(Object.keys(res.snapshot)).not.toContain('contributorAllocations');
+          expect(Object.keys(res.snapshot)).not.toContain('contributorTotalCents');
+          expect(Object.keys(res.snapshot)).not.toContain('contributorTotalBasisPoints');
+          expect(res.snapshot.contributorCount).toBeUndefined();
+          expect(res.snapshot.contributorAllocations).toBeUndefined();
+          expect(res.snapshot.contributorTotalCents).toBeUndefined();
+          expect(res.snapshot.contributorTotalBasisPoints).toBeUndefined();
+
+          // Serialized strings contain no "contributor"
+          expect(res.snapshotJson).not.toContain('contributor');
+          expect(JSON.stringify(res)).not.toContain('contributor');
+
+          // No contributor allocation rows
+          expect(res.allocations.some(a => a.role === 'contributor')).toBe(false);
+        }
+
         // Verify all 4 invocations return identical outputs
         expect(resUndefined.allocations).toEqual(resDefault.allocations);
         expect(resNull.allocations).toEqual(resDefault.allocations);
@@ -54,13 +197,6 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
         expect(resDefault.protocolPoolBasisPoints).toBe(resEmpty.protocolPoolBasisPoints);
         expect(resDefault.lineageTotalCents).toBe(resEmpty.lineageTotalCents);
         expect(resDefault.lineageTotalBasisPoints).toBe(resEmpty.lineageTotalBasisPoints);
-
-        // No contributor rows emitted
-        expect(resDefault.allocations.some(a => a.role === 'contributor')).toBe(false);
-        expect(resEmpty.allocations.some(a => a.role === 'contributor')).toBe(false);
-        expect(resDefault.contributorAllocations).toEqual([]);
-        expect(resDefault.contributorTotalCents).toBe(0);
-        expect(resDefault.contributorTotalBasisPoints).toBe(0);
       }
     );
   });
@@ -69,17 +205,39 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
   // 2. INPUT VALIDATION & FAIL-CLOSED GUARDS
   // --------------------------------------------------------------------------
   describe('2. Contributor Input Validation & Fail-Closed Guards', () => {
-    it('accepts null, undefined, or empty array as empty contributors', () => {
-      expect(validateContributors(null)).toEqual([]);
-      expect(validateContributors(undefined)).toEqual([]);
-      expect(validateContributors([])).toEqual([]);
+    it('accepts null, undefined, or empty array as empty contributors when valid makerBasisPoints is provided', () => {
+      expect(validateContributors(null, COMMERCE_BASIS_POINTS.ROOT_MAKER)).toEqual([]);
+      expect(validateContributors(undefined, COMMERCE_BASIS_POINTS.ROOT_MAKER)).toEqual([]);
+      expect(validateContributors([], COMMERCE_BASIS_POINTS.ROOT_MAKER)).toEqual([]);
+      expect(validateContributors(null, COMMERCE_BASIS_POINTS.FORK_MAKER)).toEqual([]);
+      expect(validateContributors(undefined, COMMERCE_BASIS_POINTS.FORK_MAKER)).toEqual([]);
+      expect(validateContributors([], COMMERCE_BASIS_POINTS.FORK_MAKER)).toEqual([]);
+    });
+
+    it('requires makerBasisPoints (9000 or 7000) and rejects missing or invalid values fail-closed', () => {
+      // Direct call with missing 2nd arg
+      expect(() => (validateContributors as any)([{ userId: 'usr_c1', bps: 500 }])).toThrow(CommerceValidationError);
+      expect(() => (validateContributors as any)([{ userId: 'usr_c1', bps: 500 }])).toThrow(
+        /makerBasisPoints must be either 9000 \(root\) or 7000 \(fork\)/
+      );
+      expect(() => (validateContributors as any)([])).toThrow(CommerceValidationError);
+      expect(() => (validateContributors as any)(null)).toThrow(CommerceValidationError);
+
+      // Direct call with invalid makerBasisPoints values
+      expect(() => validateContributors([], 0 as any)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([], 5000 as any)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([], 8000 as any)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([], 10000 as any)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([], -9000 as any)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([], '9000' as any)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([], NaN as any)).toThrow(CommerceValidationError);
     });
 
     it('sanitizes valid contributor inputs by trimming user IDs', () => {
       const result = validateContributors([
         { userId: '  usr_alice  ', bps: 500 },
         { userId: 'usr_bob', bps: 1000 }
-      ]);
+      ], COMMERCE_BASIS_POINTS.ROOT_MAKER);
       expect(result).toEqual([
         { userId: 'usr_alice', bps: 500 },
         { userId: 'usr_bob', bps: 1000 }
@@ -92,8 +250,8 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
       [true, 'boolean instead of array'],
       [{}, 'object instead of array']
     ])('rejects non-array contributor input: %s (%s)', (invalidInput, _desc) => {
-      expect(() => validateContributors(invalidInput)).toThrow(CommerceValidationError);
-      expect(() => validateContributors(invalidInput)).toThrow(/Contributors must be an array/);
+      expect(() => validateContributors(invalidInput, COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(CommerceValidationError);
+      expect(() => validateContributors(invalidInput, COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(/Contributors must be an array/);
     });
 
     it.each([
@@ -102,8 +260,8 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
       [['string_item'], 'string item in array'],
       [[123], 'number item in array']
     ])('rejects invalid item in contributors array: %s (%s)', (invalidArray, _desc) => {
-      expect(() => validateContributors(invalidArray as any)).toThrow(CommerceValidationError);
-      expect(() => validateContributors(invalidArray as any)).toThrow(/must be a valid object/);
+      expect(() => validateContributors(invalidArray as any, COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(CommerceValidationError);
+      expect(() => validateContributors(invalidArray as any, COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(/must be a valid object/);
     });
 
     it.each([
@@ -114,8 +272,8 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
       [123, 'number userId'],
       [{}, 'object userId']
     ])('rejects invalid or missing userId: %s (%s)', (invalidUserId, _desc) => {
-      expect(() => validateContributors([{ userId: invalidUserId as any, bps: 500 }])).toThrow(CommerceValidationError);
-      expect(() => validateContributors([{ userId: invalidUserId as any, bps: 500 }])).toThrow(/invalid or missing userId/);
+      expect(() => validateContributors([{ userId: invalidUserId as any, bps: 500 }], COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([{ userId: invalidUserId as any, bps: 500 }], COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(/invalid or missing userId/);
     });
 
     it('rejects duplicate contributor userIds', () => {
@@ -123,13 +281,13 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
         validateContributors([
           { userId: 'usr_alice', bps: 500 },
           { userId: 'usr_alice', bps: 1000 }
-        ])
+        ], COMMERCE_BASIS_POINTS.ROOT_MAKER)
       ).toThrow(CommerceValidationError);
       expect(() =>
         validateContributors([
           { userId: 'usr_alice', bps: 500 },
           { userId: 'usr_alice', bps: 1000 }
-        ])
+        ], COMMERCE_BASIS_POINTS.ROOT_MAKER)
       ).toThrow(/Duplicate contributor userId detected: usr_alice/);
     });
 
@@ -146,14 +304,21 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
       [null, 'null bps'],
       [undefined, 'undefined bps']
     ])('rejects invalid basis points: %s (%s)', (invalidBps, _desc) => {
-      expect(() => validateContributors([{ userId: 'usr_alice', bps: invalidBps as any }])).toThrow(CommerceValidationError);
-      expect(() => validateContributors([{ userId: 'usr_alice', bps: invalidBps as any }])).toThrow(/invalid bps/);
+      expect(() => validateContributors([{ userId: 'usr_alice', bps: invalidBps as any }], COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(CommerceValidationError);
+      expect(() => validateContributors([{ userId: 'usr_alice', bps: invalidBps as any }], COMMERCE_BASIS_POINTS.ROOT_MAKER)).toThrow(/invalid bps/);
     });
 
     // ------------------------------------------------------------------------
     // Floor & Over-Cap Validation (Root <= 8000 bps, Fork <= 6000 bps)
     // ------------------------------------------------------------------------
     it('allows root application contributors up to exactly 8000 bps (maker floor 1000 bps)', () => {
+      // Direct validator check
+      const validNodes = validateContributors([
+        { userId: 'usr_c1', bps: 4000 },
+        { userId: 'usr_c2', bps: 4000 }
+      ], COMMERCE_BASIS_POINTS.ROOT_MAKER);
+      expect(validNodes).toHaveLength(2);
+
       const validRoot = calculateAllocations({
         grossCents: 10000,
         currency: 'usd',
@@ -169,7 +334,19 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
       expect(validRoot.allocations.find(a => a.role === 'maker')?.basisPoints).toBe(1000);
     });
 
-    it('rejects root application contributors exceeding 8000 bps cap (fail-closed)', () => {
+    it('rejects root application contributors exceeding 8000 bps cap in calculateAllocations and direct validateContributors (fail-closed)', () => {
+      // Direct call to validateContributors cannot bypass cap
+      expect(() =>
+        validateContributors([{ userId: 'usr_c1', bps: 9000 }], COMMERCE_BASIS_POINTS.ROOT_MAKER)
+      ).toThrow(/exceeds the allowable carve cap of 8000 bps/);
+
+      expect(() =>
+        validateContributors([
+          { userId: 'usr_c1', bps: 4000 },
+          { userId: 'usr_c2', bps: 4001 }
+        ], COMMERCE_BASIS_POINTS.ROOT_MAKER)
+      ).toThrow(/exceeds the allowable carve cap of 8000 bps/);
+
       expect(() =>
         calculateAllocations({
           grossCents: 10000,
@@ -193,6 +370,13 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
     });
 
     it('allows fork application contributors up to exactly 6000 bps (maker floor 1000 bps)', () => {
+      // Direct validator check
+      const validNodes = validateContributors([
+        { userId: 'usr_c1', bps: 3000 },
+        { userId: 'usr_c2', bps: 3000 }
+      ], COMMERCE_BASIS_POINTS.FORK_MAKER);
+      expect(validNodes).toHaveLength(2);
+
       const validFork = calculateAllocations({
         grossCents: 10000,
         currency: 'usd',
@@ -209,7 +393,19 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
       expect(validFork.allocations.find(a => a.role === 'maker')?.basisPoints).toBe(1000);
     });
 
-    it('rejects fork application contributors exceeding 6000 bps cap (fail-closed)', () => {
+    it('rejects fork application contributors exceeding 6000 bps cap in calculateAllocations and direct validateContributors (fail-closed)', () => {
+      // Direct call to validateContributors cannot bypass cap
+      expect(() =>
+        validateContributors([{ userId: 'usr_c1', bps: 6500 }], COMMERCE_BASIS_POINTS.FORK_MAKER)
+      ).toThrow(/exceeds the allowable carve cap of 6000 bps/);
+
+      expect(() =>
+        validateContributors([
+          { userId: 'usr_c1', bps: 3000 },
+          { userId: 'usr_c2', bps: 3001 }
+        ], COMMERCE_BASIS_POINTS.FORK_MAKER)
+      ).toThrow(/exceeds the allowable carve cap of 6000 bps/);
+
       expect(() =>
         calculateAllocations({
           grossCents: 10000,
@@ -608,7 +804,37 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
         expect(actualCarvedBps).toBe(expectedCarvedBps);
 
         const actualCarvedCents = resBaseline.makerCents - resCarved.makerCents;
-        expect(actualCarvedCents).toBe(resCarved.contributorTotalCents);
+        expect(actualCarvedCents).toBe(resCarved.contributorTotalCents ?? 0);
+
+        // Invariant: Baseline has NO contributor envelope properties
+        expect(resBaseline.contributorTotalCents).toBeUndefined();
+        expect(resBaseline.contributorTotalBasisPoints).toBeUndefined();
+        expect(resBaseline.contributorAllocations).toBeUndefined();
+        expect(resBaseline.snapshot.contributorCount).toBeUndefined();
+        expect(resBaseline.snapshot.contributorTotalCents).toBeUndefined();
+        expect(resBaseline.snapshot.contributorTotalBasisPoints).toBeUndefined();
+        expect(resBaseline.snapshot.contributorAllocations).toBeUndefined();
+        expect(resBaseline.snapshotJson).not.toContain('contributor');
+
+        if (contributors.length === 0) {
+          expect(resCarved.contributorTotalCents).toBeUndefined();
+          expect(resCarved.contributorTotalBasisPoints).toBeUndefined();
+          expect(resCarved.contributorAllocations).toBeUndefined();
+          expect(resCarved.snapshot.contributorCount).toBeUndefined();
+          expect(resCarved.snapshot.contributorTotalCents).toBeUndefined();
+          expect(resCarved.snapshot.contributorTotalBasisPoints).toBeUndefined();
+          expect(resCarved.snapshot.contributorAllocations).toBeUndefined();
+          expect(resCarved.snapshotJson).not.toContain('contributor');
+        } else {
+          expect(resCarved.contributorTotalCents).toBeDefined();
+          expect(resCarved.contributorTotalBasisPoints).toBe(expectedCarvedBps);
+          expect(resCarved.contributorAllocations).toHaveLength(contributors.length);
+          expect(resCarved.snapshot.contributorCount).toBe(contributors.length);
+          expect(resCarved.snapshot.contributorTotalCents).toBe(resCarved.contributorTotalCents);
+          expect(resCarved.snapshot.contributorTotalBasisPoints).toBe(expectedCarvedBps);
+          expect(resCarved.snapshot.contributorAllocations).toHaveLength(contributors.length);
+          expect(resCarved.snapshotJson).toContain('contributorAllocations');
+        }
 
         // --------------------------------------------------------------------
         // Invariant F: Contributor Rows Structure & Sequencing

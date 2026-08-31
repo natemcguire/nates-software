@@ -88,10 +88,10 @@ export interface LineageSnapshotPayload {
     amountCents: number;
     basisPoints: number;
   }>;
-  contributorCount: number;
-  contributorTotalCents: number;
-  contributorTotalBasisPoints: number;
-  contributorAllocations: ReadonlyArray<{
+  contributorCount?: number;
+  contributorTotalCents?: number;
+  contributorTotalBasisPoints?: number;
+  contributorAllocations?: ReadonlyArray<{
     sequence: number;
     repositoryId: string | null;
     userId: string;
@@ -113,9 +113,9 @@ export interface AllocationCalculationResult {
   lineageTotalBasisPoints: number;
   protocolPoolCents: number;
   protocolPoolBasisPoints: number;
-  contributorTotalCents: number;
-  contributorTotalBasisPoints: number;
-  contributorAllocations: ReadonlyArray<{
+  contributorTotalCents?: number;
+  contributorTotalBasisPoints?: number;
+  contributorAllocations?: ReadonlyArray<{
     sequence: number;
     repositoryId: string | null;
     userId: string;
@@ -242,11 +242,22 @@ export function validateAncestors(
  * Validates and sanitizes contributor share input list.
  * Enforces non-empty distinct user IDs, positive integer basis points,
  * and maker floor invariant (maker retains at least MAKER_FLOOR_BPS = 1000 bps).
+ * Requires makerBasisPoints (must be 9000 for root or 7000 for fork) to enforce
+ * the allowable contributor carve cap.
  */
 export function validateContributors(
   contributors: unknown,
-  makerBasisPoints?: number
+  makerBasisPoints: number
 ): ContributorNode[] {
+  if (
+    typeof makerBasisPoints !== 'number' ||
+    (makerBasisPoints !== COMMERCE_BASIS_POINTS.ROOT_MAKER && makerBasisPoints !== COMMERCE_BASIS_POINTS.FORK_MAKER)
+  ) {
+    throw new CommerceValidationError(
+      `makerBasisPoints must be either ${COMMERCE_BASIS_POINTS.ROOT_MAKER} (root) or ${COMMERCE_BASIS_POINTS.FORK_MAKER} (fork), received: ${makerBasisPoints}`
+    );
+  }
+
   if (contributors === null || contributors === undefined) {
     return [];
   }
@@ -292,13 +303,11 @@ export function validateContributors(
     });
   }
 
-  if (makerBasisPoints !== undefined) {
-    const maxAllowedBps = makerBasisPoints - MAKER_FLOOR_BPS;
-    if (totalBps > maxAllowedBps) {
-      throw new CommerceValidationError(
-        `Contributor total basis points (${totalBps}) exceeds the allowable carve cap of ${maxAllowedBps} bps (maker floor: ${MAKER_FLOOR_BPS} bps)`
-      );
-    }
+  const maxAllowedBps = makerBasisPoints - MAKER_FLOOR_BPS;
+  if (totalBps > maxAllowedBps) {
+    throw new CommerceValidationError(
+      `Contributor total basis points (${totalBps}) exceeds the allowable carve cap of ${maxAllowedBps} bps (maker floor: ${MAKER_FLOOR_BPS} bps)`
+    );
   }
 
   return result;
@@ -508,16 +517,6 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
       basisPoints: a.basisPoints,
     }));
 
-  const contributorAllocations = allocations
-    .filter(a => a.role === 'contributor')
-    .map(a => ({
-      sequence: a.sequence,
-      repositoryId: a.sourceRepositoryId,
-      userId: a.recipientUserId!,
-      amountCents: a.amountCents,
-      basisPoints: a.basisPoints,
-    }));
-
   const snapshot: LineageSnapshotPayload = {
     snapshottedAt: new Date().toISOString(),
     lineagePolicy,
@@ -534,10 +533,22 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
     protocolPoolBasisPoints,
     ancestorCount: ancestors.length,
     ancestorAllocations,
-    contributorCount: contributors.length,
-    contributorTotalCents,
-    contributorTotalBasisPoints,
-    contributorAllocations,
+    ...(contributors.length > 0
+      ? {
+          contributorCount: contributors.length,
+          contributorTotalCents,
+          contributorTotalBasisPoints,
+          contributorAllocations: allocations
+            .filter(a => a.role === 'contributor')
+            .map(a => ({
+              sequence: a.sequence,
+              repositoryId: a.sourceRepositoryId,
+              userId: a.recipientUserId!,
+              amountCents: a.amountCents,
+              basisPoints: a.basisPoints,
+            })),
+        }
+      : {}),
     allocations,
     conservationVerified: true,
   };
@@ -553,9 +564,13 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
     lineageTotalBasisPoints,
     protocolPoolCents,
     protocolPoolBasisPoints,
-    contributorTotalCents,
-    contributorTotalBasisPoints,
-    contributorAllocations,
+    ...(contributors.length > 0
+      ? {
+          contributorTotalCents,
+          contributorTotalBasisPoints,
+          contributorAllocations: snapshot.contributorAllocations,
+        }
+      : {}),
     allocations,
     snapshot,
     snapshotJson: JSON.stringify(snapshot),
