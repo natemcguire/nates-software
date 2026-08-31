@@ -1,9 +1,20 @@
 # IDEA MARKETPLACE + CONTRIBUTOR REVENUE-SHARING — Build-Ready Spec
 
-> **⚠️ MIGRATION-NUMBER CORRECTION (mayor, 2026-08-31):** This spec was written as the Postgres add-on landed. `0027` is now TAKEN by `0027_app_postgres_addon.sql` (already applied to prod). **The contributor migration is `0028_contributor_revenue_sharing.sql`.** Every "`0027`" below that refers to the NEW contributor migration means `0028`. (Citations to *existing* migrations 0006/0009/0010/0011/0012/0024 are unchanged and correct.)
+> **⚠️ MIGRATION-NUMBER CORRECTION (mayor, 2026-08-31, updated):** `0027` = `0027_app_postgres_addon.sql` (applied). `0028` = `0028_user_ssh_keys.sql` (multi-SSH-key support, lands first). **The contributor migration is now `0029_contributor_revenue_sharing.sql`.** Every "`0027`"/"`0028`" below that refers to the NEW contributor migration means **`0029`**. (Citations to *existing* migrations 0006/0009/0010/0011/0012/0024 are unchanged and correct.)
 
 
 *Folds the user's marketplace framing + locked decisions onto the validated core ledger plan (contributor-plan.md). Money model unchanged from the core plan; renumbered and re-grounded against the current repo (migrations now run through 0026; several core-plan citations corrected below).*
+
+---
+
+## PHASE-0 DECISIONS — DECIDED (mayor, 2026-08-31; user said "you decide, go for it")
+These are the ~4 open Phase-0 calls, resolved with the spec's recommended defaults. Encode as handler constants + migration defaults; surface in the build report.
+1. **`MAKER_FLOOR_BPS = 1000` (10%).** Matches Nate's "keep 10%." A ROOT idea can therefore put up to **9000 bps (90%) grantable** (his exact example). A fork's ceiling is `7000 − 1000 = 6000 bps` grantable (forks keep a smaller maker slice).
+2. **Pool is raisable anytime; lowerable only down to `≥ SUM(active+pending granted bps)`.** You can shrink the UNALLOCATED pool but can never strand a grant you've already made. Enforce in the `grantable_bps` UPDATE handler; reject a lower with a clear error ("N% is already granted; can't drop the pool below that").
+3. **Grants are PERPETUAL + IRREVOCABLE once active.** A landed contribution earns its % of every future sale forever — the core promise, mirroring immutable purchase-time allocations. The owner can NEVER claw back an active contributor share. ONLY a pending grant auto-revokes (when its merge attempt goes stale/rejected → releases cap headroom). No owner-initiated revoke path on active shares.
+4. **The "permanent" copy** (grant-time UI, verbatim): *"Permanent — this contributor earns {N}% of every future sale of this app, forever. It's carved from your share; ancestors and the protocol pool are untouched. Once the contribution lands, this can't be undone."*
+
+**Consequence for the code:** no revoke-active-share endpoint exists (by design). The status lifecycle is `pending → active` (on land) OR `pending → revoked` (on stale) — an active share has NO outbound transition. Constants live next to the settlement code so tests assert them.
 
 ---
 
