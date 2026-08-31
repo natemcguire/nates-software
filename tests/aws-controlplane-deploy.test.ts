@@ -419,7 +419,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         { name: 'SOURCE_KEY', value: `${data.buildId}.tar`, type: 'PLAINTEXT' },
         { name: 'ECR_REPO', value: `nsw/${appId}`, type: 'PLAINTEXT' },
         { name: 'COMMIT_OID', value: commitOid, type: 'PLAINTEXT' },
-        { name: 'PROCFILE_START', value: 'python app.py', type: 'PLAINTEXT' }
+        { name: 'PROCFILE_START', value: 'gunicorn --bind 0.0.0.0:$PORT app:app', type: 'PLAINTEXT' }
       ]);
 
       // Assert D1 records: app is in building state, build_runs has running row with codeBuildId
@@ -1287,7 +1287,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
 
       const storageKey = `repositories/${appId}`;
       const repoInfo = createCommittedRepo(storageKey, {
-        'requirements.txt': 'Flask==3.0.0\n',
+        'requirements.txt': 'Flask==3.0.0\ngunicorn==21.2.0\n',
         'app.py': 'from flask import Flask\napp = Flask(__name__)\n'
       });
       const commitA = repoInfo.commitOid;
@@ -1355,7 +1355,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
             storageKey,
             commitOid: commitB,
             files: ['requirements.txt', 'app.py'],
-            manifestContents: { 'requirements.txt': 'Flask==3.0.0', 'app.py': 'app = Flask(__name__)' }
+            manifestContents: { 'requirements.txt': 'Flask==3.0.0\ngunicorn==21.2.0', 'app.py': 'app = Flask(__name__)' }
           });
         }
         if (url.pathname === '/api/gateway/archive') {

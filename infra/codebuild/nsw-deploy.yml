@@ -72,9 +72,10 @@ phases:
         for i in $(seq 1 40); do
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${WORKER_URL}/" || echo 000)
           echo "smoke attempt $i: HTTP $code"
-          if [ "$code" = "200" ]; then echo "SMOKE_OK"; break; fi
+          if [ "$code" = "200" ]; then echo "SMOKE_OK"; SMOKE_OK=1; break; fi
           sleep 10
         done
+        if [ "${SMOKE_OK:-0}" != "1" ]; then echo "SMOKE_FAILED: container never returned 200"; exit 1; fi
       - 'echo "{\"worker_url\":\"${WORKER_URL}\"}" > /tmp/deploy-result.json'
 artifacts:
   files: [ deploy-result.json ]

@@ -252,6 +252,95 @@ function isStaticServeCommand(cmd: string | undefined): boolean {
   );
 }
 
+function extractPythonDependencies(
+  getContent: (pattern: string) => string | undefined
+): string[] {
+  const deps: string[] = [];
+
+  const extractReqLines = (content: string) => {
+    for (let line of content.split('\n')) {
+      line = line.trim();
+      if (!line || line.startsWith('#') || line.startsWith('-')) continue;
+      const commentIdx = line.indexOf('#');
+      if (commentIdx !== -1) {
+        line = line.slice(0, commentIdx).trim();
+      }
+      const match = line.match(/^([a-zA-Z0-9_\-\.]+)/);
+      if (match && match[1]) {
+        deps.push(match[1].toLowerCase());
+      }
+    }
+  };
+
+  const reqContent = getContent('requirements.txt');
+  if (reqContent) {
+    extractReqLines(reqContent);
+  }
+
+  const pyprojectContent = getContent('pyproject.toml');
+  if (pyprojectContent) {
+    const extractDepsFromArray = (arrayText: string) => {
+      const stringMatches = arrayText.matchAll(/["']\s*([a-zA-Z0-9_\-\.]+)[^"']*["']/g);
+      for (const match of stringMatches) {
+        if (match[1]) {
+          deps.push(match[1].toLowerCase());
+        }
+      }
+    };
+
+    // 1. [project] section dependencies = [ ... ]
+    const projectDepMatch = pyprojectContent.match(/\[project\][\s\S]*?dependencies\s*=\s*\[([\s\S]*?)\]/i);
+    if (projectDepMatch && projectDepMatch[1]) {
+      extractDepsFromArray(projectDepMatch[1]);
+    }
+
+    // 2. [project.optional-dependencies] section
+    const optDepMatch = pyprojectContent.match(/\[project\.optional-dependencies\]([\s\S]*?)(?:^\[|\z)/im);
+    if (optDepMatch && optDepMatch[1]) {
+      const arrayMatches = optDepMatch[1].matchAll(/=\s*\[([\s\S]*?)\]/g);
+      for (const arr of arrayMatches) {
+        if (arr[1]) {
+          extractDepsFromArray(arr[1]);
+        }
+      }
+    }
+
+    // 3. Match generic dependencies = [ ... ] if not caught under [project]
+    if (!projectDepMatch) {
+      const genericDepMatch = pyprojectContent.match(/dependencies\s*=\s*\[([\s\S]*?)\]/i);
+      if (genericDepMatch && genericDepMatch[1]) {
+        extractDepsFromArray(genericDepMatch[1]);
+      }
+    }
+
+    // 4. [tool.poetry.dependencies] section
+    const poetryMatch = pyprojectContent.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?:^\[|\z)/im);
+    if (poetryMatch && poetryMatch[1]) {
+      for (const line of poetryMatch[1].split('\n')) {
+        const match = line.match(/^\s*([a-zA-Z0-9_\-\.]+)\s*=/);
+        if (match && match[1] && match[1].toLowerCase() !== 'python') {
+          deps.push(match[1].toLowerCase());
+        }
+      }
+    }
+  }
+
+  const pipfileContent = getContent('pipfile');
+  if (pipfileContent) {
+    const packagesMatch = pipfileContent.match(/\[packages\]([\s\S]*?)(?:^\[|\z)/im);
+    if (packagesMatch && packagesMatch[1]) {
+      for (const line of packagesMatch[1].split('\n')) {
+        const match = line.match(/^\s*([a-zA-Z0-9_\-\.]+)\s*=/);
+        if (match && match[1]) {
+          deps.push(match[1].toLowerCase());
+        }
+      }
+    }
+  }
+
+  return deps;
+}
+
 /**
  * RIG runtime detection: inspects repository file list and contents to produce a deployment plan.
  */
@@ -388,19 +477,51 @@ export function detectRigRuntime(
 
   // 4. Python (requirements.txt / pyproject.toml / Pipfile) Detection
   if (fileSet.has('requirements.txt') || fileSet.has('pyproject.toml') || fileSet.has('pipfile')) {
+    const pyDeps = extractPythonDependencies(getContent);
+    const hasFastApi = pyDeps.some(d => /(^|[^a-z])fastapi/i.test(d));
+    const hasUvicorn = pyDeps.some(d => d === 'uvicorn' || /(^|[^a-z])uvicorn/i.test(d));
+    const hasGunicorn = pyDeps.some(d => d === 'gunicorn' || /(^|[^a-z])gunicorn/i.test(d));
+    const hasWsgi = pyDeps.some(d => /(^|[^a-z])(flask|django)([^a-z]|$)/i.test(d));
+    const hasProcfile = fileSet.has('procfile');
+
     const inferredEntry = fileSet.has('main.py') ? 'main.py' : (fileSet.has('app.py') ? 'app.py' : 'main.py');
+    const moduleName = inferredEntry.replace(/\.py$/i, '').split('/').pop() || 'main';
     const inferredBuild = fileSet.has('requirements.txt') ? 'pip install -r requirements.txt' : (fileSet.has('pyproject.toml') ? 'pip install -e .' : undefined);
+
+    let startCmd: string;
+    if (hasFastApi || hasUvicorn) {
+      startCmd = `uvicorn ${moduleName}:app --host 0.0.0.0 --port $PORT`;
+    } else if (hasGunicorn) {
+      startCmd = `gunicorn --bind 0.0.0.0:$PORT ${moduleName}:app`;
+    } else if (hasWsgi && !hasProcfile && !manifestOverrides?.startCommand) {
+      const guidance = "Add gunicorn (or uvicorn) to requirements.txt, or declare a Procfile 'web:' line.";
+      return {
+        success: false,
+        isDeployable: false,
+        detectedType: 'python',
+        error: `WSGI web framework detected without a production application server. ${guidance}`,
+        reasons: [guidance]
+      };
+    } else {
+      startCmd = `python ${inferredEntry}`;
+    }
+
+    const inferredFrom: string[] = [];
+    if (fileSet.has('requirements.txt')) inferredFrom.push('requirements.txt');
+    if (fileSet.has('pyproject.toml')) inferredFrom.push('pyproject.toml');
+    if (fileSet.has('pipfile')) inferredFrom.push('Pipfile');
+    if (inferredFrom.length === 0) inferredFrom.push('requirements.txt');
 
     const defaultPlan: DeploymentPlan = {
       detectedType: 'python',
       buildCommand: inferredBuild,
-      startCommand: `python ${inferredEntry}`,
+      startCommand: startCmd,
       port: 8000,
       healthEndpoint: '/',
       memoryMb: 256,
-      entrypointFile: fileSet.has('requirements.txt') ? 'requirements.txt' : 'pyproject.toml',
+      entrypointFile: fileSet.has('requirements.txt') ? 'requirements.txt' : (fileSet.has('pyproject.toml') ? 'pyproject.toml' : 'Pipfile'),
       manifestApplied: false,
-      inferredFrom: fileSet.has('requirements.txt') ? ['requirements.txt'] : ['pyproject.toml']
+      inferredFrom
     };
 
     const finalPlan = applyManifest(defaultPlan, manifestOverrides, manifestFile);
