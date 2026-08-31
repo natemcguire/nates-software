@@ -21,11 +21,20 @@ CREATE TABLE IF NOT EXISTS user_ssh_keys (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_ssh_keys_prefix ON user_ssh_keys(key_prefix);
 CREATE INDEX IF NOT EXISTS idx_user_ssh_keys_user ON user_ssh_keys(user_id);
 
--- Backfill existing keys from users.ssh_public_key
+-- Parse and validate candidate legacy keys from users.ssh_public_key into a staging table.
+-- Validation mirrors src/lib/sshDomain.ts:
+-- 1. Full whitespace normalization: converts all \s (tab, newline, cr, vt, formfeed) to spaces.
+-- 2. Allowed key types: ('ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')
+-- 3. Base64 validation (/^[A-Za-z0-9+/]+={0,2}$/):
+--    - max length <= 16384
+--    - at least 1 non-padding character
+--    - at most 2 trailing '=' padding chars (no interior '=')
+--    - non-padding characters strictly within [A-Za-z0-9+/]
+CREATE TABLE _ssh_backfill_candidates AS
 WITH raw_keys AS (
   SELECT
     id AS user_id,
-    trim(replace(replace(replace(ssh_public_key, char(9), ' '), char(10), ' '), char(13), ' ')) AS raw_key
+    trim(replace(replace(replace(replace(replace(ssh_public_key, char(9), ' '), char(10), ' '), char(13), ' '), char(11), ' '), char(12), ' ')) AS raw_key
   FROM users
   WHERE ssh_public_key IS NOT NULL AND trim(ssh_public_key) != ''
 ),
@@ -36,7 +45,7 @@ token1 AS (
     trim(substr(raw_key, instr(raw_key || ' ', ' ') + 1)) AS rem
   FROM raw_keys
 ),
-parsed AS (
+token2 AS (
   SELECT
     user_id,
     key_type,
@@ -45,9 +54,31 @@ parsed AS (
       ELSE rem
     END AS key_base64
   FROM token1
-  WHERE key_type IN ('ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')
-    AND rem != ''
+),
+parsed AS (
+  SELECT
+    user_id,
+    key_type,
+    key_base64,
+    CASE
+      WHEN key_base64 LIKE '%==' THEN substr(key_base64, 1, length(key_base64) - 2)
+      WHEN key_base64 LIKE '%=' THEN substr(key_base64, 1, length(key_base64) - 1)
+      ELSE key_base64
+    END AS b64_body
+  FROM token2
 )
+SELECT
+  user_id,
+  key_type,
+  key_base64,
+  key_type || ' ' || key_base64 AS key_prefix
+FROM parsed
+WHERE key_type IN ('ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521')
+  AND length(key_base64) <= 16384
+  AND length(b64_body) >= 1
+  AND b64_body NOT GLOB '*[^A-Za-z0-9+/]*';
+
+-- Backfill valid legacy keys into user_ssh_keys
 INSERT OR IGNORE INTO user_ssh_keys (
   id,
   user_id,
@@ -62,17 +93,25 @@ SELECT
   user_id,
   key_type,
   key_base64,
-  key_type || ' ' || key_base64,
+  key_prefix,
   'migrated',
   CURRENT_TIMESTAMP
-FROM parsed
-WHERE length(key_base64) <= 16384
-  AND length(key_base64) > 0
-  AND key_base64 NOT GLOB '*[^A-Za-z0-9+/=]*';
+FROM _ssh_backfill_candidates;
 
--- Fail-closed guard: ensure every legacy user key with non-empty ssh_public_key landed in user_ssh_keys
+-- Fail-closed guard:
+-- Asserts that for EVERY legacy user with a non-empty users.ssh_public_key:
+-- 1. The key was valid and parsed into _ssh_backfill_candidates, AND
+-- 2. That exact normalized key_prefix landed in user_ssh_keys for that specific user_id.
+-- If any user's legacy key failed validation or was skipped during backfill, COUNT > 0, tripping CHECK(x = 0).
 CREATE TABLE _ssh_backfill_guard(x INTEGER CHECK(x = 0));
-INSERT INTO _ssh_backfill_guard SELECT COUNT(*) FROM users u
-  WHERE u.ssh_public_key IS NOT NULL AND trim(u.ssh_public_key) != ''
-    AND NOT EXISTS (SELECT 1 FROM user_ssh_keys k WHERE k.user_id = u.id);
+INSERT INTO _ssh_backfill_guard
+SELECT COUNT(*) FROM users u
+WHERE u.ssh_public_key IS NOT NULL AND trim(u.ssh_public_key) != ''
+  AND NOT EXISTS (
+    SELECT 1
+    FROM _ssh_backfill_candidates c
+    JOIN user_ssh_keys k ON k.user_id = c.user_id AND k.key_prefix = c.key_prefix
+    WHERE c.user_id = u.id
+  );
 DROP TABLE _ssh_backfill_guard;
+DROP TABLE _ssh_backfill_candidates;

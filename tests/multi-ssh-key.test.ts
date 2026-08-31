@@ -129,9 +129,206 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       expect(nateKeys.results?.length).toBe(1);
     });
 
-    it('fail-closed guard passes for valid data and guard table is dropped', async () => {
+    it('fail-closed guard passes for valid data and guard/staging tables are dropped', async () => {
       const tables = ctx.getTableNames();
       expect(tables).not.toContain('_ssh_backfill_guard');
+      expect(tables).not.toContain('_ssh_backfill_candidates');
+    });
+
+    it('fail-closed guard ABORTS migration in FALSE-PASS scenario (user already has key A in user_ssh_keys, but legacy col holds key B)', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      // Insert user with legacy Key B
+      const KEY_B_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIKeyBInLegacyColumn1234567890123456';
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES ('usr_partial', 'partial', 'Partial User', 'maker', ?)
+      `).bind(`ssh-ed25519 ${KEY_B_B64} partial@laptop`).run();
+
+      // Pre-create table user_ssh_keys and insert Key A for usr_partial
+      const KEY_A_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIKeyAAlreadyInNewTable1234567890123';
+      await legacyCtx.d1.prepare(`
+        CREATE TABLE user_ssh_keys (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          key_type TEXT NOT NULL,
+          key_base64 TEXT NOT NULL,
+          key_prefix TEXT NOT NULL,
+          label TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          CHECK (key_prefix = key_type || ' ' || key_base64)
+        );
+        CREATE UNIQUE INDEX idx_user_ssh_keys_prefix ON user_ssh_keys(key_prefix);
+        CREATE INDEX idx_user_ssh_keys_user ON user_ssh_keys(user_id);
+      `).run();
+
+      await legacyCtx.d1.prepare(`
+        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+        VALUES ('key_migrated_usr_partial', 'usr_partial', 'ssh-ed25519', ?, ?, 'old')
+      `).bind(KEY_A_B64, `ssh-ed25519 ${KEY_A_B64}`).run();
+
+      // Now run migration 0028:
+      // The INSERT OR IGNORE will skip key_migrated_usr_partial (id collision) so Key B does NOT land.
+      // The exact-prefix guard MUST catch that Key B never landed and ABORT.
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('fail-closed guard ABORTS migration on cross-user key collision', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      const SHARED_KEY = 'AAAAC3NzaC1lZDI1NTE5AAAAISharedKeyBetweenTwoUsers123456789';
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES
+          ('usr_alice_dup', 'alice_dup', 'Alice', 'maker', ?),
+          ('usr_bob_dup', 'bob_dup', 'Bob', 'maker', ?)
+      `).bind(`ssh-ed25519 ${SHARED_KEY}`, `ssh-ed25519 ${SHARED_KEY}`).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      // Unique constraint prevents second user from landing -> guard fails closed
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('fail-closed guard aborts if legacy key has interior "=" sign (Fix #3)', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES ('usr_bad_eq', 'badeq', 'Bad Eq User', 'maker', 'ssh-ed25519 AAA=AC3NzaC1lZDI1NTE5AAAAI bad@host')
+      `).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('fail-closed guard aborts if legacy key has more than 2 "=" padding chars (Fix #3)', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES ('usr_triple_eq', 'triple_eq', 'Triple Eq User', 'maker', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI=== bad@host')
+      `).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('fail-closed guard aborts if legacy key has leading "=" sign (Fix #3)', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES ('usr_leading_eq', 'leading_eq', 'Leading Eq User', 'maker', 'ssh-ed25519 =AAAAC3NzaC1lZDI1NTE5AAAAI bad@host')
+      `).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('fail-closed guard aborts if legacy key exceeds length cap > 16384 (Fix #3)', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      const oversizedBlob = 'A'.repeat(16385);
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES ('usr_oversized', 'oversized', 'Oversized User', 'maker', ?)
+      `).bind(`ssh-ed25519 ${oversizedBlob}`).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('backfills legacy keys with 0, 1, or 2 trailing "=" padding chars cleanly', async () => {
+      const legacyMigrations = CANONICAL_MIGRATIONS.slice(
+        0,
+        CANONICAL_MIGRATIONS.indexOf('0028_user_ssh_keys.sql')
+      );
+      const legacyCtx = await createTestD1Database({
+        foreignKeys: true,
+        migrations: legacyMigrations
+      });
+
+      await legacyCtx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role, ssh_public_key)
+        VALUES
+          ('usr_pad0', 'pad0', 'No Pad', 'maker', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPadZeroUniqueTestKey123456789012 no@pad'),
+          ('usr_pad1', 'pad1', 'One Pad', 'maker', 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCalice= one@pad'),
+          ('usr_pad2', 'pad2', 'Two Pad', 'maker', 'ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbob== two@pad')
+      `).run();
+
+      const migrationSql = fs.readFileSync(
+        path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
+        'utf8'
+      );
+      await expect(legacyCtx.d1.exec(migrationSql)).resolves.not.toThrow();
+
+      const rows = await legacyCtx.d1.prepare('SELECT user_id, key_prefix FROM user_ssh_keys ORDER BY user_id').all();
+      const userMap = new Map((rows.results || []).map((r: any) => [r.user_id, r.key_prefix]));
+
+      expect(userMap.get('usr_pad0')).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPadZeroUniqueTestKey123456789012');
+      expect(userMap.get('usr_pad1')).toBe('ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCalice=');
+      expect(userMap.get('usr_pad2')).toBe('ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbob==');
     });
 
     it('fail-closed guard aborts migration if an unparseable legacy key is left unmigrated', async () => {
