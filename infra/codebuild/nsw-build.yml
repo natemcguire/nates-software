@@ -1,0 +1,30 @@
+version: 0.2
+env:
+  variables:
+    PACK_VERSION: "v0.36.0"
+    PACK_SHA256: "42324ccbf29a6c6a64533ffe547fb1bbc0b73d741c6b2b7bee5cb9ed2bbf40b2"
+phases:
+  install:
+    commands:
+      - echo "Installing pack $PACK_VERSION (pinned + checksum)..."
+      - curl -sSL "https://github.com/buildpacks/pack/releases/download/${PACK_VERSION}/pack-${PACK_VERSION}-linux.tgz" -o /tmp/pack.tgz
+      - echo "${PACK_SHA256}  /tmp/pack.tgz" | sha256sum -c -
+      - tar -xzf /tmp/pack.tgz -C /usr/local/bin pack
+      - pack version
+  pre_build:
+    commands:
+      - echo "Logging into ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+      - echo "Pulling + extracting source tarball from S3..."
+      - mkdir -p /tmp/src
+      - aws s3 cp "s3://${SOURCE_BUCKET}/${SOURCE_KEY}" /tmp/source.tar
+      - tar -xf /tmp/source.tar -C /tmp/src
+      # Precedence: a repo Procfile is AUTHORITATIVE (Heroku semantics). Only
+      # synthesize from PROCFILE_START when the repo declares none.
+      - 'if [ -f /tmp/src/Procfile ]; then echo "Using repo Procfile:"; cat /tmp/src/Procfile; elif [ -n "${PROCFILE_START:-}" ]; then echo "web: ${PROCFILE_START}" > /tmp/src/Procfile; echo "Synthesized Procfile:"; cat /tmp/src/Procfile; else echo "No Procfile and no PROCFILE_START; buildpack default start"; fi'
+  build:
+    commands:
+      - export IMAGE="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}:${COMMIT_OID}"
+      - echo "Building $IMAGE with Paketo buildpacks (amd64)..."
+      - pack build "$IMAGE" --builder paketobuildpacks/builder-jammy-base --path /tmp/src --publish --no-color
+      - echo "PUSHED $IMAGE"
