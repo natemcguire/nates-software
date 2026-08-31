@@ -27,7 +27,8 @@ export const CANONICAL_MIGRATIONS = [
   '0021_active_project_catalog.sql',
   '0022_deployment_lifecycle_states.sql',
   '0023_retire_picfit_listing.sql',
-  '0024_canonical_repository_linkage.sql'
+  '0024_canonical_repository_linkage.sql',
+  '0025_app_origin_kind.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];
