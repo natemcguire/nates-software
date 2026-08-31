@@ -172,7 +172,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
             SOURCE_BUCKET: 'nsw-build-sources-777772815966',
             SOURCE_KEY: 'build-123.tar',
             ECR_REPO: 'nsw/flask-app',
-            COMMIT_OID: 'commit_oid_123',
+            COMMIT_OID: '0123456789abcdef0123456789abcdef01234567',
             PROCFILE_START: 'gunicorn app:app'
           }
         }
@@ -194,7 +194,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         { name: 'SOURCE_BUCKET', value: 'nsw-build-sources-777772815966', type: 'PLAINTEXT' },
         { name: 'SOURCE_KEY', value: 'build-123.tar', type: 'PLAINTEXT' },
         { name: 'ECR_REPO', value: 'nsw/flask-app', type: 'PLAINTEXT' },
-        { name: 'COMMIT_OID', value: 'commit_oid_123', type: 'PLAINTEXT' },
+        { name: 'COMMIT_OID', value: '0123456789abcdef0123456789abcdef01234567', type: 'PLAINTEXT' },
         { name: 'PROCFILE_START', value: 'gunicorn app:app', type: 'PLAINTEXT' }
       ]);
     });
@@ -240,7 +240,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
               registryId: '777772815966',
               repositoryName: 'nsw/flask-app',
               imageDigest: 'sha256:45b23e288d0b1530d83352956650d239c7722ec1a3b043f3799d48dd6a8b8b56',
-              imageTags: ['commit_oid_123']
+              imageTags: ['0123456789abcdef0123456789abcdef01234567']
             }
           ]
         });
@@ -250,7 +250,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         { ...AWS_CREDS, __AWS_FETCH: customFetch },
         {
           repositoryName: 'nsw/flask-app',
-          imageTag: 'commit_oid_123',
+          imageTag: '0123456789abcdef0123456789abcdef01234567',
           registryId: '777772815966'
         }
       );
@@ -267,7 +267,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       const body = JSON.parse(await req.text());
       expect(body.repositoryName).toBe('nsw/flask-app');
       expect(body.registryId).toBe('777772815966');
-      expect(body.imageIds).toEqual([{ imageTag: 'commit_oid_123' }]);
+      expect(body.imageIds).toEqual([{ imageTag: '0123456789abcdef0123456789abcdef01234567' }]);
     });
 
     it('handles ECR RepositoryNotFoundException gracefully without crashing', async () => {
@@ -285,7 +285,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         { ...AWS_CREDS, __AWS_FETCH: customFetch },
         {
           repositoryName: 'nsw/missing-app',
-          imageTag: 'commit_oid_123'
+          imageTag: '0123456789abcdef0123456789abcdef01234567'
         }
       );
 
@@ -538,7 +538,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
   describe('3. Lazy Finalize on Read (GET /api/deploy?appId)', () => {
     const appId = 'lazy-finalize-app';
     const codeBuildId = 'nsw-build:lazy-build-uuid-1111';
-    const commitOid = 'oid_commit_lazy_finalize_2222';
+    const commitOid = 'c0331701d1234567890abcdef1234567890abcde';
     const expectedDigest = 'sha256:5a9b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b';
 
     beforeEach(async () => {
@@ -882,7 +882,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         VALUES (?, 'usr_sec_maker', datetime('now', '+1 hour'))
       `).bind(tokenHash).run();
 
-      const commitOid = 'commit_sec_oid_33333333333333333333';
+      const commitOid = '3333333333333333333333333333333333333333';
       const storageKey = `repositories/${serverAppId}`;
 
       await ctx.d1.prepare(`
@@ -992,6 +992,512 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         }
         expect(awsReq.bodyText, 'AWS request body must not contain GITSMITH token').not.toContain(secretToken);
       }
+    });
+  });
+
+  // ==========================================================================
+  // 6. FIX 1: CAS on build_runs prevents stale-build finalization race
+  // ==========================================================================
+  describe('6. FIX 1: CAS on build_runs prevents stale-build finalization race', () => {
+    it('dispatch build A (running) -> dispatch build B for same app (A becomes cancelled) -> A reports SUCCEEDED and lazy-finalize runs for A -> app_listings is NOT modified by A (changes=0), only B can finalize', async () => {
+      const appId = 'cas-race-app';
+      const user = 'usr_cas_maker';
+      const token = 'token_cas_123';
+
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES (?, 'casmaker', 'CAS Maker', 'user')
+      `).bind(user).run();
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, ?, datetime('now', '+1 hour'))
+      `).bind(tokenHash, user).run();
+
+      const storageKey = `repositories/${appId}`;
+      const repoInfo = createCommittedRepo(storageKey, {
+        'requirements.txt': 'Flask==3.0.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)\n'
+      });
+      const commitA = repoInfo.commitOid;
+      const commitB = 'b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2';
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'CAS Race App', 'Tag', 'Desc', ?, '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).bind(appId, user).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_cas_1', ?, ?, ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(appId, user, appId, storageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_cas_1', 'refs/heads/main', ?)
+      `).bind(commitA).run();
+
+      let buildCount = 0;
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          buildCount++;
+          return Response.json({
+            build: {
+              id: `nsw-build:cas-build-${buildCount}`,
+              buildStatus: 'IN_PROGRESS'
+            }
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      // 1. Dispatch build A
+      const reqA = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'deploy', appId })
+      });
+      const resA = await deployApi.onRequestPost({
+        request: reqA,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+      const dataA: any = await resA.json();
+      expect(resA.status).toBe(202);
+      expect(dataA.codeBuildId).toBe('nsw-build:cas-build-1');
+
+      const buildA = await ctx.d1.prepare(`SELECT id, status, commit_oid FROM build_runs WHERE id = ?`).bind(dataA.buildRunId).first<any>();
+      expect(buildA.status).toBe('running');
+
+      // 2. Update repository head to commit B and dispatch build B
+      await ctx.d1.prepare(`UPDATE repository_refs SET commit_oid = ? WHERE repository_id = 'repo_cas_1'`).bind(commitB).run();
+
+      // Mock gateway verifying commit B
+      const gitsmithFetch: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === '/api/gateway/verify-commit') {
+          return Response.json({
+            success: true,
+            exists: true,
+            storageKey,
+            commitOid: commitB,
+            files: ['requirements.txt', 'app.py'],
+            manifestContents: { 'requirements.txt': 'Flask==3.0.0', 'app.py': 'app = Flask(__name__)' }
+          });
+        }
+        if (url.pathname === '/api/gateway/archive') {
+          return new Response(Buffer.from('archive-b'), { status: 200, headers: { 'Content-Type': 'application/x-tar' } });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const reqB = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'deploy', appId })
+      });
+      const resB = await deployApi.onRequestPost({
+        request: reqB,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_GATEWAY_URL: 'https://gitsmith.internal',
+          GITSMITH_GATEWAY_TOKEN: 'sec_token',
+          __GITSMITH_GATEWAY_FETCH: gitsmithFetch,
+          ...AWS_CREDS,
+          __AWS_FETCH: mockAwsFetch
+        }
+      });
+      const dataB: any = await resB.json();
+      expect(resB.status).toBe(202);
+      expect(dataB.codeBuildId).toBe('nsw-build:cas-build-2');
+
+      // Invariant: Build A was superseded on dispatch -> status is 'cancelled'
+      const buildAAfterB = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = ?`).bind(dataA.buildRunId).first<any>();
+      expect(buildAAfterB.status).toBe('cancelled');
+
+      // Build B is running
+      const buildB = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = ?`).bind(dataB.buildRunId).first<any>();
+      expect(buildB.status).toBe('running');
+
+      // App listing active_commit_oid is commitB and deployment_state is building
+      const appAfterB = await ctx.d1.prepare(`SELECT deployment_state, active_commit_oid, deployment_evidence_json FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(appAfterB.deployment_state).toBe('building');
+      expect(appAfterB.active_commit_oid).toBe(commitB);
+      const evidenceBeforeA = appAfterB.deployment_evidence_json;
+
+      // 3. Simulate build A SUCCEEDED in CodeBuild and attempt lazy-finalize with CAS guard
+      // Even if CodeBuild reported SUCCEEDED for A, atomic CAS on build A row finds status != 'running' (changes=0)
+      const casUpdateA = await ctx.d1.prepare(`
+        UPDATE build_runs SET
+          status = 'passed',
+          result_digest = 'sha256:digestA_fake',
+          exit_code = 0,
+          finished_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'running'
+      `).bind(dataA.buildRunId).run();
+
+      expect(casUpdateA.meta?.changes ?? (casUpdateA as any).changes).toBe(0);
+
+      // Verify app_listings was NOT modified by A
+      const appAfterAAttempt = await ctx.d1.prepare(`SELECT deployment_state, active_commit_oid, deployment_evidence_json FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(appAfterAAttempt.deployment_state).toBe('building');
+      expect(appAfterAAttempt.active_commit_oid).toBe(commitB);
+      expect(appAfterAAttempt.deployment_evidence_json).toBe(evidenceBeforeA);
+
+      // 4. Now lazy-finalize runs for B (which is running) -> it succeeds and updates app_listings
+      const mockAwsFetchFinalize: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{ id: dataB.codeBuildId, buildStatus: 'SUCCEEDED', currentPhase: 'COMPLETED' }]
+          });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{ registryId: '777772815966', repositoryName: `nsw/${appId}`, imageDigest: 'sha256:digestB_real', imageTags: [commitB] }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const resGet = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetchFinalize }
+      });
+      const dataGet: any = await resGet.json();
+      expect(resGet.status).toBe(200);
+      expect(dataGet.deploymentState).toBe('deployable');
+
+      const buildBFinal = await ctx.d1.prepare(`SELECT status, result_digest FROM build_runs WHERE id = ?`).bind(dataB.buildRunId).first<any>();
+      expect(buildBFinal.status).toBe('passed');
+      expect(buildBFinal.result_digest).toBe('sha256:digestB_real');
+
+      const appFinal = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(appFinal.deployment_state).toBe('deployable');
+    });
+  });
+
+  // ==========================================================================
+  // 7. FIX 2: Bounded retry for transient ECR eventual consistency
+  // ==========================================================================
+  describe('7. FIX 2: Bounded retry for transient ECR eventual consistency', () => {
+    const appId = 'ecr-retry-app';
+    const commitOid = 'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1';
+    const codeBuildId = 'nsw-build:ecr-retry-build-1';
+
+    beforeEach(async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_ecr_maker', 'ecrmaker', 'ECR Maker', 'user')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'ECR Retry App', 'Tag', 'Desc', 'usr_ecr_maker', '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'building')
+      `).bind(appId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_ecr_1', ?, 'usr_ecr_maker', ?, 'public', 'sha1', 'refs/heads/main', 'repositories/ecr-retry-app', 'active')
+      `).bind(appId, appId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_ecr_1', 'repo_ecr_1', ?, 'release', 'running', ?, 'python app.py', 'sha256:manifest123', CURRENT_TIMESTAMP)
+      `).bind(commitOid, codeBuildId).run();
+    });
+
+    it('(a) transient ECR error post-SUCCEEDED (endTime recent) leaves app in building state for retry', async () => {
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: codeBuildId,
+              buildStatus: 'SUCCEEDED',
+              endTime: new Date().toISOString() // Finished right now
+            }]
+          });
+        }
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json(
+            { __type: 'ImageNotFoundException', message: `The image with imageId {imageTag='${commitOid}'} does not exist within repository 'nsw/${appId}'` },
+            { status: 400 }
+          );
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('building');
+      expect(data.isVerifiedActive).toBe(false);
+
+      // Invariant: build_runs stays running so subsequent GET calls retry
+      const buildRun = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = 'br_ecr_1'`).first<any>();
+      expect(buildRun.status).toBe('running');
+
+      const app = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('building');
+    });
+
+    it('(b) repo-missing causes terminal failed state immediately', async () => {
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{ id: codeBuildId, buildStatus: 'SUCCEEDED', endTime: new Date().toISOString() }]
+          });
+        }
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json(
+            { __type: 'RepositoryNotFoundException', message: `The repository with name 'nsw/${appId}' does not exist` },
+            { status: 400 }
+          );
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentError).toContain(`ECR repo nsw/${appId} not provisioned`);
+
+      const buildRun = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = 'br_ecr_1'`).first<any>();
+      expect(buildRun.status).toBe('failed');
+
+      const app = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('failed');
+    });
+
+    it('(c) SUCCEEDED endTime >10min ago + still no digest causes terminal failed timeout', async () => {
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: codeBuildId,
+              buildStatus: 'SUCCEEDED',
+              endTime: fifteenMinutesAgo
+            }]
+          });
+        }
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json(
+            { __type: 'ImageNotFoundException', message: `The image with imageId {imageTag='${commitOid}'} does not exist` },
+            { status: 400 }
+          );
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentError).toContain('image never appeared in ECR after build success');
+
+      const buildRun = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = 'br_ecr_1'`).first<any>();
+      expect(buildRun.status).toBe('failed');
+
+      const app = await ctx.d1.prepare(`SELECT deployment_state, deployment_error FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('failed');
+      expect(app.deployment_error).toContain('image never appeared in ECR after build success');
+    });
+  });
+
+  // ==========================================================================
+  // 8. FIX 3: Fail-closed validation of appId and commitOid before ANY AWS call
+  // ==========================================================================
+  describe('8. FIX 3: Fail-closed validation of appId and commitOid before ANY AWS call', () => {
+    let makerToken: string;
+
+    beforeEach(async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_val_maker', 'valmaker', 'Validation Maker', 'user')
+      `).run();
+      makerToken = 'token_val_123';
+      const tokenHash = await hashSessionToken(makerToken);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_val_maker', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+    });
+
+    it('rejects an appId with "/", "..", or uppercase before ANY AWS call', async () => {
+      let awsCalled = false;
+      const mockAwsFetch: typeof fetch = async () => {
+        awsCalled = true;
+        throw new Error('AWS must NOT be called for invalid appId!');
+      };
+
+      const invalidAppIds = ['bad/slash', '../path-traversal', 'UppercaseApp', '-leading-hyphen', 'has_underscore'];
+
+      for (const badAppId of invalidAppIds) {
+        awsCalled = false;
+
+        // POST dispatch path
+        const postReq = new Request('https://nates-software.com/api/deploy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+          body: JSON.stringify({ action: 'deploy', appId: badAppId })
+        });
+        const postRes = await deployApi.onRequestPost({
+          request: postReq,
+          env: { DB: ctx.d1, STORAGE: storage, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+        });
+        expect(postRes.status).toBe(400);
+        const postData: any = await postRes.json();
+        expect(postData.error).toContain('Invalid appId');
+        expect(awsCalled).toBe(false);
+
+        // GET query path
+        const getRes = await deployApi.onRequestGet({
+          request: new Request(`https://nates-software.com/api/deploy?appId=${encodeURIComponent(badAppId)}`),
+          env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+        });
+        expect(getRes.status).toBe(400);
+        const getData: any = await getRes.json();
+        expect(getData.error).toContain('Invalid appId');
+        expect(awsCalled).toBe(false);
+      }
+    });
+
+    it('rejects non-hex or short commitOid before ANY AWS call', async () => {
+      let awsCalled = false;
+      const mockAwsFetch: typeof fetch = async () => {
+        awsCalled = true;
+        throw new Error('AWS must NOT be called for invalid commitOid!');
+      };
+
+      const validAppId = 'valid-validation-app';
+      const storageKey = `repositories/${validAppId}`;
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'Val App', 'Tag', 'Desc', 'usr_val_maker', '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).bind(validAppId).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_val_1', ?, 'usr_val_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(validAppId, validAppId, storageKey).run();
+
+      const invalidOids = [
+        'short123', // short
+        'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz', // non-hex
+        'ABCDEF0123456789ABCDEF0123456789ABCDEF01', // uppercase
+        '123456789012345678901234567890123456789' // 39 chars (short)
+      ];
+
+      for (const badOid of invalidOids) {
+        awsCalled = false;
+        await ctx.d1.prepare(`
+          INSERT OR REPLACE INTO repository_refs (repository_id, ref_name, commit_oid)
+          VALUES ('repo_val_1', 'refs/heads/main', ?)
+        `).bind(badOid).run();
+
+        const postReq = new Request('https://nates-software.com/api/deploy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+          body: JSON.stringify({ action: 'deploy', appId: validAppId })
+        });
+
+        const postRes = await deployApi.onRequestPost({
+          request: postReq,
+          env: { DB: ctx.d1, STORAGE: storage, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+        });
+
+        expect(postRes.status).toBe(422);
+        const postData: any = await postRes.json();
+        expect(postData.error).toContain('Invalid commitOid');
+        expect(awsCalled).toBe(false);
+      }
+    });
+
+    it('leaves PROCFILE_START unescaped by design', async () => {
+      const serverAppId = 'procfile-app';
+      const storageKey = `repositories/${serverAppId}`;
+      const rawStartCmd = "gunicorn -w 4 -b 0.0.0.0:$PORT 'my_app:create_app()'";
+
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'requirements.txt': 'Flask==3.0.0\n',
+        'rig.json': JSON.stringify({ startCommand: rawStartCmd })
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'Procfile App', 'Tag', 'Desc', 'usr_val_maker', '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).bind(serverAppId).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_proc_1', ?, 'usr_val_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(serverAppId, serverAppId, storageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_proc_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      let capturedOverrides: any[] = [];
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          const body = JSON.parse(await req.clone().text());
+          capturedOverrides = body.environmentVariablesOverride;
+          return Response.json({
+            build: { id: 'nsw-build:proc-uuid-1', buildStatus: 'IN_PROGRESS' }
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId: serverAppId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      expect(postRes.status).toBe(202);
+      const procOverride = capturedOverrides.find(o => o.name === 'PROCFILE_START');
+      expect(procOverride).toBeDefined();
+      // Confirm PROCFILE_START is passed exactly unescaped as authored in Procfile/plan
+      expect(procOverride.value).toBe(rawStartCmd);
     });
   });
 });

@@ -1382,7 +1382,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       `).run();
       await ctx.d1.prepare(`
         INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
-        VALUES ('repo_edge_1', 'refs/heads/main', 'commit_edge_oid_111122223333444455556666')
+        VALUES ('repo_edge_1', 'refs/heads/main', '1111222233334444555566667777888899990000')
       `).run();
     });
 
@@ -1395,7 +1395,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         }));
         const body = JSON.parse(String(init?.body || '{}'));
         expect(body.storageKey).toBe('repositories/edge-app');
-        expect(body.commitOid).toBe('commit_edge_oid_111122223333444455556666');
+        expect(body.commitOid).toBe('1111222233334444555566667777888899990000');
 
         return Response.json({
           success: true,
@@ -1439,7 +1439,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
     });
 
     it('successfully deploys by delegating source verification, archive fetch, and container build to gateways', async () => {
-      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const commitOid = '1111222233334444555566667777888899990000';
       const fakeTarArchive = Buffer.from('fake-tar-archive-bytes');
 
       const gitsmithFetch: typeof fetch = async (input) => {
@@ -1647,7 +1647,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
     });
 
     it('fails closed when RIG gateway returns build failure', async () => {
-      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const commitOid = '1111222233334444555566667777888899990000';
       const fakeTar = Buffer.from('tar');
 
       const gitsmithFetch: typeof fetch = async (input) => {
@@ -1719,7 +1719,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
     });
 
     it('fails closed when RIG gateway returns smoke check failure', async () => {
-      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const commitOid = '1111222233334444555566667777888899990000';
       const fakeTar = Buffer.from('tar');
 
       const gitsmithFetch: typeof fetch = async (input) => {

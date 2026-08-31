@@ -9,6 +9,9 @@ export const DEFAULT_AWS_ACCOUNT_ID = '777772815966';
 export const DEFAULT_AWS_S3_BUILD_BUCKET = 'nsw-build-sources-777772815966';
 export const DEFAULT_AWS_CODEBUILD_PROJECT = 'nsw-build';
 
+export const APP_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,62}$/;
+export const COMMIT_OID_REGEX = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
+
 export interface AwsCredentials {
   accessKeyId: string;
   secretAccessKey: string;
@@ -157,6 +160,25 @@ export async function startCodeBuild(
   error?: string;
   status?: number;
 }> {
+  if (params.envOverrides) {
+    if (params.envOverrides.ECR_REPO) {
+      const parts = params.envOverrides.ECR_REPO.split('/');
+      const appIdPart = parts.length > 1 ? parts[1] : parts[0];
+      if (!APP_ID_REGEX.test(appIdPart)) {
+        return {
+          success: false,
+          error: `Invalid ECR_REPO '${params.envOverrides.ECR_REPO}': appId component must match ^[a-z0-9][a-z0-9-]{0,62}$`
+        };
+      }
+    }
+    if (params.envOverrides.COMMIT_OID && !COMMIT_OID_REGEX.test(params.envOverrides.COMMIT_OID)) {
+      return {
+        success: false,
+        error: `Invalid COMMIT_OID '${params.envOverrides.COMMIT_OID}': must match ^[a-f0-9]{40}([a-f0-9]{24})?$`
+      };
+    }
+  }
+
   const creds = getAwsCredentials(env);
   const region = creds.region || DEFAULT_AWS_REGION;
   const projectName = params.projectName || env?.AWS_CODEBUILD_PROJECT || DEFAULT_AWS_CODEBUILD_PROJECT;
@@ -287,6 +309,23 @@ export async function describeEcrImages(
   error?: string;
   status?: number;
 }> {
+  if (params.repositoryName) {
+    const parts = params.repositoryName.split('/');
+    const appIdPart = parts.length > 1 ? parts[1] : parts[0];
+    if (!APP_ID_REGEX.test(appIdPart)) {
+      return {
+        success: false,
+        error: `Invalid repositoryName '${params.repositoryName}': appId component must match ^[a-z0-9][a-z0-9-]{0,62}$`
+      };
+    }
+  }
+  if (params.imageTag && !COMMIT_OID_REGEX.test(params.imageTag)) {
+    return {
+      success: false,
+      error: `Invalid imageTag '${params.imageTag}': must match ^[a-f0-9]{40}([a-f0-9]{24})?$`
+    };
+  }
+
   const creds = getAwsCredentials(env);
   const region = creds.region || DEFAULT_AWS_REGION;
   const registryId = params.registryId || env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID;
@@ -323,10 +362,10 @@ export async function describeEcrImages(
     const data: any = await res.json().catch(() => null);
 
     if (!res.ok) {
-      const errType = data?.__type || '';
-      const errMsg = data?.message || data?.error || `ECR DescribeImages failed with HTTP ${res.status}`;
+      const errType = String(data?.__type || '').toLowerCase();
+      const errMsg = String(data?.message || data?.error || `ECR DescribeImages failed with HTTP ${res.status}`).toLowerCase();
 
-      if (errType.includes('RepositoryNotFoundException') || errMsg.toLowerCase().includes('does not exist')) {
+      if (errType.includes('repositorynotfoundexception') || (errMsg.includes('repository') && errMsg.includes('does not exist') && !errMsg.includes('image'))) {
         return {
           success: false,
           repoMissing: true,
@@ -335,7 +374,7 @@ export async function describeEcrImages(
         };
       }
 
-      if (errType.includes('ImageNotFoundException') || errMsg.toLowerCase().includes('image') && errMsg.toLowerCase().includes('not exist')) {
+      if (errType.includes('imagenotfoundexception') || errMsg.includes('imagenotfound') || (errMsg.includes('image') && errMsg.includes('does not exist'))) {
         return {
           success: false,
           imageMissing: true,
@@ -347,7 +386,7 @@ export async function describeEcrImages(
       return {
         success: false,
         status: res.status,
-        error: errMsg
+        error: data?.message || data?.error || `ECR DescribeImages failed with HTTP ${res.status}`
       };
     }
 
