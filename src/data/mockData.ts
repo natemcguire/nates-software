@@ -49,6 +49,7 @@ export interface AppListing {
   mergeCleanliness?: string;
   deploymentState?: AppDeploymentState;
   deploymentError?: string;
+  lastDeployError?: string | null;
   deploymentEvidence?: any;
   detectedProjectType?: string;
   deploymentPlan?: any;

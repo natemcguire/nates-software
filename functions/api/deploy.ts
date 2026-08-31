@@ -285,6 +285,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return json({ success: false, error: `Application '${appId}' not found in catalog` }, 404);
     }
 
+    const isCurrentlyActive = listing.deploymentState === 'active' && Boolean(listing.activeDeploymentId && listing.revisionStatus === 'healthy');
+
     // Lazy finalize check for async AWS CodeBuild runs:
     // If this app has a running build_runs entry, check CodeBuild BatchGetBuilds
     if (listing.repositoryId || appId) {
@@ -305,6 +307,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
               stage: 'build',
               status: 'failed',
               details: errorMsg,
+              lastDeployError: errorMsg,
               codeBuildId: runningBuild.runner_image_digest,
               commitOid,
               timestamp: new Date().toISOString()
@@ -320,17 +323,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
             const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
             if (changes > 0) {
-              await env.DB.prepare(`
-                UPDATE app_listings SET
-                  deployment_state = 'failed',
-                  deployment_error = ?,
-                  deployment_evidence_json = ?
-                WHERE id = ?
-              `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+              if (isCurrentlyActive) {
+                await env.DB.prepare(`
+                  UPDATE app_listings SET
+                    deployment_evidence_json = ?
+                  WHERE id = ?
+                `).bind(JSON.stringify(failureEvidence), appId).run();
 
-              listing.deploymentState = 'failed';
-              listing.deploymentError = errorMsg;
-              listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+              } else {
+                await env.DB.prepare(`
+                  UPDATE app_listings SET
+                    deployment_state = 'failed',
+                    deployment_error = ?,
+                    deployment_evidence_json = ?
+                  WHERE id = ?
+                `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                listing.deploymentState = 'failed';
+                listing.deploymentError = errorMsg;
+                listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+              }
             }
           } else {
             const codeBuildId = runningBuild.runner_image_digest;
@@ -361,6 +374,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       stage: 'deploy',
                       status: 'failed',
                       details: errorMsg,
+                      lastDeployError: errorMsg,
                       codeBuildId,
                       commitOid,
                       timestamp: new Date().toISOString()
@@ -376,17 +390,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                     const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                     if (changes > 0) {
-                      await env.DB.prepare(`
-                        UPDATE app_listings SET
-                          deployment_state = 'failed',
-                          deployment_error = ?,
-                          deployment_evidence_json = ?
-                        WHERE id = ?
-                      `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                      if (isCurrentlyActive) {
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(JSON.stringify(failureEvidence), appId).run();
 
-                      listing.deploymentState = 'failed';
-                      listing.deploymentError = errorMsg;
-                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      } else {
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_state = 'failed',
+                            deployment_error = ?,
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                        listing.deploymentState = 'failed';
+                        listing.deploymentError = errorMsg;
+                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      }
                     }
                   } else {
                     // Deploy succeeded with worker URL! CAS promote on deploy build_runs
@@ -409,13 +433,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       const revisionNumber = revRow?.nextRev || 1;
                       const revisionId = `rev_${crypto.randomUUID().replace(/-/g, '')}`;
 
-                      // Supersede previous active production revisions
-                      await env.DB.prepare(`
-                        UPDATE deployment_revisions SET status = 'superseded'
-                        WHERE app_id = ? AND environment = 'production' AND status = 'healthy'
-                      `).bind(appId).run();
-
-                      // Insert healthy deployment_revisions row
+                      // 1. Insert healthy deployment_revisions row FIRST
                       await env.DB.prepare(`
                         INSERT INTO deployment_revisions (
                           id, app_id, repository_id, commit_oid, build_run_id, environment,
@@ -444,27 +462,57 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         timestamp: new Date().toISOString()
                       };
 
-                      await env.DB.prepare(`
-                        UPDATE app_listings SET
-                          deployment_state = 'active',
-                          origin_kind = 'cf_container',
-                          origin_ref = ?,
-                          active_deployment_id = ?,
-                          active_commit_oid = ?,
-                          deployment_error = NULL,
-                          deployment_evidence_json = ?
-                        WHERE id = ?
-                      `).bind(workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+                      // 2. Atomically FLIP active_deployment_id and origin_ref with CAS on old active_deployment_id
+                      //
+                      // Known accepted risk:
+                      // The router HOST_CACHE KV caches the listing 60s. After a flip, up to 60s of requests
+                      // can still route to the old origin_ref — harmless because the old revision stays healthy
+                      // (sleepAfter=10m). This is stale-but-serving, not an outage.
+                      // Follow-up (not now): HOST_CACHE.delete on flip for instant cutover.
+                      const oldActiveId = listing.activeDeploymentId || null;
+                      const flipRes = oldActiveId
+                        ? await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'active',
+                              origin_kind = 'cf_container',
+                              origin_ref = ?,
+                              active_deployment_id = ?,
+                              active_commit_oid = ?,
+                              deployment_error = NULL,
+                              deployment_evidence_json = ?
+                            WHERE id = ? AND (active_deployment_id = ? OR active_deployment_id IS NULL)
+                          `).bind(workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId, oldActiveId).run()
+                        : await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'active',
+                              origin_kind = 'cf_container',
+                              origin_ref = ?,
+                              active_deployment_id = ?,
+                              active_commit_oid = ?,
+                              deployment_error = NULL,
+                              deployment_evidence_json = ?
+                            WHERE id = ? AND active_deployment_id IS NULL
+                          `).bind(workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
 
-                      listing.deploymentState = 'active';
-                      listing.originKind = 'cf_container';
-                      listing.originRef = workerUrl;
-                      listing.activeDeploymentId = revisionId;
-                      listing.activeCommitOid = commitOid;
-                      listing.deploymentError = null;
-                      listing.deploymentEvidenceJson = JSON.stringify(promotionEvidence);
-                      listing.revisionStatus = 'healthy';
-                      listing.deploymentUrl = workerUrl;
+                      const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
+
+                      // 3. THEN supersede previous active production revisions (new revision healthy FIRST, flip LAST)
+                      if (flipChanges > 0) {
+                        await env.DB.prepare(`
+                          UPDATE deployment_revisions SET status = 'superseded'
+                          WHERE app_id = ? AND environment = 'production' AND status = 'healthy' AND id != ?
+                        `).bind(appId, revisionId).run();
+
+                        listing.deploymentState = 'active';
+                        listing.originKind = 'cf_container';
+                        listing.originRef = workerUrl;
+                        listing.activeDeploymentId = revisionId;
+                        listing.activeCommitOid = commitOid;
+                        listing.deploymentError = null;
+                        listing.deploymentEvidenceJson = JSON.stringify(promotionEvidence);
+                        listing.revisionStatus = 'healthy';
+                        listing.deploymentUrl = workerUrl;
+                      }
                     }
                   }
                 } else if (
@@ -480,6 +528,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                     stage: 'deploy',
                     status: 'failed',
                     details: errorMsg,
+                    lastDeployError: errorMsg,
                     codeBuildId,
                     buildStatus,
                     phases: cbBuild.phases,
@@ -496,17 +545,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                   const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                   if (changes > 0) {
-                    await env.DB.prepare(`
-                      UPDATE app_listings SET
-                        deployment_state = 'failed',
-                        deployment_error = ?,
-                        deployment_evidence_json = ?
-                      WHERE id = ?
-                    `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                    if (isCurrentlyActive) {
+                      await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                      `).bind(JSON.stringify(failureEvidence), appId).run();
 
-                    listing.deploymentState = 'failed';
-                    listing.deploymentError = errorMsg;
-                    listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                    } else {
+                      await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_state = 'failed',
+                          deployment_error = ?,
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                      `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                      listing.deploymentState = 'failed';
+                      listing.deploymentError = errorMsg;
+                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                    }
                   }
                 }
               } else {
@@ -528,6 +587,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       stage: 'build',
                       status: 'failed',
                       details: errorMsg,
+                      lastDeployError: errorMsg,
                       codeBuildId,
                       commitOid,
                       ecrRepo,
@@ -544,17 +604,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                     const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                     if (changes > 0) {
-                      await env.DB.prepare(`
-                        UPDATE app_listings SET
-                          deployment_state = 'failed',
-                          deployment_error = ?,
-                          deployment_evidence_json = ?
-                        WHERE id = ?
-                      `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                      if (isCurrentlyActive) {
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(JSON.stringify(failureEvidence), appId).run();
 
-                      listing.deploymentState = 'failed';
-                      listing.deploymentError = errorMsg;
-                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      } else {
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_state = 'failed',
+                            deployment_error = ?,
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                        listing.deploymentState = 'failed';
+                        listing.deploymentError = errorMsg;
+                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      }
                     }
                   } else if (ecrRes.success && ecrRes.imageDigest) {
                     // Candidate build Succeeded! Verified image digest from ECR
@@ -592,6 +662,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                           stage: 'deploy_dispatch',
                           status: 'failed',
                           details: errorMsg,
+                          lastDeployError: errorMsg,
                           buildCodeBuildId: codeBuildId,
                           commitOid,
                           ecrRepo,
@@ -599,17 +670,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                           timestamp: new Date().toISOString()
                         };
 
-                        await env.DB.prepare(`
-                          UPDATE app_listings SET
-                            deployment_state = 'failed',
-                            deployment_error = ?,
-                            deployment_evidence_json = ?
-                          WHERE id = ?
-                        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                        if (isCurrentlyActive) {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(failureEvidence), appId).run();
 
-                        listing.deploymentState = 'failed';
-                        listing.deploymentError = errorMsg;
-                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        } else {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'failed',
+                              deployment_error = ?,
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                          listing.deploymentState = 'failed';
+                          listing.deploymentError = errorMsg;
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        }
                       } else {
                         const deployCodeBuildId = deployStart.buildId;
                         const deployRunId = `br_dep_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -640,22 +721,33 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                           timestamp: new Date().toISOString()
                         };
 
-                        // Deploy stage stays under 'building' (no 'deploying'
-                        // state in prod's CHECK); the deploy build_runs row is
-                        // the stage discriminator.
-                        await env.DB.prepare(`
-                          UPDATE app_listings SET
-                            deployment_state = 'building',
-                            origin_kind = 'cf_container',
-                            deployment_error = NULL,
-                            deployment_evidence_json = ?
-                          WHERE id = ?
-                        `).bind(JSON.stringify(deployingEvidence), appId).run();
+                        if (isCurrentlyActive) {
+                          // Keep active state while deploy stage runs in background
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(deployingEvidence), appId).run();
 
-                        listing.deploymentState = 'building';
-                        listing.originKind = 'cf_container';
-                        listing.deploymentError = null;
-                        listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
+                          listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
+                        } else {
+                          // Deploy stage stays under 'building' (no 'deploying'
+                          // state in prod's CHECK); the deploy build_runs row is
+                          // the stage discriminator.
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'building',
+                              origin_kind = 'cf_container',
+                              deployment_error = NULL,
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(deployingEvidence), appId).run();
+
+                          listing.deploymentState = 'building';
+                          listing.originKind = 'cf_container';
+                          listing.deploymentError = null;
+                          listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
+                        }
                       }
                     }
                   } else {
@@ -671,6 +763,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         stage: 'build',
                         status: 'failed',
                         details: errorMsg,
+                        lastDeployError: errorMsg,
                         codeBuildId,
                         commitOid,
                         ecrRepo,
@@ -690,17 +783,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                       const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                       if (changes > 0) {
-                        await env.DB.prepare(`
-                          UPDATE app_listings SET
-                            deployment_state = 'failed',
-                            deployment_error = ?,
-                            deployment_evidence_json = ?
-                          WHERE id = ?
-                        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                        if (isCurrentlyActive) {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(failureEvidence), appId).run();
 
-                        listing.deploymentState = 'failed';
-                        listing.deploymentError = errorMsg;
-                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        } else {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'failed',
+                              deployment_error = ?,
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                          listing.deploymentState = 'failed';
+                          listing.deploymentError = errorMsg;
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        }
                       }
                     } else {
                       // Stays running (app stays building) for bounded retry on next GET
@@ -719,6 +822,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                     stage: 'build',
                     status: 'failed',
                     details: errorMsg,
+                    lastDeployError: errorMsg,
                     codeBuildId,
                     buildStatus,
                     phases: cbBuild.phases,
@@ -735,17 +839,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                   const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                   if (changes > 0) {
-                    await env.DB.prepare(`
-                      UPDATE app_listings SET
-                        deployment_state = 'failed',
-                        deployment_error = ?,
-                        deployment_evidence_json = ?
-                      WHERE id = ?
-                    `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                    if (isCurrentlyActive) {
+                      await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                      `).bind(JSON.stringify(failureEvidence), appId).run();
 
-                    listing.deploymentState = 'failed';
-                    listing.deploymentError = errorMsg;
-                    listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                    } else {
+                      await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_state = 'failed',
+                          deployment_error = ?,
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                      `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                      listing.deploymentState = 'failed';
+                      listing.deploymentError = errorMsg;
+                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                    }
                   }
                 }
               }
@@ -771,6 +885,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const isVerifiedActive = state === 'active' && Boolean(listing.activeDeploymentId && listing.revisionStatus === 'healthy');
 
+    const lastDeployError = evidence?.status === 'failed'
+      ? (evidence.lastDeployError || evidence.details || evidence.error || null)
+      : (evidence?.lastDeployError || null);
+
     return json({
       success: true,
       appId: listing.id,
@@ -782,6 +900,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       originRef: listing.originRef || null,
       isVerifiedActive,
       deploymentError: listing.deploymentError,
+      lastDeployError,
       deploymentEvidence: evidence,
       detectedProjectType: listing.detectedProjectType,
       deploymentPlan: plan,
@@ -801,6 +920,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   let targetRepoId = '';
   let targetCommitOid = '';
   let targetPlan: any = null;
+  let isCurrentlyActive = false;
 
   try {
     if (!env?.DB) {
@@ -827,8 +947,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     // 1. Check if application listing exists
     const appListing = await env.DB.prepare(`
-      SELECT id, name, creator_id, version, deployment_state, deployment_error, repository_id
-      FROM app_listings WHERE id = ?
+      SELECT 
+        a.id, a.name, a.creator_id, a.version, a.deployment_state, a.deployment_error, a.repository_id,
+        a.active_deployment_id, a.origin_ref, a.origin_kind, a.active_commit_oid,
+        dr.status AS revisionStatus
+      FROM app_listings a
+      LEFT JOIN deployment_revisions dr ON dr.id = a.active_deployment_id
+      WHERE a.id = ?
     `).bind(appId).first();
 
     if (!appListing) {
@@ -839,6 +964,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (appListing.creator_id !== auth.user.id && auth.user.role !== 'super_admin') {
       return json({ success: false, error: 'Forbidden: you do not own this application listing' }, 403);
     }
+
+    isCurrentlyActive = appListing.deployment_state === 'active' && Boolean(appListing.active_deployment_id && appListing.revisionStatus === 'healthy');
 
     // Action: Plan only
     if (action === 'plan') {
@@ -906,11 +1033,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `No deployable revision exists for ${appListing.name}. Source has not been imported into GITSMITH and built by RIG.`;
         const evidence = {
           stage: 'source_verification',
+          status: 'failed',
           timestamp,
           details: 'A canonical repository and commit must exist in GITSMITH before candidate build.',
+          lastDeployError: errorMsg,
           repositoryId: repository?.id || null,
           commitOid: commitOid || null
         };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -933,11 +1079,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Invalid commitOid '${commitOid}': must match ^[a-f0-9]{40}([a-f0-9]{24})?$`;
         const evidence = {
           stage: 'source_verification',
+          status: 'failed',
           timestamp,
           details: errorMsg,
+          lastDeployError: errorMsg,
           repositoryId: repository.id,
           commitOid
         };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -964,11 +1129,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `No deployable revision exists for ${appListing.name}. Source has not been imported into GITSMITH and built by RIG.`;
         const evidence = {
           stage: 'source_verification',
+          status: 'failed',
           timestamp,
           details: sourceVerify.error || 'A canonical repository and commit must exist in GITSMITH before candidate build.',
+          lastDeployError: errorMsg,
           repositoryId: repository.id,
           commitOid
         };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -997,11 +1181,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Deployment failed for ${appListing.name}: No committed files found in repository tree at ${commitOid.slice(0, 8)}.`;
         const evidence = {
           stage: 'detection',
+          status: 'failed',
           timestamp,
           details: 'The committed source tree is empty.',
+          lastDeployError: errorMsg,
           repositoryId: repository.id,
           commitOid
         };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1027,12 +1230,31 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Deployment failed for ${appListing.name}: Unsupported project type.`;
         const evidence = {
           stage: 'detection',
+          status: 'failed',
           timestamp,
           details: detection.error || 'No recognized project configuration found.',
+          lastDeployError: errorMsg,
           reasons: detection.reasons,
           repositoryId: repository.id,
           commitOid
         };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1081,11 +1303,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           const errorMsg = `Deployment failed for ${appListing.name}: Unable to fetch source archive from GITSMITH gateway (${archiveResult.error || 'unknown error'}).`;
           const evidence = {
             stage: 'source_archive',
+            status: 'failed',
             timestamp,
             details: archiveResult.error || 'Authoritative source archive could not be retrieved.',
+            lastDeployError: errorMsg,
             repositoryId: repository.id,
             commitOid
           };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(evidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence
+            }, 422);
+          }
 
           await env.DB.prepare(`
             UPDATE app_listings SET
@@ -1124,13 +1365,32 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           const errorMsg = `Deployment failed for ${appListing.name}: Failed to stage source tarball to S3 (${s3Result.error || 'upload error'}).`;
           const failureEvidence = {
             stage: 'source_staging',
+            status: 'failed',
             timestamp: new Date().toISOString(),
             details: errorMsg,
+            lastDeployError: errorMsg,
             repositoryId: repository.id,
             commitOid,
             s3Bucket,
             s3Key
           };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(failureEvidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence: failureEvidence
+            }, 422);
+          }
 
           await env.DB.prepare(`
             UPDATE app_listings SET
@@ -1165,12 +1425,31 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           const errorMsg = `Deployment failed for ${appListing.name}: Failed to start CodeBuild build (${cbResult.error || 'start build error'}).`;
           const failureEvidence = {
             stage: 'build_dispatch',
+            status: 'failed',
             timestamp: new Date().toISOString(),
             details: errorMsg,
+            lastDeployError: errorMsg,
             repositoryId: repository.id,
             commitOid,
             projectName: codebuildProject
           };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(failureEvidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence: failureEvidence
+            }, 422);
+          }
 
           await env.DB.prepare(`
             UPDATE app_listings SET
@@ -1220,35 +1499,65 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           plan
         };
 
-        await env.DB.prepare(`
-          UPDATE app_listings SET
-            deployment_state = 'building',
-            origin_kind = 'cf_container',
-            detected_project_type = ?,
-            deployment_plan_json = ?,
-            active_commit_oid = ?,
-            deployment_error = NULL,
-            deployment_evidence_json = ?
-          WHERE id = ?
-        `).bind(
-          plan.detectedType,
-          JSON.stringify(plan),
-          commitOid,
-          JSON.stringify(buildingEvidence),
-          appId
-        ).run();
+        if (isCurrentlyActive) {
+          // If the app is CURRENTLY active with a healthy active revision,
+          // DO NOT touch deployment_state and DO NOT clear active_deployment_id/origin_ref.
+          // Track the new build ONLY in build_runs. The old revision keeps serving throughout.
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              detected_project_type = ?,
+              deployment_plan_json = ?,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(
+            plan.detectedType,
+            JSON.stringify(plan),
+            JSON.stringify(buildingEvidence),
+            appId
+          ).run();
 
-        return json({
-          success: true,
-          appId,
-          deploymentState: 'building',
-          buildId,
-          codeBuildId,
-          buildRunId,
-          commitOid,
-          ecrRepo,
-          message: `Candidate container build dispatched to AWS CodeBuild (${codeBuildId})`
-        }, 202);
+          return json({
+            success: true,
+            appId,
+            deploymentState: 'active',
+            buildId,
+            codeBuildId,
+            buildRunId,
+            commitOid,
+            ecrRepo,
+            message: `Candidate container build dispatched to AWS CodeBuild (${codeBuildId})`
+          }, 202);
+        } else {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'building',
+              origin_kind = 'cf_container',
+              detected_project_type = ?,
+              deployment_plan_json = ?,
+              active_commit_oid = ?,
+              deployment_error = NULL,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(
+            plan.detectedType,
+            JSON.stringify(plan),
+            commitOid,
+            JSON.stringify(buildingEvidence),
+            appId
+          ).run();
+
+          return json({
+            success: true,
+            appId,
+            deploymentState: 'building',
+            buildId,
+            codeBuildId,
+            buildRunId,
+            commitOid,
+            ecrRepo,
+            message: `Candidate container build dispatched to AWS CodeBuild (${codeBuildId})`
+          }, 202);
+        }
       }
 
       // Step 5: Static App execution (remains synchronous R2 publish path)
@@ -1269,11 +1578,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Deployment failed for ${appListing.name}: Unable to fetch source archive from GITSMITH gateway (${archiveResult.error || 'unknown error'}).`;
         const evidence = {
           stage: 'source_archive',
+          status: 'failed',
           timestamp,
           details: archiveResult.error || 'Authoritative source archive could not be retrieved.',
+          lastDeployError: errorMsg,
           repositoryId: repository.id,
           commitOid
         };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1310,14 +1638,23 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         sourceManifestDigest
       ).run();
 
-      await env.DB.prepare(`
-        UPDATE app_listings SET
-          deployment_state = 'building',
-          detected_project_type = ?,
-          deployment_plan_json = ?,
-          active_commit_oid = ?
-        WHERE id = ?
-      `).bind(plan.detectedType, JSON.stringify(plan), commitOid, appId).run();
+      if (isCurrentlyActive) {
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            detected_project_type = ?,
+            deployment_plan_json = ?
+          WHERE id = ?
+        `).bind(plan.detectedType, JSON.stringify(plan), appId).run();
+      } else {
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'building',
+            detected_project_type = ?,
+            deployment_plan_json = ?,
+            active_commit_oid = ?
+          WHERE id = ?
+        `).bind(plan.detectedType, JSON.stringify(plan), commitOid, appId).run();
+      }
 
       // Step 6: Execute static build via RIG gateway (or injected executor)
       let buildResult: any;
@@ -1386,8 +1723,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = buildResult?.error || buildResult?.smokeCheck?.error || `Build or smoke check failed for ${appListing.name}.`;
         const failureEvidence = {
           stage: (buildResult?.exitCode ?? 1) !== 0 ? 'build' : 'smoke_check',
+          status: 'failed',
           timestamp: new Date().toISOString(),
           details: errorMsg,
+          lastDeployError: errorMsg,
           detectedType: plan.detectedType,
           plan,
           repositoryId: repository.id,
@@ -1407,6 +1746,23 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             finished_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).bind(buildResult?.artifactDigest || null, buildResult?.exitCode ?? 1, buildResult?.durationMs ?? 0, buildRunId).run();
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(failureEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence: failureEvidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1431,8 +1787,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Deployment publication failed for ${appListing.name}: Artifact storage service (R2 STORAGE) is unavailable.`;
         const storageEvidence = {
           stage: 'storage_publication',
+          status: 'failed',
           timestamp: new Date().toISOString(),
           details: errorMsg,
+          lastDeployError: errorMsg,
           detectedType: plan.detectedType,
           plan,
           repositoryId: repository.id,
@@ -1451,6 +1809,23 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             finished_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).bind(buildResult.artifactDigest || null, buildResult.durationMs || 0, buildRunId).run();
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(storageEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence: storageEvidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1473,8 +1848,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Deployment publication failed for ${appListing.name}: No static artifact files produced for storage publication.`;
         const storageEvidence = {
           stage: 'storage_publication',
+          status: 'failed',
           timestamp: new Date().toISOString(),
           details: errorMsg,
+          lastDeployError: errorMsg,
           detectedType: plan.detectedType,
           plan,
           repositoryId: repository.id,
@@ -1493,6 +1870,23 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             finished_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).bind(buildResult.artifactDigest || null, buildResult.durationMs || 0, buildRunId).run();
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(storageEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence: storageEvidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1529,8 +1923,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const errorMsg = `Deployment publication failed for ${appListing.name}: Storage upload failed (${putErr?.message || 'unknown storage error'}).`;
         const storageEvidence = {
           stage: 'storage_publication',
+          status: 'failed',
           timestamp: new Date().toISOString(),
           details: errorMsg,
+          lastDeployError: errorMsg,
           error: putErr?.message || String(putErr),
           detectedType: plan.detectedType,
           plan,
@@ -1550,6 +1946,23 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             finished_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `).bind(buildResult.artifactDigest || null, buildResult.durationMs || 0, buildRunId).run();
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(storageEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence: storageEvidence
+          }, 422);
+        }
 
         await env.DB.prepare(`
           UPDATE app_listings SET
@@ -1602,13 +2015,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       `).bind(appId).first();
       const revisionNumber = revRow?.nextRev || 1;
 
-      // Supersede previous active revisions
-      await env.DB.prepare(`
-        UPDATE deployment_revisions SET status = 'superseded'
-        WHERE app_id = ? AND environment = 'production' AND status = 'healthy'
-      `).bind(appId).run();
-
-      // Insert real deployment_revisions row
+      // 1. Insert real deployment_revisions row FIRST (status='healthy')
       await env.DB.prepare(`
         INSERT INTO deployment_revisions (
           id, app_id, repository_id, commit_oid, build_run_id, environment,
@@ -1626,9 +2033,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         auth.user.id
       ).run();
 
-      // Promote app_listings to 'active'
       const promotionEvidence = {
         stage: 'promotion',
+        status: 'passed',
         timestamp: new Date().toISOString(),
         details: 'Real RIG candidate build, HTTP smoke verification, and R2 byte storage succeeded. Revision promoted to active.',
         detectedType: plan.detectedType,
@@ -1642,16 +2049,45 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         logs: [buildResult.output]
       };
 
-      await env.DB.prepare(`
-        UPDATE app_listings SET
-          deployment_state = 'active',
-          origin_kind = 'r2_static',
-          active_deployment_id = ?,
-          active_commit_oid = ?,
-          deployment_error = NULL,
-          deployment_evidence_json = ?
-        WHERE id = ?
-      `).bind(revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+      // 2. Atomically FLIP active_deployment_id with CAS predicate on old active_deployment_id
+      //
+      // Known accepted risk:
+      // The router HOST_CACHE KV caches the listing 60s. After a flip, up to 60s of requests
+      // can still route to the old origin_ref — harmless because the old revision stays healthy
+      // (sleepAfter=10m). This is stale-but-serving, not an outage.
+      // Follow-up (not now): HOST_CACHE.delete on flip for instant cutover.
+      const oldActiveId = appListing.active_deployment_id || null;
+      const flipRes = oldActiveId
+        ? await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'active',
+              origin_kind = 'r2_static',
+              active_deployment_id = ?,
+              active_commit_oid = ?,
+              deployment_error = NULL,
+              deployment_evidence_json = ?
+            WHERE id = ? AND (active_deployment_id = ? OR active_deployment_id IS NULL)
+          `).bind(revisionId, commitOid, JSON.stringify(promotionEvidence), appId, oldActiveId).run()
+        : await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'active',
+              origin_kind = 'r2_static',
+              active_deployment_id = ?,
+              active_commit_oid = ?,
+              deployment_error = NULL,
+              deployment_evidence_json = ?
+            WHERE id = ? AND active_deployment_id IS NULL
+          `).bind(revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+
+      const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
+
+      // 3. THEN supersede previous active revisions (new revision healthy FIRST, flip LAST)
+      if (flipChanges > 0) {
+        await env.DB.prepare(`
+          UPDATE deployment_revisions SET status = 'superseded'
+          WHERE app_id = ? AND environment = 'production' AND status = 'healthy' AND id != ?
+        `).bind(appId, revisionId).run();
+      }
 
       return json({
         success: true,
@@ -1672,8 +2108,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const errorMsg = err?.message || 'Deployment execution failed';
     const failureEvidence = {
       stage: 'execution_error',
+      status: 'failed',
       timestamp: new Date().toISOString(),
       details: errorMsg,
+      lastDeployError: errorMsg,
       error: String(err?.stack || err?.message || err),
       appId: targetAppId || null,
       repositoryId: targetRepoId || null,
@@ -1684,13 +2122,21 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     if (env?.DB && targetAppId) {
       try {
-        await env.DB.prepare(`
-          UPDATE app_listings SET
-            deployment_state = 'failed',
-            deployment_error = ?,
-            deployment_evidence_json = ?
-          WHERE id = ?
-        `).bind(errorMsg, JSON.stringify(failureEvidence), targetAppId).run();
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(failureEvidence), targetAppId).run();
+        } else {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'failed',
+              deployment_error = ?,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(errorMsg, JSON.stringify(failureEvidence), targetAppId).run();
+        }
       } catch {}
 
       if (activeBuildRunId) {
@@ -1709,8 +2155,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     return json({
       success: false,
       appId: targetAppId || undefined,
-      deploymentState: 'failed',
+      deploymentState: isCurrentlyActive ? 'active' : 'failed',
       error: errorMsg,
+      lastDeployError: errorMsg,
       evidence: failureEvidence
     }, 500);
   }

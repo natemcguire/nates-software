@@ -1885,4 +1885,754 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(procOverride.value).toBe(rawStartCmd);
     });
   });
+
+  // ==========================================================================
+  // 9. Phase 4 P1: Zero-Downtime Redeploy (Build-New-Then-Flip)
+  // ==========================================================================
+  describe('9. Phase 4 P1: Zero-Downtime Redeploy (Build-New-Then-Flip)', () => {
+    let makerToken: string;
+    const appId = 'zero-downtime-server-app';
+    const storageKey = `repositories/${appId}`;
+    let commitOidR1: string;
+    let commitOidR2: string;
+    const oldWorkerUrl = 'https://nsw-app-zero-downtime.worker-r1.workers.dev';
+    const newWorkerUrl = 'https://nsw-app-zero-downtime.worker-r2.workers.dev';
+    const r2Digest = 'sha256:2222222222222222222222222222222222222222222222222222222222222222';
+
+    beforeEach(async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_zd_maker', 'zdmaker', 'Zero Downtime Maker', 'user')
+      `).run();
+      makerToken = 'token_zd_123';
+      const tokenHash = await hashSessionToken(makerToken);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_zd_maker', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const r1Repo = createCommittedRepo(storageKey, {
+        'requirements.txt': 'Flask==3.0.0\ngunicorn==21.2.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)\n@app.route("/")\ndef index(): return "Hello Revision 1"\n',
+        'Procfile': 'web: gunicorn app:app\n'
+      });
+      commitOidR1 = r1Repo.commitOid;
+
+      // 1. Seed app listing without active_deployment_id (to satisfy FK constraints)
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, deployment_state, origin_kind, origin_ref, active_commit_oid
+        ) VALUES (
+          ?, 'Zero Downtime App', 'Tag', 'Desc', 'usr_zd_maker', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'active', 'cf_container', ?, ?
+        )
+      `).bind(appId, oldWorkerUrl, commitOidR1).run();
+
+      // 2. Seed repository
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_zd_1', ?, 'usr_zd_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(appId, appId, storageKey).run();
+
+      // 3. Seed repository ref
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_zd_1', 'refs/heads/main', ?)
+      `).bind(commitOidR1).run();
+
+      // 4. Seed initial build run for R1
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (
+          id, repository_id, commit_oid, purpose, status, runner_image_digest,
+          build_command, test_command, source_manifest_digest, started_at, finished_at
+        ) VALUES (
+          'br_r1_init', 'repo_zd_1', ?, 'release', 'passed', 'nsw-deploy:r1-init',
+          'nsw-deploy', 'cf_container', 'sha256:r1manifest', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+      `).bind(commitOidR1).run();
+
+      // 5. Seed initial healthy deployment_revisions for R1
+      await ctx.d1.prepare(`
+        INSERT INTO deployment_revisions (
+          id, app_id, repository_id, commit_oid, build_run_id, environment,
+          revision_number, status, url, runtime_config_digest, deployed_by_user_id, deployed_at
+        ) VALUES (
+          'rev_r1_init', ?, 'repo_zd_1', ?, 'br_r1_init', 'production',
+          1, 'healthy', ?, 'cf_container', 'usr_zd_maker', CURRENT_TIMESTAMP
+        )
+      `).bind(appId, commitOidR1, oldWorkerUrl).run();
+
+      // 6. Link active_deployment_id
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET active_deployment_id = 'rev_r1_init' WHERE id = ?
+      `).bind(appId).run();
+    });
+
+    it('redeploy of ACTIVE app keeps active / R1 / old origin_ref DURING build, flips to R2 on success, and supersedes R1', async () => {
+      // Create a second commit (R2)
+      const workTree = path.join(tempDir, `wt-r2-${Date.now()}`);
+      fs.mkdirSync(workTree, { recursive: true });
+      execFileSync('git', ['clone', path.join(reposRoot, storageKey), workTree], { stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: workTree, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.email', 'test@nates.software'], { cwd: workTree, stdio: 'pipe' });
+      fs.writeFileSync(path.join(workTree, 'app.py'), 'from flask import Flask\napp = Flask(__name__)\n@app.route("/")\ndef index(): return "Hello Revision 2"\n');
+      execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', 'feat: revision 2'], { cwd: workTree, stdio: 'pipe' });
+      commitOidR2 = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8' }).trim();
+      execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workTree, stdio: 'pipe' });
+
+      await ctx.d1.prepare(`
+        UPDATE repository_refs SET commit_oid = ? WHERE repository_id = 'repo_zd_1' AND ref_name = 'refs/heads/main'
+      `).bind(commitOidR2).run();
+
+      let candidateBuildId = '';
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          const body = JSON.parse(await req.clone().text());
+          if (body.projectName === 'nsw-build') {
+            candidateBuildId = 'nsw-build:r2-build-1111';
+            return Response.json({
+              build: { id: candidateBuildId, buildStatus: 'IN_PROGRESS' }
+            });
+          }
+          if (body.projectName === 'nsw-deploy') {
+            return Response.json({
+              build: { id: 'nsw-deploy:r2-deploy-2222', buildStatus: 'IN_PROGRESS' }
+            });
+          }
+        }
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          const body = JSON.parse(await req.clone().text());
+          const bid = body.ids?.[0];
+          if (bid === 'nsw-build:r2-build-1111') {
+            return Response.json({
+              builds: [{ id: bid, buildStatus: 'SUCCEEDED', currentPhase: 'COMPLETED' }]
+            });
+          }
+          if (bid === 'nsw-deploy:r2-deploy-2222') {
+            return Response.json({
+              builds: [{
+                id: bid,
+                buildStatus: 'SUCCEEDED',
+                currentPhase: 'COMPLETED',
+                exportedEnvironmentVariables: [{ name: 'DEPLOYED_WORKER_URL', value: newWorkerUrl }]
+              }]
+            });
+          }
+        }
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: `nsw/${appId}`,
+              imageDigest: r2Digest,
+              imageTags: [commitOidR2]
+            }]
+          });
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      // 1. Dispatch redeploy
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      expect(postRes.status).toBe(202);
+      const postData: any = await postRes.json();
+      expect(postData.success).toBe(true);
+      expect(postData.deploymentState).toBe('active'); // Invariant: Returns active at dispatch!
+
+      // 2. Assert DURING build the app row still reads active / R1 / old origin_ref (router would still serve)
+      const appDuringDispatch = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid, origin_ref, deployment_error
+        FROM app_listings WHERE id = ?
+      `).bind(appId).first<any>();
+
+      expect(appDuringDispatch.deployment_state).toBe('active');
+      expect(appDuringDispatch.active_deployment_id).toBe('rev_r1_init');
+      expect(appDuringDispatch.origin_ref).toBe(oldWorkerUrl);
+      expect(appDuringDispatch.active_commit_oid).toBe(commitOidR1);
+      expect(appDuringDispatch.deployment_error).toBeNull();
+
+      // 3. Query GET while candidate build is processed -> triggers nsw-deploy
+      const getStage1Res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+      const getStage1Data: any = await getStage1Res.json();
+      expect(getStage1Data.deploymentState).toBe('active');
+      expect(getStage1Data.isVerifiedActive).toBe(true);
+      expect(getStage1Data.activeDeploymentId).toBe('rev_r1_init');
+      expect(getStage1Data.originRef).toBe(oldWorkerUrl);
+
+      // App in D1 still reads active / R1 during deploy stage
+      const appDuringDeploy = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, origin_ref
+        FROM app_listings WHERE id = ?
+      `).bind(appId).first<any>();
+      expect(appDuringDeploy.deployment_state).toBe('active');
+      expect(appDuringDeploy.active_deployment_id).toBe('rev_r1_init');
+      expect(appDuringDeploy.origin_ref).toBe(oldWorkerUrl);
+
+      // 4. Drive finalize to success (nsw-deploy succeeds)
+      const getStage2Res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+      const getStage2Data: any = await getStage2Res.json();
+      expect(getStage2Data.deploymentState).toBe('active');
+      expect(getStage2Data.isVerifiedActive).toBe(true);
+      expect(getStage2Data.originRef).toBe(newWorkerUrl);
+      expect(getStage2Data.lastDeployError).toBeNull();
+      expect(getStage2Data.activeDeploymentId).not.toBe('rev_r1_init');
+
+      const newRevId = getStage2Data.activeDeploymentId;
+
+      // Assert app flipped to R2 + new origin_ref in D1
+      const appFinal = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid, origin_ref, deployment_error
+        FROM app_listings WHERE id = ?
+      `).bind(appId).first<any>();
+      expect(appFinal.deployment_state).toBe('active');
+      expect(appFinal.active_deployment_id).toBe(newRevId);
+      expect(appFinal.origin_ref).toBe(newWorkerUrl);
+      expect(appFinal.active_commit_oid).toBe(commitOidR2);
+      expect(appFinal.deployment_error).toBeNull();
+
+      // Assert R1 is now superseded and R2 is healthy
+      const r1Rev = await ctx.d1.prepare(`SELECT status, revision_number FROM deployment_revisions WHERE id = 'rev_r1_init'`).first<any>();
+      expect(r1Rev.status).toBe('superseded');
+      expect(r1Rev.revision_number).toBe(1);
+
+      const r2Rev = await ctx.d1.prepare(`SELECT status, revision_number, url, commit_oid FROM deployment_revisions WHERE id = ?`).bind(newRevId).first<any>();
+      expect(r2Rev.status).toBe('healthy');
+      expect(r2Rev.revision_number).toBe(2);
+      expect(r2Rev.url).toBe(newWorkerUrl);
+      expect(r2Rev.commit_oid).toBe(commitOidR2);
+    });
+
+    it('redeploy that FAILS smoke keeps app active on R1 with lastDeployError populated and never transitions to building or failed', async () => {
+      // Create a second commit (R2)
+      const workTree = path.join(tempDir, `wt-r2-fail-${Date.now()}`);
+      fs.mkdirSync(workTree, { recursive: true });
+      execFileSync('git', ['clone', path.join(reposRoot, storageKey), workTree], { stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: workTree, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.email', 'test@nates.software'], { cwd: workTree, stdio: 'pipe' });
+      fs.writeFileSync(path.join(workTree, 'app.py'), 'from flask import Flask\napp = Flask(__name__)\n# syntax error crash on start\nraise RuntimeError("Crashing on smoke check")\n');
+      execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', 'feat: broken revision 2'], { cwd: workTree, stdio: 'pipe' });
+      commitOidR2 = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8' }).trim();
+      execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workTree, stdio: 'pipe' });
+
+      await ctx.d1.prepare(`
+        UPDATE repository_refs SET commit_oid = ? WHERE repository_id = 'repo_zd_1' AND ref_name = 'refs/heads/main'
+      `).bind(commitOidR2).run();
+
+      const smokeError = 'Smoke check failed: container exited with code 1';
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          const body = JSON.parse(await req.clone().text());
+          if (body.projectName === 'nsw-build') {
+            return Response.json({
+              build: { id: 'nsw-build:r2-fail-build', buildStatus: 'IN_PROGRESS' }
+            });
+          }
+          if (body.projectName === 'nsw-deploy') {
+            return Response.json({
+              build: { id: 'nsw-deploy:r2-fail-deploy', buildStatus: 'IN_PROGRESS' }
+            });
+          }
+        }
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          const body = JSON.parse(await req.clone().text());
+          const bid = body.ids?.[0];
+          if (bid === 'nsw-build:r2-fail-build') {
+            return Response.json({
+              builds: [{ id: bid, buildStatus: 'SUCCEEDED', currentPhase: 'COMPLETED' }]
+            });
+          }
+          if (bid === 'nsw-deploy:r2-fail-deploy') {
+            return Response.json({
+              builds: [{
+                id: bid,
+                buildStatus: 'FAILED',
+                phases: [
+                  { phaseType: 'SUBMITTED', phaseStatus: 'SUCCEEDED' },
+                  {
+                    phaseType: 'BUILD',
+                    phaseStatus: 'FAILED',
+                    contexts: [{ statusCode: 'COMMAND_EXECUTION_ERROR', message: smokeError }]
+                  }
+                ]
+              }]
+            });
+          }
+        }
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: `nsw/${appId}`,
+              imageDigest: r2Digest,
+              imageTags: [commitOidR2]
+            }]
+          });
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      // 1. Dispatch redeploy
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      expect(postRes.status).toBe(202);
+      const postData: any = await postRes.json();
+      expect(postData.deploymentState).toBe('active');
+
+      // 2. Process stage 1 (candidate build -> deploy trigger)
+      await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      // 3. Process stage 2 failure (nsw-deploy fails smoke)
+      const getFailRes = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const getFailData: any = await getFailRes.json();
+      expect(getFailRes.status).toBe(200);
+      expect(getFailData.success).toBe(true);
+      expect(getFailData.deploymentState).toBe('active'); // Still active!
+      expect(getFailData.isVerifiedActive).toBe(true);
+      expect(getFailData.activeDeploymentId).toBe('rev_r1_init'); // Still on R1!
+      expect(getFailData.originRef).toBe(oldWorkerUrl); // Still on old origin_ref!
+      expect(getFailData.deploymentError).toBeNull(); // deploymentError is NOT set for active app
+      expect(getFailData.lastDeployError).toContain(smokeError); // lastDeployError surfaces failure
+
+      // Assert D1 records: app stays active on R1, deployment_error is null
+      const appRecord = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid, origin_ref, deployment_error, deployment_evidence_json
+        FROM app_listings WHERE id = ?
+      `).bind(appId).first<any>();
+
+      expect(appRecord.deployment_state).toBe('active');
+      expect(appRecord.active_deployment_id).toBe('rev_r1_init');
+      expect(appRecord.origin_ref).toBe(oldWorkerUrl);
+      expect(appRecord.deployment_error).toBeNull();
+
+      const evidence = JSON.parse(appRecord.deployment_evidence_json);
+      expect(evidence.status).toBe('failed');
+      expect(evidence.lastDeployError).toContain(smokeError);
+
+      // Assert revision R1 remains healthy
+      const r1Rev = await ctx.d1.prepare(`SELECT status FROM deployment_revisions WHERE id = 'rev_r1_init'`).first<any>();
+      expect(r1Rev.status).toBe('healthy');
+    });
+
+    it('first deploy of a NON-active app still goes building -> active as before', async () => {
+      const freshAppId = 'fresh-draft-app';
+      const freshStorageKey = `repositories/${freshAppId}`;
+
+      const freshRepo = createCommittedRepo(freshStorageKey, {
+        'requirements.txt': 'Flask==3.0.0\ngunicorn==21.2.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)\n@app.route("/")\ndef index(): return "Hello Fresh App"\n',
+        'Procfile': 'web: gunicorn app:app\n'
+      });
+      const freshCommitOid = freshRepo.commitOid;
+
+      // Seed app in DRAFT state
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, deployment_state
+        ) VALUES (
+          ?, 'Fresh App', 'Tag', 'Desc', 'usr_zd_maker', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'draft'
+        )
+      `).bind(freshAppId).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_fresh_1', ?, 'usr_zd_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(freshAppId, freshAppId, freshStorageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_fresh_1', 'refs/heads/main', ?)
+      `).bind(freshCommitOid).run();
+
+      const freshWorkerUrl = 'https://nsw-app-fresh.worker.workers.dev';
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (req.method === 'PUT') return new Response('', { status: 200 });
+
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          const body = JSON.parse(await req.clone().text());
+          if (body.projectName === 'nsw-build') {
+            return Response.json({
+              build: { id: 'nsw-build:fresh-build-1', buildStatus: 'IN_PROGRESS' }
+            });
+          }
+          if (body.projectName === 'nsw-deploy') {
+            return Response.json({
+              build: { id: 'nsw-deploy:fresh-deploy-1', buildStatus: 'IN_PROGRESS' }
+            });
+          }
+        }
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          const body = JSON.parse(await req.clone().text());
+          const bid = body.ids?.[0];
+          if (bid === 'nsw-build:fresh-build-1') {
+            return Response.json({
+              builds: [{ id: bid, buildStatus: 'SUCCEEDED', currentPhase: 'COMPLETED' }]
+            });
+          }
+          if (bid === 'nsw-deploy:fresh-deploy-1') {
+            return Response.json({
+              builds: [{
+                id: bid,
+                buildStatus: 'SUCCEEDED',
+                currentPhase: 'COMPLETED',
+                exportedEnvironmentVariables: [{ name: 'DEPLOYED_WORKER_URL', value: freshWorkerUrl }]
+              }]
+            });
+          }
+        }
+
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: `nsw/${freshAppId}`,
+              imageDigest: 'sha256:freshfreshfresh',
+              imageTags: [freshCommitOid]
+            }]
+          });
+        }
+
+        return new Response('Not found', { status: 404 });
+      };
+
+      // 1. Dispatch first deploy -> sets building
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId: freshAppId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: postReq,
+        env: { DB: ctx.d1, STORAGE: storage, GITSMITH_REPOS_ROOT: reposRoot, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      expect(postRes.status).toBe(202);
+      const postData: any = await postRes.json();
+      expect(postData.deploymentState).toBe('building'); // Invariant: Non-active app sets building!
+
+      const appPost = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(freshAppId).first<any>();
+      expect(appPost.deployment_state).toBe('building');
+
+      // 2. Trigger deploy stage -> remains building
+      const getStage1Res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${freshAppId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+      const getStage1Data: any = await getStage1Res.json();
+      expect(getStage1Data.deploymentState).toBe('building');
+      expect(getStage1Data.isVerifiedActive).toBe(false);
+
+      // 3. Finalize deploy stage -> transitions building -> active
+      const getStage2Res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${freshAppId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+      const getStage2Data: any = await getStage2Res.json();
+      expect(getStage2Data.deploymentState).toBe('active');
+      expect(getStage2Data.isVerifiedActive).toBe(true);
+      expect(getStage2Data.originRef).toBe(freshWorkerUrl);
+
+      const appFinal = await ctx.d1.prepare(`SELECT deployment_state, active_deployment_id, origin_ref FROM app_listings WHERE id = ?`).bind(freshAppId).first<any>();
+      expect(appFinal.deployment_state).toBe('active');
+      expect(appFinal.origin_ref).toBe(freshWorkerUrl);
+      expect(appFinal.active_deployment_id).toBeTruthy();
+    });
+
+    it('static app redeploy flips R1 to R2 with CAS and stays active throughout', async () => {
+      const staticAppId = 'zero-downtime-static-app';
+      const staticStorageKey = `repositories/${staticAppId}`;
+
+      const r1Repo = createCommittedRepo(staticStorageKey, {
+        'index.html': '<h1>Static App Rev 1</h1>\n',
+        'package.json': JSON.stringify({ name: 'static-app', scripts: { build: 'echo build' } })
+      });
+      const staticCommitOidR1 = r1Repo.commitOid;
+
+      // Seed active static app on R1 (satisfying FK constraints)
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, deployment_state, origin_kind, active_commit_oid
+        ) VALUES (
+          ?, 'Static Zero Downtime App', 'Tag', 'Desc', 'usr_zd_maker', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'active', 'r2_static', ?
+        )
+      `).bind(staticAppId, staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_stat_1', ?, 'usr_zd_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(staticAppId, staticAppId, staticStorageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_stat_1', 'refs/heads/main', ?)
+      `).bind(staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (
+          id, repository_id, commit_oid, purpose, status, runner_image_digest,
+          build_command, test_command, source_manifest_digest, started_at, finished_at
+        ) VALUES (
+          'br_stat_r1', 'repo_stat_1', ?, 'release', 'passed', 'node:test',
+          'build', null, 'sha256:stat1manifest', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+      `).bind(staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO deployment_revisions (
+          id, app_id, repository_id, commit_oid, build_run_id, environment,
+          revision_number, status, url, runtime_config_digest, deployed_by_user_id, deployed_at
+        ) VALUES (
+          'rev_static_r1', ?, 'repo_stat_1', ?, 'br_stat_r1', 'production',
+          1, 'healthy', 'https://zero-downtime-static-app.nates-software.com', 'sha256:stat1', 'usr_zd_maker', CURRENT_TIMESTAMP
+        )
+      `).bind(staticAppId, staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET active_deployment_id = 'rev_static_r1' WHERE id = ?
+      `).bind(staticAppId).run();
+
+      // Commit R2
+      const workTree = path.join(tempDir, `wt-stat-r2-${Date.now()}`);
+      fs.mkdirSync(workTree, { recursive: true });
+      execFileSync('git', ['clone', path.join(reposRoot, staticStorageKey), workTree], { stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.name', 'Tester'], { cwd: workTree, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.email', 'test@nates.software'], { cwd: workTree, stdio: 'pipe' });
+      fs.writeFileSync(path.join(workTree, 'index.html'), '<h1>Static App Rev 2</h1>\n');
+      execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', 'feat: static rev 2'], { cwd: workTree, stdio: 'pipe' });
+      const staticCommitOidR2 = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8' }).trim();
+      execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/main'], { cwd: workTree, stdio: 'pipe' });
+
+      await ctx.d1.prepare(`
+        UPDATE repository_refs SET commit_oid = ? WHERE repository_id = 'repo_stat_1' AND ref_name = 'refs/heads/main'
+      `).bind(staticCommitOidR2).run();
+
+      const mockExecutor = async () => ({
+        success: true,
+        exitCode: 0,
+        output: 'Build succeeded',
+        artifactDigest: 'sha256:static_r2_digest',
+        durationMs: 150,
+        smokeCheck: { passed: true, statusCode: 200, durationMs: 10 },
+        staticFiles: [
+          { path: 'index.html', contentBase64: Buffer.from('<h1>Static App Rev 2</h1>').toString('base64'), mediaType: 'text/html', sizeBytes: 24 }
+        ]
+      });
+
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId: staticAppId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: postReq,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_REPOS_ROOT: reposRoot,
+          __RIG_DEPLOY_EXECUTOR: mockExecutor
+        }
+      });
+
+      expect(postRes.status).toBe(200);
+      const postData: any = await postRes.json();
+      expect(postData.success).toBe(true);
+      expect(postData.deploymentState).toBe('active');
+      expect(postData.isVerifiedActive).toBe(true);
+      expect(postData.activeDeploymentId).not.toBe('rev_static_r1');
+
+      const newRevId = postData.activeDeploymentId;
+
+      // Check D1 listings
+      const appFinal = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, active_commit_oid, deployment_error
+        FROM app_listings WHERE id = ?
+      `).bind(staticAppId).first<any>();
+      expect(appFinal.deployment_state).toBe('active');
+      expect(appFinal.active_deployment_id).toBe(newRevId);
+      expect(appFinal.active_commit_oid).toBe(staticCommitOidR2);
+      expect(appFinal.deployment_error).toBeNull();
+
+      // Check revisions
+      const r1Rev = await ctx.d1.prepare(`SELECT status FROM deployment_revisions WHERE id = 'rev_static_r1'`).first<any>();
+      expect(r1Rev.status).toBe('superseded');
+
+      const r2Rev = await ctx.d1.prepare(`SELECT status, revision_number FROM deployment_revisions WHERE id = ?`).bind(newRevId).first<any>();
+      expect(r2Rev.status).toBe('healthy');
+      expect(r2Rev.revision_number).toBe(2);
+    });
+
+    it('static app redeploy failure leaves app active on R1 and populates lastDeployError', async () => {
+      const staticAppId = 'zero-downtime-static-fail-app';
+      const staticStorageKey = `repositories/${staticAppId}`;
+
+      const r1Repo = createCommittedRepo(staticStorageKey, {
+        'index.html': '<h1>Static Fail App Rev 1</h1>\n',
+        'package.json': JSON.stringify({ name: 'static-fail-app', scripts: { build: 'echo build' } })
+      });
+      const staticCommitOidR1 = r1Repo.commitOid;
+
+      // Seed active static app on R1 (satisfying FK constraints)
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, deployment_state, origin_kind, active_commit_oid
+        ) VALUES (
+          ?, 'Static Fail App', 'Tag', 'Desc', 'usr_zd_maker', '1.0.0', 'MIT', '$10', 'None',
+          '[]', '[]', '{}', 'active', 'r2_static', ?
+        )
+      `).bind(staticAppId, staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_stat_fail_1', ?, 'usr_zd_maker', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(staticAppId, staticAppId, staticStorageKey).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_stat_fail_1', 'refs/heads/main', ?)
+      `).bind(staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (
+          id, repository_id, commit_oid, purpose, status, runner_image_digest,
+          build_command, test_command, source_manifest_digest, started_at, finished_at
+        ) VALUES (
+          'br_stat_fail_r1', 'repo_stat_fail_1', ?, 'release', 'passed', 'node:test',
+          'build', null, 'sha256:statfail1manifest', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+      `).bind(staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO deployment_revisions (
+          id, app_id, repository_id, commit_oid, build_run_id, environment,
+          revision_number, status, url, runtime_config_digest, deployed_by_user_id, deployed_at
+        ) VALUES (
+          'rev_static_fail_r1', ?, 'repo_stat_fail_1', ?, 'br_stat_fail_r1', 'production',
+          1, 'healthy', 'https://zero-downtime-static-fail-app.nates-software.com', 'sha256:statfail1', 'usr_zd_maker', CURRENT_TIMESTAMP
+        )
+      `).bind(staticAppId, staticCommitOidR1).run();
+
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET active_deployment_id = 'rev_static_fail_r1' WHERE id = ?
+      `).bind(staticAppId).run();
+
+      const mockFailExecutor = async () => ({
+        success: false,
+        exitCode: 1,
+        output: 'Vite build failed: syntax error in main.js',
+        error: 'Build failed with exit code 1',
+        artifactDigest: '',
+        durationMs: 50,
+        smokeCheck: { passed: false, statusCode: 500, durationMs: 0, error: 'Build failed' }
+      });
+
+      const postReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${makerToken}` },
+        body: JSON.stringify({ action: 'deploy', appId: staticAppId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: postReq,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_REPOS_ROOT: reposRoot,
+          __RIG_DEPLOY_EXECUTOR: mockFailExecutor
+        }
+      });
+
+      expect(postRes.status).toBe(422);
+      const postData: any = await postRes.json();
+      expect(postData.success).toBe(false);
+      expect(postData.deploymentState).toBe('active'); // Stays active in response!
+      expect(postData.lastDeployError).toContain('Build failed');
+
+      // Check D1 records: still active on R1, deployment_error is null
+      const appRecord = await ctx.d1.prepare(`
+        SELECT deployment_state, active_deployment_id, deployment_error, deployment_evidence_json
+        FROM app_listings WHERE id = ?
+      `).bind(staticAppId).first<any>();
+
+      expect(appRecord.deployment_state).toBe('active');
+      expect(appRecord.active_deployment_id).toBe('rev_static_fail_r1');
+      expect(appRecord.deployment_error).toBeNull();
+
+      const evidence = JSON.parse(appRecord.deployment_evidence_json);
+      expect(evidence.status).toBe('failed');
+      expect(evidence.lastDeployError).toContain('Build failed');
+
+      // Check GET /api/deploy returns active on R1 with lastDeployError
+      const getRes = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${staticAppId}`),
+        env: { DB: ctx.d1 }
+      });
+      const getData: any = await getRes.json();
+      expect(getData.deploymentState).toBe('active');
+      expect(getData.isVerifiedActive).toBe(true);
+      expect(getData.activeDeploymentId).toBe('rev_static_fail_r1');
+      expect(getData.deploymentError).toBeNull();
+      expect(getData.lastDeployError).toContain('Build failed');
+    });
+  });
 });
