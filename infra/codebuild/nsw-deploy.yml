@@ -10,6 +10,7 @@ env:
     CONTAINERS_PKG_VERSION: "0.3.7"
   parameter-store:
     CLOUDFLARE_API_TOKEN: /nsw/cf-deploy-token
+    ORIGIN_AUTH: /nsw/origin-shared-secret
   exported-variables:
     - DEPLOYED_WORKER_URL
 phases:
@@ -41,6 +42,7 @@ phases:
           "compatibility_date": "2024-09-23",
           "account_id": "${CF_ACCOUNT_ID}",
           "workers_dev": true,
+          "vars": { "ORIGIN_AUTH": "${ORIGIN_AUTH}" },
           "containers": [ { "class_name": "AppContainer", "image": "${CF_IMAGE}", "instance_type": "${INSTANCE_TYPE:-lite}", "max_instances": 3 } ],
           "durable_objects": { "bindings": [ { "name": "APP_CONTAINER", "class_name": "AppContainer" } ] },
           "migrations": [ { "tag": "v1", "new_sqlite_classes": ["AppContainer"] } ]
@@ -56,6 +58,7 @@ phases:
         }
         export default {
           async fetch(request: Request, env: any): Promise<Response> {
+            if (request.headers.get('X-NSW-Origin-Auth') !== env.ORIGIN_AUTH) return new Response('forbidden', { status: 403 });
             return getContainer(env.APP_CONTAINER, "default").fetch(request);
           }
         };
@@ -70,7 +73,7 @@ phases:
       # Runtime smoke: poll the worker URL until 200 (container provisions in minutes)
       - |
         for i in $(seq 1 40); do
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${WORKER_URL}/" || echo 000)
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 -H "X-NSW-Origin-Auth: ${ORIGIN_AUTH}" "${WORKER_URL}/" || echo 000)
           echo "smoke attempt $i: HTTP $code"
           if [ "$code" = "200" ]; then echo "SMOKE_OK"; SMOKE_OK=1; break; fi
           sleep 10

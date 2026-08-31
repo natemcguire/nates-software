@@ -58,6 +58,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         delete: vi.fn()
       },
       CANARY_SECRET: 'test-canary-secret-123',
+      ORIGIN_SHARED_SECRET: 'test-origin-secret-xyz',
       ...overrides
     };
 
@@ -946,6 +947,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(forwardedReq.url).toBe('https://container-app-worker.internal.workers.dev/api/v1/items?limit=10&page=2');
       expect(forwardedReq.method).toBe('GET');
       expect(forwardedReq.headers.get('X-Custom-Header')).toBe('custom-val');
+      expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('test-origin-secret-xyz');
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
 
@@ -993,6 +995,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(forwardedReq.url).toBe('https://api-container.workers.dev/submit');
       expect(forwardedReq.method).toBe('POST');
       expect(forwardedReq.headers.get('Authorization')).toBe('Bearer test-token');
+      expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('test-origin-secret-xyz');
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
 
@@ -1185,6 +1188,96 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       });
       expect(mockFetch).not.toHaveBeenCalled();
       expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('sets X-NSW-Origin-Auth header on proxied requests matching env.ORIGIN_SHARED_SECRET', async () => {
+      const { env, d1PrepareSpy } = createMockEnv({ ORIGIN_SHARED_SECRET: 'custom-secret-456' });
+
+      const containerRecord: AppListingRecord = {
+        id: 'auth-container',
+        origin_kind: 'cf_container',
+        origin_ref: 'https://auth-container.workers.dev',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_auth_1',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      mockFetch.mockResolvedValue(new Response('OK', { status: 200 }));
+
+      const req = new Request('https://auth-container.nates-software.com/api/test');
+      const res = await handleRequest(req, env);
+
+      expect(res.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const forwardedReq = mockFetch.mock.calls[0][0] as Request;
+      expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('custom-secret-456');
+    });
+
+    it('fails closed (503) and does not proxy when ORIGIN_SHARED_SECRET is undefined/missing', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv({ ORIGIN_SHARED_SECRET: undefined });
+
+      const containerRecord: AppListingRecord = {
+        id: 'unauth-container',
+        origin_kind: 'cf_container',
+        origin_ref: 'https://unauth-container.workers.dev',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_unauth_1',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      const req = new Request('https://unauth-container.nates-software.com/api/test');
+      const res = await handleRequest(req, env);
+
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json).toEqual({
+        success: false,
+        error: 'Router origin auth secret is not configured.'
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('fails closed (503) and does not proxy when ORIGIN_SHARED_SECRET is empty string or whitespace', async () => {
+      for (const emptySecret of ['', '   ']) {
+        const { env, d1PrepareSpy, r2GetSpy } = createMockEnv({ ORIGIN_SHARED_SECRET: emptySecret });
+
+        const containerRecord: AppListingRecord = {
+          id: 'unauth-container',
+          origin_kind: 'cf_container',
+          origin_ref: 'https://unauth-container.workers.dev',
+          deployment_state: 'active',
+          active_deployment_id: 'rev_unauth_1',
+          revisionStatus: 'healthy'
+        };
+
+        d1PrepareSpy.mockReturnValue({
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(containerRecord)
+        });
+
+        const req = new Request('https://unauth-container.nates-software.com/api/test');
+        const res = await handleRequest(req, env);
+
+        expect(res.status).toBe(503);
+        const json = await res.json();
+        expect(json).toEqual({
+          success: false,
+          error: 'Router origin auth secret is not configured.'
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+        expect(r2GetSpy).not.toHaveBeenCalled();
+      }
     });
   });
 });
