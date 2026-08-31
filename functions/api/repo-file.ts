@@ -124,6 +124,13 @@ export async function readBoundedBody(
         await reader.cancel('Stream read error');
       } catch {}
       throw err;
+    } finally {
+      // Always release the lock on the normal EOF path (cancel() already
+      // releases on the over-cap/error paths; releaseLock() after a cancel is a
+      // harmless no-op / caught below).
+      try {
+        reader.releaseLock();
+      } catch {}
     }
 
     const combined = new Uint8Array(totalBytes);
@@ -135,17 +142,11 @@ export async function readBoundedBody(
     return { ok: true, bytes: combined };
   }
 
-  // Fallback for environments / mocks where res.body is not a ReadableStream
-  if (typeof (res as any).arrayBuffer === 'function') {
-    const ab = await res.arrayBuffer();
-    const bytes = new Uint8Array(ab);
-    if (bytes.byteLength > maxBytes) {
-      return { ok: false, status: 413, error: 'File size exceeds maximum allowed limit' };
-    }
-    return { ok: true, bytes };
-  }
-
-  return { ok: true, bytes: new Uint8Array(0) };
+  // No streaming reader available (non-standard body / already-buffering mock).
+  // Fail CLOSED: a buffered read cannot honor the streaming DoS bound, so we do
+  // NOT fall back to res.arrayBuffer(). A conforming gateway Response always
+  // exposes getReader(); anything else is treated as an unreadable body.
+  throw new Error('Gateway response body is not a streamable ReadableStream');
 }
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }): Promise<Response> => {
