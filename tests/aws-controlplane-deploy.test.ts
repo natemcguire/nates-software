@@ -67,7 +67,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
     AWS_REGION: 'us-east-2',
     AWS_ACCOUNT_ID: '777772815966',
     AWS_S3_BUILD_BUCKET: 'nsw-build-sources-777772815966',
-    AWS_CODEBUILD_PROJECT: 'nsw-build'
+    AWS_CODEBUILD_PROJECT: 'nsw-build',
+    AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy',
+    CF_ACCOUNT_ID: '4219a576830c72b0e6e4ca358e61473a'
   };
 
   beforeEach(async () => {
@@ -598,12 +600,17 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(buildRun.status).toBe('running');
     });
 
-    it('transitions running -> passed and sets deployment_state=deployable upon SUCCEEDED + DescribeImages digest', async () => {
-      const awsCalls: string[] = [];
+    it('transitions running candidate -> passed and triggers nsw-deploy with exact overrides, setting deployment_state=deploying', async () => {
+      const awsCalls: { target: string; body?: any }[] = [];
       const mockAwsFetch: typeof fetch = async (input, init) => {
         const req = input instanceof Request ? input : new Request(input, init);
         const target = req.headers.get('x-amz-target') || '';
-        awsCalls.push(target);
+        let body: any = null;
+        try {
+          const text = await req.clone().text();
+          if (text) body = JSON.parse(text);
+        } catch {}
+        awsCalls.push({ target, body });
 
         if (target === 'CodeBuild_20161006.BatchGetBuilds') {
           return Response.json({
@@ -626,6 +633,15 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
           });
         }
 
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({
+            build: {
+              id: 'nsw-deploy:lazy-deploy-uuid-2222',
+              buildStatus: 'IN_PROGRESS'
+            }
+          });
+        }
+
         return new Response('Not found', { status: 404 });
       };
 
@@ -641,29 +657,285 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       const data: any = await res.json();
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(data.deploymentState).toBe('deployable');
+      expect(data.deploymentState).toBe('deploying');
+      expect(data.isVerifiedActive).toBe(false);
       expect(data.deploymentError).toBeNull();
 
-      expect(awsCalls).toContain('CodeBuild_20161006.BatchGetBuilds');
-      expect(awsCalls).toContain('AmazonEC2ContainerRegistry_V20150921.DescribeImages');
+      expect(awsCalls.map(c => c.target)).toContain('CodeBuild_20161006.BatchGetBuilds');
+      expect(awsCalls.map(c => c.target)).toContain('AmazonEC2ContainerRegistry_V20150921.DescribeImages');
+      expect(awsCalls.map(c => c.target)).toContain('CodeBuild_20161006.StartBuild');
 
-      // Assert D1 records: build_run passed with verified digest
-      const buildRun = await ctx.d1.prepare(`
+      // Assert StartBuild was called for nsw-deploy with exact env overrides
+      const deployCall = awsCalls.find(c => c.target === 'CodeBuild_20161006.StartBuild');
+      expect(deployCall?.body.projectName).toBe('nsw-deploy');
+      expect(deployCall?.body.environmentVariablesOverride).toEqual([
+        { name: 'APP_ID', value: appId, type: 'PLAINTEXT' },
+        { name: 'COMMIT_OID', value: commitOid, type: 'PLAINTEXT' },
+        { name: 'ECR_REPO', value: `nsw/${appId}`, type: 'PLAINTEXT' },
+        { name: 'CF_ACCOUNT_ID', value: '4219a576830c72b0e6e4ca358e61473a', type: 'PLAINTEXT' },
+        { name: 'INSTANCE_TYPE', value: 'lite', type: 'PLAINTEXT' }
+      ]);
+
+      // Assert D1 records: candidate build_run passed with verified digest
+      const candidateRun = await ctx.d1.prepare(`
         SELECT status, result_digest, exit_code FROM build_runs WHERE id = 'br_lazy_1'
       `).first<any>();
-      expect(buildRun.status).toBe('passed');
-      expect(buildRun.result_digest).toBe(expectedDigest);
-      expect(buildRun.exit_code).toBe(0);
+      expect(candidateRun.status).toBe('passed');
+      expect(candidateRun.result_digest).toBe(expectedDigest);
+      expect(candidateRun.exit_code).toBe(0);
 
-      // Assert app_listing updated to deployable
+      // Assert new deploy build_run created with status running
+      const deployRun = await ctx.d1.prepare(`
+        SELECT id, purpose, status, runner_image_digest, build_command FROM build_runs WHERE build_command = 'nsw-deploy'
+      `).first<any>();
+      expect(deployRun).toBeDefined();
+      expect(deployRun.status).toBe('running');
+      expect(deployRun.purpose).toBe('release');
+      expect(deployRun.runner_image_digest).toBe('nsw-deploy:lazy-deploy-uuid-2222');
+
+      // Assert app_listing updated to deploying
       const app = await ctx.d1.prepare(`
-        SELECT deployment_state, deployment_error, deployment_evidence_json FROM app_listings WHERE id = ?
+        SELECT deployment_state, origin_kind, deployment_error, deployment_evidence_json FROM app_listings WHERE id = ?
       `).bind(appId).first<any>();
-      expect(app.deployment_state).toBe('deployable');
+      expect(app.deployment_state).toBe('deploying');
+      expect(app.origin_kind).toBe('cf_container');
       expect(app.deployment_error).toBeNull();
       const evidence = JSON.parse(app.deployment_evidence_json);
-      expect(evidence.status).toBe('passed');
+      expect(evidence.stage).toBe('deploy');
+      expect(evidence.status).toBe('running');
       expect(evidence.imageDigest).toBe(expectedDigest);
+      expect(evidence.deployCodeBuildId).toBe('nsw-deploy:lazy-deploy-uuid-2222');
+    });
+
+    it('lazy-finalizes deploy stage: remains in deploying state while nsw-deploy is IN_PROGRESS', async () => {
+      // Set app to deploying state with running deploy build
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+      `).bind(appId).run();
+      await ctx.d1.prepare(`
+        UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
+      `).bind(expectedDigest).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_lazy_deploy_1', 'repo_lazy_1', ?, 'release', 'running', 'nsw-deploy:lazy-deploy-uuid-2222', 'nsw-deploy', ?, CURRENT_TIMESTAMP)
+      `).bind(commitOid, expectedDigest).run();
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-deploy:lazy-deploy-uuid-2222',
+              buildStatus: 'IN_PROGRESS',
+              currentPhase: 'BUILD'
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('deploying');
+      expect(data.isVerifiedActive).toBe(false);
+
+      const deployRun = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = 'br_lazy_deploy_1'`).first<any>();
+      expect(deployRun.status).toBe('running');
+    });
+
+    it('lazy-finalizes deploy stage: promotes to active, creates deployment_revisions row, and sets origin_ref when nsw-deploy SUCCEEDS with DEPLOYED_WORKER_URL', async () => {
+      const workerUrl = `https://nsw-app-${appId}.tester-subdomain.workers.dev`;
+
+      // Set app to deploying state with running deploy build
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+      `).bind(appId).run();
+      await ctx.d1.prepare(`
+        UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
+      `).bind(expectedDigest).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, test_command, source_manifest_digest, started_at)
+        VALUES ('br_lazy_deploy_1', 'repo_lazy_1', ?, 'release', 'running', 'nsw-deploy:lazy-deploy-uuid-2222', 'nsw-deploy', ?, ?, CURRENT_TIMESTAMP)
+      `).bind(commitOid, expectedDigest, expectedDigest).run();
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-deploy:lazy-deploy-uuid-2222',
+              buildStatus: 'SUCCEEDED',
+              currentPhase: 'COMPLETED',
+              exportedEnvironmentVariables: [
+                { name: 'DEPLOYED_WORKER_URL', value: workerUrl }
+              ]
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.deploymentState).toBe('active');
+      expect(data.isVerifiedActive).toBe(true);
+      expect(data.originKind).toBe('cf_container');
+      expect(data.originRef).toBe(workerUrl);
+      expect(data.activeUrl).toBe(workerUrl);
+      expect(data.activeDeploymentId).toBeTruthy();
+
+      // Assert deploy build_runs row passed with workerUrl as result_digest
+      const deployRun = await ctx.d1.prepare(`
+        SELECT status, result_digest, exit_code FROM build_runs WHERE id = 'br_lazy_deploy_1'
+      `).first<any>();
+      expect(deployRun.status).toBe('passed');
+      expect(deployRun.result_digest).toBe(workerUrl);
+      expect(deployRun.exit_code).toBe(0);
+
+      // Assert deployment_revisions row created
+      const rev = await ctx.d1.prepare(`
+        SELECT id, app_id, commit_oid, build_run_id, environment, revision_number, status, url, deployed_by_user_id
+        FROM deployment_revisions WHERE app_id = ?
+      `).bind(appId).first<any>();
+      expect(rev).toBeDefined();
+      expect(rev.status).toBe('healthy');
+      expect(rev.environment).toBe('production');
+      expect(rev.revision_number).toBe(1);
+      expect(rev.url).toBe(workerUrl);
+      expect(rev.commit_oid).toBe(commitOid);
+      expect(rev.build_run_id).toBe('br_lazy_deploy_1');
+      expect(rev.deployed_by_user_id).toBe('usr_lazy_maker');
+
+      // Assert app_listings promoted to active
+      const app = await ctx.d1.prepare(`
+        SELECT deployment_state, origin_kind, origin_ref, active_deployment_id, active_commit_oid, deployment_error
+        FROM app_listings WHERE id = ?
+      `).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('active');
+      expect(app.origin_kind).toBe('cf_container');
+      expect(app.origin_ref).toBe(workerUrl);
+      expect(app.active_deployment_id).toBe(rev.id);
+      expect(app.active_commit_oid).toBe(commitOid);
+      expect(app.deployment_error).toBeNull();
+    });
+
+    it('lazy-finalizes deploy stage: transitions deploying -> failed and sets honest deployment_error when nsw-deploy FAILED', async () => {
+      // Set app to deploying state with running deploy build
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+      `).bind(appId).run();
+      await ctx.d1.prepare(`
+        UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
+      `).bind(expectedDigest).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_lazy_deploy_1', 'repo_lazy_1', ?, 'release', 'running', 'nsw-deploy:lazy-deploy-uuid-2222', 'nsw-deploy', ?, CURRENT_TIMESTAMP)
+      `).bind(commitOid, expectedDigest).run();
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-deploy:lazy-deploy-uuid-2222',
+              buildStatus: 'FAILED',
+              phases: [
+                { phaseType: 'SUBMITTED', phaseStatus: 'SUCCEEDED' },
+                {
+                  phaseType: 'BUILD',
+                  phaseStatus: 'FAILED',
+                  contexts: [{ statusCode: 'COMMAND_EXECUTION_ERROR', message: 'wrangler containers push: unauthorized 401' }]
+                }
+              ]
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentError).toContain('wrangler containers push: unauthorized 401');
+
+      const deployRun = await ctx.d1.prepare(`SELECT status, exit_code FROM build_runs WHERE id = 'br_lazy_deploy_1'`).first<any>();
+      expect(deployRun.status).toBe('failed');
+      expect(deployRun.exit_code).toBe(1);
+
+      const app = await ctx.d1.prepare(`SELECT deployment_state, deployment_error FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('failed');
+      expect(app.deployment_error).toContain('wrangler containers push: unauthorized 401');
+    });
+
+    it('lazy-finalizes deploy stage: fails closed when nsw-deploy SUCCEEDS but no DEPLOYED_WORKER_URL was found', async () => {
+      // Set app to deploying state with running deploy build
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+      `).bind(appId).run();
+      await ctx.d1.prepare(`
+        UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
+      `).bind(expectedDigest).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_lazy_deploy_1', 'repo_lazy_1', ?, 'release', 'running', 'nsw-deploy:lazy-deploy-uuid-2222', 'nsw-deploy', ?, CURRENT_TIMESTAMP)
+      `).bind(commitOid, expectedDigest).run();
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-deploy:lazy-deploy-uuid-2222',
+              buildStatus: 'SUCCEEDED',
+              currentPhase: 'COMPLETED',
+              exportedEnvironmentVariables: [] // Empty! No worker URL exported
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentError).toContain('no DEPLOYED_WORKER_URL was found in build output');
+
+      const deployRun = await ctx.d1.prepare(`SELECT status, exit_code FROM build_runs WHERE id = 'br_lazy_deploy_1'`).first<any>();
+      expect(deployRun.status).toBe('failed');
+      expect(deployRun.exit_code).toBe(1);
+
+      const app = await ctx.d1.prepare(`SELECT deployment_state, deployment_error FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(app.deployment_state).toBe('failed');
+      expect(app.deployment_error).toContain('no DEPLOYED_WORKER_URL was found in build output');
     });
 
     it('transitions running -> failed and sets honest deployment_error upon CodeBuild FAILED', async () => {
@@ -1146,7 +1418,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(appAfterAAttempt.active_commit_oid).toBe(commitB);
       expect(appAfterAAttempt.deployment_evidence_json).toBe(evidenceBeforeA);
 
-      // 4. Now lazy-finalize runs for B (which is running) -> it succeeds and updates app_listings
+      // 4. Now lazy-finalize runs for B (which is running) -> candidate build passes and triggers nsw-deploy
       const mockAwsFetchFinalize: typeof fetch = async (input, init) => {
         const req = input instanceof Request ? input : new Request(input, init);
         const target = req.headers.get('x-amz-target') || '';
@@ -1160,6 +1432,11 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
             imageDetails: [{ registryId: '777772815966', repositoryName: `nsw/${appId}`, imageDigest: 'sha256:digestB_real', imageTags: [commitB] }]
           });
         }
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({
+            build: { id: 'nsw-deploy:cas-deploy-2', buildStatus: 'IN_PROGRESS' }
+          });
+        }
         return new Response('Not found', { status: 404 });
       };
 
@@ -1169,14 +1446,122 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       });
       const dataGet: any = await resGet.json();
       expect(resGet.status).toBe(200);
-      expect(dataGet.deploymentState).toBe('deployable');
+      expect(dataGet.deploymentState).toBe('deploying');
 
       const buildBFinal = await ctx.d1.prepare(`SELECT status, result_digest FROM build_runs WHERE id = ?`).bind(dataB.buildRunId).first<any>();
       expect(buildBFinal.status).toBe('passed');
       expect(buildBFinal.result_digest).toBe('sha256:digestB_real');
 
       const appFinal = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
-      expect(appFinal.deployment_state).toBe('deployable');
+      expect(appFinal.deployment_state).toBe('deploying');
+
+      // 5. Deploy stage finalize for B -> promotes to active
+      const workerUrlB = 'https://nsw-app-cas-race-app.subdomain.workers.dev';
+      const mockAwsFetchDeployFinalize: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-deploy:cas-deploy-2',
+              buildStatus: 'SUCCEEDED',
+              exportedEnvironmentVariables: [{ name: 'DEPLOYED_WORKER_URL', value: workerUrlB }]
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const resGetDeploy = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetchDeployFinalize }
+      });
+      const dataGetDeploy: any = await resGetDeploy.json();
+      expect(resGetDeploy.status).toBe(200);
+      expect(dataGetDeploy.deploymentState).toBe('active');
+      expect(dataGetDeploy.activeUrl).toBe(workerUrlB);
+
+      const appActive = await ctx.d1.prepare(`SELECT deployment_state, origin_kind, origin_ref FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(appActive.deployment_state).toBe('active');
+      expect(appActive.origin_kind).toBe('cf_container');
+      expect(appActive.origin_ref).toBe(workerUrlB);
+    });
+
+    it('deploy stage CAS guard prevents stale deploy build from promoting over a newer release', async () => {
+      const appId = 'cas-deploy-race-app';
+      const user = 'usr_cas_dep_maker';
+
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES (?, 'casdepmaker', 'CAS Dep Maker', 'user')
+      `).bind(user).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state, origin_kind)
+        VALUES (?, 'CAS Dep Race App', 'Tag', 'Desc', ?, '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'deploying', 'cf_container')
+      `).bind(appId, user).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_cas_dep_1', ?, ?, ?, 'public', 'sha1', 'refs/heads/main', 'repositories/cas-deploy-race-app', 'active')
+      `).bind(appId, user, appId).run();
+
+      const commit1 = '1111111111111111111111111111111111111111';
+      const commit2 = '2222222222222222222222222222222222222222';
+
+      // Deploy build 1 (was running, but cancelled/superseded)
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_dep_old', 'repo_cas_dep_1', ?, 'release', 'cancelled', 'nsw-deploy:old-uuid', 'nsw-deploy', 'sha256:old', CURRENT_TIMESTAMP)
+      `).bind(commit1).run();
+
+      // Deploy build 2 (authoritative running)
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_dep_new', 'repo_cas_dep_1', ?, 'release', 'running', 'nsw-deploy:new-uuid', 'nsw-deploy', 'sha256:new', CURRENT_TIMESTAMP)
+      `).bind(commit2).run();
+
+      // Simulate old build attempting atomic CAS update in D1
+      const casOld = await ctx.d1.prepare(`
+        UPDATE build_runs SET
+          status = 'passed',
+          result_digest = 'https://old.workers.dev',
+          exit_code = 0,
+          finished_at = CURRENT_TIMESTAMP
+        WHERE id = 'br_dep_old' AND status = 'running'
+      `).run();
+
+      // CAS changes is 0 because status is 'cancelled'
+      expect(casOld.meta?.changes ?? (casOld as any).changes).toBe(0);
+
+      // Now lazy finalize runs for authoritative build (br_dep_new)
+      const mockAwsFetchNew: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-deploy:new-uuid',
+              buildStatus: 'SUCCEEDED',
+              exportedEnvironmentVariables: [{ name: 'DEPLOYED_WORKER_URL', value: 'https://new-authoritative.workers.dev' }]
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const resGet = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${appId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetchNew }
+      });
+      const dataGet: any = await resGet.json();
+      expect(resGet.status).toBe(200);
+      expect(dataGet.deploymentState).toBe('active');
+      expect(dataGet.activeUrl).toBe('https://new-authoritative.workers.dev');
+
+      const finalApp = await ctx.d1.prepare(`SELECT deployment_state, origin_ref, active_commit_oid FROM app_listings WHERE id = ?`).bind(appId).first<any>();
+      expect(finalApp.deployment_state).toBe('active');
+      expect(finalApp.origin_ref).toBe('https://new-authoritative.workers.dev');
+      expect(finalApp.active_commit_oid).toBe(commit2);
     });
   });
 

@@ -16,6 +16,7 @@ export type AppDeploymentState =
   | 'source_ready'
   | 'building'
   | 'deployable'
+  | 'deploying'
   | 'active'
   | 'failed'
   | 'retired'

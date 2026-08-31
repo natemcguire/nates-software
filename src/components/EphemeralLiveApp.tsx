@@ -42,6 +42,12 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
             <CheckCircle2 size={11} /> DEPLOYABLE (PROMOTION PENDING)
           </span>
         );
+      case 'deploying':
+        return (
+          <span className="bg-amber-950 text-amber-300 px-2 py-0.5 rounded border border-amber-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">
+            <RefreshCw size={11} className="animate-spin" /> DEPLOYING CONTAINER
+          </span>
+        );
       case 'building':
         return (
           <span className="bg-sky-950 text-sky-300 px-2 py-0.5 rounded border border-sky-600 flex items-center gap-1 font-bold font-mono text-[11px]" data-testid="deployment-state-badge">

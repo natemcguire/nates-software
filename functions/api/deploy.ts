@@ -24,12 +24,52 @@ import {
   DEFAULT_AWS_ACCOUNT_ID,
   DEFAULT_AWS_S3_BUILD_BUCKET,
   DEFAULT_AWS_CODEBUILD_PROJECT,
+  DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT,
+  DEFAULT_CF_ACCOUNT_ID,
   APP_ID_REGEX,
   COMMIT_OID_REGEX
 } from './_aws';
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+
+function extractWorkerUrl(cbBuild: any): string | null {
+  if (!cbBuild) return null;
+
+  // 1. Primary: exportedEnvironmentVariables from buildspec exported-variables
+  if (Array.isArray(cbBuild.exportedEnvironmentVariables)) {
+    const item = cbBuild.exportedEnvironmentVariables.find(
+      (v: any) => v.name === 'DEPLOYED_WORKER_URL' || v.name === 'WORKER_URL'
+    );
+    if (item?.value && typeof item.value === 'string' && item.value.trim().startsWith('https://')) {
+      return item.value.trim();
+    }
+  }
+
+  // 2. Secondary: environmentVariables
+  if (Array.isArray(cbBuild.environment?.environmentVariables)) {
+    const item = cbBuild.environment.environmentVariables.find(
+      (v: any) => v.name === 'DEPLOYED_WORKER_URL' || v.name === 'WORKER_URL'
+    );
+    if (item?.value && typeof item.value === 'string' && item.value.trim().startsWith('https://')) {
+      return item.value.trim();
+    }
+  }
+
+  // 3. Fallback: parse phase context messages
+  if (Array.isArray(cbBuild.phases)) {
+    for (const phase of cbBuild.phases) {
+      if (Array.isArray(phase.contexts)) {
+        for (const ctx of phase.contexts) {
+          const match = String(ctx.message || '').match(/DEPLOYED_WORKER_URL=(https:\/\/[^\s\r\n]+)/);
+          if (match && match[1]) return match[1].trim();
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 const digest = (value: Buffer | string): string =>
   `sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -224,13 +264,15 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const listing = await env.DB.prepare(`
       SELECT 
-        a.id, a.name, a.version, a.listing_status AS listingStatus,
+        a.id, a.name, a.version, a.creator_id AS creatorId, a.listing_status AS listingStatus,
         a.deployment_state AS deploymentState, a.deployment_error AS deploymentError,
         a.deployment_evidence_json AS deploymentEvidenceJson,
         a.detected_project_type AS detectedProjectType,
         a.deployment_plan_json AS deploymentPlanJson,
         a.active_deployment_id AS activeDeploymentId,
         a.active_commit_oid AS activeCommitOid,
+        a.origin_kind AS originKind,
+        a.origin_ref AS originRef,
         r.id AS repositoryId, r.default_ref AS defaultRef,
         dr.status AS revisionStatus, dr.url AS deploymentUrl, dr.deployed_at AS deployedAt
       FROM app_listings a
@@ -248,7 +290,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     if (listing.repositoryId || appId) {
       try {
         const runningBuild = await env.DB.prepare(`
-          SELECT id, repository_id, commit_oid, runner_image_digest, started_at
+          SELECT id, repository_id, commit_oid, purpose, status, runner_image_digest,
+                 build_command, test_command, source_manifest_digest, started_at
           FROM build_runs
           WHERE (repository_id = ? OR repository_id = ?) AND status = 'running'
           ORDER BY started_at DESC LIMIT 1
@@ -291,111 +334,31 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             }
           } else {
             const codeBuildId = runningBuild.runner_image_digest;
+            const isDeployStage = runningBuild.build_command === 'nsw-deploy' ||
+              listing.deploymentState === 'deploying' ||
+              codeBuildId.startsWith('nsw-deploy:') ||
+              (env?.AWS_CODEBUILD_DEPLOY_PROJECT && codeBuildId.startsWith(env.AWS_CODEBUILD_DEPLOY_PROJECT + ':'));
+
             const batchRes = await batchGetCodeBuilds(env, { buildIds: [codeBuildId] });
 
             if (batchRes.success && Array.isArray(batchRes.builds) && batchRes.builds.length > 0) {
               const cbBuild = batchRes.builds[0];
               const buildStatus = cbBuild.buildStatus;
 
-              if (buildStatus === 'SUCCEEDED') {
-                const ecrRepo = `nsw/${appId}`;
-                const accountId = env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID;
-                const ecrRes = await describeEcrImages(env, {
-                  repositoryName: ecrRepo,
-                  imageTag: commitOid,
-                  registryId: accountId
-                });
-
-                if (ecrRes.repoMissing) {
-                  const errorMsg = `ECR repo ${ecrRepo} not provisioned`;
-                  const failureEvidence = {
-                    stage: 'build',
-                    status: 'failed',
-                    details: errorMsg,
-                    codeBuildId,
-                    commitOid,
-                    ecrRepo,
-                    timestamp: new Date().toISOString()
-                  };
-
-                  const casRes = await env.DB.prepare(`
-                    UPDATE build_runs SET
-                      status = 'failed',
-                      exit_code = 1,
-                      finished_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND status = 'running'
-                  `).bind(runningBuild.id).run();
-
-                  const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
-                  if (changes > 0) {
-                    await env.DB.prepare(`
-                      UPDATE app_listings SET
-                        deployment_state = 'failed',
-                        deployment_error = ?,
-                        deployment_evidence_json = ?
-                      WHERE id = ?
-                    `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
-
-                    listing.deploymentState = 'failed';
-                    listing.deploymentError = errorMsg;
-                    listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
-                  }
-                } else if (ecrRes.success && ecrRes.imageDigest) {
-                  // Succeeded! Verified image digest from ECR
-                  const imageDigest = ecrRes.imageDigest;
-                  const passedEvidence = {
-                    stage: 'build',
-                    status: 'passed',
-                    details: 'Candidate container build succeeded in CodeBuild and verified image digest in ECR.',
-                    codeBuildId,
-                    ecrRepo,
-                    commitOid,
-                    imageDigest,
-                    timestamp: new Date().toISOString()
-                  };
-
-                  const casRes = await env.DB.prepare(`
-                    UPDATE build_runs SET
-                      status = 'passed',
-                      result_digest = ?,
-                      exit_code = 0,
-                      finished_at = CURRENT_TIMESTAMP
-                    WHERE id = ? AND status = 'running'
-                  `).bind(imageDigest, runningBuild.id).run();
-
-                  const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
-                  if (changes > 0) {
-                    await env.DB.prepare(`
-                      UPDATE app_listings SET
-                        deployment_state = 'deployable',
-                        deployment_error = NULL,
-                        deployment_evidence_json = ?
-                      WHERE id = ?
-                    `).bind(JSON.stringify(passedEvidence), appId).run();
-
-                    listing.deploymentState = 'deployable';
-                    listing.deploymentError = null;
-                    listing.deploymentEvidenceJson = JSON.stringify(passedEvidence);
-                  }
-                } else {
-                  // Transient ECR error / image not yet visible post-SUCCEEDED
-                  // Check 10-minute bounded retry
-                  const endMs = parseTimestampMs(cbBuild.endTime) ?? parseTimestampMs(runningBuild.started_at) ?? Date.now();
-                  const elapsedMs = Date.now() - endMs;
-                  const TEN_MINUTES_MS = 10 * 60 * 1000;
-
-                  if (elapsedMs > TEN_MINUTES_MS) {
-                    const errorMsg = 'image never appeared in ECR after build success';
+              if (isDeployStage) {
+                // ==========================================
+                // STAGE 2: Deploy Stage (nsw-deploy -> active)
+                // ==========================================
+                if (buildStatus === 'SUCCEEDED') {
+                  const workerUrl = extractWorkerUrl(cbBuild);
+                  if (!workerUrl) {
+                    const errorMsg = 'nsw-deploy succeeded but no DEPLOYED_WORKER_URL was found in build output';
                     const failureEvidence = {
-                      stage: 'build',
+                      stage: 'deploy',
                       status: 'failed',
                       details: errorMsg,
                       codeBuildId,
                       commitOid,
-                      ecrRepo,
-                      ecrError: ecrRes.error,
-                      endTime: cbBuild.endTime,
-                      elapsedMs,
                       timestamp: new Date().toISOString()
                     };
 
@@ -422,49 +385,361 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
                     }
                   } else {
-                    // Stays running (app stays building) for bounded retry on next GET
+                    // Deploy succeeded with worker URL! CAS promote on deploy build_runs
+                    const casRes = await env.DB.prepare(`
+                      UPDATE build_runs SET
+                        status = 'passed',
+                        result_digest = ?,
+                        exit_code = 0,
+                        finished_at = CURRENT_TIMESTAMP
+                      WHERE id = ? AND status = 'running'
+                    `).bind(workerUrl, runningBuild.id).run();
+
+                    const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                    if (changes > 0) {
+                      const revRow: any = await env.DB.prepare(`
+                        SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRev
+                        FROM deployment_revisions
+                        WHERE app_id = ? AND environment = 'production'
+                      `).bind(appId).first();
+                      const revisionNumber = revRow?.nextRev || 1;
+                      const revisionId = `rev_${crypto.randomUUID().replace(/-/g, '')}`;
+
+                      // Supersede previous active production revisions
+                      await env.DB.prepare(`
+                        UPDATE deployment_revisions SET status = 'superseded'
+                        WHERE app_id = ? AND environment = 'production' AND status = 'healthy'
+                      `).bind(appId).run();
+
+                      // Insert healthy deployment_revisions row
+                      await env.DB.prepare(`
+                        INSERT INTO deployment_revisions (
+                          id, app_id, repository_id, commit_oid, build_run_id, environment,
+                          revision_number, status, url, runtime_config_digest, deployed_by_user_id, deployed_at
+                        ) VALUES (?, ?, ?, ?, ?, 'production', ?, 'healthy', ?, ?, ?, CURRENT_TIMESTAMP)
+                      `).bind(
+                        revisionId,
+                        appId,
+                        listing.repositoryId || appId,
+                        commitOid,
+                        runningBuild.id,
+                        revisionNumber,
+                        workerUrl,
+                        runningBuild.test_command || runningBuild.source_manifest_digest || 'cf_container',
+                        listing.creatorId || 'system'
+                      ).run();
+
+                      const promotionEvidence = {
+                        stage: 'deploy',
+                        status: 'passed',
+                        details: 'nsw-deploy succeeded. CF Container Worker deployed and runtime smoke verified.',
+                        codeBuildId,
+                        workerUrl,
+                        commitOid,
+                        deploymentRevisionId: revisionId,
+                        timestamp: new Date().toISOString()
+                      };
+
+                      await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_state = 'active',
+                          origin_kind = 'cf_container',
+                          origin_ref = ?,
+                          active_deployment_id = ?,
+                          active_commit_oid = ?,
+                          deployment_error = NULL,
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                      `).bind(workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+
+                      listing.deploymentState = 'active';
+                      listing.originKind = 'cf_container';
+                      listing.originRef = workerUrl;
+                      listing.activeDeploymentId = revisionId;
+                      listing.activeCommitOid = commitOid;
+                      listing.deploymentError = null;
+                      listing.deploymentEvidenceJson = JSON.stringify(promotionEvidence);
+                      listing.revisionStatus = 'healthy';
+                      listing.deploymentUrl = workerUrl;
+                    }
+                  }
+                } else if (
+                  buildStatus === 'FAILED' ||
+                  buildStatus === 'FAULT' ||
+                  buildStatus === 'TIMED_OUT' ||
+                  buildStatus === 'STOPPED'
+                ) {
+                  const failedPhase = cbBuild.phases?.find((p: any) => p.phaseStatus === 'FAILED');
+                  const phaseCtx = failedPhase?.contexts?.[0]?.message || failedPhase?.phaseType || buildStatus;
+                  const errorMsg = `CodeBuild deploy failed: ${phaseCtx}`;
+                  const failureEvidence = {
+                    stage: 'deploy',
+                    status: 'failed',
+                    details: errorMsg,
+                    codeBuildId,
+                    buildStatus,
+                    phases: cbBuild.phases,
+                    timestamp: new Date().toISOString()
+                  };
+
+                  const casRes = await env.DB.prepare(`
+                    UPDATE build_runs SET
+                      status = 'failed',
+                      exit_code = 1,
+                      finished_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'running'
+                  `).bind(runningBuild.id).run();
+
+                  const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                  if (changes > 0) {
+                    await env.DB.prepare(`
+                      UPDATE app_listings SET
+                        deployment_state = 'failed',
+                        deployment_error = ?,
+                        deployment_evidence_json = ?
+                      WHERE id = ?
+                    `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                    listing.deploymentState = 'failed';
+                    listing.deploymentError = errorMsg;
+                    listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
                   }
                 }
-              } else if (
-                buildStatus === 'FAILED' ||
-                buildStatus === 'FAULT' ||
-                buildStatus === 'TIMED_OUT' ||
-                buildStatus === 'STOPPED'
-              ) {
-                const failedPhase = cbBuild.phases?.find((p: any) => p.phaseStatus === 'FAILED');
-                const phaseCtx = failedPhase?.contexts?.[0]?.message || failedPhase?.phaseType || buildStatus;
-                const errorMsg = `CodeBuild candidate build failed: ${phaseCtx}`;
-                const failureEvidence = {
-                  stage: 'build',
-                  status: 'failed',
-                  details: errorMsg,
-                  codeBuildId,
-                  buildStatus,
-                  phases: cbBuild.phases,
-                  timestamp: new Date().toISOString()
-                };
+              } else {
+                // ==========================================
+                // STAGE 1: Candidate Build Stage (nsw-build -> ECR -> trigger nsw-deploy)
+                // ==========================================
+                if (buildStatus === 'SUCCEEDED') {
+                  const ecrRepo = `nsw/${appId}`;
+                  const accountId = env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID;
+                  const ecrRes = await describeEcrImages(env, {
+                    repositoryName: ecrRepo,
+                    imageTag: commitOid,
+                    registryId: accountId
+                  });
 
-                const casRes = await env.DB.prepare(`
-                  UPDATE build_runs SET
-                    status = 'failed',
-                    exit_code = 1,
-                    finished_at = CURRENT_TIMESTAMP
-                  WHERE id = ? AND status = 'running'
-                `).bind(runningBuild.id).run();
+                  if (ecrRes.repoMissing) {
+                    const errorMsg = `ECR repo ${ecrRepo} not provisioned`;
+                    const failureEvidence = {
+                      stage: 'build',
+                      status: 'failed',
+                      details: errorMsg,
+                      codeBuildId,
+                      commitOid,
+                      ecrRepo,
+                      timestamp: new Date().toISOString()
+                    };
 
-                const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
-                if (changes > 0) {
-                  await env.DB.prepare(`
-                    UPDATE app_listings SET
-                      deployment_state = 'failed',
-                      deployment_error = ?,
-                      deployment_evidence_json = ?
-                    WHERE id = ?
-                  `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+                    const casRes = await env.DB.prepare(`
+                      UPDATE build_runs SET
+                        status = 'failed',
+                        exit_code = 1,
+                        finished_at = CURRENT_TIMESTAMP
+                      WHERE id = ? AND status = 'running'
+                    `).bind(runningBuild.id).run();
 
-                  listing.deploymentState = 'failed';
-                  listing.deploymentError = errorMsg;
-                  listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                    const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                    if (changes > 0) {
+                      await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_state = 'failed',
+                          deployment_error = ?,
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                      `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                      listing.deploymentState = 'failed';
+                      listing.deploymentError = errorMsg;
+                      listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                    }
+                  } else if (ecrRes.success && ecrRes.imageDigest) {
+                    // Candidate build Succeeded! Verified image digest from ECR
+                    const imageDigest = ecrRes.imageDigest;
+
+                    const casRes = await env.DB.prepare(`
+                      UPDATE build_runs SET
+                        status = 'passed',
+                        result_digest = ?,
+                        exit_code = 0,
+                        finished_at = CURRENT_TIMESTAMP
+                      WHERE id = ? AND status = 'running'
+                    `).bind(imageDigest, runningBuild.id).run();
+
+                    const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                    if (changes > 0) {
+                      // Trigger nsw-deploy for cf_container server apps
+                      const deployProject = env?.AWS_CODEBUILD_DEPLOY_PROJECT || DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT || 'nsw-deploy';
+                      const cfAccountId = env?.CF_ACCOUNT_ID || DEFAULT_CF_ACCOUNT_ID || '4219a576830c72b0e6e4ca358e61473a';
+                      const deployStart = await startCodeBuild(env, {
+                        projectName: deployProject,
+                        project: deployProject,
+                        envOverrides: {
+                          APP_ID: appId,
+                          COMMIT_OID: commitOid,
+                          ECR_REPO: ecrRepo,
+                          CF_ACCOUNT_ID: cfAccountId,
+                          INSTANCE_TYPE: 'lite'
+                        }
+                      });
+
+                      if (!deployStart.success || !deployStart.buildId) {
+                        const errorMsg = `Failed to trigger deploy in CodeBuild: ${deployStart.error || 'unknown deploy dispatch error'}`;
+                        const failureEvidence = {
+                          stage: 'deploy_dispatch',
+                          status: 'failed',
+                          details: errorMsg,
+                          buildCodeBuildId: codeBuildId,
+                          commitOid,
+                          ecrRepo,
+                          imageDigest,
+                          timestamp: new Date().toISOString()
+                        };
+
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_state = 'failed',
+                            deployment_error = ?,
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                        listing.deploymentState = 'failed';
+                        listing.deploymentError = errorMsg;
+                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      } else {
+                        const deployCodeBuildId = deployStart.buildId;
+                        const deployRunId = `br_dep_${crypto.randomUUID().replace(/-/g, '')}`;
+
+                        await env.DB.prepare(`
+                          INSERT INTO build_runs (
+                            id, repository_id, commit_oid, purpose, status, runner_image_digest,
+                            build_command, test_command, source_manifest_digest, started_at
+                          ) VALUES (?, ?, ?, 'release', 'running', ?, 'nsw-deploy', ?, ?, CURRENT_TIMESTAMP)
+                        `).bind(
+                          deployRunId,
+                          listing.repositoryId || appId,
+                          commitOid,
+                          deployCodeBuildId,
+                          imageDigest,
+                          imageDigest
+                        ).run();
+
+                        const deployingEvidence = {
+                          stage: 'deploy',
+                          status: 'running',
+                          details: 'Candidate container build succeeded and verified in ECR; nsw-deploy triggered.',
+                          buildCodeBuildId: codeBuildId,
+                          deployCodeBuildId,
+                          ecrRepo,
+                          commitOid,
+                          imageDigest,
+                          timestamp: new Date().toISOString()
+                        };
+
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_state = 'deploying',
+                            origin_kind = 'cf_container',
+                            deployment_error = NULL,
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(JSON.stringify(deployingEvidence), appId).run();
+
+                        listing.deploymentState = 'deploying';
+                        listing.originKind = 'cf_container';
+                        listing.deploymentError = null;
+                        listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
+                      }
+                    }
+                  } else {
+                    // Transient ECR error / image not yet visible post-SUCCEEDED
+                    // Check 10-minute bounded retry
+                    const endMs = parseTimestampMs(cbBuild.endTime) ?? parseTimestampMs(runningBuild.started_at) ?? Date.now();
+                    const elapsedMs = Date.now() - endMs;
+                    const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+                    if (elapsedMs > TEN_MINUTES_MS) {
+                      const errorMsg = 'image never appeared in ECR after build success';
+                      const failureEvidence = {
+                        stage: 'build',
+                        status: 'failed',
+                        details: errorMsg,
+                        codeBuildId,
+                        commitOid,
+                        ecrRepo,
+                        ecrError: ecrRes.error,
+                        endTime: cbBuild.endTime,
+                        elapsedMs,
+                        timestamp: new Date().toISOString()
+                      };
+
+                      const casRes = await env.DB.prepare(`
+                        UPDATE build_runs SET
+                          status = 'failed',
+                          exit_code = 1,
+                          finished_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND status = 'running'
+                      `).bind(runningBuild.id).run();
+
+                      const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                      if (changes > 0) {
+                        await env.DB.prepare(`
+                          UPDATE app_listings SET
+                            deployment_state = 'failed',
+                            deployment_error = ?,
+                            deployment_evidence_json = ?
+                          WHERE id = ?
+                        `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                        listing.deploymentState = 'failed';
+                        listing.deploymentError = errorMsg;
+                        listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                      }
+                    } else {
+                      // Stays running (app stays building) for bounded retry on next GET
+                    }
+                  }
+                } else if (
+                  buildStatus === 'FAILED' ||
+                  buildStatus === 'FAULT' ||
+                  buildStatus === 'TIMED_OUT' ||
+                  buildStatus === 'STOPPED'
+                ) {
+                  const failedPhase = cbBuild.phases?.find((p: any) => p.phaseStatus === 'FAILED');
+                  const phaseCtx = failedPhase?.contexts?.[0]?.message || failedPhase?.phaseType || buildStatus;
+                  const errorMsg = `CodeBuild candidate build failed: ${phaseCtx}`;
+                  const failureEvidence = {
+                    stage: 'build',
+                    status: 'failed',
+                    details: errorMsg,
+                    codeBuildId,
+                    buildStatus,
+                    phases: cbBuild.phases,
+                    timestamp: new Date().toISOString()
+                  };
+
+                  const casRes = await env.DB.prepare(`
+                    UPDATE build_runs SET
+                      status = 'failed',
+                      exit_code = 1,
+                      finished_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'running'
+                  `).bind(runningBuild.id).run();
+
+                  const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                  if (changes > 0) {
+                    await env.DB.prepare(`
+                      UPDATE app_listings SET
+                        deployment_state = 'failed',
+                        deployment_error = ?,
+                        deployment_evidence_json = ?
+                      WHERE id = ?
+                    `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                    listing.deploymentState = 'failed';
+                    listing.deploymentError = errorMsg;
+                    listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                  }
                 }
               }
             }
@@ -496,6 +771,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       version: listing.version,
       listingStatus: listing.listingStatus,
       deploymentState: state,
+      originKind: listing.originKind || (state === 'active' && listing.originRef ? 'cf_container' : 'r2_static'),
+      originRef: listing.originRef || null,
       isVerifiedActive,
       deploymentError: listing.deploymentError,
       deploymentEvidence: evidence,
@@ -503,7 +780,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       deploymentPlan: plan,
       activeDeploymentId: listing.activeDeploymentId,
       activeCommitOid: listing.activeCommitOid,
-      activeUrl: isVerifiedActive ? (listing.deploymentUrl || `https://${listing.id}.nates-software.com`) : null,
+      activeUrl: isVerifiedActive ? (listing.deploymentUrl || listing.originRef || `https://${listing.id}.nates-software.com`) : null,
       honestMessage: honest
     });
   } catch (err: any) {
@@ -939,6 +1216,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         await env.DB.prepare(`
           UPDATE app_listings SET
             deployment_state = 'building',
+            origin_kind = 'cf_container',
             detected_project_type = ?,
             deployment_plan_json = ?,
             active_commit_oid = ?,
@@ -1360,6 +1638,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       await env.DB.prepare(`
         UPDATE app_listings SET
           deployment_state = 'active',
+          origin_kind = 'r2_static',
           active_deployment_id = ?,
           active_commit_oid = ?,
           deployment_error = NULL,

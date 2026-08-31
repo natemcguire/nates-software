@@ -10,6 +10,8 @@ env:
     CONTAINERS_PKG_VERSION: "0.3.7"
   parameter-store:
     CLOUDFLARE_API_TOKEN: /nsw/cf-deploy-token
+  exported-variables:
+    - DEPLOYED_WORKER_URL
 phases:
   install:
     runtime-versions:
@@ -63,6 +65,7 @@ phases:
       - npm install @cloudflare/containers@${CONTAINERS_PKG_VERSION}
       - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler deploy 2>&1 | tee /tmp/deploy.log
       - export WORKER_URL=$(grep -oE 'https://nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
+      - export DEPLOYED_WORKER_URL="${WORKER_URL}"
       - echo "DEPLOYED_WORKER_URL=${WORKER_URL}"
       # Runtime smoke: poll the worker URL until 200 (container provisions in minutes)
       - |
