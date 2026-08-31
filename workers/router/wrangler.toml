@@ -3,9 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# Canary Secret (local/dev placeholder; Claude sets the real secret via `wrangler secret put CANARY_SECRET` in prod)
-[vars]
-CANARY_SECRET = "placeholder-canary-secret-override-in-prod"
+# CANARY_SECRET is a SECRET, not a var — never commit a value here (a plaintext
+# placeholder could become the effective prod value). Set it in prod with
+# `wrangler secret put CANARY_SECRET`, and locally via an untracked `.dev.vars`
+# file (CANARY_SECRET=...). The Worker reads it from env.CANARY_SECRET either way.
 
 # Cloudflare D1 (Serverless SQLite at Edge)
 [[d1_databases]]

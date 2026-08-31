@@ -9,3 +9,5 @@ tsconfig.tsbuildinfo
 
 # Wrangler local state cache (never commit)
 .wrangler/
+workers/**/.dev.vars
+.dev.vars
