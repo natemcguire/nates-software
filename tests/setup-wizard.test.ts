@@ -32,4 +32,14 @@ describe('First-Time User Onboarding & Setup Wizard Flow', () => {
     expect(source).toContain('Use your native terminal to keep the fork.');
     expect(source).toContain('workspace is deleted when the session ends');
   });
+
+  it('provides real web auth entrypoints (Create username / Log in) instead of static CLI login chip', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).not.toContain('CLI login required');
+    expect(source).toContain('Create your maker username to publish and sell — or log in if you already have one.');
+    expect(source).toContain("openAuthModal('register')");
+    expect(source).toContain("openAuthModal('login')");
+    expect(source).toContain('Create username');
+    expect(source).toContain('Signed in as @');
+  });
 });
