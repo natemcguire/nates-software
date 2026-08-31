@@ -29,6 +29,10 @@ phases:
       - echo "Push image to Cloudflare managed registry..."
       - docker tag "$SRC" "${APP_ID}:${COMMIT_OID}"
       - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler containers push "${APP_ID}:${COMMIT_OID}"
+      - |
+        if [ -n "$DB_SECRET_PATH" ]; then
+          export APP_DATABASE_URL=$(aws ssm get-parameter --name "$DB_SECRET_PATH" --with-decryption --query Parameter.Value --output text)
+        fi
   build:
     commands:
       - echo "Generate per-app container Worker + deploy..."
@@ -54,7 +58,10 @@ phases:
         export class AppContainer extends Container {
           defaultPort = 8080;
           sleepAfter = "10m";
-          envVars = { PORT: "8080" };
+          constructor(state: any, env: any) {
+            super(state, env);
+            this.envVars = { PORT: "8080", ...(env.DATABASE_URL ? { DATABASE_URL: env.DATABASE_URL } : {}) };
+          }
         }
         export default {
           async fetch(request: Request, env: any): Promise<Response> {
@@ -67,6 +74,10 @@ phases:
       - echo '{"name":"appworker","private":true}' > package.json
       - npm install @cloudflare/containers@${CONTAINERS_PKG_VERSION}
       - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler deploy 2>&1 | tee /tmp/deploy.log
+      - |
+        if [ -n "$APP_DATABASE_URL" ]; then
+          printf '%s' "$APP_DATABASE_URL" | CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler secret put DATABASE_URL
+        fi
       - export WORKER_URL=$(grep -oE 'https://nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
       - export DEPLOYED_WORKER_URL="${WORKER_URL}"
       - echo "DEPLOYED_WORKER_URL=${WORKER_URL}"

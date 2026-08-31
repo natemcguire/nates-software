@@ -41,7 +41,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0022_deployment_lifecycle_states.sql',
         '0023_retire_picfit_listing.sql',
         '0024_canonical_repository_linkage.sql',
-        '0025_app_origin_kind.sql'
+        '0025_app_origin_kind.sql',
+        '0026_unique_hostname_index.sql',
+        '0027_app_postgres_addon.sql'
       ]);
     });
 
@@ -902,7 +904,44 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       // 4. Verify index on hostname exists
       const indices = ctx.getIndexNames();
-      expect(indices).toContain('idx_app_listings_hostname');
+      expect(indices.some(idx => idx === 'idx_app_listings_hostname' || idx === 'idx_app_listings_hostname_unique')).toBe(true);
+
+      expect(ctx.runForeignKeyCheck()).toEqual([]);
+    });
+
+    it('should support Postgres add-on metadata (migration 0027)', async () => {
+      // 1. Verify columns exist on app_listings
+      const listing = await ctx.d1.prepare(`
+        SELECT id, db_kind, db_secret_path, db_provisioned_at FROM app_listings WHERE id = 'dronehunter'
+      `).first<{ id: string; db_kind: string | null; db_secret_path: string | null; db_provisioned_at: string | null }>();
+      expect(listing).toBeDefined();
+      expect(listing?.id).toBe('dronehunter');
+      expect(listing?.db_kind).toBeNull();
+      expect(listing?.db_secret_path).toBeNull();
+      expect(listing?.db_provisioned_at).toBeNull();
+
+      // 2. Reject invalid db_kind under CHECK constraint
+      await expect(
+        ctx.d1.prepare(`
+          UPDATE app_listings SET db_kind = 'mysql' WHERE id = 'dronehunter'
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // 3. Accept valid postgres db_kind and secret path
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET
+          db_kind = 'postgres',
+          db_secret_path = '/nsw/apps/dronehunter/db-url',
+          db_provisioned_at = CURRENT_TIMESTAMP
+        WHERE id = 'dronehunter'
+      `).run();
+
+      const updated = await ctx.d1.prepare(`
+        SELECT db_kind, db_secret_path, db_provisioned_at FROM app_listings WHERE id = 'dronehunter'
+      `).first<{ db_kind: string; db_secret_path: string; db_provisioned_at: string }>();
+      expect(updated?.db_kind).toBe('postgres');
+      expect(updated?.db_secret_path).toBe('/nsw/apps/dronehunter/db-url');
+      expect(updated?.db_provisioned_at).toBeTruthy();
 
       expect(ctx.runForeignKeyCheck()).toEqual([]);
     });
