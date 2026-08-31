@@ -1037,6 +1037,28 @@ describe('GITSMITH Authoritative Gateway & Durable Outbox Dispatcher Suite', () 
         expect(archiveRes.headers.get('Content-Type')).toBe('application/x-tar');
         const archiveBuf = await archiveRes.arrayBuffer();
         expect(archiveBuf.byteLength).toBeGreaterThan(0);
+
+        // Blob endpoint GET /api/gateway/blob
+        const blobRes = await fetch(`http://127.0.0.1:${port}/api/gateway/blob?storageKey=repositories/http_verify_test&commitOid=${commitOid}&path=index.html`, {
+          headers: {
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          }
+        });
+        expect(blobRes.status).toBe(200);
+        const blobData: any = await blobRes.json();
+        expect(blobData.success).toBe(true);
+        expect(Buffer.from(blobData.base64, 'base64').toString('utf8')).toBe('<h1>HTTP Verify</h1>');
+
+        // Raw endpoint GET /api/gateway/raw
+        const rawRes = await fetch(`http://127.0.0.1:${port}/api/gateway/raw?storageKey=repositories/http_verify_test&commitOid=${commitOid}&path=index.html`, {
+          headers: {
+            Authorization: `Bearer ${GATEWAY_SECRET}`
+          }
+        });
+        expect(rawRes.status).toBe(200);
+        expect(rawRes.headers.get('Content-Type')).toContain('text/html');
+        const rawText = await rawRes.text();
+        expect(rawText).toBe('<h1>HTTP Verify</h1>');
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
       }

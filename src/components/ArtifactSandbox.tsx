@@ -12,7 +12,8 @@ import {
   Bot,
   CreditCard,
   X,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +21,7 @@ import { useCatalog } from '../context/CatalogContext';
 import { CheckoutModal } from './CheckoutModal';
 import { ForkWithAiModal } from './ForkWithAiModal';
 import { useAlert } from '../context/AlertContext';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ArtifactSandboxProps {
   app: AppListing;
@@ -40,7 +42,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const isAppOwned = isOwned(app.id);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments'>('preview');
+  const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'spec'>('preview');
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
   // Modals state
@@ -50,6 +52,79 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   // Comment state
   const [comments, setComments] = useState<AppComment[]>(app.comments || []);
   const [newCommentText, setNewCommentText] = useState('');
+
+  // Idea Spec state (Phase C-render)
+  const [specContent, setSpecContent] = useState<string | null>(null);
+  const [specLoading, setSpecLoading] = useState(false);
+  const [specError, setSpecError] = useState<string | null>(null);
+
+  const getRepoFileUrl = (filePath: string): string => {
+    const repoQuery = app.repositoryId
+      ? `repoId=${encodeURIComponent(app.repositoryId)}`
+      : (app.repoSlug
+        ? `repo=${encodeURIComponent(app.repoSlug)}`
+        : `id=${encodeURIComponent(app.id)}`);
+    return `/api/repo-file?${repoQuery}&path=${encodeURIComponent(filePath)}`;
+  };
+
+  const resolveScreenshotUrl = (src: string): string => {
+    if (!src) return '';
+    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:') || src.startsWith('/api/')) {
+      return src;
+    }
+    const cleanPath = src.startsWith('repo:') ? src.slice(5) : src;
+    return getRepoFileUrl(cleanPath);
+  };
+
+  useEffect(() => {
+    let isCancelled = false;
+    setSpecLoading(true);
+    setSpecError(null);
+    setSpecContent(null);
+
+    const specUrl = getRepoFileUrl('spec.md');
+
+    fetch(specUrl)
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const text = await res.text();
+          setSpecContent(text);
+        } else if (res.status === 404) {
+          setSpecContent(null);
+        } else {
+          setSpecError(`Failed to load spec (HTTP ${res.status})`);
+        }
+      })
+      .catch(err => {
+        if (!isCancelled) {
+          setSpecError(err?.message || 'Failed to load spec.md');
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setSpecLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [app.id, app.repositoryId, app.repoSlug]);
+
+  const processedSpecContent = React.useMemo(() => {
+    if (!specContent) return '';
+    const repoQuery = app.repositoryId
+      ? `repoId=${encodeURIComponent(app.repositoryId)}`
+      : (app.repoSlug
+        ? `repo=${encodeURIComponent(app.repoSlug)}`
+        : `id=${encodeURIComponent(app.id)}`);
+
+    return specContent.replace(/!\[([^\]]*)\]\((?!(?:https?:\/\/|\/|data:))([^)]+)\)/g, (_, alt, relPath) => {
+      const cleanRelPath = relPath.replace(/^\.\//, '');
+      return `![${alt}](/api/repo-file?${repoQuery}&path=${encodeURIComponent(cleanRelPath)})`;
+    });
+  }, [specContent, app.id, app.repositoryId, app.repoSlug]);
 
   // Fetch comments from Cloudflare D1
   useEffect(() => {
@@ -192,6 +267,12 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             </a>
           </div>
           <button
+            onClick={() => { setActiveTab('spec'); playClickSound(); }}
+            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'spec' ? 'btn-w95-primary font-bold' : ''}`}
+          >
+            <FileText size={13} /> Spec
+          </button>
+          <button
             onClick={() => { setActiveTab('screenshots'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'screenshots' ? 'btn-w95-primary' : ''}`}
           >
@@ -245,11 +326,54 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         )}
 
+        {/* TAB: Spec */}
+        {activeTab === 'spec' && (
+          <div className="h-full flex flex-col">
+            {specLoading ? (
+              <div className="flex-1 flex items-center justify-center p-8 text-gray-500 font-mono text-xs">
+                <span className="animate-pulse">Loading spec.md from repository...</span>
+              </div>
+            ) : processedSpecContent ? (
+              <div className="flex-1 overflow-y-auto p-4 bg-white border border-gray-300 rounded shadow-inner">
+                <div className="mb-3 pb-2 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-mono">
+                  <span className="flex items-center gap-1.5 font-bold text-gray-700">
+                    <FileText size={14} className="text-blue-700" />
+                    <span>spec.md</span>
+                  </span>
+                  {app.repoSlug && (
+                    <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded border border-gray-300">
+                      {app.repoSlug}
+                    </span>
+                  )}
+                </div>
+                <MarkdownRenderer content={processedSpecContent} />
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50 border border-dashed border-gray-300 rounded">
+                <FileText size={36} className="text-gray-400 mb-2" />
+                <h4 className="font-bold text-gray-700 text-sm">
+                  {specError ? 'Unable to Load Specification' : 'No Idea Specification Found'}
+                </h4>
+                <p className="text-xs text-gray-500 max-w-sm mt-1 leading-relaxed">
+                  {specError ? (
+                    <span className="text-red-700 font-mono text-[11px]">{specError}</span>
+                  ) : (
+                    <>
+                      This repository does not have a <code>spec.md</code> committed at its root yet.
+                      Commit a <code>spec.md</code> to the main branch to render the idea pitch and specification here.
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TAB 2: Screenshots */}
         {activeTab === 'screenshots' && (
           <div className="h-full flex flex-col items-center justify-center p-2">
             <img
-              src={app.screenshots[activeShotIdx]}
+              src={resolveScreenshotUrl(app.screenshots[activeShotIdx])}
               alt={app.name}
               className="max-h-[340px] rounded border border-gray-400 shadow-md object-contain"
             />

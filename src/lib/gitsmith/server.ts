@@ -7,7 +7,7 @@ import { GitsmithGatewayService } from './gatewayService.ts';
 import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 import { GatewayHealthChecker } from './health.ts';
 import { constantTimeTokenCompare } from '../forgeDomain.ts';
-import { archiveAuthoritativeCommit, getProposalDiff, inspectCommitTree } from './gitStorage.ts';
+import { archiveAuthoritativeCommit, getProposalDiff, inspectCommitTree, readCommitFileBase64, readCommitFileBuffer } from './gitStorage.ts';
 
 export interface CreateServerOptions {
   service?: GitsmithGatewayService;
@@ -185,6 +185,93 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       } catch (error: any) {
         res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify({ success: false, error: error?.message || 'Diff computation failed.' }));
+      }
+      return;
+    }
+
+    // Authenticated blob/raw file reading for spec/image rendering
+    if (
+      (req.method === 'GET' || req.method === 'POST') &&
+      (url.pathname === '/api/gateway/blob' || url.pathname === '/v1/blob' || url.pathname === '/api/gateway/raw' || url.pathname === '/v1/raw')
+    ) {
+      if (!verifyToken()) {
+        res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Valid gateway token required.' }));
+        return;
+      }
+
+      let storageKey = String(url.searchParams.get('storageKey') || '').trim();
+      let commitOid = String(url.searchParams.get('commitOid') || '').trim();
+      let filePath = String(url.searchParams.get('path') || url.searchParams.get('filePath') || '').trim();
+
+      if (req.method === 'POST' && (!storageKey || !commitOid || !filePath)) {
+        try {
+          const body = await readJsonBody();
+          if (body?.storageKey) storageKey = String(body.storageKey).trim();
+          if (body?.commitOid) commitOid = String(body.commitOid).trim();
+          if (body?.path || body?.filePath) filePath = String(body.path || body.filePath).trim();
+        } catch {}
+      }
+
+      if (!storageKey || !commitOid || !filePath) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'storageKey, commitOid, and path are required.' }));
+        return;
+      }
+
+      try {
+        if (url.pathname === '/api/gateway/raw' || url.pathname === '/v1/raw') {
+          const buf = readCommitFileBuffer(config.reposRoot, storageKey, commitOid, filePath);
+          if (!buf) {
+            res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+            res.end(JSON.stringify({ success: false, error: `File '${filePath}' not found in commit ${commitOid.slice(0, 8)}.` }));
+            return;
+          }
+          const ext = filePath.includes('.') ? '.' + filePath.split('.').pop()!.toLowerCase() : '';
+          const contentType = ext === '.png' ? 'image/png'
+            : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+            : ext === '.gif' ? 'image/gif'
+            : ext === '.svg' ? 'image/svg+xml'
+            : ext === '.webp' ? 'image/webp'
+            : ext === '.ico' ? 'image/x-icon'
+            : ext === '.avif' ? 'image/avif'
+            : ext === '.bmp' ? 'image/bmp'
+            : ext === '.md' || ext === '.markdown' ? 'text/markdown; charset=utf-8'
+            : ext === '.html' || ext === '.htm' ? 'text/html; charset=utf-8'
+            : ext === '.css' ? 'text/css; charset=utf-8'
+            : ext === '.js' || ext === '.mjs' || ext === '.ts' ? 'text/javascript; charset=utf-8'
+            : ext === '.txt' ? 'text/plain; charset=utf-8'
+            : ext === '.json' ? 'application/json; charset=utf-8'
+            : 'application/octet-stream';
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Content-Length': buf.length,
+            'Cache-Control': 'private, no-store',
+            'X-Gitsmith-Commit-Oid': commitOid
+          });
+          res.end(buf);
+        } else {
+          const base64 = readCommitFileBase64(config.reposRoot, storageKey, commitOid, filePath);
+          if (base64 === null) {
+            res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+            res.end(JSON.stringify({ success: false, error: `File '${filePath}' not found in commit ${commitOid.slice(0, 8)}.` }));
+            return;
+          }
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'private, no-store'
+          });
+          res.end(JSON.stringify({
+            success: true,
+            storageKey,
+            commitOid,
+            path: filePath,
+            base64
+          }));
+        }
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: err?.message || 'Failed to read commit file.' }));
       }
       return;
     }

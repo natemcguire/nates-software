@@ -437,6 +437,50 @@ export function readCommitFileContent(
 }
 
 /**
+ * Reads the raw binary buffer of a file at a specific commit OID in a bare repository.
+ */
+export function readCommitFileBuffer(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string,
+  maxBytes: number = 10 * 1024 * 1024
+): Buffer | null {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return null;
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return null;
+  if (!filePath || typeof filePath !== 'string' || filePath.startsWith('-') || filePath.includes('\0')) return null;
+
+  try {
+    const out = execFileSync('git', ['show', `${commitOid}:${filePath}`], {
+      cwd: pathRes.resolvedPath,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxBytes,
+      timeout: 10_000
+    });
+    return Buffer.isBuffer(out) ? out : Buffer.from(out);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the base64 encoded content of a file at a specific commit OID in a bare repository.
+ */
+export function readCommitFileBase64(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string,
+  maxBytes: number = 10 * 1024 * 1024
+): string | null {
+  const buf = readCommitFileBuffer(reposRoot, storageKey, commitOid, filePath, maxBytes);
+  return buf ? buf.toString('base64') : null;
+}
+
+/**
  * Inspects a committed tree on disk: verifies existence, lists committed files,
  * and reads contents of manifest candidate files.
  */
