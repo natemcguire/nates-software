@@ -1166,7 +1166,7 @@ dependencies = [
             imageDetails: [{
               registryId: '777772815966',
               repositoryName: 'nsw/certified-mailer-app',
-              imageDigest: 'sha256:python_artifact_digest_123',
+              imageDigest: `sha256:${'a'.repeat(64)}`,
               imageTags: [commitOid]
             }]
           });
@@ -1222,7 +1222,7 @@ dependencies = [
       `).bind(data.buildRunId).first<any>();
       expect(buildRun.status).toBe('passed');
       expect(buildRun.exit_code).toBe(0);
-      expect(buildRun.result_digest).toBe('sha256:python_artifact_digest_123');
+      expect(buildRun.result_digest).toBe(`sha256:${'a'.repeat(64)}`);
 
       // Verify deploy build_run was created with status running
       const deployRun = await ctx.d1.prepare(`

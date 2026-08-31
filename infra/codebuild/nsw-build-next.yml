@@ -23,8 +23,8 @@ phases:
   build:
     commands:
       - cd /tmp/src
-      # Platform ALWAYS overwrites any repo wrangler.jsonc: the platform owns the
-      # worker name + bindings (security — a repo must not name/bind arbitrary workers).
+      # Platform writes wrangler.jsonc for the dry-run size gate only;
+      # it is discarded and regenerated downstream in the trusted deploy stage.
       - |
         cat > wrangler.jsonc <<JSON
         {

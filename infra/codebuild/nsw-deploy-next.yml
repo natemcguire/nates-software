@@ -21,6 +21,18 @@ phases:
       - mkdir -p /tmp/app
       - aws s3 cp "s3://${ARTIFACT_BUCKET}/${APP_ID}/${COMMIT_OID}/opennext.tar" /tmp/a.tar
       - tar -xf /tmp/a.tar -C /tmp/app
+      - rm -f /tmp/app/wrangler.jsonc /tmp/app/wrangler.toml /tmp/app/wrangler.json
+      - |
+        cat > /tmp/app/wrangler.jsonc <<JSON
+        {
+          "name": "nsw-app-${APP_ID}",
+          "main": ".open-next/worker.js",
+          "compatibility_date": "2024-12-30",
+          "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+          "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+          "workers_dev": true
+        }
+        JSON
   build:
     commands:
       - cd /tmp/app
@@ -28,15 +40,17 @@ phases:
       # (proven: wrangler deploy from a node_modules-free dir succeeds).
       - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler deploy 2>&1 | tee /tmp/deploy.log
       - export WORKER_URL=$(grep -oE 'https://nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
+      - if [ -z "$WORKER_URL" ]; then echo "NO_WORKER_URL: wrangler deploy produced no workers.dev URL"; exit 1; fi
       - export DEPLOYED_WORKER_URL="${WORKER_URL}"
       - echo "DEPLOYED_WORKER_URL=${WORKER_URL}"
       - |
         for i in $(seq 1 20); do
           code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${WORKER_URL}/" || echo 000)
           echo "smoke attempt $i: HTTP $code"
-          if [ "$code" = "200" ]; then echo "SMOKE_OK"; break; fi
+          if [ "$code" = "200" ]; then echo "SMOKE_OK"; SMOKE_OK=1; break; fi
           sleep 5
         done
+        if [ "${SMOKE_OK:-0}" != "1" ]; then echo "SMOKE_FAILED: worker never returned 200"; exit 1; fi
       - 'echo "{\"worker_url\":\"${WORKER_URL}\"}" > /tmp/deploy-result.json'
 artifacts:
   files: [ deploy-result.json ]

@@ -743,6 +743,7 @@ describe('Phase 5: Postgres Add-on AWS Control Plane Suite', () => {
         { name: 'APP_ID', value: appId, type: 'PLAINTEXT' },
         { name: 'COMMIT_OID', value: commitOid, type: 'PLAINTEXT' },
         { name: 'ECR_REPO', value: `nsw/${appId}`, type: 'PLAINTEXT' },
+        { name: 'IMAGE_DIGEST', value: 'sha256:45b23e288d0b1530d83352956650d239c7722ec1a3b043f3799d48dd6a8b8b56', type: 'PLAINTEXT' },
         { name: 'CF_ACCOUNT_ID', value: '4219a576830c72b0e6e4ca358e61473a', type: 'PLAINTEXT' },
         { name: 'INSTANCE_TYPE', value: 'lite', type: 'PLAINTEXT' },
         { name: 'DB_SECRET_PATH', value: `/nsw/apps/${appId}/db-url`, type: 'PLAINTEXT' }

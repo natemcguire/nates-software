@@ -672,6 +672,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         { name: 'APP_ID', value: appId, type: 'PLAINTEXT' },
         { name: 'COMMIT_OID', value: commitOid, type: 'PLAINTEXT' },
         { name: 'ECR_REPO', value: `nsw/${appId}`, type: 'PLAINTEXT' },
+        { name: 'IMAGE_DIGEST', value: expectedDigest, type: 'PLAINTEXT' },
         { name: 'CF_ACCOUNT_ID', value: '4219a576830c72b0e6e4ca358e61473a', type: 'PLAINTEXT' },
         { name: 'INSTANCE_TYPE', value: 'lite', type: 'PLAINTEXT' }
       ]);
@@ -705,6 +706,82 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(evidence.status).toBe('running');
       expect(evidence.imageDigest).toBe(expectedDigest);
       expect(evidence.deployCodeBuildId).toBe('nsw-deploy:lazy-deploy-uuid-2222');
+    });
+
+    it('fails closed and refuses nsw-deploy dispatch when ECR returns a malformed image digest (Fix #1)', async () => {
+      const malformedAppId = 'malformed-digest-app';
+      const malformedCommit = 'c01234567890abcdef1234567890abcdef123456';
+      const malformedCodeBuildId = 'nsw-build:malformed-uuid-123';
+
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_malformed', 'malformed', 'Malformed Maker', 'user')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'Malformed App', 'Tag', 'Desc', 'usr_malformed', '1.0.0', 'MIT', '$0', 'None', '[]', '[]', '{}', 'building')
+      `).bind(malformedAppId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_malformed_1', ?, 'usr_malformed', ?, 'public', 'sha1', 'refs/heads/main', 'repositories/malformed', 'active')
+      `).bind(malformedAppId, malformedAppId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO build_runs (id, repository_id, commit_oid, purpose, status, runner_image_digest, build_command, source_manifest_digest, started_at)
+        VALUES ('br_malformed_1', 'repo_malformed_1', ?, 'release', 'running', ?, 'nsw-build', 'sha256:sourcemanifest123', CURRENT_TIMESTAMP)
+      `).bind(malformedCommit, malformedCodeBuildId).run();
+
+      let startBuildCalled = false;
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{ id: malformedCodeBuildId, buildStatus: 'SUCCEEDED', currentPhase: 'COMPLETED' }]
+          });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: `nsw/${malformedAppId}`,
+              imageDigest: 'not-a-valid-sha256-digest',
+              imageTags: [malformedCommit]
+            }]
+          });
+        }
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          startBuildCalled = true;
+          return Response.json({ build: { id: 'nsw-deploy:should-not-reach', buildStatus: 'IN_PROGRESS' } });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${malformedAppId}`),
+        env: { DB: ctx.d1, ...AWS_CREDS, __AWS_FETCH: mockAwsFetch }
+      });
+
+      const data: any = await res.json();
+      expect(res.status).toBe(200);
+      expect(data.deploymentState).toBe('failed');
+      expect(data.deploymentError).toContain('Invalid ECR image digest format');
+      expect(startBuildCalled).toBe(false);
+
+      const buildRun = await ctx.d1.prepare(`SELECT status, exit_code FROM build_runs WHERE id = 'br_malformed_1'`).first<any>();
+      expect(buildRun.status).toBe('failed');
+      expect(buildRun.exit_code).toBe(1);
+
+      const listing = await ctx.d1.prepare(`SELECT deployment_state, deployment_error FROM app_listings WHERE id = ?`).bind(malformedAppId).first<any>();
+      expect(listing.deployment_state).toBe('failed');
+      expect(listing.deployment_error).toContain('Invalid ECR image digest format');
+    });
+
+    it('asserts infra/codebuild/nsw-deploy.yml validates IMAGE_DIGEST format and pulls by digest (Fix #1)', () => {
+      const filePath = path.resolve(__dirname, '../infra/codebuild/nsw-deploy.yml');
+      const content = fs.readFileSync(filePath, 'utf8');
+      expect(content).toContain('if ! echo "$IMAGE_DIGEST" | grep -qE \'^sha256:[0-9a-f]{64}$\'; then echo "BAD_IMAGE_DIGEST"; exit 1; fi');
+      expect(content).toContain('export SRC="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}@${IMAGE_DIGEST}"');
+      expect(content).toContain('docker pull --platform linux/amd64 "$SRC"');
     });
 
     it('lazy-finalizes deploy stage: remains in building state while nsw-deploy is IN_PROGRESS', async () => {
@@ -1429,7 +1506,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
         }
         if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
           return Response.json({
-            imageDetails: [{ registryId: '777772815966', repositoryName: `nsw/${appId}`, imageDigest: 'sha256:digestB_real', imageTags: [commitB] }]
+            imageDetails: [{ registryId: '777772815966', repositoryName: `nsw/${appId}`, imageDigest: `sha256:${'b'.repeat(64)}`, imageTags: [commitB] }]
           });
         }
         if (target === 'CodeBuild_20161006.StartBuild') {
@@ -1450,7 +1527,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
 
       const buildBFinal = await ctx.d1.prepare(`SELECT status, result_digest FROM build_runs WHERE id = ?`).bind(dataB.buildRunId).first<any>();
       expect(buildBFinal.status).toBe('passed');
-      expect(buildBFinal.result_digest).toBe('sha256:digestB_real');
+      expect(buildBFinal.result_digest).toBe(`sha256:${'b'.repeat(64)}`);
 
       const appFinal = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
       expect(appFinal.deployment_state).toBe('building');
@@ -2341,7 +2418,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
             imageDetails: [{
               registryId: '777772815966',
               repositoryName: `nsw/${freshAppId}`,
-              imageDigest: 'sha256:freshfreshfresh',
+              imageDigest: `sha256:${'f'.repeat(64)}`,
               imageTags: [freshCommitOid]
             }]
           });

@@ -769,36 +769,84 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                     // Candidate build Succeeded! Verified image digest from ECR
                     const imageDigest = ecrRes.imageDigest;
 
-                    const casRes = await env.DB.prepare(`
-                      UPDATE build_runs SET
-                        status = 'passed',
-                        result_digest = ?,
-                        exit_code = 0,
-                        finished_at = CURRENT_TIMESTAMP
-                      WHERE id = ? AND status = 'running'
-                    `).bind(imageDigest, runningBuild.id).run();
-
-                    const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
-                    if (changes > 0) {
-                      // Trigger nsw-deploy for cf_container server apps
-                      const deployProject = env?.AWS_CODEBUILD_DEPLOY_PROJECT || DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT || 'nsw-deploy';
-                      const cfAccountId = env?.CF_ACCOUNT_ID || DEFAULT_CF_ACCOUNT_ID || '4219a576830c72b0e6e4ca358e61473a';
-                      const deployEnvOverrides: Record<string, string> = {
-                        APP_ID: appId,
-                        COMMIT_OID: commitOid,
-                        ECR_REPO: ecrRepo,
-                        CF_ACCOUNT_ID: cfAccountId,
-                        INSTANCE_TYPE: 'lite'
+                    if (!/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
+                      const errorMsg = `Invalid ECR image digest format: ${imageDigest}`;
+                      const failureEvidence = {
+                        stage: 'deploy_dispatch',
+                        status: 'failed',
+                        details: errorMsg,
+                        lastDeployError: errorMsg,
+                        codeBuildId,
+                        commitOid,
+                        ecrRepo,
+                        imageDigest,
+                        timestamp: new Date().toISOString()
                       };
-                      if (listing.dbSecretPath) {
-                        deployEnvOverrides.DB_SECRET_PATH = listing.dbSecretPath;
-                      }
 
-                      const deployStart = await startCodeBuild(env, {
-                        projectName: deployProject,
-                        project: deployProject,
-                        envOverrides: deployEnvOverrides
-                      });
+                      const casRes = await env.DB.prepare(`
+                        UPDATE build_runs SET
+                          status = 'failed',
+                          exit_code = 1,
+                          finished_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND status = 'running'
+                      `).bind(runningBuild.id).run();
+
+                      const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                      if (changes > 0) {
+                        if (isCurrentlyActive) {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(failureEvidence), appId).run();
+
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        } else {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'failed',
+                              deployment_error = ?,
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                          listing.deploymentState = 'failed';
+                          listing.deploymentError = errorMsg;
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        }
+                      }
+                    } else {
+                      const casRes = await env.DB.prepare(`
+                        UPDATE build_runs SET
+                          status = 'passed',
+                          result_digest = ?,
+                          exit_code = 0,
+                          finished_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND status = 'running'
+                      `).bind(imageDigest, runningBuild.id).run();
+
+                      const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                      if (changes > 0) {
+                        // Trigger nsw-deploy for cf_container server apps
+                        const deployProject = env?.AWS_CODEBUILD_DEPLOY_PROJECT || DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT || 'nsw-deploy';
+                        const cfAccountId = env?.CF_ACCOUNT_ID || DEFAULT_CF_ACCOUNT_ID || '4219a576830c72b0e6e4ca358e61473a';
+                        const deployEnvOverrides: Record<string, string> = {
+                          APP_ID: appId,
+                          COMMIT_OID: commitOid,
+                          ECR_REPO: ecrRepo,
+                          IMAGE_DIGEST: imageDigest,
+                          CF_ACCOUNT_ID: cfAccountId,
+                          INSTANCE_TYPE: 'lite'
+                        };
+                        if (listing.dbSecretPath) {
+                          deployEnvOverrides.DB_SECRET_PATH = listing.dbSecretPath;
+                        }
+
+                        const deployStart = await startCodeBuild(env, {
+                          projectName: deployProject,
+                          project: deployProject,
+                          envOverrides: deployEnvOverrides
+                        });
 
                       if (!deployStart.success || !deployStart.buildId) {
                         const errorMsg = `Failed to trigger deploy in CodeBuild: ${deployStart.error || 'unknown deploy dispatch error'}`;
@@ -894,7 +942,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         }
                       }
                     }
-                  } else {
+                  }
+                } else {
                     // Transient ECR error / image not yet visible post-SUCCEEDED
                     // Check 10-minute bounded retry
                     const endMs = parseTimestampMs(cbBuild.endTime) ?? parseTimestampMs(runningBuild.started_at) ?? Date.now();
