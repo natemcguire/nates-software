@@ -61,6 +61,7 @@ export type RigProjectType =
   | 'go'
   | 'static'
   | 'worker-pages'
+  | 'next-worker'
   | 'unsupported';
 
 export interface StorageVolumeDeclaration {
@@ -404,7 +405,67 @@ export function detectRigRuntime(
     };
   }
 
-  // 3. Node.js (package.json) Detection vs Static Web with package.json
+  // 3. Next.js Detection (Worker / OpenNext lane)
+  // Runs AFTER Dockerfile (hand-written Dockerfile takes precedence as 'docker')
+  // and BEFORE Node (so Next repos aren't swallowed as generic node/port 3000).
+  if (fileSet.has('package.json')) {
+    const pkgForNextContent = getContent('package.json');
+    let pkgForNext: any = {};
+    if (pkgForNextContent) {
+      try { pkgForNext = JSON.parse(pkgForNextContent); } catch {}
+    }
+    // hasNextDep gate is crucial: keeps repos with build: 'vite build' but NO next dep classified as 'node'
+    const hasNextDep = Boolean(pkgForNext?.dependencies?.next || pkgForNext?.devDependencies?.next);
+    const hasNextConfig = fileSet.has('next.config.js') || fileSet.has('next.config.mjs') || fileSet.has('next.config.ts');
+    const hasAppOrPages = normalizedFiles.some(f => {
+      const l = f.toLowerCase();
+      return l === 'app' || l.startsWith('app/') || l === 'pages' || l.startsWith('pages/');
+    });
+    const isNext = hasNextDep && (hasNextConfig || hasAppOrPages);
+
+    if (isNext) {
+      const nextConfigFilename = fileSet.has('next.config.js')
+        ? 'next.config.js'
+        : fileSet.has('next.config.mjs')
+          ? 'next.config.mjs'
+          : fileSet.has('next.config.ts')
+            ? 'next.config.ts'
+            : undefined;
+      const nextConfigContent = getContent('next.config.js') || getContent('next.config.mjs') || getContent('next.config.ts') || '';
+      const isStaticExport = /output\s*:\s*['"]export['"]/.test(nextConfigContent);
+
+      const reasons: string[] = [];
+      if (isStaticExport) {
+        reasons.push('Next.js static-export detected; served via SSR-capable worker lane in v1.');
+      } else {
+        reasons.push('Next.js application detected with OpenNext Cloudflare Worker deployment plan.');
+      }
+
+      const defaultPlan: DeploymentPlan = {
+        detectedType: 'next-worker',
+        buildCommand: 'npx opennextjs-cloudflare build',
+        startCommand: 'opennext-worker-runtime',
+        port: 0,
+        healthEndpoint: '/',
+        memoryMb: 128,
+        env: { NEXT_OUTPUT: isStaticExport ? 'export' : 'ssr' },
+        entrypointFile: nextConfigFilename || 'package.json',
+        manifestApplied: false,
+        inferredFrom: ['package.json', nextConfigFilename ? 'next.config' : 'app/pages']
+      };
+
+      const finalPlan = applyManifest(defaultPlan, manifestOverrides, manifestFile);
+      return {
+        success: true,
+        isDeployable: true,
+        detectedType: 'next-worker',
+        plan: finalPlan,
+        reasons
+      };
+    }
+  }
+
+  // 4. Node.js (package.json) Detection vs Static Web with package.json
   if (fileSet.has('package.json')) {
     const pkgContent = getContent('package.json');
     let pkg: any = {};

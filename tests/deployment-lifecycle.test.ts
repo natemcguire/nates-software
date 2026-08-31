@@ -499,6 +499,88 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(result.plan?.buildCommand).toBe('npm run build');
     });
 
+    it('detects Next.js SSR app as next-worker with NEXT_OUTPUT ssr', () => {
+      const files = ['package.json', 'next.config.js', 'app/page.tsx'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'my-next-app',
+          dependencies: {
+            next: '^15.0.0',
+            react: '^19.0.0'
+          }
+        }),
+        'next.config.js': 'module.exports = { reactStrictMode: true };'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('next-worker');
+      expect(result.plan?.env?.NEXT_OUTPUT).toBe('ssr');
+      expect(result.plan?.buildCommand).toBe('npx opennextjs-cloudflare build');
+      expect(result.plan?.startCommand).toBe('opennext-worker-runtime');
+      expect(result.plan?.entrypointFile).toBe('next.config.js');
+      expect(result.plan?.inferredFrom).toEqual(['package.json', 'next.config']);
+    });
+
+    it('detects Next.js static-export app as next-worker and records export in env and reasons', () => {
+      const files = ['package.json', 'next.config.mjs', 'pages/index.tsx'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'static-export-next',
+          devDependencies: {
+            next: '15.1.0'
+          }
+        }),
+        'next.config.mjs': 'export default { output: "export" };'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('next-worker');
+      expect(result.plan?.env?.NEXT_OUTPUT).toBe('export');
+      expect(result.plan?.buildCommand).toBe('npx opennextjs-cloudflare build');
+      expect(result.plan?.startCommand).toBe('opennext-worker-runtime');
+      expect(result.reasons[0]).toContain('static-export');
+    });
+
+    it('detects Next.js app directory without next.config as next-worker', () => {
+      const files = ['package.json', 'app/page.tsx', 'app/layout.tsx'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'next-app-dir',
+          dependencies: {
+            next: '15.0.0'
+          }
+        })
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('next-worker');
+      expect(result.plan?.entrypointFile).toBe('package.json');
+      expect(result.plan?.env?.NEXT_OUTPUT).toBe('ssr');
+      expect(result.plan?.inferredFrom).toEqual(['package.json', 'app/pages']);
+    });
+
+    it('precedence: Dockerfile beats Next.js detection', () => {
+      const files = ['package.json', 'next.config.js', 'Dockerfile'];
+      const contents = {
+        'package.json': JSON.stringify({
+          name: 'dockerized-next',
+          dependencies: {
+            next: '15.0.0'
+          }
+        }),
+        'next.config.js': 'module.exports = {};',
+        'Dockerfile': 'FROM node:22\nEXPOSE 3000\nCMD ["npm", "start"]'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('docker');
+      expect(result.plan?.entrypointFile).toBe('Dockerfile');
+    });
+
     it('should still detect Node.js server projects when package.json has server start script', () => {
       const files = ['package.json', 'server.js', 'index.html'];
       const contents = {

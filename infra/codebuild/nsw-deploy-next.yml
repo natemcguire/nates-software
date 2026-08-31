@@ -1,0 +1,43 @@
+version: 0.2
+# Next.js OpenNext deploy runner. Holds CF API token (SSM). Consumes the inert
+# .open-next tarball (never runs user code). Env: APP_ID, COMMIT_OID,
+# CF_ACCOUNT_ID, ARTIFACT_BUCKET.
+env:
+  variables:
+    WRANGLER_VERSION: "4.127.1"
+  parameter-store:
+    CLOUDFLARE_API_TOKEN: /nsw/cf-deploy-token
+  exported-variables:
+    - DEPLOYED_WORKER_URL
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - npm install -g wrangler@${WRANGLER_VERSION}
+      - wrangler --version
+  pre_build:
+    commands:
+      - mkdir -p /tmp/app
+      - aws s3 cp "s3://${ARTIFACT_BUCKET}/${APP_ID}/${COMMIT_OID}/opennext.tar" /tmp/a.tar
+      - tar -xf /tmp/a.tar -C /tmp/app
+  build:
+    commands:
+      - cd /tmp/app
+      # Deploy stage needs ONLY wrangler — the .open-next/ dir is self-contained
+      # (proven: wrangler deploy from a node_modules-free dir succeeds).
+      - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler deploy 2>&1 | tee /tmp/deploy.log
+      - export WORKER_URL=$(grep -oE 'https://nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
+      - export DEPLOYED_WORKER_URL="${WORKER_URL}"
+      - echo "DEPLOYED_WORKER_URL=${WORKER_URL}"
+      - |
+        for i in $(seq 1 20); do
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${WORKER_URL}/" || echo 000)
+          echo "smoke attempt $i: HTTP $code"
+          if [ "$code" = "200" ]; then echo "SMOKE_OK"; break; fi
+          sleep 5
+        done
+      - 'echo "{\"worker_url\":\"${WORKER_URL}\"}" > /tmp/deploy-result.json'
+artifacts:
+  files: [ deploy-result.json ]
+  base-directory: /tmp

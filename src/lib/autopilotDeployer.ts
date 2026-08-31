@@ -29,6 +29,7 @@ export type DeployableDetectedType =
   | 'python'
   | 'rust'
   | 'go'
+  | 'next-worker'
   | 'unsupported';
 
 export interface DeployabilityReport {

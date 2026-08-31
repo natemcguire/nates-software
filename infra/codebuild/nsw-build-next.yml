@@ -1,0 +1,44 @@
+version: 0.2
+# Next.js (OpenNext) candidate build. Runs UNTRUSTED user code (next.config,
+# npm lifecycle, next build). NO CF token here. Emits an S3 tarball of
+# .open-next/ + a PLATFORM-OWNED wrangler.jsonc. Env from control plane:
+# SOURCE_BUCKET, SOURCE_KEY, APP_ID, COMMIT_OID, ARTIFACT_BUCKET.
+env:
+  variables:
+    OPENNEXT_VERSION: "1.20.4"
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+  pre_build:
+    commands:
+      - mkdir -p /tmp/src
+      - aws s3 cp "s3://${SOURCE_BUCKET}/${SOURCE_KEY}" /tmp/source.tar
+      - tar -xf /tmp/source.tar -C /tmp/src
+      - cd /tmp/src
+      - npm ci || npm install
+      # Inject the adapter WITHOUT --legacy-peer-deps. An out-of-range user Next
+      # version fails HERE (ERESOLVE) — this is the intended fail-closed version gate.
+      - npm i -D --no-save @opennextjs/cloudflare@${OPENNEXT_VERSION}
+  build:
+    commands:
+      - cd /tmp/src
+      # Platform ALWAYS overwrites any repo wrangler.jsonc: the platform owns the
+      # worker name + bindings (security — a repo must not name/bind arbitrary workers).
+      - |
+        cat > wrangler.jsonc <<JSON
+        {
+          "name": "nsw-app-${APP_ID}",
+          "main": ".open-next/worker.js",
+          "compatibility_date": "2024-12-30",
+          "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+          "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+          "workers_dev": true
+        }
+        JSON
+      - npx next build
+      - npx opennextjs-cloudflare build
+      # Optional tokenless script-size gate: surfaces script_too_large before deploy.
+      - npx wrangler deploy --dry-run --outdir /tmp/wdry 2>&1 | tee /tmp/dryrun.log
+      - tar -cf /tmp/opennext.tar .open-next wrangler.jsonc
+      - aws s3 cp /tmp/opennext.tar "s3://${ARTIFACT_BUCKET}/${APP_ID}/${COMMIT_OID}/opennext.tar"
