@@ -739,8 +739,8 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
 
       const storageKey = 'repositories/broken-build-app';
       const { commitOid } = createCommittedRepo(storageKey, {
-        'package.json': JSON.stringify({ name: 'broken-app', scripts: { build: 'tsc --noEmit', start: 'node index.js' } }),
-        'index.ts': 'const invalid: number = "cannot assign string to number";'
+        'index.html': '<h1>Broken App</h1>',
+        'styles.css': 'body { color: red; }'
       });
 
       await ctx.d1.prepare(`
@@ -845,8 +845,8 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
 
       const storageKey = 'repositories/smoke-fail-app';
       const { commitOid } = createCommittedRepo(storageKey, {
-        'package.json': JSON.stringify({ name: 'smoke-fail-app', scripts: { build: 'echo "Built"', start: 'node app.js' } }),
-        'app.js': 'console.log("No index.html generated");'
+        'index.html': '<h1>Smoke Fail App</h1>',
+        'styles.css': 'body { color: blue; }'
       });
 
       await ctx.d1.prepare(`
@@ -958,42 +958,73 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         })
       });
 
-      // Server app build succeeds with artifact digest
-      const mockServerRigBuild = async (params: any) => {
-        expect(params.plan.detectedType).toBe('python');
-        return {
-          success: true,
-          exitCode: 0,
-          output: '[RIG] Python dependencies installed. Verified entrypoint main.py.',
-          artifactDigest: 'sha256:python_artifact_digest_123',
-          artifactKind: 'bundle',
-          smokeCheck: {
-            passed: true,
-            statusCode: 200,
-            durationMs: 25,
-            responseSnippet: 'Verified entrypoint main.py for python'
-          },
-          durationMs: 500
-        };
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(req.url);
+        const target = req.headers.get('x-amz-target') || '';
+
+        if (req.method === 'PUT' && url.hostname.includes('.s3.')) {
+          return new Response('', { status: 200 });
+        }
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({
+            build: {
+              id: 'nsw-build:cm-build-uuid-1234',
+              arn: 'arn:aws:codebuild:us-east-2:777772815966:build/nsw-build:cm-build-uuid-1234',
+              buildStatus: 'IN_PROGRESS'
+            }
+          });
+        }
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-build:cm-build-uuid-1234',
+              buildStatus: 'SUCCEEDED'
+            }]
+          });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: 'nsw/certified-mailer-app',
+              imageDigest: 'sha256:python_artifact_digest_123',
+              imageTags: [commitOid]
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const testEnv = {
+        DB: ctx.d1,
+        STORAGE: storage,
+        GITSMITH_REPOS_ROOT: reposRoot,
+        AWS_ACCESS_KEY_ID: 'test-akid',
+        AWS_SECRET_ACCESS_KEY: 'test-secret',
+        __AWS_FETCH: mockAwsFetch
       };
 
       const res = await deployApi.onRequestPost({
         request: req,
-        env: {
-          DB: ctx.d1,
-          STORAGE: storage,
-          GITSMITH_REPOS_ROOT: reposRoot,
-          __RIG_DEPLOY_EXECUTOR: mockServerRigBuild
-        }
+        env: testEnv
       });
 
       const data: any = await res.json();
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(202);
       expect(data.success).toBe(true);
-      expect(data.deploymentState).toBe('deployable');
-      expect(data.isDeployable).toBe(true);
-      expect(data.message).toContain('Server applications require hostname-to-container ingress proxying');
+      expect(data.deploymentState).toBe('building');
+      expect(data.codeBuildId).toBe('nsw-build:cm-build-uuid-1234');
+
+      // Verify lazy finalize on GET /api/deploy
+      const getRes = await deployApi.onRequestGet({
+        request: new Request('https://nates-software.com/api/deploy?appId=certified-mailer-app'),
+        env: testEnv
+      });
+      const getData: any = await getRes.json();
+      expect(getData.success).toBe(true);
+      expect(getData.deploymentState).toBe('deployable');
 
       // Verify D1 records: deployable state, active_deployment_id is NULL (never fakes active without serve)
       const app = await ctx.d1.prepare(`
@@ -1002,7 +1033,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
 
       expect(app.deployment_state).toBe('deployable');
       expect(app.active_deployment_id).toBeNull();
-      expect(app.deployment_error).toContain('Server applications require hostname-to-container ingress proxying');
+      expect(app.deployment_error).toBeNull();
 
       // Verify build_runs was recorded as passed with real digest
       const buildRun = await ctx.d1.prepare(`
@@ -1351,7 +1382,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       `).run();
       await ctx.d1.prepare(`
         INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
-        VALUES ('repo_edge_1', 'refs/heads/main', 'commit_edge_oid_111122223333444455556666')
+        VALUES ('repo_edge_1', 'refs/heads/main', '1111222233334444555566667777888899990000')
       `).run();
     });
 
@@ -1364,7 +1395,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         }));
         const body = JSON.parse(String(init?.body || '{}'));
         expect(body.storageKey).toBe('repositories/edge-app');
-        expect(body.commitOid).toBe('commit_edge_oid_111122223333444455556666');
+        expect(body.commitOid).toBe('1111222233334444555566667777888899990000');
 
         return Response.json({
           success: true,
@@ -1408,7 +1439,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
     });
 
     it('successfully deploys by delegating source verification, archive fetch, and container build to gateways', async () => {
-      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const commitOid = '1111222233334444555566667777888899990000';
       const fakeTarArchive = Buffer.from('fake-tar-archive-bytes');
 
       const gitsmithFetch: typeof fetch = async (input) => {
@@ -1616,7 +1647,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
     });
 
     it('fails closed when RIG gateway returns build failure', async () => {
-      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const commitOid = '1111222233334444555566667777888899990000';
       const fakeTar = Buffer.from('tar');
 
       const gitsmithFetch: typeof fetch = async (input) => {
@@ -1625,8 +1656,8 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
           return Response.json({
             success: true,
             exists: true,
-            files: ['package.json', 'src/index.ts'],
-            manifestContents: { 'package.json': JSON.stringify({ scripts: { build: 'tsc' } }) }
+            files: ['index.html', 'style.css'],
+            manifestContents: { 'index.html': '<!DOCTYPE html><h1>Edge App</h1>' }
           });
         }
         return new Response(fakeTar, { status: 200, headers: { 'Content-Type': 'application/x-tar', 'X-Gitsmith-Commit-Oid': commitOid } });
@@ -1688,7 +1719,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
     });
 
     it('fails closed when RIG gateway returns smoke check failure', async () => {
-      const commitOid = 'commit_edge_oid_111122223333444455556666';
+      const commitOid = '1111222233334444555566667777888899990000';
       const fakeTar = Buffer.from('tar');
 
       const gitsmithFetch: typeof fetch = async (input) => {
