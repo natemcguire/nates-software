@@ -116,6 +116,18 @@ describe('Phase 2: Next.js (SSR) -> Cloudflare Worker Lane (origin_kind=worker)'
       expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('# Platform writes wrangler.jsonc for the dry-run size gate only;');
       expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('# it is discarded and regenerated downstream in the trusted deploy stage.');
     });
+
+    it('NSW_BUILD_NEXT_BUILDSPEC writes platform-owned open-next.config.ts before opennextjs-cloudflare build (Finding 4)', () => {
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('cat > open-next.config.ts <<TS');
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('import { defineCloudflareConfig } from "@opennextjs/cloudflare";');
+      expect(NSW_BUILD_NEXT_BUILDSPEC).toContain('export default defineCloudflareConfig({});');
+
+      const heredocPos = NSW_BUILD_NEXT_BUILDSPEC.indexOf('cat > open-next.config.ts <<TS');
+      const openNextBuildPos = NSW_BUILD_NEXT_BUILDSPEC.indexOf('npx opennextjs-cloudflare build');
+      expect(heredocPos).toBeGreaterThan(-1);
+      expect(openNextBuildPos).toBeGreaterThan(-1);
+      expect(heredocPos).toBeLessThan(openNextBuildPos);
+    });
   });
 
   // ==========================================================================

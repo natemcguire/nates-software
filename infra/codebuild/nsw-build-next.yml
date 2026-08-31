@@ -36,6 +36,12 @@ phases:
           "workers_dev": true
         }
         JSON
+      # Platform owns open-next.config.ts; write unconditionally (overwrites any repo config).
+      - |
+        cat > open-next.config.ts <<TS
+        import { defineCloudflareConfig } from "@opennextjs/cloudflare";
+        export default defineCloudflareConfig({});
+        TS
       - npx next build
       - npx opennextjs-cloudflare build
       # Optional tokenless script-size gate: surfaces script_too_large before deploy.

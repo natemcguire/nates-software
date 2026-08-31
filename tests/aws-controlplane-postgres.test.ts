@@ -289,28 +289,32 @@ describe('Phase 5: Postgres Add-on AWS Control Plane Suite', () => {
       expect(res.dbKind).toBe('postgres');
       expect(res.reused).toBe(false);
 
-      // Verify sequence of 5 SQL statements
-      expect(executedSqls.length).toBe(5);
+      // Verify sequence of 6 SQL statements
+      expect(executedSqls.length).toBe(6);
 
       // 1. CREATE ROLE "app_<id>" LOGIN PASSWORD '<pw>' on database: 'postgres'
       expect(executedSqls[0].database).toBe('postgres');
       expect(executedSqls[0].sql).toMatch(new RegExp(`^CREATE ROLE ${expectedDbName} LOGIN PASSWORD '[A-Za-z0-9]{32}'$`));
 
-      // 2. CREATE DATABASE "app_<id>" OWNER "app_<id>" on database: 'postgres'
+      // 2. GRANT "app_<id>" TO CURRENT_USER on database: 'postgres' (required so master user can assign DB owner)
       expect(executedSqls[1].database).toBe('postgres');
-      expect(executedSqls[1].sql).toBe(`CREATE DATABASE ${expectedDbName} OWNER ${expectedDbName}`);
+      expect(executedSqls[1].sql).toBe(`GRANT ${expectedDbName} TO CURRENT_USER`);
 
-      // 3. REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC on database: 'postgres'
+      // 3. CREATE DATABASE "app_<id>" OWNER "app_<id>" on database: 'postgres'
       expect(executedSqls[2].database).toBe('postgres');
-      expect(executedSqls[2].sql).toBe(`REVOKE ALL ON DATABASE ${expectedDbName} FROM PUBLIC`);
+      expect(executedSqls[2].sql).toBe(`CREATE DATABASE ${expectedDbName} OWNER ${expectedDbName}`);
 
-      // 4. REVOKE ALL ON SCHEMA public FROM PUBLIC on database: "app_<id>"
-      expect(executedSqls[3].database).toBe(`app_${appId}`);
-      expect(executedSqls[3].sql).toBe('REVOKE ALL ON SCHEMA public FROM PUBLIC');
+      // 4. REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC on database: 'postgres'
+      expect(executedSqls[3].database).toBe('postgres');
+      expect(executedSqls[3].sql).toBe(`REVOKE ALL ON DATABASE ${expectedDbName} FROM PUBLIC`);
 
-      // 5. GRANT ALL ON SCHEMA public TO "app_<id>" on database: "app_<id>"
+      // 5. REVOKE ALL ON SCHEMA public FROM PUBLIC on database: "app_<id>"
       expect(executedSqls[4].database).toBe(`app_${appId}`);
-      expect(executedSqls[4].sql).toBe(`GRANT ALL ON SCHEMA public TO ${expectedDbName}`);
+      expect(executedSqls[4].sql).toBe('REVOKE ALL ON SCHEMA public FROM PUBLIC');
+
+      // 6. GRANT ALL ON SCHEMA public TO "app_<id>" on database: "app_<id>"
+      expect(executedSqls[5].database).toBe(`app_${appId}`);
+      expect(executedSqls[5].sql).toBe(`GRANT ALL ON SCHEMA public TO ${expectedDbName}`);
 
       // Verify SSM PutParameter payload
       expect(ssmPutPayload).toBeDefined();
@@ -354,6 +358,49 @@ describe('Phase 5: Postgres Add-on AWS Control Plane Suite', () => {
 
       expect(res.success).toBe(true);
       expect(res.secretPath).toBe(`/nsw/apps/${appId}/db-url`);
+    });
+
+    it('issues GRANT "<dbName>" TO CURRENT_USER strictly before CREATE DATABASE in master postgres db (Finding 1)', async () => {
+      const appId = 'grant-order-app';
+      const expectedDbName = `"app_${appId}"`;
+      const executedSqls: { database: string; sql: string }[] = [];
+
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const target = req.headers.get('x-amz-target') || '';
+        const bodyText = await req.clone().text();
+        const body = bodyText ? JSON.parse(bodyText) : {};
+
+        if (target === 'AmazonSSM.GetParameter') {
+          return Response.json({ __type: 'ParameterNotFound' }, { status: 400 });
+        }
+        if (target === 'AmazonSSM.PutParameter') {
+          return Response.json({ Version: 1 });
+        }
+        if (req.url.includes('/Execute')) {
+          executedSqls.push({ database: body.database, sql: body.sql });
+          return Response.json({ records: [], numberOfRecordsUpdated: 0 });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      const res = await provisionAppDatabase(
+        { ...AWS_CREDS, __AWS_FETCH: mockAwsFetch, AWS_RDS_DATA_RETRY_DELAY_MS: 0 },
+        appId
+      );
+
+      expect(res.success).toBe(true);
+
+      const grantIndex = executedSqls.findIndex(
+        s => s.sql === `GRANT ${expectedDbName} TO CURRENT_USER` && s.database === 'postgres'
+      );
+      const createDbIndex = executedSqls.findIndex(
+        s => s.sql === `CREATE DATABASE ${expectedDbName} OWNER ${expectedDbName}` && s.database === 'postgres'
+      );
+
+      expect(grantIndex).toBeGreaterThan(-1);
+      expect(createDbIndex).toBeGreaterThan(-1);
+      expect(grantIndex).toBeLessThan(createDbIndex);
     });
   });
 
@@ -665,6 +712,15 @@ describe('Phase 5: Postgres Add-on AWS Control Plane Suite', () => {
               buildStatus: 'SUCCEEDED',
               currentPhase: 'COMPLETED'
             }]
+          });
+        }
+        // ECR CreateRepository
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({
+            repository: {
+              repositoryName: `nsw/${appId}`,
+              registryId: '777772815966'
+            }
           });
         }
         // ECR DescribeImages

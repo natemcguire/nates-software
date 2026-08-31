@@ -20,6 +20,7 @@ import {
   putS3SourceArchive,
   startCodeBuild,
   batchGetCodeBuilds,
+  createEcrRepository,
   describeEcrImages,
   provisionAppDatabase,
   DEFAULT_AWS_ACCOUNT_ID,
@@ -1981,6 +1982,59 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
               deployment_evidence_json = ?
             WHERE id = ?
           `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'failed',
+            error: errorMsg,
+            evidence: failureEvidence
+          }, 422);
+        }
+
+        // ECR CreateRepository (SigV4) - ensure per-app repository exists before container build
+        const ecrResult = await createEcrRepository(env, {
+          repositoryName: ecrRepo
+        });
+
+        if (!ecrResult.success) {
+          const errorMsg = `Deployment failed for ${appListing.name}: Failed to provision ECR repository (${ecrResult.error || 'ECR repository provisioning error'}).`;
+          const failureEvidence = {
+            stage: 'ecr_provisioning',
+            status: 'failed',
+            timestamp: new Date().toISOString(),
+            details: errorMsg,
+            lastDeployError: errorMsg,
+            repositoryId: repository.id,
+            commitOid,
+            ecrRepo
+          };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(failureEvidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence: failureEvidence
+            }, 422);
+          }
+
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'failed',
+              deployment_error = ?,
+              deployment_evidence_json = ?,
+              detected_project_type = ?
+            WHERE id = ?
+          `).bind(errorMsg, JSON.stringify(failureEvidence), plan.detectedType, appId).run();
 
           return json({
             success: false,

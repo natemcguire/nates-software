@@ -1161,6 +1161,14 @@ dependencies = [
             }]
           });
         }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({
+            repository: {
+              repositoryName: 'nsw/certified-mailer-app',
+              registryId: '777772815966'
+            }
+          });
+        }
         if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
           return Response.json({
             imageDetails: [{
@@ -2227,6 +2235,14 @@ dependencies = [
               buildStatus: 'SUCCEEDED',
               currentPhase: 'COMPLETED'
             }]
+          });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.CreateRepository') {
+          return Response.json({
+            repository: {
+              repositoryName: `nsw/${pgAppId}`,
+              registryId: '777772815966'
+            }
           });
         }
         if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
