@@ -146,6 +146,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_reversal_cumulative_guard');
       expect(triggers).toContain('commerce_refund_finalization_guard');
       expect(triggers).toContain('commerce_refund_finalized_immutable');
+      expect(triggers).toContain('contributor_shares_no_delete');
       expect(triggers).toContain('contributor_shares_economics_immutable');
       expect(triggers).toContain('contributor_shares_status_forward_only');
     });
@@ -194,6 +195,122 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       const foreignKeys = legacy.rawDb.exec('PRAGMA foreign_key_list(drop_upvotes);');
       expect(foreignKeys[0]?.values.some(row => row[2] === 'app_listings' && row[6] === 'CASCADE')).toBe(true);
       expect(legacy.runForeignKeyCheck()).toEqual([]);
+    });
+
+    it('should migrate a populated database through 0029 using D1 deferred foreign keys with all child rows preserved', async () => {
+      const legacy = await createTestD1Database({
+        foreignKeys: true,
+        migrations: CANONICAL_MIGRATIONS.slice(
+          0,
+          CANONICAL_MIGRATIONS.indexOf('0029_contributor_revenue_sharing.sql')
+        )
+      });
+
+      // Populate fixture with fulfilled order, frozen allocation, and child table rows
+      await legacy.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, storage_key, status)
+        VALUES ('repo_pop_test', 'usr_nate', 'pop-repo', 'storage_pop', 'active')
+      `).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, seller_user_id,
+          app_version, price_version, gross_cents, currency, lineage_snapshot_json, status
+        ) VALUES (
+          'cord_pop_1', 'chk_pop_1', 'usr_sam', 'dronehunter', 'usr_nate',
+          'v1.0.0', 1, 3000, 'usd', '{}', 'fulfilled'
+        )
+      `).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
+        ) VALUES (
+          'coa_pop_1', 'cord_pop_1', 0, 'maker', 'usr_nate', 'repo_pop_test', 9000, 2700
+        )
+      `).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_transfer_outbox (
+          id, order_id, allocation_id, destination_user_id, amount_cents, currency
+        ) VALUES (
+          'cout_pop_1', 'cord_pop_1', 'coa_pop_1', 'usr_nate', 2700, 'usd'
+        )
+      `).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO stripe_event_inbox (event_id, event_type, livemode, payload_json, payload_sha256)
+        VALUES ('evt_pop_1', 'charge.refund.updated', 0, '{}', ?)
+      `).bind('a'.repeat(64)).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_refunds (
+          id, stripe_refund_id, order_id, stripe_charge_id, amount_cents, currency, status,
+          authoritative_json, first_event_id, last_event_id
+        ) VALUES (
+          're_pop_1', 'sr_pop_1', 'cord_pop_1', 'ch_pop_1', 2700, 'usd', 'succeeded',
+          '{}', 'evt_pop_1', 'evt_pop_1'
+        )
+      `).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_refund_allocations (
+          id, refund_id, allocation_id, sequence, amount_cents
+        ) VALUES (
+          'cra_pop_1', 're_pop_1', 'coa_pop_1', 0, 2700
+        )
+      `).run();
+
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_recovery_obligations (
+          id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
+          source_event_id, amount_cents, currency, status
+        ) VALUES (
+          'cro_pop_1', 'cord_pop_1', 'refund', 're_pop_1', 'coa_pop_1', 'cout_pop_1',
+          'evt_pop_1', 2700, 'usd', 'pending'
+        )
+      `).run();
+
+      expect(legacy.runForeignKeyCheck()).toEqual([]);
+
+      const migration = fs.readFileSync(path.join(getMigrationsDir(), '0029_contributor_revenue_sharing.sql'), 'utf8');
+      await legacy.d1.exec(migration);
+
+      expect(legacy.runForeignKeyCheck()).toEqual([]);
+
+      // Verify all populated rows preserved with exact fidelity
+      const alloc = await legacy.d1.prepare('SELECT * FROM commerce_order_allocations WHERE id = ?')
+        .bind('coa_pop_1').first<any>();
+      expect(alloc?.id).toBe('coa_pop_1');
+      expect(alloc?.role).toBe('maker');
+      expect(alloc?.amount_cents).toBe(2700);
+
+      const outbox = await legacy.d1.prepare('SELECT * FROM commerce_transfer_outbox WHERE id = ?')
+        .bind('cout_pop_1').first<any>();
+      expect(outbox?.id).toBe('cout_pop_1');
+      expect(outbox?.allocation_id).toBe('coa_pop_1');
+      expect(outbox?.amount_cents).toBe(2700);
+
+      const refundAlloc = await legacy.d1.prepare('SELECT * FROM commerce_refund_allocations WHERE id = ?')
+        .bind('cra_pop_1').first<any>();
+      expect(refundAlloc?.id).toBe('cra_pop_1');
+      expect(refundAlloc?.allocation_id).toBe('coa_pop_1');
+      expect(refundAlloc?.amount_cents).toBe(2700);
+
+      const recovery = await legacy.d1.prepare('SELECT * FROM commerce_recovery_obligations WHERE id = ?')
+        .bind('cro_pop_1').first<any>();
+      expect(recovery?.id).toBe('cro_pop_1');
+      expect(recovery?.allocation_id).toBe('coa_pop_1');
+      expect(recovery?.amount_cents).toBe(2700);
+
+      // Verify FK enforcement is active post-rebuild
+      await expect(
+        legacy.d1.prepare(`
+          INSERT INTO commerce_transfer_outbox (
+            id, order_id, allocation_id, destination_user_id, amount_cents, currency
+          ) VALUES ('cout_bad_fk', 'cord_pop_1', 'nonexistent_alloc', 'usr_nate', 2700, 'usd')
+        `).run()
+      ).rejects.toThrow();
     });
   });
 
@@ -1038,7 +1155,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/UNIQUE constraint failed/);
 
-      // 3. contributor_shares triggers: economics-immutable
+      // BEFORE DELETE trigger prevents row deletion (#2)
+      await expect(
+        ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
+
+      // 3. contributor_shares triggers: economics-immutable & provenance freeze (#3)
       await expect(
         ctx.d1.prepare('UPDATE contributor_shares SET basis_points = 1500 WHERE id = ?')
           .bind('cs_valid1').run()
@@ -1059,16 +1181,38 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .bind('cs_valid1').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // 4. contributor_shares triggers: status forward-only
-      // pending -> active is allowed
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_job_id = 'mj_new' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_approval_id = 'mapp_new' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      // 4. contributor_shares triggers: status forward-only & timestamp coupling (#4)
+      // Activating without activated_at must fail (#4)
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow();
+
+      // pending -> active with activated_at is allowed
       await ctx.d1.prepare(`
-        UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE id = ?
+        UPDATE contributor_shares SET status = 'active', activated_at = '2026-08-31 12:00:00' WHERE id = ?
       `).bind('cs_valid1').run();
 
       const activeShare = await ctx.d1.prepare('SELECT status, activated_at FROM contributor_shares WHERE id = ?')
         .bind('cs_valid1').first<any>();
       expect(activeShare?.status).toBe('active');
       expect(activeShare?.activated_at).toBeTruthy();
+
+      // Rewriting activated_at must fail (#4)
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET activated_at = '2026-08-31 13:00:00' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
 
       // active -> revoked must be rejected
       await expect(

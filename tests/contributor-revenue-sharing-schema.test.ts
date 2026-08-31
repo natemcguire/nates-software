@@ -56,7 +56,7 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       `).run();
     });
 
-    it('defaults status to pending', async () => {
+    it('defaults status to pending with null timestamps', async () => {
       await ctx.d1.prepare(`
         INSERT INTO contributor_shares (
           id, repository_id, contributor_user_id, granted_by_user_id, basis_points
@@ -70,6 +70,66 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       expect(share?.activated_at).toBeNull();
       expect(share?.revoked_at).toBeNull();
       expect(share?.created_at).toBeTruthy();
+    });
+
+    it('rejects pending row with non-null timestamps (#4)', async () => {
+      // Pending with activated_at
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at
+          ) VALUES ('cs_bad_p_act', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000, 'pending', CURRENT_TIMESTAMP)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Pending with revoked_at
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, revoked_at
+          ) VALUES ('cs_bad_p_rev', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000, 'pending', CURRENT_TIMESTAMP)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('rejects active row without activated_at or with revoked_at (#4)', async () => {
+      // Active without activated_at
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at
+          ) VALUES ('cs_bad_act_no_time', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000, 'active', NULL)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Active with revoked_at
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at, revoked_at
+          ) VALUES ('cs_bad_act_rev', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+    });
+
+    it('rejects revoked row without revoked_at or with activated_at (#4)', async () => {
+      // Revoked without revoked_at
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, revoked_at
+          ) VALUES ('cs_bad_rev_no_time', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000, 'revoked', NULL)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Revoked with activated_at
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at, revoked_at
+          ) VALUES ('cs_bad_rev_act', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000, 'revoked', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
     });
 
     it('rejects self-grant where contributor_user_id == granted_by_user_id', async () => {
@@ -138,21 +198,75 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       expect(count).toBe(2);
     });
 
-    it('cascades deletion when repository is deleted', async () => {
-      await ctx.d1.prepare(`
-        INSERT INTO contributor_shares (
-          id, repository_id, contributor_user_id, granted_by_user_id, basis_points
-        ) VALUES ('cs_cascade', 'repo_cs_test', 'usr_sam', 'usr_nate', 1000)
-      `).run();
+    describe('BEFORE DELETE guard on contributor_shares (#2)', () => {
+      it('blocks physical deletion of pending share and keeps merge_attempt_id occupied', async () => {
+        await ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id,
+            merge_attempt_id, basis_points, status
+          ) VALUES ('cs_del_pend', 'repo_cs_test', 'usr_sam', 'usr_nate', 'att_del_pend', 1000, 'pending')
+        `).run();
 
-      expect(await ctx.d1.prepare('SELECT count(*) as c FROM contributor_shares WHERE id = ?')
-        .bind('cs_cascade').first<number>('c')).toBe(1);
+        await expect(
+          ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_del_pend').run()
+        ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
 
-      await ctx.d1.prepare('DELETE FROM repositories WHERE id = ?').bind('repo_cs_test').run();
+        // Attempt second insert with same merge_attempt_id -> must fail UNIQUE check because original row is preserved
+        await expect(
+          ctx.d1.prepare(`
+            INSERT INTO contributor_shares (
+              id, repository_id, contributor_user_id, granted_by_user_id,
+              merge_attempt_id, basis_points, status
+            ) VALUES ('cs_swap_pend', 'repo_cs_test', 'usr_josh', 'usr_nate', 'att_del_pend', 500, 'pending')
+          `).run()
+        ).rejects.toThrow(/UNIQUE constraint failed/);
+      });
 
-      expect(await ctx.d1.prepare('SELECT count(*) as c FROM contributor_shares WHERE id = ?')
-        .bind('cs_cascade').first<number>('c')).toBe(0);
-      expect(ctx.runForeignKeyCheck()).toEqual([]);
+      it('blocks physical deletion of active share and keeps merge_attempt_id occupied', async () => {
+        await ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id,
+            merge_attempt_id, basis_points, status, activated_at
+          ) VALUES ('cs_del_act', 'repo_cs_test', 'usr_sam', 'usr_nate', 'att_del_act', 1000, 'active', CURRENT_TIMESTAMP)
+        `).run();
+
+        await expect(
+          ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_del_act').run()
+        ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
+
+        // Attempt second insert with same merge_attempt_id -> must fail UNIQUE check
+        await expect(
+          ctx.d1.prepare(`
+            INSERT INTO contributor_shares (
+              id, repository_id, contributor_user_id, granted_by_user_id,
+              merge_attempt_id, basis_points, status
+            ) VALUES ('cs_swap_act', 'repo_cs_test', 'usr_josh', 'usr_nate', 'att_del_act', 500, 'pending')
+          `).run()
+        ).rejects.toThrow(/UNIQUE constraint failed/);
+      });
+
+      it('blocks physical deletion of revoked share and keeps merge_attempt_id occupied', async () => {
+        await ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id,
+            merge_attempt_id, basis_points, status, revoked_at
+          ) VALUES ('cs_del_rev', 'repo_cs_test', 'usr_sam', 'usr_nate', 'att_del_rev', 1000, 'revoked', CURRENT_TIMESTAMP)
+        `).run();
+
+        await expect(
+          ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_del_rev').run()
+        ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
+
+        // Attempt second insert with same merge_attempt_id -> must fail UNIQUE check
+        await expect(
+          ctx.d1.prepare(`
+            INSERT INTO contributor_shares (
+              id, repository_id, contributor_user_id, granted_by_user_id,
+              merge_attempt_id, basis_points, status
+            ) VALUES ('cs_swap_rev', 'repo_cs_test', 'usr_josh', 'usr_nate', 'att_del_rev', 500, 'pending')
+          `).run()
+        ).rejects.toThrow(/UNIQUE constraint failed/);
+      });
     });
   });
 
@@ -174,7 +288,7 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       `).run();
     });
 
-    it('economics-immutable trigger prevents modification of economic columns', async () => {
+    it('economics-immutable trigger prevents modification of economic columns and provenance (#3)', async () => {
       // basis_points
       await expect(
         ctx.d1.prepare('UPDATE contributor_shares SET basis_points = 2000 WHERE id = ?')
@@ -204,9 +318,31 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         ctx.d1.prepare("UPDATE contributor_shares SET merge_attempt_id = 'att_new' WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
+
+      // merge_job_id (#3)
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_job_id = 'mj_rewritten' WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_job_id = NULL WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      // merge_approval_id (#3)
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_approval_id = 'map_rewritten' WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_approval_id = NULL WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
     });
 
-    it('status forward-only trigger allows pending -> active transition', async () => {
+    it('status forward-only trigger allows pending -> active transition with non-null activated_at', async () => {
       await ctx.d1.prepare(`
         UPDATE contributor_shares
         SET status = 'active', activated_at = CURRENT_TIMESTAMP
@@ -219,7 +355,14 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       expect(share?.activated_at).toBeTruthy();
     });
 
-    it('status forward-only trigger allows pending -> revoked transition', async () => {
+    it('status forward-only trigger rejects pending -> active without activated_at (#4)', async () => {
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow();
+    });
+
+    it('status forward-only trigger allows pending -> revoked transition with non-null revoked_at', async () => {
       await ctx.d1.prepare(`
         UPDATE contributor_shares
         SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP
@@ -232,38 +375,83 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       expect(share?.revoked_at).toBeTruthy();
     });
 
+    it('status forward-only trigger rejects pending -> revoked without revoked_at (#4)', async () => {
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked' WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow();
+    });
+
     it('status forward-only trigger blocks active -> revoked and active -> pending', async () => {
       // Activate share first
-      await ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
+      await ctx.d1.prepare("UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind('cs_trig').run();
 
       // Attempt active -> revoked
       await expect(
-        ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked' WHERE id = ?")
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
       // Attempt active -> pending
       await expect(
-        ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending' WHERE id = ?")
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending', activated_at = NULL WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
     });
 
     it('status forward-only trigger blocks revoked -> active and revoked -> pending', async () => {
       // Revoke share first
-      await ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked' WHERE id = ?")
+      await ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind('cs_trig').run();
 
       // Attempt revoked -> active
       await expect(
-        ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
       // Attempt revoked -> pending
       await expect(
-        ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending' WHERE id = ?")
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending', revoked_at = NULL WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+    });
+
+    it('freezes timestamps once set (#4)', async () => {
+      // Activate share first
+      await ctx.d1.prepare("UPDATE contributor_shares SET status = 'active', activated_at = '2026-08-31 12:00:00' WHERE id = ?")
+        .bind('cs_trig').run();
+
+      // Rewriting activated_at on active share must fail
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET activated_at = '2026-08-31 13:00:00' WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      // Nulling activated_at on active share must fail
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET activated_at = NULL WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      // Setting revoked_at on active share must fail (#4)
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+    });
+
+    it('rejects setting timestamps on a pending share without status transition (#4)', async () => {
+      // Setting activated_at while keeping status = pending
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET activated_at = CURRENT_TIMESTAMP WHERE id = ?")
+          .bind('cs_trig').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+
+      // Setting revoked_at while keeping status = pending
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
     });

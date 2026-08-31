@@ -3,7 +3,7 @@
 -- and widens commerce_order_allocations, commerce_outbox_requires_fulfilled_allocation,
 -- and commerce_recovery_matches_order_allocation to admit 'contributor' role.
 
-PRAGMA foreign_keys = OFF;
+PRAGMA defer_foreign_keys = true;
 
 -- 1. New table contributor_shares + indexes + triggers
 CREATE TABLE IF NOT EXISTS contributor_shares (
@@ -19,7 +19,12 @@ CREATE TABLE IF NOT EXISTS contributor_shares (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     activated_at DATETIME,
     revoked_at DATETIME,
-    CHECK (contributor_user_id != granted_by_user_id)
+    CHECK (contributor_user_id != granted_by_user_id),
+    CHECK (
+      (status = 'pending' AND activated_at IS NULL AND revoked_at IS NULL) OR
+      (status = 'active' AND activated_at IS NOT NULL AND revoked_at IS NULL) OR
+      (status = 'revoked' AND activated_at IS NULL AND revoked_at IS NOT NULL)
+    )
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_contributor_shares_attempt
@@ -31,21 +36,37 @@ CREATE INDEX IF NOT EXISTS idx_contributor_shares_repo_status
 CREATE INDEX IF NOT EXISTS idx_contributor_shares_contributor
     ON contributor_shares(contributor_user_id);
 
+CREATE TRIGGER IF NOT EXISTS contributor_shares_no_delete
+BEFORE DELETE ON contributor_shares
+BEGIN
+    SELECT RAISE(ABORT, 'contributor_shares rows cannot be deleted; use revocation');
+END;
+
 CREATE TRIGGER IF NOT EXISTS contributor_shares_economics_immutable
 BEFORE UPDATE ON contributor_shares
 WHEN OLD.repository_id IS NOT NEW.repository_id
   OR OLD.contributor_user_id IS NOT NEW.contributor_user_id
   OR OLD.granted_by_user_id IS NOT NEW.granted_by_user_id
   OR OLD.basis_points IS NOT NEW.basis_points
+  OR OLD.merge_job_id IS NOT NEW.merge_job_id
   OR OLD.merge_attempt_id IS NOT NEW.merge_attempt_id
+  OR OLD.merge_approval_id IS NOT NEW.merge_approval_id
+  OR (OLD.activated_at IS NOT NULL AND OLD.activated_at IS NOT NEW.activated_at)
+  OR (OLD.revoked_at IS NOT NULL AND OLD.revoked_at IS NOT NEW.revoked_at)
 BEGIN
     SELECT RAISE(ABORT, 'contributor share economics are immutable');
 END;
 
 CREATE TRIGGER IF NOT EXISTS contributor_shares_status_forward_only
 BEFORE UPDATE ON contributor_shares
-WHEN (OLD.status IS NOT NEW.status)
-  AND NOT (OLD.status = 'pending' AND NEW.status IN ('active', 'revoked'))
+WHEN (
+  (OLD.status IS NOT NEW.status AND NOT (OLD.status = 'pending' AND NEW.status IN ('active', 'revoked')))
+  OR (OLD.status = 'pending' AND NEW.status = 'active' AND (NEW.activated_at IS NULL OR NEW.revoked_at IS NOT NULL))
+  OR (OLD.status = 'pending' AND NEW.status = 'revoked' AND (NEW.revoked_at IS NULL OR NEW.activated_at IS NOT NULL))
+  OR (NEW.status = 'pending' AND (NEW.activated_at IS NOT NULL OR NEW.revoked_at IS NOT NULL))
+  OR (NEW.status = 'active' AND NEW.revoked_at IS NOT NULL)
+  OR (NEW.status = 'revoked' AND NEW.activated_at IS NOT NULL)
+)
 BEGIN
     SELECT RAISE(ABORT, 'contributor share status transition is forward-only (pending to active or revoked)');
 END;
@@ -58,6 +79,8 @@ ALTER TABLE repositories ADD COLUMN grantable_bps INTEGER NOT NULL DEFAULT 0 CHE
 DROP TRIGGER IF EXISTS commerce_outbox_requires_fulfilled_allocation;
 DROP TRIGGER IF EXISTS commerce_recovery_matches_order_allocation;
 DROP TRIGGER IF EXISTS commerce_refund_allocations_match_order;
+DROP TRIGGER IF EXISTS commerce_order_allocations_immutable_update;
+DROP TRIGGER IF EXISTS commerce_order_allocations_immutable_delete;
 
 CREATE TABLE commerce_order_allocations_canonical (
     id TEXT PRIMARY KEY,
@@ -171,4 +194,4 @@ BEGIN
     SELECT RAISE(ABORT, 'refund allocation must match a succeeded refund and frozen order allocation');
 END;
 
-PRAGMA foreign_keys = ON;
+PRAGMA foreign_key_check;
