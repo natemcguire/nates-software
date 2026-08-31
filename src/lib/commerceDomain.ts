@@ -46,12 +46,23 @@ export interface OrderAllocationSnapshot {
   amountCents: number;
 }
 
+export interface ContributorInput {
+  userId: string;
+  bps: number;
+}
+
+export interface ContributorNode {
+  userId: string;
+  bps: number;
+}
+
 export interface AllocationCalculationInput {
   grossCents: number;
   currency: string;
   sellerUserId: string;
   repositoryId?: string | null;
   ancestors?: readonly AncestorInput[] | null;
+  contributors?: readonly ContributorInput[] | null;
 }
 
 export interface LineageSnapshotPayload {
@@ -77,6 +88,16 @@ export interface LineageSnapshotPayload {
     amountCents: number;
     basisPoints: number;
   }>;
+  contributorCount: number;
+  contributorTotalCents: number;
+  contributorTotalBasisPoints: number;
+  contributorAllocations: ReadonlyArray<{
+    sequence: number;
+    repositoryId: string | null;
+    userId: string;
+    amountCents: number;
+    basisPoints: number;
+  }>;
   allocations: readonly OrderAllocationSnapshot[];
   conservationVerified: boolean;
 }
@@ -92,6 +113,15 @@ export interface AllocationCalculationResult {
   lineageTotalBasisPoints: number;
   protocolPoolCents: number;
   protocolPoolBasisPoints: number;
+  contributorTotalCents: number;
+  contributorTotalBasisPoints: number;
+  contributorAllocations: ReadonlyArray<{
+    sequence: number;
+    repositoryId: string | null;
+    userId: string;
+    amountCents: number;
+    basisPoints: number;
+  }>;
   allocations: OrderAllocationSnapshot[];
   snapshot: LineageSnapshotPayload;
   snapshotJson: string;
@@ -209,18 +239,86 @@ export function validateAncestors(
 }
 
 /**
+ * Validates and sanitizes contributor share input list.
+ * Enforces non-empty distinct user IDs, positive integer basis points,
+ * and maker floor invariant (maker retains at least MAKER_FLOOR_BPS = 1000 bps).
+ */
+export function validateContributors(
+  contributors: unknown,
+  makerBasisPoints?: number
+): ContributorNode[] {
+  if (contributors === null || contributors === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(contributors)) {
+    throw new CommerceValidationError('Contributors must be an array or null/undefined');
+  }
+
+  if (contributors.length === 0) {
+    return [];
+  }
+
+  const result: ContributorNode[] = [];
+  const seenUserIds = new Set<string>();
+  let totalBps = 0;
+
+  for (let i = 0; i < contributors.length; i++) {
+    const item = contributors[i];
+    if (!item || typeof item !== 'object') {
+      throw new CommerceValidationError(`Contributor at index ${i} must be a valid object`);
+    }
+
+    const userId = item.userId;
+    if (typeof userId !== 'string' || !userId.trim()) {
+      throw new CommerceValidationError(`Contributor at index ${i} has invalid or missing userId`);
+    }
+    const cleanUserId = userId.trim();
+
+    if (seenUserIds.has(cleanUserId)) {
+      throw new CommerceValidationError(`Duplicate contributor userId detected: ${cleanUserId}`);
+    }
+    seenUserIds.add(cleanUserId);
+
+    const bps = item.bps;
+    if (typeof bps !== 'number' || !Number.isFinite(bps) || !Number.isSafeInteger(bps) || bps <= 0) {
+      throw new CommerceValidationError(`Contributor at index ${i} has invalid bps: ${bps} (must be a strictly positive integer)`);
+    }
+
+    totalBps += bps;
+    result.push({
+      userId: cleanUserId,
+      bps
+    });
+  }
+
+  if (makerBasisPoints !== undefined) {
+    const maxAllowedBps = makerBasisPoints - MAKER_FLOOR_BPS;
+    if (totalBps > maxAllowedBps) {
+      throw new CommerceValidationError(
+        `Contributor total basis points (${totalBps}) exceeds the allowable carve cap of ${maxAllowedBps} bps (maker floor: ${MAKER_FLOOR_BPS} bps)`
+      );
+    }
+  }
+
+  return result;
+}
+
+/**
  * Deterministically calculates royalty allocations for a purchase.
  *
  * Rules:
  * 1. Conservation of Cents: Sum of all allocation amount_cents EXACTLY equals gross_cents.
  * 2. Conservation of BPS: Sum of all basis_points EXACTLY equals 10,000.
  * 3. Root App (0 ancestors):
- *    - Maker: 9000 BPS (90%)
- *    - Protocol Pool: 1000 BPS (10%)
+ *    - Maker: 9000 BPS (90%) minus active contributor shares
+ *    - Active Contributors: carved from Maker slice (seq 1..M)
+ *    - Protocol Pool: 1000 BPS (10%) (seq last)
  * 4. Fork App (N >= 1 ancestors):
- *    - Maker: 7000 BPS (70%)
- *    - Protocol Pool: 1000 BPS (10%)
- *    - Ancestors collectively: 2000 BPS (20%)
+ *    - Maker: 7000 BPS (70%) minus active contributor shares
+ *    - Ancestors collectively: 2000 BPS (20%) (seq 1..N)
+ *    - Active Contributors: carved from Maker slice (seq N+1..N+M)
+ *    - Protocol Pool: 1000 BPS (10%) (seq last)
  *    - Ancestor shares are equal with deterministic remainder assignment by ancestry order (nearest ancestor first).
  */
 export function calculateAllocations(input: AllocationCalculationInput): AllocationCalculationResult {
@@ -231,6 +329,12 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
   const ancestors = validateAncestors(input.ancestors, sellerUserId, repositoryId);
 
   const isRoot = ancestors.length === 0;
+  const initialMakerBasisPoints = isRoot
+    ? COMMERCE_BASIS_POINTS.ROOT_MAKER
+    : COMMERCE_BASIS_POINTS.FORK_MAKER;
+
+  const contributors = validateContributors(input.contributors, initialMakerBasisPoints);
+
   const lineagePolicy = DEFAULT_LINEAGE_POLICY;
   const allocations: OrderAllocationSnapshot[] = [];
 
@@ -245,14 +349,35 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
   protocolPoolBasisPoints = COMMERCE_BASIS_POINTS.ROOT_PROTOCOL_POOL;
   protocolPoolCents = Math.floor((grossCents * protocolPoolBasisPoints) / COMMERCE_BASIS_POINTS.TOTAL);
 
+  let contributorTotalBasisPoints = 0;
+  let contributorTotalCents = 0;
+
   if (isRoot) {
-    // Root Application: 90% Maker / 10% Protocol Pool
-    makerBasisPoints = COMMERCE_BASIS_POINTS.ROOT_MAKER;
+    // Root Application: 90% Maker (minus contributors) / 10% Protocol Pool
     lineageTotalBasisPoints = 0;
     lineageTotalCents = 0;
 
-    // Maker receives the conserved remainder
-    makerCents = grossCents - protocolPoolCents;
+    // Compute contributor allocations
+    const contributorSnapshots: OrderAllocationSnapshot[] = [];
+    for (let i = 0; i < contributors.length; i++) {
+      const contrib = contributors[i];
+      const allocCents = Math.floor((grossCents * contrib.bps) / COMMERCE_BASIS_POINTS.TOTAL);
+      contributorSnapshots.push({
+        sequence: 1 + i,
+        role: 'contributor',
+        recipientUserId: contrib.userId,
+        sourceRepositoryId: repositoryId,
+        lineageDepth: null,
+        basisPoints: contrib.bps,
+        amountCents: allocCents,
+      });
+      contributorTotalBasisPoints += contrib.bps;
+      contributorTotalCents += allocCents;
+    }
+
+    // Maker receives conserved remainder: gross - protocolPool - contributorTotal
+    makerBasisPoints = COMMERCE_BASIS_POINTS.ROOT_MAKER - contributorTotalBasisPoints;
+    makerCents = grossCents - protocolPoolCents - contributorTotalCents;
 
     // Sequence 0: Maker
     allocations.push({
@@ -265,9 +390,14 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
       amountCents: makerCents,
     });
 
-    // Sequence 1: Protocol Pool
+    // Sequence 1..M: Contributors
+    for (const cs of contributorSnapshots) {
+      allocations.push(cs);
+    }
+
+    // Sequence M + 1: Protocol Pool
     allocations.push({
-      sequence: 1,
+      sequence: 1 + contributors.length,
       role: 'protocol_pool',
       recipientUserId: null,
       sourceRepositoryId: null,
@@ -276,14 +406,32 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
       amountCents: protocolPoolCents,
     });
   } else {
-    // Fork Application: 70% Maker / 20% Ancestors / 10% Protocol Pool
+    // Fork Application: 70% Maker (minus contributors) / 20% Ancestors / 10% Protocol Pool
     const ancestorCount = ancestors.length;
-    makerBasisPoints = COMMERCE_BASIS_POINTS.FORK_MAKER;
     lineageTotalBasisPoints = COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL;
     lineageTotalCents = Math.floor((grossCents * lineageTotalBasisPoints) / COMMERCE_BASIS_POINTS.TOTAL);
 
-    // Maker receives the conserved remainder of (gross - lineage - protocol)
-    makerCents = grossCents - lineageTotalCents - protocolPoolCents;
+    // Compute contributor allocations
+    const contributorSnapshots: OrderAllocationSnapshot[] = [];
+    for (let i = 0; i < contributors.length; i++) {
+      const contrib = contributors[i];
+      const allocCents = Math.floor((grossCents * contrib.bps) / COMMERCE_BASIS_POINTS.TOTAL);
+      contributorSnapshots.push({
+        sequence: 1 + ancestorCount + i,
+        role: 'contributor',
+        recipientUserId: contrib.userId,
+        sourceRepositoryId: repositoryId,
+        lineageDepth: null,
+        basisPoints: contrib.bps,
+        amountCents: allocCents,
+      });
+      contributorTotalBasisPoints += contrib.bps;
+      contributorTotalCents += allocCents;
+    }
+
+    // Maker receives conserved remainder of (gross - lineage - protocol - contributors)
+    makerBasisPoints = COMMERCE_BASIS_POINTS.FORK_MAKER - contributorTotalBasisPoints;
+    makerCents = grossCents - lineageTotalCents - protocolPoolCents - contributorTotalCents;
 
     // Sequence 0: Maker
     allocations.push({
@@ -320,9 +468,14 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
       });
     }
 
-    // Sequence N + 1: Protocol Pool
+    // Sequence N + 1 .. N + M: Contributors
+    for (const cs of contributorSnapshots) {
+      allocations.push(cs);
+    }
+
+    // Sequence N + M + 1: Protocol Pool
     allocations.push({
-      sequence: ancestorCount + 1,
+      sequence: 1 + ancestorCount + contributors.length,
       role: 'protocol_pool',
       recipientUserId: null,
       sourceRepositoryId: null,
@@ -355,6 +508,16 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
       basisPoints: a.basisPoints,
     }));
 
+  const contributorAllocations = allocations
+    .filter(a => a.role === 'contributor')
+    .map(a => ({
+      sequence: a.sequence,
+      repositoryId: a.sourceRepositoryId,
+      userId: a.recipientUserId!,
+      amountCents: a.amountCents,
+      basisPoints: a.basisPoints,
+    }));
+
   const snapshot: LineageSnapshotPayload = {
     snapshottedAt: new Date().toISOString(),
     lineagePolicy,
@@ -371,6 +534,10 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
     protocolPoolBasisPoints,
     ancestorCount: ancestors.length,
     ancestorAllocations,
+    contributorCount: contributors.length,
+    contributorTotalCents,
+    contributorTotalBasisPoints,
+    contributorAllocations,
     allocations,
     conservationVerified: true,
   };
@@ -386,6 +553,9 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
     lineageTotalBasisPoints,
     protocolPoolCents,
     protocolPoolBasisPoints,
+    contributorTotalCents,
+    contributorTotalBasisPoints,
+    contributorAllocations,
     allocations,
     snapshot,
     snapshotJson: JSON.stringify(snapshot),
