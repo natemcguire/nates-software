@@ -74,15 +74,23 @@ END;
 -- 2. repositories.grantable_bps
 ALTER TABLE repositories ADD COLUMN grantable_bps INTEGER NOT NULL DEFAULT 0 CHECK (grantable_bps >= 0 AND grantable_bps <= 10000);
 
--- 3. Rebuild commerce_order_allocations to widen role CHECK to include 'contributor'
--- and widen recipient-nullability CHECK to include 'contributor'
-DROP TRIGGER IF EXISTS commerce_outbox_requires_fulfilled_allocation;
-DROP TRIGGER IF EXISTS commerce_recovery_matches_order_allocation;
-DROP TRIGGER IF EXISTS commerce_refund_allocations_match_order;
-DROP TRIGGER IF EXISTS commerce_order_allocations_immutable_update;
-DROP TRIGGER IF EXISTS commerce_order_allocations_immutable_delete;
+-- 3. Full 4-table rebuild in dependency order to widen role and recipient checks
+-- Snapshot 4 tables in dependency order into temp tables
+CREATE TEMP TABLE _bak_recovery_obligations AS SELECT * FROM commerce_recovery_obligations;
+CREATE TEMP TABLE _bak_refund_allocations AS SELECT * FROM commerce_refund_allocations;
+CREATE TEMP TABLE _bak_transfer_outbox AS SELECT * FROM commerce_transfer_outbox;
+CREATE TEMP TABLE _bak_order_allocations AS SELECT * FROM commerce_order_allocations;
 
-CREATE TABLE commerce_order_allocations_canonical (
+-- Drop 4 tables in dependency order (children first)
+DROP TABLE commerce_recovery_obligations;
+DROP TABLE commerce_refund_allocations;
+DROP TABLE commerce_transfer_outbox;
+DROP TABLE commerce_order_allocations;
+
+-- Recreate 4 tables in reverse order (parent first)
+
+-- Table 1: commerce_order_allocations (widened role + recipient nullability check)
+CREATE TABLE commerce_order_allocations (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
     sequence INTEGER NOT NULL CHECK (sequence >= 0),
@@ -100,34 +108,6 @@ CREATE TABLE commerce_order_allocations_canonical (
     )
 );
 
-INSERT INTO commerce_order_allocations_canonical (
-    id,
-    order_id,
-    sequence,
-    role,
-    recipient_user_id,
-    source_repository_id,
-    lineage_depth,
-    basis_points,
-    amount_cents,
-    created_at
-)
-SELECT
-    id,
-    order_id,
-    sequence,
-    role,
-    recipient_user_id,
-    source_repository_id,
-    lineage_depth,
-    basis_points,
-    amount_cents,
-    created_at
-FROM commerce_order_allocations;
-
-DROP TABLE commerce_order_allocations;
-ALTER TABLE commerce_order_allocations_canonical RENAME TO commerce_order_allocations;
-
 CREATE INDEX IF NOT EXISTS idx_commerce_allocations_recipient
     ON commerce_order_allocations(recipient_user_id, created_at DESC);
 
@@ -143,7 +123,44 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce order allocations are immutable');
 END;
 
--- 4. Drop and recreate commerce_outbox_requires_fulfilled_allocation to include 'contributor'
+-- Table 2: commerce_transfer_outbox (byte-faithful recreation + outbox trigger with contributor)
+CREATE TABLE commerce_transfer_outbox (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
+    allocation_id TEXT NOT NULL UNIQUE REFERENCES commerce_order_allocations(id) ON DELETE RESTRICT,
+    destination_user_id TEXT REFERENCES users(id),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency TEXT NOT NULL CHECK (length(currency) = 3 AND currency = lower(currency)),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'processing', 'retryable_failure', 'succeeded', 'terminal_failure', 'cancelled')),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    available_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    claimed_at DATETIME,
+    stripe_transfer_id TEXT UNIQUE,
+    last_error TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    claim_token TEXT,
+    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    lease_expires_at DATETIME,
+    stripe_idempotency_key TEXT,
+    destination_stripe_account TEXT,
+    last_http_status INTEGER,
+    last_stripe_request_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_commerce_transfer_outbox_work
+    ON commerce_transfer_outbox(status, available_at);
+
+CREATE INDEX IF NOT EXISTS idx_commerce_transfer_retry
+    ON commerce_transfer_outbox(status, next_attempt_at, created_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_commerce_transfer_idempotency
+    ON commerce_transfer_outbox(stripe_idempotency_key);
+
+CREATE INDEX IF NOT EXISTS idx_commerce_transfer_claimable
+    ON commerce_transfer_outbox(status, next_attempt_at, lease_expires_at, created_at);
+
 CREATE TRIGGER IF NOT EXISTS commerce_outbox_requires_fulfilled_allocation
 BEFORE INSERT ON commerce_transfer_outbox
 WHEN NOT EXISTS (
@@ -163,21 +180,32 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce outbox requires matching fulfilled allocation');
 END;
 
--- 5. Drop and recreate commerce_recovery_matches_order_allocation to include 'contributor'
-CREATE TRIGGER IF NOT EXISTS commerce_recovery_matches_order_allocation
-BEFORE INSERT ON commerce_recovery_obligations
-WHEN NOT EXISTS (
-    SELECT 1 FROM commerce_order_allocations a
-    WHERE a.id = NEW.allocation_id
-      AND a.order_id = NEW.order_id
-      AND a.role IN ('maker', 'ancestor', 'contributor')
-      AND NEW.amount_cents <= a.amount_cents
-)
+CREATE TRIGGER IF NOT EXISTS commerce_transfer_economics_immutable
+BEFORE UPDATE ON commerce_transfer_outbox
+WHEN OLD.order_id IS NOT NEW.order_id
+  OR OLD.allocation_id IS NOT NEW.allocation_id
+  OR OLD.destination_user_id IS NOT NEW.destination_user_id
+  OR OLD.amount_cents IS NOT NEW.amount_cents
+  OR OLD.currency IS NOT NEW.currency
+  OR OLD.stripe_idempotency_key IS NOT NEW.stripe_idempotency_key
+  OR (OLD.destination_stripe_account IS NOT NULL
+      AND OLD.destination_stripe_account IS NOT NEW.destination_stripe_account)
 BEGIN
-    SELECT RAISE(ABORT, 'recovery obligation must match a payable frozen allocation');
+    SELECT RAISE(ABORT, 'commerce transfer economics are immutable');
 END;
 
--- 6. Recreate commerce_refund_allocations_match_order
+-- Table 3: commerce_refund_allocations (byte-faithful recreation)
+CREATE TABLE commerce_refund_allocations (
+    id TEXT PRIMARY KEY,
+    refund_id TEXT NOT NULL REFERENCES commerce_refunds(id) ON DELETE RESTRICT,
+    allocation_id TEXT NOT NULL REFERENCES commerce_order_allocations(id) ON DELETE RESTRICT,
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (refund_id, allocation_id),
+    UNIQUE (refund_id, sequence)
+);
+
 CREATE TRIGGER IF NOT EXISTS commerce_refund_allocations_match_order
 BEFORE INSERT ON commerce_refund_allocations
 WHEN NOT EXISTS (
@@ -193,5 +221,69 @@ WHEN NOT EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'refund allocation must match a succeeded refund and frozen order allocation');
 END;
+
+CREATE TRIGGER IF NOT EXISTS commerce_refund_allocations_immutable_update
+BEFORE UPDATE ON commerce_refund_allocations
+BEGIN
+    SELECT RAISE(ABORT, 'commerce refund allocations are immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS commerce_refund_allocations_immutable_delete
+BEFORE DELETE ON commerce_refund_allocations
+BEGIN
+    SELECT RAISE(ABORT, 'commerce refund allocations are immutable');
+END;
+
+-- Table 4: commerce_recovery_obligations (byte-faithful recreation + recovery trigger with contributor)
+CREATE TABLE commerce_recovery_obligations (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
+    source_kind TEXT NOT NULL CHECK (source_kind IN ('refund', 'dispute')),
+    source_id TEXT NOT NULL,
+    allocation_id TEXT NOT NULL REFERENCES commerce_order_allocations(id) ON DELETE RESTRICT,
+    original_outbox_id TEXT REFERENCES commerce_transfer_outbox(id) ON DELETE RESTRICT,
+    source_event_id TEXT NOT NULL REFERENCES stripe_event_inbox(event_id) ON DELETE RESTRICT,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    currency TEXT NOT NULL CHECK (length(currency) = 3 AND currency = lower(currency)),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'transfer_cancelled', 'reversal_queued', 'recovered', 'unrecoverable', 'cancelled')),
+    reversal_outbox_id TEXT REFERENCES commerce_reversal_outbox(id) ON DELETE RESTRICT,
+    last_error TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    UNIQUE (source_kind, source_id, allocation_id),
+    CHECK (
+      (status = 'reversal_queued' AND reversal_outbox_id IS NOT NULL) OR
+      (status <> 'reversal_queued')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_commerce_recovery_pending
+    ON commerce_recovery_obligations(status, created_at);
+
+CREATE TRIGGER IF NOT EXISTS commerce_recovery_matches_order_allocation
+BEFORE INSERT ON commerce_recovery_obligations
+WHEN NOT EXISTS (
+    SELECT 1 FROM commerce_order_allocations a
+    WHERE a.id = NEW.allocation_id
+      AND a.order_id = NEW.order_id
+      AND a.role IN ('maker', 'ancestor', 'contributor')
+      AND NEW.amount_cents <= a.amount_cents
+)
+BEGIN
+    SELECT RAISE(ABORT, 'recovery obligation must match a payable frozen allocation');
+END;
+
+-- Restore data from temp tables parent-first
+INSERT INTO commerce_order_allocations SELECT * FROM _bak_order_allocations;
+INSERT INTO commerce_transfer_outbox SELECT * FROM _bak_transfer_outbox;
+INSERT INTO commerce_refund_allocations SELECT * FROM _bak_refund_allocations;
+INSERT INTO commerce_recovery_obligations SELECT * FROM _bak_recovery_obligations;
+
+-- Drop temp tables
+DROP TABLE _bak_order_allocations;
+DROP TABLE _bak_transfer_outbox;
+DROP TABLE _bak_refund_allocations;
+DROP TABLE _bak_recovery_obligations;
 
 PRAGMA foreign_key_check;

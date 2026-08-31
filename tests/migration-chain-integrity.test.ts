@@ -7,6 +7,7 @@ import {
 } from './fixtures/d1Harness';
 import * as fs from 'fs';
 import * as path from 'path';
+import { calculateAllocations } from '../src/lib/commerceDomain';
 
 describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
   let ctx: TestD1Context;
@@ -311,6 +312,62 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           ) VALUES ('cout_bad_fk', 'cord_pop_1', 'nonexistent_alloc', 'usr_nate', 2700, 'usd')
         `).run()
       ).rejects.toThrow();
+
+      // Verify 'contributor' allocation row can now be inserted (CHECK widened)
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
+        ) VALUES ('coa_pop_contrib', 'cord_pop_1', 1, 'contributor', 'usr_sam', 'repo_pop_test', 1000, 300)
+      `).run();
+
+      const contribAlloc = await legacy.d1.prepare('SELECT * FROM commerce_order_allocations WHERE id = ?')
+        .bind('coa_pop_contrib').first<any>();
+      expect(contribAlloc?.id).toBe('coa_pop_contrib');
+      expect(contribAlloc?.role).toBe('contributor');
+      expect(contribAlloc?.recipient_user_id).toBe('usr_sam');
+      expect(contribAlloc?.amount_cents).toBe(300);
+
+      // Verify outbox trigger admits contributor transfer
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_transfer_outbox (
+          id, order_id, allocation_id, destination_user_id, amount_cents, currency
+        ) VALUES ('cout_pop_contrib', 'cord_pop_1', 'coa_pop_contrib', 'usr_sam', 300, 'usd')
+      `).run();
+
+      const contribOutbox = await legacy.d1.prepare('SELECT * FROM commerce_transfer_outbox WHERE id = ?')
+        .bind('cout_pop_contrib').first<any>();
+      expect(contribOutbox?.id).toBe('cout_pop_contrib');
+      expect(contribOutbox?.destination_user_id).toBe('usr_sam');
+      expect(contribOutbox?.amount_cents).toBe(300);
+
+      // Verify recovery trigger admits contributor recovery obligation
+      await legacy.d1.prepare(`
+        INSERT INTO commerce_recovery_obligations (
+          id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
+          source_event_id, amount_cents, currency, status
+        ) VALUES (
+          'cro_pop_contrib', 'cord_pop_1', 'refund', 're_pop_1', 'coa_pop_contrib', 'cout_pop_contrib',
+          'evt_pop_1', 300, 'usd', 'pending'
+        )
+      `).run();
+
+      const contribRecovery = await legacy.d1.prepare('SELECT * FROM commerce_recovery_obligations WHERE id = ?')
+        .bind('cro_pop_contrib').first<any>();
+      expect(contribRecovery?.id).toBe('cro_pop_contrib');
+      expect(contribRecovery?.allocation_id).toBe('coa_pop_contrib');
+      expect(contribRecovery?.amount_cents).toBe(300);
+
+      // Verify DARK invariant: calculateAllocations emits NO contributor rows
+      const allocCalc = calculateAllocations({
+        grossCents: 3000,
+        currency: 'usd',
+        sellerUserId: 'usr_nate',
+        repositoryId: 'repo_pop_test'
+      });
+      expect(allocCalc.allocations.some((a: any) => a.role === 'contributor')).toBe(false);
+
+      // Verify final PRAGMA foreign_key_check is completely clean
+      expect(legacy.runForeignKeyCheck()).toEqual([]);
     });
   });
 

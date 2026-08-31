@@ -229,21 +229,7 @@ export class SqlJsD1Database implements D1Database {
   }
 
   public async exec(query: string): Promise<D1ExecResult> {
-    if (query.includes('defer_foreign_keys')) {
-      const fkOriginallyOn = (this.rawDb.exec('PRAGMA foreign_keys;')[0]?.values[0]?.[0] ?? 0) === 1;
-      if (fkOriginallyOn) {
-        this.rawDb.run('PRAGMA foreign_keys = OFF;');
-      }
-      try {
-        this.rawDb.exec(query);
-      } finally {
-        if (fkOriginallyOn) {
-          this.rawDb.run('PRAGMA foreign_keys = ON;');
-        }
-      }
-    } else {
-      this.rawDb.exec(query);
-    }
+    this.rawDb.exec(query);
     return { count: 1, duration: 0 };
   }
 
@@ -306,16 +292,7 @@ export async function createTestD1Database(options: {
       throw new Error(`Migration file not found: ${filePath}`);
     }
     const sql = fs.readFileSync(filePath, 'utf-8');
-    if (sql.includes('defer_foreign_keys') && foreignKeys) {
-      rawDb.run('PRAGMA foreign_keys = OFF;');
-      try {
-        rawDb.run(sql);
-      } finally {
-        rawDb.run('PRAGMA foreign_keys = ON;');
-      }
-    } else {
-      rawDb.run(sql);
-    }
+    rawDb.run(sql);
   }
 
   const d1 = new SqlJsD1Database(rawDb);
