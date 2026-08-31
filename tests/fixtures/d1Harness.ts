@@ -31,7 +31,8 @@ export const CANONICAL_MIGRATIONS = [
   '0025_app_origin_kind.sql',
   '0026_unique_hostname_index.sql',
   '0027_app_postgres_addon.sql',
-  '0028_user_ssh_keys.sql'
+  '0028_user_ssh_keys.sql',
+  '0029_contributor_revenue_sharing.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];

@@ -2,7 +2,7 @@ export interface FrozenAllocation {
   id: string;
   sequence: number;
   amountCents: number;
-  role: 'maker' | 'ancestor' | 'protocol_pool';
+  role: 'maker' | 'ancestor' | 'protocol_pool' | 'contributor';
 }
 
 export interface RefundAllocationDelta extends FrozenAllocation {

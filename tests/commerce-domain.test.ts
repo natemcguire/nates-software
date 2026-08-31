@@ -6,7 +6,8 @@ import {
   validateAncestors,
   fetchRepositoryAncestry,
   CommerceValidationError,
-  COMMERCE_BASIS_POINTS
+  COMMERCE_BASIS_POINTS,
+  MAKER_FLOOR_BPS
 } from '../src/lib/commerceDomain';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 
@@ -503,5 +504,84 @@ describe('Durable Commerce Domain Logic & Allocation Engine', () => {
         /Cycle detected in repository lineage/
       );
     });
+  });
+
+  describe('8. Phase 1 Dark Migration Safety Gate (Byte-Identical Conservation)', () => {
+    it('exports the PHASE-0 MAKER_FLOOR_BPS constant = 1000', () => {
+      expect(MAKER_FLOOR_BPS).toBe(1000);
+    });
+
+    it('asserts calculateAllocations emits ONLY maker, ancestor, and protocol_pool roles (never contributor in Phase 1)', () => {
+      const rootRes = calculateAllocations({
+        grossCents: 2000,
+        currency: 'usd',
+        sellerUserId: 'usr_nate',
+        repositoryId: 'repo_root'
+      });
+
+      expect(rootRes.allocations.map(a => a.role)).toEqual(['maker', 'protocol_pool']);
+      expect(rootRes.allocations.some(a => a.role === ('contributor' as any))).toBe(false);
+      expect(rootRes.allocations.reduce((sum, a) => sum + a.amountCents, 0)).toBe(2000);
+      expect(rootRes.allocations.reduce((sum, a) => sum + a.basisPoints, 0)).toBe(10000);
+
+      const forkRes = calculateAllocations({
+        grossCents: 5000,
+        currency: 'usd',
+        sellerUserId: 'usr_fork',
+        repositoryId: 'repo_fork',
+        ancestors: [
+          { userId: 'usr_p1', repositoryId: 'repo_p1', depth: 1 },
+          { userId: 'usr_p2', repositoryId: 'repo_p2', depth: 2 }
+        ]
+      });
+
+      expect(forkRes.allocations.map(a => a.role)).toEqual(['maker', 'ancestor', 'ancestor', 'protocol_pool']);
+      expect(forkRes.allocations.some(a => a.role === ('contributor' as any))).toBe(false);
+      expect(forkRes.allocations.reduce((sum, a) => sum + a.amountCents, 0)).toBe(5000);
+      expect(forkRes.allocations.reduce((sum, a) => sum + a.basisPoints, 0)).toBe(10000);
+    });
+
+    it.each([1, 10, 100, 1500, 2000, 4999, 10000, 999999])(
+      'maintains strict byte-identical conservation for root pricing %i cents',
+      (gross) => {
+        const res = calculateAllocations({
+          grossCents: gross,
+          currency: 'usd',
+          sellerUserId: 'usr_nate'
+        });
+
+        const totalCents = res.allocations.reduce((sum, a) => sum + a.amountCents, 0);
+        const totalBps = res.allocations.reduce((sum, a) => sum + a.basisPoints, 0);
+        expect(totalCents).toBe(gross);
+        expect(totalBps).toBe(10000);
+
+        const roles = res.allocations.map(a => a.role);
+        expect(roles).toEqual(['maker', 'protocol_pool']);
+      }
+    );
+
+    it.each([1, 10, 100, 1500, 2000, 4999, 10000, 999999])(
+      'maintains strict byte-identical conservation for multi-ancestor fork pricing %i cents',
+      (gross) => {
+        const res = calculateAllocations({
+          grossCents: gross,
+          currency: 'usd',
+          sellerUserId: 'usr_fork',
+          ancestors: [
+            { userId: 'usr_a1', repositoryId: 'repo_a1', depth: 1 },
+            { userId: 'usr_a2', repositoryId: 'repo_a2', depth: 2 },
+            { userId: 'usr_a3', repositoryId: 'repo_a3', depth: 3 }
+          ]
+        });
+
+        const totalCents = res.allocations.reduce((sum, a) => sum + a.amountCents, 0);
+        const totalBps = res.allocations.reduce((sum, a) => sum + a.basisPoints, 0);
+        expect(totalCents).toBe(gross);
+        expect(totalBps).toBe(10000);
+
+        const roles = res.allocations.map(a => a.role);
+        expect(roles).toEqual(['maker', 'ancestor', 'ancestor', 'ancestor', 'protocol_pool']);
+      }
+    );
   });
 });
