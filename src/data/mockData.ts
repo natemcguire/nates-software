@@ -34,6 +34,7 @@ export interface AppListing {
   upvotes: number;
   forkCount: number;
   forks?: number;
+  forkDepth?: number;
   tags: string[];
   liveUrl?: string;
   liveAppUrl?: string;
@@ -65,6 +66,8 @@ export interface AppListing {
   repoVisibility?: 'public' | 'unlisted' | 'private' | null;
   repoStatus?: string | null;
   repoDefaultRef?: string | null;
+  grantable_bps?: number | null;
+  grantableBps?: number | null;
   binaries?: {
     web?: string;
     mac?: string;

@@ -233,7 +233,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           tags: dropData.tags || ['Shareware'],
           screenshots: dropData.screenshots || [],
           binaries: dropData.binaries || {},
-          liveUrl: dropData.liveUrl || (dropData.binaries as any)?.web
+          liveUrl: dropData.liveUrl || (dropData.binaries as any)?.web,
+          repositoryId: dropData.repositoryId,
+          grantableBps: dropData.grantableBps ?? dropData.grantable_bps
         })
       });
 

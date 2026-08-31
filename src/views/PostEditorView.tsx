@@ -6,13 +6,14 @@ import { useAlert } from '../context/AlertContext';
 
 interface PostEditorViewProps {
   app: AppListing;
+  initialTab?: 'info' | 'media' | 'binaries' | 'guide' | 'pricing';
   onSave: (updatedApp: AppListing) => Promise<void> | void;
   onCancel: () => void;
 }
 
-export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onCancel }) => {
+export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab = 'guide', onSave, onCancel }) => {
   const { showAlert } = useAlert();
-  const [activeTab, setActiveTab] = useState<'info' | 'media' | 'binaries' | 'guide' | 'pricing'>('guide');
+  const [activeTab, setActiveTab] = useState<'info' | 'media' | 'binaries' | 'guide' | 'pricing'>(initialTab);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -22,6 +23,12 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
   const [description, setDescription] = useState(app.description);
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
+  const isFork = Boolean(app.forkDepth && app.forkDepth > 0);
+  const maxGrantablePercent = isFork ? 60 : 90;
+  const [grantablePercent, setGrantablePercent] = useState<number | string>(() => {
+    const bps = app.grantable_bps ?? app.grantableBps;
+    return typeof bps === 'number' ? bps / 100 : 0;
+  });
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
@@ -60,6 +67,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
 
     try {
       setIsSaving(true);
+      const numericGrantable = typeof grantablePercent === 'number' ? grantablePercent : (parseFloat(String(grantablePercent)) || 0);
+      const clampedPercent = Math.max(0, Math.min(maxGrantablePercent, numericGrantable));
+      const grantableBps = Math.round(clampedPercent * 100);
+
       const updated: AppListing = {
         ...app,
         name: name.trim(),
@@ -68,6 +79,8 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, onSave, onC
         description: description.trim(),
         version: version.trim(),
         price,
+        grantable_bps: grantableBps,
+        grantableBps: grantableBps,
         tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
         screenshots,
         binaries: {
@@ -424,22 +437,75 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
         {activeTab === 'pricing' && (
           <div className="space-y-4 max-w-2xl mx-auto">
             <div>
-              <div className="font-bold text-base text-w95-blue mb-1">Commercial Shareware Pricing &amp; Descendant Splits</div>
+              <div className="font-bold text-base text-w95-blue mb-1">Commercial Shareware Pricing &amp; Contributor Revenue Splits</div>
               <p className="text-gray-600 text-xs">
-                Set registered software copy pricing and ancestor split policy. Descendant forks pay royalties down the lineage tree automatically.
+                Set registered software copy pricing, descendant fork split policy, and the contributor reward pool percentage.
               </p>
             </div>
 
-            <div>
-              <label className="font-bold text-gray-800 block mb-1">Registered Copy Price (USD):</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={price}
-                  onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
-                  className="w-full p-2 border-2 border-gray-600 font-bold text-base text-green-800 bg-green-50 font-mono"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="font-bold text-gray-800 block mb-1">Registered Copy Price (USD):</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={price}
+                    onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 border-2 border-gray-600 font-bold text-base text-green-800 bg-green-50 font-mono"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Single-copy registered license price for buyers on the shelf.
+                </p>
               </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-gray-800 block">
+                    Contributor Share Pool (% Up For Grabs):
+                  </label>
+                  <span className="text-[11px] text-purple-800 font-mono font-bold">
+                    {`Cap: ${maxGrantablePercent}%`}
+                  </span>
+                </div>
+                <div className="relative flex items-center">
+                  <input
+                    type="number"
+                    min={0}
+                    max={maxGrantablePercent}
+                    step={1}
+                    value={grantablePercent}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setGrantablePercent('');
+                      } else {
+                        const num = parseFloat(val);
+                        if (!isNaN(num)) {
+                          setGrantablePercent(Math.max(0, Math.min(maxGrantablePercent, num)));
+                        }
+                      }
+                    }}
+                    className="w-full p-2 border-2 border-purple-600 font-bold text-base text-purple-900 bg-purple-50 font-mono pr-8"
+                    placeholder="0"
+                  />
+                  <span className="absolute right-3 text-sm font-bold text-purple-700 font-mono">%</span>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Percentage of future sales available to reward approved pull request contributors.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-purple-50 border-2 border-purple-400 p-3.5 rounded space-y-1.5 text-xs">
+              <div className="font-bold text-purple-950 text-sm flex items-center gap-1.5">
+                <span>🎁 Contributor Revenue-Sharing (Idea Marketplace):</span>
+              </div>
+              <p className="text-gray-700 leading-relaxed">
+                {`When contributors submit pull requests and you approve them, you can grant them a slice of this `}
+                <b>{`${typeof grantablePercent === 'number' ? grantablePercent : (parseFloat(String(grantablePercent)) || 0)}%`}</b>
+                {` pool. Grants are carved from your maker share and paid perpetually on every future sale.`}
+              </p>
             </div>
 
             <div className="bg-blue-50 border-2 border-w95-blue p-3.5 rounded space-y-2 text-xs">

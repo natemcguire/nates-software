@@ -91,6 +91,8 @@ export interface DropRankingInput {
   tags?: string[];
   screenshots?: string[];
   binaries?: Record<string, string>;
+  grantable_bps?: number;
+  grantableBps?: number;
   createdAt: Date | string | number;
   creatorStreak?: number;
   velocity?: number; // Upvotes per hour or recent velocity

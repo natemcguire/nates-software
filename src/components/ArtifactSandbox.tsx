@@ -38,6 +38,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const { user, openAuthModal } = useAuth();
   const { isOwned } = useCatalog();
   const isAppOwned = isOwned(app.id);
+  const grantableBps = typeof app.grantable_bps === 'number'
+    ? app.grantable_bps
+    : (typeof app.grantableBps === 'number' ? app.grantableBps : 0);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments'>('preview');
@@ -332,7 +335,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
       {/* Bottom Action Footer */}
       <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-gray-400">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
             onClick={() => {
               playSuccessChime();
@@ -343,6 +346,15 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             <Bot size={13} className="text-purple-700" />
             <span>⚡ Fork with AI</span>
           </button>
+          {grantableBps > 0 && (
+            <span
+              className="btn-w95 text-xs py-1.5 px-2.5 bg-purple-50 font-bold border border-purple-400 text-purple-950 shadow-sm flex items-center gap-1 font-mono"
+              title={`Up to ${grantableBps / 100}% of gross sale proceeds are available to approved contributors`}
+            >
+              <span className="text-purple-700 font-bold">🎁</span>
+              <span>{`Up to ${grantableBps / 100}% of every sale available to contributors`}</span>
+            </span>
+          )}
           {onOpenPostEditor && (
             <button
               onClick={() => onOpenPostEditor(app)}
