@@ -40,7 +40,11 @@ phases:
       # (proven: wrangler deploy from a node_modules-free dir succeeds).
       - CLOUDFLARE_ACCOUNT_ID=${CF_ACCOUNT_ID} wrangler deploy 2>&1 | tee /tmp/deploy.log
       - export WORKER_URL=$(grep -oE 'https://nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
-      - if [ -z "$WORKER_URL" ]; then echo "NO_WORKER_URL: wrangler deploy produced no workers.dev URL"; exit 1; fi
+      - |
+        if [ -z "$WORKER_URL" ]; then
+          echo "NO_WORKER_URL: wrangler deploy produced no workers.dev URL"
+          exit 1
+        fi
       - export DEPLOYED_WORKER_URL="${WORKER_URL}"
       - echo "DEPLOYED_WORKER_URL=${WORKER_URL}"
       - |

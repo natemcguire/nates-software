@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { parse } from 'yaml';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { initBareRepo } from '../src/lib/gitsmith/gitStorage';
 import { hashSessionToken } from '../functions/api/_session';
@@ -102,7 +103,44 @@ describe('Phase 2: Next.js (SSR) -> Cloudflare Worker Lane (origin_kind=worker)'
     it('NSW_DEPLOY_NEXT_BUILDSPEC contains SMOKE_OK=1, post-loop fail-closed exit guard, and NO_WORKER_URL guard (Fix #4)', () => {
       expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('SMOKE_OK=1');
       expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('if [ "${SMOKE_OK:-0}" != "1" ]; then echo "SMOKE_FAILED: worker never returned 200"; exit 1; fi');
-      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('if [ -z "$WORKER_URL" ]; then echo "NO_WORKER_URL: wrangler deploy produced no workers.dev URL"; exit 1; fi');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('if [ -z "$WORKER_URL" ]; then');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('echo "NO_WORKER_URL: wrangler deploy produced no workers.dev URL"');
+      expect(NSW_DEPLOY_NEXT_BUILDSPEC).toContain('exit 1');
+    });
+
+    it('NSW_DEPLOY_NEXT_BUILDSPEC and NSW_BUILD_NEXT_BUILDSPEC parse as valid YAML with string commands across all phases', () => {
+      let parsedDeploy: any;
+      let parsedBuild: any;
+
+      expect(() => {
+        parsedDeploy = parse(NSW_DEPLOY_NEXT_BUILDSPEC);
+      }).not.toThrow();
+
+      expect(() => {
+        parsedBuild = parse(NSW_BUILD_NEXT_BUILDSPEC);
+      }).not.toThrow();
+
+      expect(parsedDeploy).toBeDefined();
+      expect(parsedBuild).toBeDefined();
+
+      const checkCommandsAreStrings = (doc: any, name: string) => {
+        expect(doc.phases).toBeDefined();
+        for (const [phaseName, phase] of Object.entries<any>(doc.phases)) {
+          if (phase.commands) {
+            expect(Array.isArray(phase.commands)).toBe(true);
+            for (let i = 0; i < phase.commands.length; i++) {
+              const cmd = phase.commands[i];
+              expect(
+                typeof cmd,
+                `${name} phase '${phaseName}' command[${i}] should be string, got: ${JSON.stringify(cmd)}`
+              ).toBe('string');
+            }
+          }
+        }
+      };
+
+      checkCommandsAreStrings(parsedDeploy, 'NSW_DEPLOY_NEXT_BUILDSPEC');
+      checkCommandsAreStrings(parsedBuild, 'NSW_BUILD_NEXT_BUILDSPEC');
     });
 
     it('NSW_DEPLOY_NEXT_BUILDSPEC removes extracted wrangler configs and regenerates platform-owned wrangler.jsonc (Fix #2)', () => {
