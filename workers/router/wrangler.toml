@@ -3,6 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# Canary Secret (local/dev placeholder; Claude sets the real secret via `wrangler secret put CANARY_SECRET` in prod)
+[vars]
+CANARY_SECRET = "placeholder-canary-secret-override-in-prod"
+
 # Cloudflare D1 (Serverless SQLite at Edge)
 [[d1_databases]]
 binding = "DB"
@@ -18,3 +22,4 @@ bucket_name = "nates-software-storage"
 [[kv_namespaces]]
 binding = "HOST_CACHE"
 id = "a99be7ce7e6d42639088dd57bc5ec0b7"
+

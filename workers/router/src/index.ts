@@ -48,6 +48,7 @@ export interface Env {
   DB: D1Database;
   STORAGE: R2Bucket;
   HOST_CACHE?: KVNamespace;
+  CANARY_SECRET?: string;
 }
 
 export interface AppListingRecord {
@@ -56,6 +57,8 @@ export interface AppListingRecord {
   readonly origin_ref: string | null;
   readonly deployment_state: string;
   readonly active_deployment_id: string | null;
+  readonly revisionStatus?: string | null;
+  readonly revision_status?: string | null;
 }
 
 /**
@@ -87,14 +90,41 @@ const json = (body: unknown, status = 200) =>
     }
   });
 
-export function extractSubdomain(hostname: string, url: URL, request: Request): { isCanary: boolean; subdomain: string } {
-  const host = hostname.toLowerCase().trim();
+/**
+ * Normalize hostname by lowercasing, trimming, and removing one terminal trailing dot if present.
+ */
+export function normalizeHostname(raw: string): string {
+  let host = (raw || '').toLowerCase().trim();
+  if (host.endsWith('.')) {
+    host = host.slice(0, -1);
+  }
+  return host;
+}
+
+export function extractSubdomain(
+  hostname: string,
+  url: URL,
+  request: Request,
+  env?: Env
+): { isCanary: boolean; subdomain: string } {
+  const host = normalizeHostname(hostname);
 
   if (host === 'router-canary.nates-software.com') {
-    const appParam = url.searchParams.get('app')?.toLowerCase().trim() ||
-                     request.headers.get('x-app-id')?.toLowerCase().trim() ||
-                     '';
-    return { isCanary: true, subdomain: appParam };
+    const canarySecret = env?.CANARY_SECRET;
+    const providedSecret = request.headers.get('x-canary-secret');
+    const isAuthorizedCanary = Boolean(
+      canarySecret &&
+      providedSecret &&
+      canarySecret === providedSecret
+    );
+
+    if (isAuthorizedCanary) {
+      const appParam = url.searchParams.get('app')?.toLowerCase().trim() ||
+                       request.headers.get('x-app-id')?.toLowerCase().trim() ||
+                       '';
+      return { isCanary: true, subdomain: appParam };
+    }
+    return { isCanary: true, subdomain: '' };
   }
 
   if (host === 'nates-software.com' || host === 'www.nates-software.com') {
@@ -116,16 +146,21 @@ export function extractSubdomain(hostname: string, url: URL, request: Request): 
 export async function handleRequest(request: Request, env: Env, _ctx?: any): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const hostHeader = request.headers.get('host') || url.host;
-    const hostname = (hostHeader.split(':')[0] || url.hostname).toLowerCase().trim();
+    // Cloudflare zone-route Worker: use routed URL hostname only (lowercased, trailing-dot normalized)
+    const hostname = normalizeHostname(url.hostname);
 
-    // 1. Authoritative exclusion allowlist defense-in-depth
+    // 1. Suffix guard: only handle *.nates-software.com or apex nates-software.com
+    if (hostname !== 'nates-software.com' && !hostname.endsWith('.nates-software.com')) {
+      return fetch(request);
+    }
+
+    // 2. Authoritative exclusion allowlist defense-in-depth
     if (EXCLUSION_HOSTNAMES.has(hostname)) {
       return fetch(request);
     }
 
-    // 2. Extract subdomain
-    const { isCanary, subdomain } = extractSubdomain(hostname, url, request);
+    // 3. Extract subdomain
+    const { isCanary, subdomain } = extractSubdomain(hostname, url, request, env);
 
     if (isCanary && !subdomain) {
       return json({
@@ -137,11 +172,11 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }, 200);
     }
 
-    if (!subdomain || EXCLUSION_HOSTNAMES.has(subdomain) || subdomain === 'www') {
+    if (!subdomain || subdomain === 'www') {
       return fetch(request);
     }
 
-    // 3. D1 host lookup with KV caching
+    // 4. D1 host lookup with KV caching
     const cacheKey = `host:${subdomain}`;
     let listing: AppListingRecord | null = null;
 
@@ -155,9 +190,11 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
 
     if (!listing && env?.DB) {
       listing = await env.DB.prepare(`
-        SELECT id, origin_kind, origin_ref, deployment_state, active_deployment_id
-        FROM app_listings
-        WHERE hostname = ? OR id = ?
+        SELECT a.id, a.origin_kind, a.origin_ref, a.deployment_state, a.active_deployment_id,
+               dr.status AS revisionStatus
+        FROM app_listings a
+        LEFT JOIN deployment_revisions dr ON dr.id = a.active_deployment_id
+        WHERE a.hostname = ? OR a.id = ?
       `).bind(subdomain, subdomain).first<AppListingRecord>();
 
       if (listing && env?.HOST_CACHE) {
@@ -167,7 +204,7 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }
     }
 
-    // 4. Validate listing and active deployment state
+    // 5. Validate listing and active deployment state (gating on healthy revisionStatus)
     if (!listing) {
       return json({
         success: false,
@@ -175,14 +212,16 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }, 404);
     }
 
-    if (listing.deployment_state !== 'active' || !listing.active_deployment_id) {
+    const revisionStatus = listing.revisionStatus ?? listing.revision_status;
+
+    if (listing.deployment_state !== 'active' || !listing.active_deployment_id || revisionStatus !== 'healthy') {
       return json({
         success: false,
         error: `App '${listing.id || subdomain}' does not have an active verified deployment (current state: ${listing.deployment_state || 'draft'}).`
       }, 503);
     }
 
-    // 5. Origin kind dispatch (Phase 0 only supports r2_static)
+    // 6. Origin kind dispatch (Phase 0 only supports r2_static)
     if (listing.origin_kind !== 'r2_static') {
       return json({
         success: false,
@@ -190,7 +229,7 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }, 501);
     }
 
-    // 6. Serve from R2
+    // 7. Serve from R2
     let rawPath = url.pathname;
     let assetPath = rawPath.replace(/^\/+/, '').trim();
     if (!assetPath) assetPath = 'index.html';
@@ -261,3 +300,4 @@ export default {
     return handleRequest(request, env, ctx);
   }
 };
+

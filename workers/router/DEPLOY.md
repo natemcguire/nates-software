@@ -43,10 +43,11 @@ npx wrangler kv namespace create HOST_CACHE
 ```
 Ensure the resulting namespace ID is set under `[[kv_namespaces]]` in `workers/router/wrangler.toml`.
 
-### 1.3 Deploy Router Worker Script (No Routes Attached Yet)
+### 1.3 Deploy Router Worker Script & Configure Secret (No Routes Attached Yet)
 Upload the Worker code to Cloudflare without attaching any zone routes:
 ```bash
 cd workers/router
+npx wrangler secret put CANARY_SECRET # Enter secret for gating canary queries
 npx wrangler deploy
 cd ../..
 ```
@@ -112,22 +113,23 @@ In Cloudflare Workers Routes:
 Run the following curl commands to verify D1 and R2 functionality:
 
 ```bash
-# 1. Health & Canary Status Probe
+# 1. Health & Canary Status Probe (unauthenticated returns 200 canary health info, zero D1 lookups)
 curl -i https://router-canary.nates-software.com/
 # Expected: 200 OK with {"success": true, "service": "nates-software-router", "canary": true}
 
-# 2. D1 Lookup Probe (Draft / Unbuilt App)
-curl -i "https://router-canary.nates-software.com/?app=american-gardener"
+# 2. D1 Lookup Probe with Secret (Draft / Unbuilt App)
+curl -i -H "x-canary-secret: $CANARY_SECRET" "https://router-canary.nates-software.com/?app=american-gardener"
 # Expected: 503 Service Unavailable with {"success": false, "error": "App 'american-gardener' does not have an active verified deployment..."}
 
-# 3. D1 Lookup Probe (Non-existent App)
-curl -i "https://router-canary.nates-software.com/?app=nonexistent-app-xyz"
+# 3. D1 Lookup Probe with Secret (Non-existent App)
+curl -i -H "x-canary-secret: $CANARY_SECRET" "https://router-canary.nates-software.com/?app=nonexistent-app-xyz"
 # Expected: 404 Not Found with {"success": false, "error": "App 'nonexistent-app-xyz' not found"}
 
-# 4. In-Worker Defense-in-Depth Allowlist Check
-curl -i -H "Host: nates-software.com" https://router-canary.nates-software.com/
-# Expected: Passthrough to apex Pages app
+# 4. In-Worker Defense-in-Depth Allowlist Check (suffix guard / exclusion check)
+curl -i https://nates-software.com/
+# Expected: Native apex Pages app response
 ```
+
 
 ---
 
