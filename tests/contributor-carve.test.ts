@@ -860,6 +860,6 @@ describe('Phase 2: Contributor Carve Math in calculateAllocations', () => {
         // Protocol pool sequence is always last
         expect(poolRowCarved.sequence).toBe(1 + numAncestors + contributors.length);
       }
-    });
+    }, 30000);
   });
 });

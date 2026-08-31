@@ -41,6 +41,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         r.visibility AS repoVisibility,
         r.status AS repoStatus,
         r.default_ref AS repoDefaultRef,
+        r.grantable_bps AS grantable_bps,
+        r.grantable_bps AS grantableBps,
         ru.username AS repoOwnerUsername,
         rf.commit_oid AS repoHeadCommitOid,
         u.id AS creatorId, u.username AS creator, u.avatar_url AS creatorAvatar,
@@ -159,6 +161,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const repoStatus = r.repoStatus || null;
       const repoDefaultRef = r.repoDefaultRef || null;
       const repositoryId = r.canonicalRepositoryId || r.repositoryId || null;
+      const grantable_bps = typeof r.grantable_bps === 'number'
+        ? r.grantable_bps
+        : (typeof r.grantableBps === 'number' ? r.grantableBps : 0);
+      const grantableBps = grantable_bps;
 
       return {
         ...r,
@@ -172,6 +178,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         repoVisibility,
         repoStatus,
         repoDefaultRef,
+        grantable_bps,
+        grantableBps,
         screenshots: screenshots.length > 0 ? screenshots : ["https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"],
         binaries,
         liveUrl: binaries?.web || r.liveUrl,
@@ -292,6 +300,64 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ? `No deployable revision exists for ${name.trim()}. Source has not been imported into GITSMITH and built by RIG.`
       : null;
 
+    // Validate grantable pool basis points (Phase A)
+    const hasGrantableField = 'grantableBps' in body || 'grantable_bps' in body;
+    const rawGrantableBps = body.grantableBps !== undefined ? body.grantableBps : body.grantable_bps;
+    let validatedGrantableBps: number | null = null;
+    if (hasGrantableField && rawGrantableBps !== undefined) {
+      if (typeof rawGrantableBps !== 'number' || !Number.isSafeInteger(rawGrantableBps)) {
+        return Response.json({
+          success: false,
+          error: 'grantableBps must be an integer between 0 and 10000'
+        }, { status: 422 });
+      }
+      if (rawGrantableBps < 0 || rawGrantableBps > 10000) {
+        return Response.json({
+          success: false,
+          error: 'grantableBps must be between 0 and 10000'
+        }, { status: 422 });
+      }
+
+      if (!linkedRepositoryId) {
+        if (rawGrantableBps > 0) {
+          return Response.json({
+            success: false,
+            error: 'Link a repository to set a grantable pool'
+          }, { status: 422 });
+        }
+      } else {
+        // Lineage lookup for root vs fork cap (Root <= 9000, Fork <= 6000 per Phase-0 decision)
+        const forkEdge = await env.DB.prepare(
+          'SELECT 1 FROM repository_forks WHERE child_repository_id = ? LIMIT 1'
+        ).bind(linkedRepositoryId).first();
+        const isRoot = !forkEdge;
+        const maxAllowedBps = isRoot ? 9000 : 6000;
+
+        if (rawGrantableBps > maxAllowedBps) {
+          return Response.json({
+            success: false,
+            error: `Grantable pool ${rawGrantableBps} bps exceeds maximum allowable cap of ${maxAllowedBps} bps (${maxAllowedBps / 100}%) for ${isRoot ? 'root' : 'fork'} repository`
+          }, { status: 422 });
+        }
+
+        // Lowering check: cannot drop pool below sum of active + pending grants (Decision #2)
+        const grantedRow = await env.DB.prepare(`
+          SELECT COALESCE(SUM(basis_points), 0) AS totalGranted
+          FROM contributor_shares
+          WHERE repository_id = ? AND status IN ('active', 'pending')
+        `).bind(linkedRepositoryId).first();
+        const totalGranted = Number(grantedRow?.totalGranted || 0);
+        if (rawGrantableBps < totalGranted) {
+          return Response.json({
+            success: false,
+            error: `${totalGranted / 100}% is already granted; can't drop the pool below that`
+          }, { status: 422 });
+        }
+
+        validatedGrantableBps = rawGrantableBps;
+      }
+    }
+
     const listingStmt = env.DB.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error, repository_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
@@ -347,10 +413,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       RETURNING app_id
     `).bind(productPriceCents, dropId, creatorId);
 
-    const batchResults = await env.DB.batch([listingStmt, productStmt]);
+    const statements = [listingStmt, productStmt];
+    if (linkedRepositoryId && validatedGrantableBps !== null) {
+      statements.push(
+        env.DB.prepare('UPDATE repositories SET grantable_bps = ? WHERE id = ?').bind(validatedGrantableBps, linkedRepositoryId)
+      );
+    }
+
+    const batchResults = await env.DB.batch(statements);
     const listingWritten = Boolean(batchResults?.[0]?.results?.[0]);
     const productWritten = Boolean(batchResults?.[1]?.results?.[0]);
-    if (!batchResults || batchResults.length < 2 || !batchResults[0].success || !batchResults[1].success) {
+    if (!batchResults || batchResults.length < statements.length || batchResults.some((r: any) => !r.success)) {
       return Response.json({ success: false, error: 'Failed to atomically persist listing and commerce product' }, { status: 500 });
     }
     if (!listingWritten || !productWritten) {
