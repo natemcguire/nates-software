@@ -40,7 +40,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0021_active_project_catalog.sql',
         '0022_deployment_lifecycle_states.sql',
         '0023_retire_picfit_listing.sql',
-        '0024_canonical_repository_linkage.sql'
+        '0024_canonical_repository_linkage.sql',
+        '0025_app_origin_kind.sql'
       ]);
     });
 
@@ -864,6 +865,48 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       expect(ctx.runForeignKeyCheck()).toEqual([]);
     });
+
+    it('should support host resolution and origin dispatch metadata (migration 0025)', async () => {
+      // 1. Verify columns exist and are populated with backfilled defaults
+      const listing = await ctx.d1.prepare(`
+        SELECT id, hostname, origin_kind, origin_ref FROM app_listings WHERE id = 'dronehunter'
+      `).first<{ id: string; hostname: string; origin_kind: string; origin_ref: string | null }>();
+      expect(listing).toBeDefined();
+      expect(listing?.id).toBe('dronehunter');
+      expect(listing?.hostname).toBe('dronehunter');
+      expect(listing?.origin_kind).toBe('r2_static');
+      expect(listing?.origin_ref).toBeNull();
+
+      // 2. Reject invalid origin_kind values under CHECK constraint
+      await expect(
+        ctx.d1.prepare(`
+          UPDATE app_listings SET origin_kind = 'invalid_kind' WHERE id = 'dronehunter'
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // 3. Accept valid origin_kind values
+      for (const kind of ['r2_static', 'worker', 'cf_container', 'fargate_warm'] as const) {
+        await ctx.d1.prepare(`
+          UPDATE app_listings SET origin_kind = ? WHERE id = 'dronehunter'
+        `).bind(kind).run();
+        const updated = await ctx.d1.prepare(`
+          SELECT origin_kind FROM app_listings WHERE id = 'dronehunter'
+        `).first<{ origin_kind: string }>();
+        expect(updated?.origin_kind).toBe(kind);
+      }
+
+      // Reset back to r2_static
+      await ctx.d1.prepare(`
+        UPDATE app_listings SET origin_kind = 'r2_static' WHERE id = 'dronehunter'
+      `).run();
+
+      // 4. Verify index on hostname exists
+      const indices = ctx.getIndexNames();
+      expect(indices).toContain('idx_app_listings_hostname');
+
+      expect(ctx.runForeignKeyCheck()).toEqual([]);
+    });
   });
 });
+
 

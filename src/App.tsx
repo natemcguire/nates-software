@@ -8,19 +8,29 @@ export interface ResolvedRoute {
   readonly title?: string;
 }
 
+const RESERVED_VIEW_HOSTS = new Set([
+  'gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile',
+  'whitepapers', 'white-papers', 'terminal', 'editorial', 'lab', 'chat', 'irc',
+  'lounge', 'www', 'nates-software', 'api', 'router-canary', 'rig-provider'
+]);
+
+function formatAppTitle(id: string): string {
+  const titles: Record<string, string> = {
+    dronehunter: 'DroneHunter 95',
+    'certified-mailer': 'Certified Mailer',
+    'american-gardener': 'American Gardener',
+    wallart: 'WallArt Canvas Pro'
+  };
+  if (titles[id]) return titles[id];
+  return id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export function resolveAppRoute(
   hostname: string = '',
   pathname: string = '',
   viewQuery: string = '',
   appIdQuery: string | null = null
 ): ResolvedRoute {
-  const requestedAppId = appIdQuery || (hostname ? hostname.split('.')[0] : null);
-  const standaloneApp = requestedAppId ? INITIAL_APPS.find(a => a.id === requestedAppId || a.name.toLowerCase().replace(/[^a-z0-9]/g, '') === requestedAppId) : null;
-
-  if (standaloneApp && !['gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile', 'whitepapers', 'terminal', 'editorial', 'lab', 'www', 'nates-software'].includes(requestedAppId || '')) {
-    return { type: 'standalone_app', id: standaloneApp.id, title: standaloneApp.name };
-  }
-
   if (hostname.startsWith('chat.') || pathname.startsWith('/chat') || pathname.startsWith('/irc') || pathname.startsWith('/lounge') || viewQuery === 'chat') {
     return { type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' };
   }
@@ -65,13 +75,24 @@ export function resolveAppRoute(
     return { type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' };
   }
 
+  const hostLabel = hostname ? hostname.split('.')[0].toLowerCase() : null;
+  const requestedAppId = appIdQuery || (hostLabel && !RESERVED_VIEW_HOSTS.has(hostLabel) ? hostLabel : null);
+
+  if (requestedAppId && !RESERVED_VIEW_HOSTS.has(requestedAppId)) {
+    return {
+      type: 'standalone_app',
+      id: requestedAppId,
+      title: formatAppTitle(requestedAppId)
+    };
+  }
+
   return { type: 'desktop' };
 }
 
 import React, { useState } from 'react';
 import { GitsmithView } from './views/GitsmithView';
 import { EphemeralLiveApp } from './components/EphemeralLiveApp';
-import { INITIAL_APPS, AppListing } from './data/mockData';
+import type { AppListing } from './data/mockData';
 import { useWindowManager } from './hooks/useWindowManager';
 import { DesktopIcon } from './components/DesktopIcon';
 import { RetroWindow } from './components/RetroWindow';
