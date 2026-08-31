@@ -56,8 +56,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
           ma.status AS attemptStatus,
           mj.id AS mergeJobId, mj.target_ref AS targetRef, mj.status AS jobStatus,
           mj.landed_commit_oid AS landedCommitOid,
+          mj.requested_by_user_id AS requestedByUserId,
           r.id AS repositoryId, r.storage_key AS storageKey, r.slug AS repositorySlug,
           r.owner_user_id AS repositoryOwnerId,
+          r.grantable_bps AS grantableBps,
           fpv.git_ref AS versionFeatureRef
         FROM inbox_messages m
         LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
@@ -80,16 +82,36 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
 
       const diffResult = getProposalDiff(reposRoot, storageKey, baseOid, headOid);
 
+      let grantableBps = 0;
+      let grantedBps = 0;
+      if (proposal.repositoryId) {
+        grantableBps = Number(proposal.grantableBps || 0);
+        const grantedRes = await env.DB.prepare(`
+          SELECT COALESCE(SUM(basis_points), 0) AS totalGrantedBps
+          FROM contributor_shares
+          WHERE repository_id = ? AND status IN ('active', 'pending')
+        `).bind(proposal.repositoryId).first();
+        grantedBps = Number(grantedRes?.totalGrantedBps || 0);
+      }
+      const remainingGrantableBps = Math.max(0, grantableBps - grantedBps);
+
       return Response.json({
         proposalId: proposal.id,
         mergeAttemptId: proposal.mergeAttemptId,
         mergeJobId: proposal.mergeJobId,
         repositorySlug: proposal.repositorySlug,
+        repositoryOwnerId: proposal.repositoryOwnerId,
         targetRef: proposal.targetRef,
         featureRef: proposal.featureRef || proposal.versionFeatureRef || 'feature',
         status: proposal.jobStatus,
         attemptStatus: proposal.attemptStatus,
         landed: Boolean(proposal.jobStatus === 'landed' && proposal.landedCommitOid === proposal.resultCommitOid),
+        grantableBps,
+        grantable_bps: grantableBps,
+        grantedBps,
+        granted_bps: grantedBps,
+        remainingGrantableBps,
+        remaining_grantable_bps: remainingGrantableBps,
         ...diffResult
       });
     }
@@ -350,11 +372,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (!messageId) return jsonError('messageId is required', 400);
       const proposal = await env.DB.prepare(`
         SELECT m.message_kind AS messageKind, m.merge_attempt_id AS mergeAttemptId,
+          m.sender_id AS senderId,
           ma.merge_job_id AS mergeJobId, ma.input_target_oid AS inputTargetOid,
           ma.result_commit_oid AS resultCommitOid, ma.status AS attemptStatus,
           mj.target_ref AS targetRef, mj.status AS jobStatus,
+          mj.requested_by_user_id AS requestedByUserId,
           r.id AS repositoryId, r.owner_user_id AS repositoryOwnerId,
-          r.storage_key AS storageKey
+          r.storage_key AS storageKey,
+          r.grantable_bps AS grantableBps
         FROM inbox_messages m
         LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
         LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
@@ -374,6 +399,55 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (!allowedJobStatuses.includes(String(proposal.jobStatus))) {
         return jsonError(`Merge job cannot be ${decision} from status ${proposal.jobStatus}`, 409);
       }
+
+      // Parse and validate contributor grant basis points
+      let rawGrantBps = body.grantBps ?? body.grant_bps ?? body.basisPoints ?? body.basis_points;
+      if (rawGrantBps === undefined && (body.grantPercent !== undefined || body.grant_percent !== undefined)) {
+        const pct = Number(body.grantPercent ?? body.grant_percent);
+        if (!Number.isNaN(pct)) {
+          rawGrantBps = Math.round(pct * 100);
+        }
+      }
+
+      let newBps = 0;
+      if (rawGrantBps !== undefined && rawGrantBps !== null && rawGrantBps !== '') {
+        const parsed = Number(rawGrantBps);
+        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10000) {
+          return jsonError('Grant basis points must be a valid integer between 0 and 10000', 422);
+        }
+        newBps = parsed;
+      }
+
+      if (decision === 'rejected' && newBps > 0) {
+        return jsonError('Grants can only be awarded when approving a merge attempt', 422);
+      }
+
+      const contributorUserId = proposal.requestedByUserId || proposal.senderId;
+
+      if (decision === 'approved' && newBps > 0) {
+        if (!contributorUserId) {
+          return jsonError('Contributor user ID could not be resolved for this proposal', 422);
+        }
+        if (contributorUserId === proposal.repositoryOwnerId) {
+          return jsonError('Repository owner cannot grant contributor shares to themselves', 422);
+        }
+
+        const grantableBps = Number(proposal.grantableBps || 0);
+        const sharesRes = await env.DB.prepare(`
+          SELECT COALESCE(SUM(basis_points), 0) AS totalGrantedBps
+          FROM contributor_shares
+          WHERE repository_id = ?
+            AND status IN ('active', 'pending')
+            AND (merge_attempt_id IS NULL OR merge_attempt_id != ?)
+        `).bind(proposal.repositoryId, proposal.mergeAttemptId).first();
+        const otherGrantedBps = Number(sharesRes?.totalGrantedBps || 0);
+
+        if (otherGrantedBps + newBps > grantableBps) {
+          const remaining = Math.max(0, grantableBps - otherGrantedBps);
+          return jsonError(`Grant of ${newBps} bps (${(newBps / 100).toFixed(2)}%) exceeds available repository grantable pool (${remaining} bps remaining)`, 422);
+        }
+      }
+
       const approvalId = crypto.randomUUID();
       const rawComment = typeof body.comment === 'string' ? body.comment.trim() : '';
       if (rawComment.length > 2_000) return jsonError('Review comment must be 2,000 characters or fewer', 400);
@@ -438,6 +512,25 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
             approverUserId: userId
           }))
         );
+        if (newBps > 0) {
+          const shareId = `cs_${crypto.randomUUID().replace(/-/g, '')}`;
+          statements.push(
+            env.DB.prepare(`
+              INSERT OR IGNORE INTO contributor_shares
+                (id, repository_id, contributor_user_id, granted_by_user_id, merge_job_id, merge_attempt_id, merge_approval_id, basis_points, status)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            `).bind(
+              shareId,
+              proposal.repositoryId,
+              contributorUserId,
+              userId,
+              proposal.mergeJobId,
+              proposal.mergeAttemptId,
+              approvalId,
+              newBps
+            )
+          );
+        }
       } else {
         statements.push(env.DB.prepare(`
           UPDATE merge_jobs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP,
@@ -449,6 +542,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       return Response.json({
         success: true, approvalStatus: decision, mergeStatus: decision, approvalComment: rawComment,
         outboxEventId,
+        grantBps: newBps > 0 ? newBps : undefined,
         message: decision === 'approved'
           ? 'Exact merge attempt approved and queued for authoritative GITSMITH CAS landing.'
           : 'Exact merge attempt rejected. No Git ref was changed.'
