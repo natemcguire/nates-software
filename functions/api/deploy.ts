@@ -334,8 +334,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             }
           } else {
             const codeBuildId = runningBuild.runner_image_digest;
+            // Stage discriminator = which CodeBuild project this build_runs row
+            // points at (build vs deploy). We deliberately do NOT use a separate
+            // 'deploying' app state — both stages surface as 'building' to the
+            // user (prod's deployment_state CHECK has no 'deploying' value, and
+            // recreating that CHECK on the most-FK-referenced table isn't worth it).
             const isDeployStage = runningBuild.build_command === 'nsw-deploy' ||
-              listing.deploymentState === 'deploying' ||
               codeBuildId.startsWith('nsw-deploy:') ||
               (env?.AWS_CODEBUILD_DEPLOY_PROJECT && codeBuildId.startsWith(env.AWS_CODEBUILD_DEPLOY_PROJECT + ':'));
 
@@ -636,16 +640,19 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                           timestamp: new Date().toISOString()
                         };
 
+                        // Deploy stage stays under 'building' (no 'deploying'
+                        // state in prod's CHECK); the deploy build_runs row is
+                        // the stage discriminator.
                         await env.DB.prepare(`
                           UPDATE app_listings SET
-                            deployment_state = 'deploying',
+                            deployment_state = 'building',
                             origin_kind = 'cf_container',
                             deployment_error = NULL,
                             deployment_evidence_json = ?
                           WHERE id = ?
                         `).bind(JSON.stringify(deployingEvidence), appId).run();
 
-                        listing.deploymentState = 'deploying';
+                        listing.deploymentState = 'building';
                         listing.originKind = 'cf_container';
                         listing.deploymentError = null;
                         listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);

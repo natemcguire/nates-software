@@ -600,7 +600,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(buildRun.status).toBe('running');
     });
 
-    it('transitions running candidate -> passed and triggers nsw-deploy with exact overrides, setting deployment_state=deploying', async () => {
+    it('transitions running candidate -> passed and triggers nsw-deploy with exact overrides, keeping deployment_state=building', async () => {
       const awsCalls: { target: string; body?: any }[] = [];
       const mockAwsFetch: typeof fetch = async (input, init) => {
         const req = input instanceof Request ? input : new Request(input, init);
@@ -657,7 +657,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       const data: any = await res.json();
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      expect(data.deploymentState).toBe('deploying');
+      expect(data.deploymentState).toBe('building');
       expect(data.isVerifiedActive).toBe(false);
       expect(data.deploymentError).toBeNull();
 
@@ -693,11 +693,11 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(deployRun.purpose).toBe('release');
       expect(deployRun.runner_image_digest).toBe('nsw-deploy:lazy-deploy-uuid-2222');
 
-      // Assert app_listing updated to deploying
+      // Assert app_listing updated with deploy stage evidence under building state
       const app = await ctx.d1.prepare(`
         SELECT deployment_state, origin_kind, deployment_error, deployment_evidence_json FROM app_listings WHERE id = ?
       `).bind(appId).first<any>();
-      expect(app.deployment_state).toBe('deploying');
+      expect(app.deployment_state).toBe('building');
       expect(app.origin_kind).toBe('cf_container');
       expect(app.deployment_error).toBeNull();
       const evidence = JSON.parse(app.deployment_evidence_json);
@@ -707,10 +707,10 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(evidence.deployCodeBuildId).toBe('nsw-deploy:lazy-deploy-uuid-2222');
     });
 
-    it('lazy-finalizes deploy stage: remains in deploying state while nsw-deploy is IN_PROGRESS', async () => {
-      // Set app to deploying state with running deploy build
+    it('lazy-finalizes deploy stage: remains in building state while nsw-deploy is IN_PROGRESS', async () => {
+      // Set app to building state with running deploy build
       await ctx.d1.prepare(`
-        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+        UPDATE app_listings SET deployment_state = 'building', origin_kind = 'cf_container' WHERE id = ?
       `).bind(appId).run();
       await ctx.d1.prepare(`
         UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
@@ -743,7 +743,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
 
       const data: any = await res.json();
       expect(res.status).toBe(200);
-      expect(data.deploymentState).toBe('deploying');
+      expect(data.deploymentState).toBe('building');
       expect(data.isVerifiedActive).toBe(false);
 
       const deployRun = await ctx.d1.prepare(`SELECT status FROM build_runs WHERE id = 'br_lazy_deploy_1'`).first<any>();
@@ -753,9 +753,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
     it('lazy-finalizes deploy stage: promotes to active, creates deployment_revisions row, and sets origin_ref when nsw-deploy SUCCEEDS with DEPLOYED_WORKER_URL', async () => {
       const workerUrl = `https://nsw-app-${appId}.tester-subdomain.workers.dev`;
 
-      // Set app to deploying state with running deploy build
+      // Set app to building state with running deploy build
       await ctx.d1.prepare(`
-        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+        UPDATE app_listings SET deployment_state = 'building', origin_kind = 'cf_container' WHERE id = ?
       `).bind(appId).run();
       await ctx.d1.prepare(`
         UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
@@ -834,10 +834,10 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       expect(app.deployment_error).toBeNull();
     });
 
-    it('lazy-finalizes deploy stage: transitions deploying -> failed and sets honest deployment_error when nsw-deploy FAILED', async () => {
-      // Set app to deploying state with running deploy build
+    it('lazy-finalizes deploy stage: transitions building -> failed and sets honest deployment_error when nsw-deploy FAILED', async () => {
+      // Set app to building state with running deploy build
       await ctx.d1.prepare(`
-        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+        UPDATE app_listings SET deployment_state = 'building', origin_kind = 'cf_container' WHERE id = ?
       `).bind(appId).run();
       await ctx.d1.prepare(`
         UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
@@ -890,9 +890,9 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
     });
 
     it('lazy-finalizes deploy stage: fails closed when nsw-deploy SUCCEEDS but no DEPLOYED_WORKER_URL was found', async () => {
-      // Set app to deploying state with running deploy build
+      // Set app to building state with running deploy build
       await ctx.d1.prepare(`
-        UPDATE app_listings SET deployment_state = 'deploying', origin_kind = 'cf_container' WHERE id = ?
+        UPDATE app_listings SET deployment_state = 'building', origin_kind = 'cf_container' WHERE id = ?
       `).bind(appId).run();
       await ctx.d1.prepare(`
         UPDATE build_runs SET status = 'passed', result_digest = ? WHERE id = 'br_lazy_1'
@@ -1446,14 +1446,14 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
       });
       const dataGet: any = await resGet.json();
       expect(resGet.status).toBe(200);
-      expect(dataGet.deploymentState).toBe('deploying');
+      expect(dataGet.deploymentState).toBe('building');
 
       const buildBFinal = await ctx.d1.prepare(`SELECT status, result_digest FROM build_runs WHERE id = ?`).bind(dataB.buildRunId).first<any>();
       expect(buildBFinal.status).toBe('passed');
       expect(buildBFinal.result_digest).toBe('sha256:digestB_real');
 
       const appFinal = await ctx.d1.prepare(`SELECT deployment_state FROM app_listings WHERE id = ?`).bind(appId).first<any>();
-      expect(appFinal.deployment_state).toBe('deploying');
+      expect(appFinal.deployment_state).toBe('building');
 
       // 5. Deploy stage finalize for B -> promotes to active
       const workerUrlB = 'https://nsw-app-cas-race-app.subdomain.workers.dev';
@@ -1497,7 +1497,7 @@ describe('Phase 1: AWS Build Substrate Control Plane Suite', () => {
 
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state, origin_kind)
-        VALUES (?, 'CAS Dep Race App', 'Tag', 'Desc', ?, '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'deploying', 'cf_container')
+        VALUES (?, 'CAS Dep Race App', 'Tag', 'Desc', ?, '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'building', 'cf_container')
       `).bind(appId, user).run();
 
       await ctx.d1.prepare(`

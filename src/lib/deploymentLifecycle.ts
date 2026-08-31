@@ -24,21 +24,22 @@ export const APP_DEPLOYMENT_STATES: readonly AppDeploymentState[] = [
   'source_ready',
   'building',
   'deployable',
-  'deploying',
   'active',
   'failed',
   'retired',
   'client_demo'
 ] as const;
 
+// NB: there is no 'deploying' state. The build AND deploy stages both surface as
+// 'building' (prod's deployment_state CHECK has no 'deploying' value); the deploy
+// vs build stage is discriminated by the build_runs CodeBuild project, not app state.
 export const DEPLOYMENT_STATE_TRANSITIONS: Readonly<Record<AppDeploymentState, readonly AppDeploymentState[]>> = {
   draft: ['source_ready', 'building', 'failed', 'retired', 'client_demo'],
   source_ready: ['building', 'failed', 'retired', 'draft'],
-  building: ['deployable', 'deploying', 'failed', 'retired'],
-  deployable: ['deploying', 'active', 'building', 'failed', 'retired'],
-  deploying: ['active', 'failed', 'retired', 'building'],
-  active: ['building', 'deploying', 'deployable', 'failed', 'retired'],
-  failed: ['source_ready', 'building', 'deploying', 'draft', 'retired'],
+  building: ['deployable', 'active', 'failed', 'retired'],
+  deployable: ['active', 'building', 'failed', 'retired'],
+  active: ['building', 'deployable', 'failed', 'retired'],
+  failed: ['source_ready', 'building', 'draft', 'retired'],
   retired: ['draft', 'source_ready'],
   client_demo: ['draft', 'source_ready', 'retired']
 };
@@ -655,18 +656,6 @@ export function getHonestDeploymentMessage(
     };
   }
 
-  if (state === 'deploying') {
-    return {
-      headline: `Deployment in progress for ${name}.`,
-      subtext: 'Deploying container worker to Cloudflare and running runtime smoke checks.',
-      state: 'deploying',
-      guidance: [
-        'Container image is being deployed to Cloudflare Containers.',
-        'Runtime smoke verification is in progress.',
-        'Standalone hostname will be promoted to active once smoke test passes.'
-      ]
-    };
-  }
 
   if (state === 'retired') {
     return {

@@ -8,7 +8,7 @@
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE app_listings ADD COLUMN deployment_state TEXT NOT NULL DEFAULT 'draft'
-  CHECK (deployment_state IN ('draft', 'source_ready', 'building', 'deployable', 'deploying', 'active', 'failed', 'retired', 'client_demo'));
+  CHECK (deployment_state IN ('draft', 'source_ready', 'building', 'deployable', 'active', 'failed', 'retired', 'client_demo'));
 
 ALTER TABLE app_listings ADD COLUMN deployment_error TEXT;
 

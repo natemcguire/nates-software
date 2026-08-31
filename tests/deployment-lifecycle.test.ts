@@ -122,7 +122,6 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
         'source_ready',
         'building',
         'deployable',
-        'deploying',
         'active',
         'failed',
         'retired',
@@ -135,7 +134,7 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(isValidDeploymentState('source_ready')).toBe(true);
       expect(isValidDeploymentState('building')).toBe(true);
       expect(isValidDeploymentState('deployable')).toBe(true);
-      expect(isValidDeploymentState('deploying')).toBe(true);
+      expect(isValidDeploymentState('deploying')).toBe(false);
       expect(isValidDeploymentState('active')).toBe(true);
       expect(isValidDeploymentState('failed')).toBe(true);
       expect(isValidDeploymentState('retired')).toBe(true);
@@ -149,19 +148,23 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(canTransitionDeploymentState('draft', 'source_ready')).toBe(true);
       expect(canTransitionDeploymentState('source_ready', 'building')).toBe(true);
       expect(canTransitionDeploymentState('building', 'deployable')).toBe(true);
-      expect(canTransitionDeploymentState('building', 'deploying')).toBe(true);
+      expect(canTransitionDeploymentState('building', 'active')).toBe(true);
       expect(canTransitionDeploymentState('building', 'failed')).toBe(true);
-      expect(canTransitionDeploymentState('deployable', 'deploying')).toBe(true);
       expect(canTransitionDeploymentState('deployable', 'active')).toBe(true);
-      expect(canTransitionDeploymentState('deploying', 'active')).toBe(true);
-      expect(canTransitionDeploymentState('deploying', 'failed')).toBe(true);
       expect(canTransitionDeploymentState('active', 'retired')).toBe(true);
       expect(canTransitionDeploymentState('failed', 'source_ready')).toBe(true);
 
       // Illegal jumps: draft cannot jump directly to active without build and promotion
       expect(canTransitionDeploymentState('draft', 'active')).toBe(false);
       expect(canTransitionDeploymentState('draft', 'deployable')).toBe(false);
-      expect(canTransitionDeploymentState('building', 'active')).toBe(false);
+      // building -> active is LEGAL: the deploy stage (nsw-deploy) runs under
+      // 'building' and promotes straight to 'active' on smoke success.
+      expect(canTransitionDeploymentState('building', 'active')).toBe(true);
+
+      // 'deploying' is not a valid state, so transitions to/from it must return false
+      expect(canTransitionDeploymentState('building', 'deploying' as any)).toBe(false);
+      expect(canTransitionDeploymentState('deploying' as any, 'active')).toBe(false);
+      expect(canTransitionDeploymentState('deploying' as any, 'failed')).toBe(false);
     });
 
     it('should enforce CHECK constraints on app_listings deployment_state in D1', async () => {
@@ -1025,21 +1028,21 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(data.deploymentState).toBe('building');
       expect(data.codeBuildId).toBe('nsw-build:cm-build-uuid-1234');
 
-      // Verify lazy finalize on GET /api/deploy: candidate build SUCCEEDED + verified digest -> triggers nsw-deploy -> deploying
+      // Verify lazy finalize on GET /api/deploy: candidate build SUCCEEDED + verified digest -> triggers nsw-deploy -> stays building
       const getRes = await deployApi.onRequestGet({
         request: new Request('https://nates-software.com/api/deploy?appId=certified-mailer-app'),
         env: testEnv
       });
       const getData: any = await getRes.json();
       expect(getData.success).toBe(true);
-      expect(getData.deploymentState).toBe('deploying');
+      expect(getData.deploymentState).toBe('building');
 
-      // Verify D1 records: deploying state, origin_kind is cf_container, active_deployment_id is NULL (never fakes active without serve)
+      // Verify D1 records: building state (deploy stage runs under building), origin_kind is cf_container, active_deployment_id is NULL (never fakes active without serve)
       const app = await ctx.d1.prepare(`
         SELECT deployment_state, origin_kind, active_deployment_id, deployment_error FROM app_listings WHERE id = 'certified-mailer-app'
       `).first<any>();
 
-      expect(app.deployment_state).toBe('deploying');
+      expect(app.deployment_state).toBe('building');
       expect(app.origin_kind).toBe('cf_container');
       expect(app.active_deployment_id).toBeNull();
       expect(app.deployment_error).toBeNull();
