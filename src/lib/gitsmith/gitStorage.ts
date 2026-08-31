@@ -24,7 +24,14 @@ import type {
   RepositoryObjectFormat,
   StorageValidationResult
 } from './types.ts';
-import { validateGitRef, validateGitOid, isValidGitOid } from '../forgeDomain.ts';
+import {
+  validateGitRef,
+  validateGitOid,
+  isValidGitOid,
+  validateRepoFilePath,
+  MAX_TEXT_FILE_BYTES,
+  MAX_IMAGE_FILE_BYTES
+} from '../forgeDomain.ts';
 
 export const SHA1_ZERO_OID = '0000000000000000000000000000000000000000';
 export const SHA256_ZERO_OID = '0000000000000000000000000000000000000000000000000000000000000000';
@@ -406,21 +413,66 @@ export function listCommitFiles(reposRoot: string, storageKey: string, commitOid
 }
 
 /**
+ * Reads the object byte size of a file at a specific commit OID in a bare repository
+ * using `git cat-file -s <oid>:<path>` without buffering the file content.
+ */
+export function getCommitFileSize(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string
+): number | null {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return null;
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return null;
+  const pathVal = validateRepoFilePath(filePath);
+  if (!pathVal.valid) return null;
+
+  try {
+    const out = execFileSync('git', ['cat-file', '-s', `${commitOid}:${filePath}`], {
+      cwd: pathRes.resolvedPath,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5_000
+    }).trim();
+    const size = parseInt(out, 10);
+    return Number.isFinite(size) && size >= 0 ? size : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Reads the text content of a file at a specific commit OID in a bare repository.
+ * Checks object size via `git cat-file -s` before buffering.
  */
 export function readCommitFileContent(
   reposRoot: string,
   storageKey: string,
   commitOid: string,
   filePath: string,
-  maxBytes: number = 1024 * 1024
+  maxBytes: number = MAX_TEXT_FILE_BYTES
 ): string | null {
   const pathRes = resolveRepoPath(reposRoot, storageKey);
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
     return null;
   }
   if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return null;
-  if (!filePath || typeof filePath !== 'string' || filePath.startsWith('-') || filePath.includes('\0')) return null;
+  const pathVal = validateRepoFilePath(filePath);
+  if (!pathVal.valid) return null;
+
+  // Check object size FIRST via git cat-file -s before reading/buffering
+  const size = getCommitFileSize(reposRoot, storageKey, commitOid, filePath);
+  if (size === null) return null;
+  if (size > maxBytes) {
+    const err = new Error(`File size (${size} bytes) exceeds maximum limit of ${maxBytes} bytes.`);
+    (err as any).code = 'ERR_FILE_TOO_LARGE';
+    (err as any).size = size;
+    (err as any).maxBytes = maxBytes;
+    throw err;
+  }
 
   try {
     const out = execFileSync('git', ['show', `${commitOid}:${filePath}`], {
@@ -431,9 +483,68 @@ export function readCommitFileContent(
       timeout: 10_000
     });
     return out;
-  } catch {
+  } catch (err: any) {
+    if (err?.code === 'ERR_FILE_TOO_LARGE') throw err;
     return null;
   }
+}
+
+/**
+ * Reads the raw binary buffer of a file at a specific commit OID in a bare repository.
+ * Checks object size via `git cat-file -s` before buffering.
+ */
+export function readCommitFileBuffer(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string,
+  maxBytes: number = MAX_IMAGE_FILE_BYTES
+): Buffer | null {
+  const pathRes = resolveRepoPath(reposRoot, storageKey);
+  if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
+    return null;
+  }
+  if (!isValidGitOid(commitOid) || commitOid.startsWith('-')) return null;
+  const pathVal = validateRepoFilePath(filePath);
+  if (!pathVal.valid) return null;
+
+  // Check object size FIRST via git cat-file -s before reading/buffering
+  const size = getCommitFileSize(reposRoot, storageKey, commitOid, filePath);
+  if (size === null) return null;
+  if (size > maxBytes) {
+    const err = new Error(`File size (${size} bytes) exceeds maximum limit of ${maxBytes} bytes.`);
+    (err as any).code = 'ERR_FILE_TOO_LARGE';
+    (err as any).size = size;
+    (err as any).maxBytes = maxBytes;
+    throw err;
+  }
+
+  try {
+    const out = execFileSync('git', ['show', `${commitOid}:${filePath}`], {
+      cwd: pathRes.resolvedPath,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: maxBytes,
+      timeout: 10_000
+    });
+    return Buffer.isBuffer(out) ? out : Buffer.from(out);
+  } catch (err: any) {
+    if (err?.code === 'ERR_FILE_TOO_LARGE') throw err;
+    return null;
+  }
+}
+
+/**
+ * Reads the base64 encoded content of a file at a specific commit OID in a bare repository.
+ */
+export function readCommitFileBase64(
+  reposRoot: string,
+  storageKey: string,
+  commitOid: string,
+  filePath: string,
+  maxBytes: number = MAX_IMAGE_FILE_BYTES
+): string | null {
+  const buf = readCommitFileBuffer(reposRoot, storageKey, commitOid, filePath, maxBytes);
+  return buf ? buf.toString('base64') : null;
 }
 
 /**
@@ -490,10 +601,12 @@ export function inspectCommitTree(
       f => f.toLowerCase() === candidate.toLowerCase() || f.toLowerCase().endsWith(`/${candidate.toLowerCase()}`)
     );
     if (matched && !(matched in manifestContents)) {
-      const content = readCommitFileContent(reposRoot, storageKey, commitOid, matched);
-      if (content !== null) {
-        manifestContents[matched] = content;
-      }
+      try {
+        const content = readCommitFileContent(reposRoot, storageKey, commitOid, matched);
+        if (content !== null) {
+          manifestContents[matched] = content;
+        }
+      } catch {}
     }
   }
 
