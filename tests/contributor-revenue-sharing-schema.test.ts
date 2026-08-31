@@ -151,7 +151,7 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
               id, repository_id, contributor_user_id, granted_by_user_id, basis_points
             ) VALUES (?, 'repo_cs_test', 'usr_sam', 'usr_nate', ?)
           `).bind(`cs_bad_bps_${invalidBps}`, invalidBps).run()
-        ).rejects.toThrow(/CHECK constraint failed/);
+        ).rejects.toThrow(/CHECK constraint failed|contributor share exceeds available repository grantable pool/);
       }
     );
 

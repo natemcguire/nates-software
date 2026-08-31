@@ -46,7 +46,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0026_unique_hostname_index.sql',
         '0027_app_postgres_addon.sql',
         '0028_user_ssh_keys.sql',
-        '0029_contributor_revenue_sharing.sql'
+        '0029_contributor_revenue_sharing.sql',
+        '0030_contributor_cap_triggers.sql'
       ]);
     });
 
@@ -153,6 +154,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('contributor_shares_no_delete');
       expect(triggers).toContain('contributor_shares_economics_immutable');
       expect(triggers).toContain('contributor_shares_status_forward_only');
+      expect(triggers).toContain('contributor_shares_cap_guard');
+      expect(triggers).toContain('repositories_grantable_no_strand');
     });
 
     it('should create all unique indices across the migration chain', () => {
@@ -1254,7 +1257,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points)
           VALUES ('cs_over_bps', 'repo_contrib_test', 'usr_sam', 'usr_nate', 10001)
         `).run()
-      ).rejects.toThrow(/CHECK constraint failed/);
+      ).rejects.toThrow(/CHECK constraint failed|contributor share exceeds available repository grantable pool/);
 
       // Inserts valid pending contributor share
       await ctx.d1.prepare(`

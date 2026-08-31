@@ -251,7 +251,7 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     expect(await ctx.d1.prepare('SELECT count(*) AS c FROM contributor_shares WHERE repository_id=?').bind('repo-self-grant').first('c')).toBe(0);
   });
 
-  it('replay approval (same merge_attempt_id) succeeds with no 500 and % unchanged via INSERT OR IGNORE', async () => {
+  it('replay approval (same merge_attempt_id): exact replay succeeds idempotently, differing replay returns 409 Conflict', async () => {
     const { baseOid, headOid } = setupTestRepo('repositories/repo-replay');
     await ctx.d1.prepare(`INSERT INTO repositories
       (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
@@ -272,19 +272,75 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     // First approval: grant 750 bps
     const res1 = await post({ action: 'approve', messageId: 'msg-replay', grantBps: 750 });
     expect(res1.status).toBe(200);
+    const data1: any = await res1.json();
+    expect(data1.grantBps).toBe(750);
 
     const shareBefore: any = await ctx.d1.prepare('SELECT * FROM contributor_shares WHERE merge_attempt_id=?').bind('attempt-replay').first();
     expect(shareBefore.basis_points).toBe(750);
     expect(shareBefore.status).toBe('pending');
 
-    // Replay approval with same or different bps: succeeds with 200, row is unchanged
+    // Exact replay with same bps: succeeds idempotently with 200, reporting 750 bps
+    const exactReplay = await post({ action: 'approve', messageId: 'msg-replay', grantBps: 750 });
+    expect(exactReplay.status).toBe(200);
+    const exactData: any = await exactReplay.json();
+    expect(exactData.grantBps).toBe(750);
+
+    // Replay approval with different bps (1500 bps): must return 409 Conflict
     const res2 = await post({ action: 'approve', messageId: 'msg-replay', grantBps: 1500 });
-    expect(res2.status).toBe(200);
+    expect(res2.status).toBe(409);
+    const errData2: any = await res2.json();
+    expect(errData2.error).toContain('already has a 750 bps (7.50%) grant');
+
+    // Replay approval with 0 bps / omitted: must return 409 Conflict
+    const res3 = await post({ action: 'approve', messageId: 'msg-replay' });
+    expect(res3.status).toBe(409);
+    const errData3: any = await res3.json();
+    expect(errData3.error).toContain('already has a 750 bps (7.50%) grant');
 
     const shareAfter: any = await ctx.d1.prepare('SELECT * FROM contributor_shares WHERE merge_attempt_id=?').bind('attempt-replay').first();
     expect(shareAfter.id).toBe(shareBefore.id);
-    expect(shareAfter.basis_points).toBe(750); // Untouched! First approval is final
+    expect(shareAfter.basis_points).toBe(750); // Untouched!
     expect(await ctx.d1.prepare('SELECT count(*) AS c FROM contributor_shares WHERE merge_attempt_id=?').bind('attempt-replay').first('c')).toBe(1);
+  });
+
+  it('late grant approval: initial approval with 0 bps, subsequent approval with 500 bps binds persisted merge_approval_id', async () => {
+    const { baseOid, headOid } = setupTestRepo('repositories/repo-late-grant');
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+      VALUES ('repo-late-grant','dronehunter','usr_nate','nate/late-grant','private','refs/heads/main','repositories/repo-late-grant','active',2000)`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-late-grant','repo-late-grant','refs/heads/main','usr_sam','preview_ready','late-grant-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-late-grant','job-late-grant',1,?,?, 'tool-v1','policy-v1','preview_ready')`)
+      .bind(baseOid, headOid).run();
+    await insertMessage(ownMessage('msg-late-grant', {
+      user_id: 'usr_nate',
+      sender_id: 'usr_sam',
+      merge_attempt_id: 'attempt-late-grant'
+    }));
+
+    // First approval with no grant
+    const res1 = await post({ action: 'approve', messageId: 'msg-late-grant' });
+    expect(res1.status).toBe(200);
+
+    const approvalRow: any = await ctx.d1.prepare('SELECT id FROM merge_approvals WHERE merge_attempt_id = ?')
+      .bind('attempt-late-grant').first();
+    expect(approvalRow).not.toBeNull();
+    const persistedApprovalId = approvalRow.id;
+
+    // Late grant on subsequent approval call
+    const res2 = await post({ action: 'approve', messageId: 'msg-late-grant', grantBps: 500 });
+    expect(res2.status).toBe(200);
+    const data2: any = await res2.json();
+    expect(data2.grantBps).toBe(500);
+
+    const shareRow: any = await ctx.d1.prepare('SELECT * FROM contributor_shares WHERE merge_attempt_id = ?')
+      .bind('attempt-late-grant').first();
+    expect(shareRow).not.toBeNull();
+    expect(shareRow.basis_points).toBe(500);
+    expect(shareRow.merge_approval_id).toBe(persistedApprovalId);
   });
 
   it('grant of 0 or absent succeeds with no contributor_shares row created', async () => {
@@ -363,6 +419,133 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     expect(over10000Res.status).toBe(422);
   });
 
+  it('rejects non-numeric, NaN, out-of-range, and conflicting percent/bps inputs with 422', async () => {
+    const { baseOid, headOid } = setupTestRepo('repositories/repo-pct-guard');
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+      VALUES ('repo-pct-guard','dronehunter','usr_nate','nate/pct-guard','private','refs/heads/main','repositories/repo-pct-guard','active',3000)`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-pct-guard','repo-pct-guard','refs/heads/main','usr_sam','preview_ready','pct-guard-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-pct-guard','job-pct-guard',1,?,?, 'tool-v1','policy-v1','preview_ready')`)
+      .bind(baseOid, headOid).run();
+    await insertMessage(ownMessage('msg-pct-guard', {
+      user_id: 'usr_nate',
+      sender_id: 'usr_sam',
+      merge_attempt_id: 'attempt-pct-guard'
+    }));
+
+    // grantPercent: "not-a-number" -> 422
+    const nanRes = await post({ action: 'approve', messageId: 'msg-pct-guard', grantPercent: 'not-a-number' });
+    expect(nanRes.status).toBe(422);
+    const nanData: any = await nanRes.json();
+    expect(nanData.error).toContain('grantPercent must be a number');
+
+    // grantPercent: "abc" -> 422
+    const abcRes = await post({ action: 'approve', messageId: 'msg-pct-guard', grantPercent: 'abc' });
+    expect(abcRes.status).toBe(422);
+
+    // grantPercent: -5 -> 422
+    const negRes = await post({ action: 'approve', messageId: 'msg-pct-guard', grantPercent: -5 });
+    expect(negRes.status).toBe(422);
+
+    // grantPercent: 105 -> 422
+    const over100Res = await post({ action: 'approve', messageId: 'msg-pct-guard', grantPercent: 105 });
+    expect(over100Res.status).toBe(422);
+
+    // Conflicting grantBps (500) and grantPercent (10% = 1000 bps) -> 422
+    const conflictRes = await post({ action: 'approve', messageId: 'msg-pct-guard', grantBps: 500, grantPercent: 10 });
+    expect(conflictRes.status).toBe(422);
+    const conflictData: any = await conflictRes.json();
+    expect(conflictData.error).toContain('conflict');
+
+    // Valid grantPercent: 12.34% -> rounds to 1234 bps
+    const validPctRes = await post({ action: 'approve', messageId: 'msg-pct-guard', grantPercent: 12.34 });
+    expect(validPctRes.status).toBe(200);
+    const validPctData: any = await validPctRes.json();
+    expect(validPctData.grantBps).toBe(1234);
+
+    const share: any = await ctx.d1.prepare('SELECT basis_points FROM contributor_shares WHERE merge_attempt_id = ?')
+      .bind('attempt-pct-guard').first();
+    expect(share.basis_points).toBe(1234);
+  });
+
+  describe('Database Triggers (Migration 0030)', () => {
+    it('contributor_shares_cap_guard: DB trigger aborts direct insert that exceeds repository grantable_bps', async () => {
+      await ctx.d1.prepare(`INSERT OR IGNORE INTO users (id, username, display_name) VALUES ('usr_alice', 'alice', 'Alice')`).run();
+      await ctx.d1.prepare(`INSERT INTO repositories
+        (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+        VALUES ('repo-trig-cap','dronehunter','usr_nate','nate/trig-cap','private','refs/heads/main','repositories/repo-trig-cap','active',1000)`).run();
+
+      // First direct insert of 600 bps succeeds
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+        VALUES ('cs_trig_1', 'repo-trig-cap', 'usr_sam', 'usr_nate', 600, 'pending')
+      `).run();
+
+      // Second direct insert of 500 bps (total 1100 > 1000) is aborted by DB trigger
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+          VALUES ('cs_trig_2', 'repo-trig-cap', 'usr_alice', 'usr_nate', 500, 'pending')
+        `).run()
+      ).rejects.toThrow(/contributor share exceeds available repository grantable pool or repository does not exist/);
+
+      // Third direct insert of 400 bps (total 600 + 400 = 1000 <= 1000) succeeds
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+        VALUES ('cs_trig_3', 'repo-trig-cap', 'usr_alice', 'usr_nate', 400, 'pending')
+      `).run();
+
+      const total: any = await ctx.d1.prepare(`
+        SELECT SUM(basis_points) AS s FROM contributor_shares WHERE repository_id = 'repo-trig-cap' AND status IN ('active', 'pending')
+      `).first();
+      expect(total.s).toBe(1000);
+
+      // Insert for non-existent repository is aborted by DB trigger
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+          VALUES ('cs_trig_bad_repo', 'repo-does-not-exist', 'usr_sam', 'usr_nate', 100, 'pending')
+        `).run()
+      ).rejects.toThrow(/contributor share exceeds available repository grantable pool or repository does not exist/);
+    });
+
+    it('repositories_grantable_no_strand: DB trigger aborts lowering grantable_bps below committed grants', async () => {
+      await ctx.d1.prepare(`INSERT OR IGNORE INTO users (id, username, display_name) VALUES ('usr_alice', 'alice', 'Alice')`).run();
+      await ctx.d1.prepare(`INSERT INTO repositories
+        (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+        VALUES ('repo-trig-strand','dronehunter','usr_nate','nate/trig-strand','private','refs/heads/main','repositories/repo-trig-strand','active',2500)`).run();
+
+      // Commit 1500 bps in active and pending shares
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at)
+        VALUES ('cs_strand_1', 'repo-trig-strand', 'usr_sam', 'usr_nate', 1000, 'active', CURRENT_TIMESTAMP)
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+        VALUES ('cs_strand_2', 'repo-trig-strand', 'usr_alice', 'usr_nate', 500, 'pending')
+      `).run();
+
+      // Attempting to lower grantable_bps to 1400 (< 1500 committed) is aborted by DB trigger
+      await expect(
+        ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 1400 WHERE id = 'repo-trig-strand'`).run()
+      ).rejects.toThrow(/repository grantable_bps cannot be lowered below committed grants/);
+
+      // Lowering to exactly 1500 (= 1500 committed) succeeds
+      await ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 1500 WHERE id = 'repo-trig-strand'`).run();
+      const updated: any = await ctx.d1.prepare(`SELECT grantable_bps FROM repositories WHERE id = 'repo-trig-strand'`).first();
+      expect(updated.grantable_bps).toBe(1500);
+
+      // Raising to 3000 succeeds
+      await ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 3000 WHERE id = 'repo-trig-strand'`).run();
+      const raised: any = await ctx.d1.prepare(`SELECT grantable_bps FROM repositories WHERE id = 'repo-trig-strand'`).first();
+      expect(raised.grantable_bps).toBe(3000);
+    });
+  });
+
   it('renders InboxView with Reward Contributor UI components', () => {
     const html = renderToString(React.createElement(AuthProvider, null, React.createElement(InboxView)));
     expect(html).toContain('INBOX.EXE');
@@ -370,3 +553,4 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     expect(html).toContain('No Message Selected');
   });
 });
+
