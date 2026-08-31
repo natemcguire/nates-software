@@ -135,6 +135,12 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     expect(share.activated_at).toBeNull();
     expect(share.revoked_at).toBeNull();
 
+    const approval: any = await ctx.d1.prepare(`
+      SELECT * FROM merge_approvals WHERE merge_attempt_id = ?
+    `).bind('attempt-grant-10').first();
+    expect(approval).not.toBeNull();
+    expect(share.merge_approval_id).toBe(approval.id);
+
     // Verify outbox event and merge job status
     expect(await ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-grant-10').first('status')).toBe('landing');
     expect(await ctx.d1.prepare('SELECT count(*) AS c FROM forge_outbox_events WHERE aggregate_id=?').bind('attempt-grant-10').first('c')).toBe(1);
@@ -341,6 +347,51 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     expect(shareRow).not.toBeNull();
     expect(shareRow.basis_points).toBe(500);
     expect(shareRow.merge_approval_id).toBe(persistedApprovalId);
+  });
+
+  it('concurrent interleaving: binds persisted merge_approvals.id atomically via subselect, not an orphaned id', async () => {
+    const { baseOid, headOid } = setupTestRepo('repositories/repo-concurrent-bind');
+    await ctx.d1.prepare(`INSERT INTO repositories
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+      VALUES ('repo-concurrent-bind','dronehunter','usr_nate','nate/concurrent-bind','private','refs/heads/main','repositories/repo-concurrent-bind','active',2000)`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_jobs
+      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
+      VALUES ('job-concurrent-bind','repo-concurrent-bind','refs/heads/main','usr_sam','preview_ready','concurrent-bind-test')`).run();
+    await ctx.d1.prepare(`INSERT INTO merge_attempts
+      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
+      VALUES ('attempt-concurrent-bind','job-concurrent-bind',1,?,?, 'tool-v1','policy-v1','preview_ready')`)
+      .bind(baseOid, headOid).run();
+    await insertMessage(ownMessage('msg-concurrent-bind', {
+      user_id: 'usr_nate',
+      sender_id: 'usr_sam',
+      merge_attempt_id: 'attempt-concurrent-bind'
+    }));
+
+    // Simulate Request A having won the race and persisted an approval row first
+    const preexistingApprovalId = 'appr_preexisting_winner_123';
+    await ctx.d1.prepare(`
+      INSERT INTO merge_approvals (id, merge_attempt_id, approver_user_id, result_commit_oid, decision, comment)
+      VALUES (?, 'attempt-concurrent-bind', 'usr_nate', ?, 'approved', 'Pre-existing approval from request A')
+    `).bind(preexistingApprovalId, headOid).run();
+
+    // Now Request B arrives to approve with a positive grant (500 bps)
+    const resB = await post({ action: 'approve', messageId: 'msg-concurrent-bind', grantBps: 500 });
+    expect(resB.status).toBe(200);
+
+    // Verify merge_approvals row still has the original winner ID (ON CONFLICT DO UPDATE didn't change ID)
+    const persistedApproval: any = await ctx.d1.prepare(
+      'SELECT id, decision FROM merge_approvals WHERE merge_attempt_id = ? AND approver_user_id = ?'
+    ).bind('attempt-concurrent-bind', 'usr_nate').first();
+    expect(persistedApproval.id).toBe(preexistingApprovalId);
+
+    // Verify contributor_shares row bound to preexistingApprovalId via the atomic subselect (not an orphaned id)
+    const share: any = await ctx.d1.prepare(
+      'SELECT * FROM contributor_shares WHERE merge_attempt_id = ?'
+    ).bind('attempt-concurrent-bind').first();
+    expect(share).not.toBeNull();
+    expect(share.merge_approval_id).toBe(preexistingApprovalId);
+    expect(share.basis_points).toBe(500);
+    expect(share.status).toBe('pending');
   });
 
   it('grant of 0 or absent succeeds with no contributor_shares row created', async () => {

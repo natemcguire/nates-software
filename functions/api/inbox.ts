@@ -533,7 +533,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       }
 
       const approvalId = crypto.randomUUID();
-      const persistedApprovalId = String(existingApproval?.id || approvalId);
 
       const statements = [
         env.DB.prepare(`
@@ -576,7 +575,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
             env.DB.prepare(`
               INSERT INTO contributor_shares
                 (id, repository_id, contributor_user_id, granted_by_user_id, merge_job_id, merge_attempt_id, merge_approval_id, basis_points, status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+              VALUES (?, ?, ?, ?, ?, ?, (SELECT id FROM merge_approvals WHERE merge_attempt_id = ? AND approver_user_id = ?), ?, 'pending')
             `).bind(
               shareId,
               proposal.repositoryId,
@@ -584,7 +583,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
               userId,
               proposal.mergeJobId,
               proposal.mergeAttemptId,
-              persistedApprovalId,
+              proposal.mergeAttemptId,
+              userId,
               requestedBps
             )
           );
