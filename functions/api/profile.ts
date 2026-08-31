@@ -1,8 +1,10 @@
-// GET /api/profile?username=<handle> (Public maker lookup or private owner view)
-// POST /api/profile (Authenticated profile update)
-
 import { getSessionUser, requireAuth } from './_auth';
 import { validateMakerProfile, calculateMakerEconomics, safePublishedArtifacts } from '../../src/lib/profileDomain';
+import {
+  parseAndValidateSshKeyInput,
+  parseAndValidateSshKeyString,
+  ParsedSshKey
+} from '../../src/lib/sshDomain';
 
 const unavailable = (message = 'Profile service is temporarily unavailable') => Response.json(
   { success: false, error: message },
@@ -12,6 +14,39 @@ const unavailable = (message = 'Profile service is temporarily unavailable') => 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const url = new URL(request.url);
+    const action = url.searchParams.get('action');
+
+    if (action === 'list-ssh-keys' || action === 'keys' || action === 'ssh-keys') {
+      const auth = await requireAuth(request, env);
+      if (auth.errorResponse) return auth.errorResponse;
+      const sessionUser = auth.user!;
+
+      if (!env || !env.DB) {
+        return unavailable('Database service is unavailable');
+      }
+
+      const { results: keys } = await env.DB.prepare(`
+        SELECT id, user_id AS userId, key_type AS keyType, key_base64 AS keyBase64,
+               key_prefix AS keyPrefix, label, created_at AS createdAt
+        FROM user_ssh_keys
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+      `).bind(sessionUser.id).all();
+
+      return Response.json({
+        success: true,
+        keys: (keys || []).map((k: any) => ({
+          id: k.id,
+          keyType: k.keyType,
+          keyBase64: k.keyBase64,
+          keyPrefix: k.keyPrefix,
+          label: k.label,
+          createdAt: k.createdAt,
+          fingerprint: k.keyBase64 ? k.keyBase64.slice(-8) : ''
+        }))
+      });
+    }
+
     const requestedUsername = url.searchParams.get('username')?.trim();
     const sessionUser = await getSessionUser(request, env);
 
@@ -141,6 +176,32 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   }
 };
 
+async function removeUserSshKey(db: any, userId: string, keyId: string): Promise<{ removed: boolean }> {
+  const keyRow = await db.prepare(`
+    SELECT id, key_prefix FROM user_ssh_keys
+    WHERE id = ? AND user_id = ?
+  `).bind(keyId, userId).first();
+
+  if (!keyRow) {
+    return { removed: false };
+  }
+
+  const keyPrefix = (keyRow as any).key_prefix;
+  await db.batch([
+    db.prepare(`
+      DELETE FROM user_ssh_keys
+      WHERE id = ? AND user_id = ?
+    `).bind(keyId, userId),
+    db.prepare(`
+      UPDATE users
+      SET ssh_public_key = NULL
+      WHERE id = ? AND (ssh_public_key = ? OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' ')
+    `).bind(userId, keyPrefix, keyPrefix, keyPrefix)
+  ]);
+
+  return { removed: true };
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const auth = await requireAuth(request, env);
@@ -157,6 +218,63 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     } catch {
       return Response.json({ success: false, error: 'Request body must be valid JSON' }, { status: 400 });
     }
+
+    const url = new URL(request.url);
+    const action = String(body?.action || url.searchParams.get('action') || '');
+
+    // Action: Add SSH Key
+    if (action === 'add-ssh-key') {
+      const parsed = parseAndValidateSshKeyInput(body);
+      if (!parsed.valid) {
+        return Response.json({ success: false, error: parsed.error }, { status: parsed.status });
+      }
+
+      const keyId = `key_${crypto.randomUUID().replace(/-/g, '')}`;
+
+      try {
+        await env.DB.prepare(`
+          INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(keyId, sessionUser.id, parsed.key.keyType, parsed.key.keyBase64, parsed.key.keyPrefix, parsed.key.label || null).run();
+      } catch (error: any) {
+        const msg = String(error?.message || '');
+        if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_user_ssh_keys_prefix') || msg.includes('user_ssh_keys.key_prefix')) {
+          return Response.json({ success: false, error: 'This SSH key is already registered.' }, { status: 409 });
+        }
+        console.error('Failed to insert user ssh key', error);
+        return Response.json({ success: false, error: 'Failed to register SSH key.' }, { status: 500 });
+      }
+
+      const created = await env.DB.prepare(`
+        SELECT id, user_id AS userId, key_type AS keyType, key_base64 AS keyBase64,
+               key_prefix AS keyPrefix, label, created_at AS createdAt
+        FROM user_ssh_keys
+        WHERE id = ?
+      `).bind(keyId).first();
+
+      return Response.json({
+        success: true,
+        message: 'SSH key added successfully',
+        key: created
+      }, { status: 201 });
+    }
+
+    // Action: Remove SSH Key
+    if (action === 'remove-ssh-key') {
+      const id = String(body?.id || url.searchParams.get('id') || '').trim();
+      if (!id) {
+        return Response.json({ success: false, error: 'Key id is required.' }, { status: 400 });
+      }
+
+      const { removed } = await removeUserSshKey(env.DB, sessionUser.id, id);
+      return Response.json({
+        success: true,
+        message: 'SSH key removed successfully',
+        removed
+      });
+    }
+
+    // Default: Legacy Profile Update
     const { displayName, avatar, bio, sshKey } = body;
 
     // Validate using domain rules
@@ -177,22 +295,76 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const hasBio = Object.prototype.hasOwnProperty.call(body, 'bio');
     const hasSshKey = Object.prototype.hasOwnProperty.call(body, 'sshKey');
 
-    const result = await env.DB.prepare(`
-      UPDATE users SET
-        display_name = CASE WHEN ? = 1 THEN ? ELSE display_name END,
-        avatar_url = CASE WHEN ? = 1 THEN ? ELSE avatar_url END,
-        bio = CASE WHEN ? = 1 THEN ? ELSE bio END,
-        ssh_public_key = CASE WHEN ? = 1 THEN ? ELSE ssh_public_key END
-      WHERE id = ?
-    `).bind(
-      hasDisplayName ? 1 : 0, hasDisplayName ? displayName.trim() : null,
-      hasAvatar ? 1 : 0, hasAvatar ? (avatar.trim() || null) : null,
-      hasBio ? 1 : 0, hasBio ? bio.trim() : null,
-      hasSshKey ? 1 : 0, hasSshKey && sshKey ? sshKey.trim() : null,
-      sessionUser.id
-    ).run();
+    let parsedNewKey: ParsedSshKey | null = null;
+    if (hasSshKey && sshKey && typeof sshKey === 'string' && sshKey.trim()) {
+      const parsed = parseAndValidateSshKeyString(sshKey);
+      if (!parsed.valid) {
+        return Response.json({ success: false, error: parsed.error }, { status: 400 });
+      }
+      parsedNewKey = parsed.key;
 
-    if (result?.success === false) throw new Error('Profile update was rejected by storage');
+      // Check cross-user uniqueness collision before mutation
+      const existingOther = await env.DB.prepare(`
+        SELECT user_id FROM user_ssh_keys WHERE key_prefix = ? AND user_id != ? LIMIT 1
+      `).bind(parsedNewKey.keyPrefix, sessionUser.id).first();
+      if (existingOther) {
+        return Response.json({ success: false, error: 'This SSH key is already registered.' }, { status: 409 });
+      }
+    }
+
+    const statements: any[] = [];
+
+    if (hasSshKey) {
+      if (parsedNewKey) {
+        const keyId = `key_${crypto.randomUUID().replace(/-/g, '')}`;
+        statements.push(
+          env.DB.prepare(`
+            DELETE FROM user_ssh_keys WHERE user_id = ?
+          `).bind(sessionUser.id)
+        );
+        statements.push(
+          env.DB.prepare(`
+            INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          `).bind(keyId, sessionUser.id, parsedNewKey.keyType, parsedNewKey.keyBase64, parsedNewKey.keyPrefix, parsedNewKey.label || null)
+        );
+      } else {
+        // Clearing sshKey
+        statements.push(
+          env.DB.prepare(`
+            DELETE FROM user_ssh_keys WHERE user_id = ?
+          `).bind(sessionUser.id)
+        );
+      }
+    }
+
+    statements.push(
+      env.DB.prepare(`
+        UPDATE users SET
+          display_name = CASE WHEN ? = 1 THEN ? ELSE display_name END,
+          avatar_url = CASE WHEN ? = 1 THEN ? ELSE avatar_url END,
+          bio = CASE WHEN ? = 1 THEN ? ELSE bio END,
+          ssh_public_key = CASE WHEN ? = 1 THEN ? ELSE ssh_public_key END
+        WHERE id = ?
+      `).bind(
+        hasDisplayName ? 1 : 0, hasDisplayName ? displayName.trim() : null,
+        hasAvatar ? 1 : 0, hasAvatar ? (avatar.trim() || null) : null,
+        hasBio ? 1 : 0, hasBio ? bio.trim() : null,
+        hasSshKey ? 1 : 0, hasSshKey && sshKey ? sshKey.trim() : null,
+        sessionUser.id
+      )
+    );
+
+    try {
+      await env.DB.batch(statements);
+    } catch (batchErr: any) {
+      const msg = String(batchErr?.message || '');
+      if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_user_ssh_keys_prefix') || msg.includes('user_ssh_keys.key_prefix')) {
+        return Response.json({ success: false, error: 'This SSH key is already registered.' }, { status: 409 });
+      }
+      throw batchErr;
+    }
+
     const updated = await env.DB.prepare(`
       SELECT username, display_name AS displayName, avatar_url AS avatar, bio,
              ssh_public_key AS sshKey
@@ -205,9 +377,46 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       message: 'Profile updated securely from authenticated session',
       user: updated
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('profile update failed', error);
+    const msg = String(error?.message || '');
+    if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_user_ssh_keys_prefix') || msg.includes('user_ssh_keys.key_prefix')) {
+      return Response.json({ success: false, error: 'This SSH key is already registered.' }, { status: 409 });
+    }
     return Response.json({ success: false, error: 'Profile update could not be completed' }, { status: 500 });
+  }
+};
+
+export const onRequestDelete = async ({ request, env }: { request: Request; env: any }) => {
+  try {
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse) return auth.errorResponse;
+    const sessionUser = auth.user!;
+
+    if (!env || !env.DB) {
+      return unavailable('Database service is unavailable');
+    }
+
+    const url = new URL(request.url);
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {}
+
+    const id = String(body?.id || url.searchParams.get('id') || '').trim();
+    if (!id) {
+      return Response.json({ success: false, error: 'Key id is required.' }, { status: 400 });
+    }
+
+    const { removed } = await removeUserSshKey(env.DB, sessionUser.id, id);
+    return Response.json({
+      success: true,
+      message: 'SSH key removed successfully',
+      removed
+    });
+  } catch (error) {
+    console.error('remove ssh key failed', error);
+    return Response.json({ success: false, error: 'Failed to remove SSH key.' }, { status: 500 });
   }
 };
 

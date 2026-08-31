@@ -108,6 +108,8 @@ export interface ProfileValidationInput {
   sshKey?: string | null;
 }
 
+import { ALLOWED_SSH_KEY_TYPES } from './sshDomain';
+
 /**
  * Validates maker profile fields against security and format rules.
  */
@@ -138,7 +140,7 @@ export function validateMakerProfile(profile: ProfileValidationInput): { valid: 
 
   if (profile.sshKey !== undefined && profile.sshKey) {
     const trimmed = profile.sshKey.trim();
-    const validPrefixes = ['ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'ssh-dss'];
+    const validPrefixes = ALLOWED_SSH_KEY_TYPES;
     const startsWithValidPrefix = validPrefixes.some(prefix => trimmed.startsWith(prefix));
     if (!startsWithValidPrefix) {
       errors.push('SSH key must start with valid protocol prefix (e.g. ssh-ed25519, ssh-rsa, or ecdsa-sha2-nistp256).');

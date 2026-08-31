@@ -17,6 +17,7 @@ import {
   isValidRefPolicies,
   selectRefPolicy
 } from '../../src/lib/forgeDomain';
+import { parseAndValidateSshKeyInput } from '../../src/lib/sshDomain';
 import { getProposalDiff } from '../../src/lib/gitsmith/gitStorage';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
@@ -450,21 +451,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   if (action === 'gateway-identify-ssh-key') {
     const gwAuth = await verifyGatewayAuth(request, env, db);
     if (!gwAuth.authorized) return gwAuth.errorResponse!;
-    const keyType = String(body.keyType || '').trim();
-    const keyBase64 = String(body.keyBase64 || '').trim();
-    if (!keyType || !keyBase64) return failure('keyType and keyBase64 are required.', 400);
+    const keyValidation = parseAndValidateSshKeyInput(body);
+    if (!keyValidation.valid) {
+      return failure(keyValidation.error, 400);
+    }
     try {
-      // Match the "<type> <base64>" prefix, ignoring any trailing comment.
-      // NOTE: D1 rejects long LIKE patterns ("LIKE or GLOB pattern too complex"),
-      // and an SSH key base64 exceeds that limit — so we use a LIKE-free substr
-      // prefix match. `.bind()` is positional; the prefix value is bound twice.
-      const keyPrefix = `${keyType} ${keyBase64}`;
+      const keyPrefix = keyValidation.key.keyPrefix;
       const actor = await db.prepare(`
-        SELECT id FROM users
-        WHERE ssh_public_key = ?
-           OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' '
+        SELECT u.id
+        FROM user_ssh_keys k
+        JOIN users u ON u.id = k.user_id
+        WHERE k.key_prefix = ?
         LIMIT 1
-      `).bind(keyPrefix, keyPrefix, keyPrefix).first();
+      `).bind(keyPrefix).first();
       if (!actor) return failure('SSH public key is not registered.', 401);
       return Response.json({ success: true, actorUserId: (actor as any).id });
     } catch (error: any) {
@@ -476,30 +475,27 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const gwAuth = await verifyGatewayAuth(request, env, db);
     if (!gwAuth.authorized) return gwAuth.errorResponse!;
 
-    const keyType = String(body.keyType || '').trim();
-    const keyBase64 = String(body.keyBase64 || '').trim();
     const owner = String(body.owner || '').trim();
     const slug = String(body.slug || '').trim();
     const operation = String(body.operation || '').trim();
-    if (!['ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'].includes(keyType)) {
-      return failure('Unsupported SSH public key type.', 400);
-    }
-    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(keyBase64) || keyBase64.length > 16384) {
-      return failure('Malformed SSH public key.', 400);
-    }
     if (!owner || !slug || !['read', 'write'].includes(operation)) {
       return failure('owner, slug, and operation (read or write) are required.', 400);
     }
 
+    const keyValidation = parseAndValidateSshKeyInput(body);
+    if (!keyValidation.valid) {
+      return failure(keyValidation.error, 400);
+    }
+
     try {
-      // LIKE-free prefix match (D1 rejects long LIKE patterns; see gateway-identify-ssh-key).
-      const keyPrefix = `${keyType} ${keyBase64}`;
+      const keyPrefix = keyValidation.key.keyPrefix;
       const actor = await db.prepare(`
-        SELECT id, username FROM users
-        WHERE ssh_public_key = ?
-           OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' '
+        SELECT u.id, u.username
+        FROM user_ssh_keys k
+        JOIN users u ON u.id = k.user_id
+        WHERE k.key_prefix = ?
         LIMIT 1
-      `).bind(keyPrefix, keyPrefix, keyPrefix).first();
+      `).bind(keyPrefix).first();
       if (!actor) return failure('SSH public key is not registered.', 401);
 
       const repository = await db.prepare(`
