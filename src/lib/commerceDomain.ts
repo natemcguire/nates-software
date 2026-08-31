@@ -11,9 +11,11 @@ export const COMMERCE_BASIS_POINTS = {
   FORK_PROTOCOL_POOL: 1000,
 } as const;
 
+export const MAKER_FLOOR_BPS = 1000;
+
 export const DEFAULT_LINEAGE_POLICY = 'maker_70_lineage_20_pool_10' as const;
 
-export type AllocationRole = 'maker' | 'ancestor' | 'protocol_pool';
+export type AllocationRole = 'maker' | 'ancestor' | 'protocol_pool' | 'contributor';
 
 export class CommerceValidationError extends Error {
   constructor(message: string) {

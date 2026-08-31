@@ -43,7 +43,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0024_canonical_repository_linkage.sql',
         '0025_app_origin_kind.sql',
         '0026_unique_hostname_index.sql',
-        '0027_app_postgres_addon.sql'
+        '0027_app_postgres_addon.sql',
+        '0029_contributor_revenue_sharing.sql'
       ]);
     });
 
@@ -125,6 +126,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('drop_upvotes');
       // Migration 0018 ephemeral terminal sessions table
       expect(tables).toContain('terminal_session_tickets');
+      // Migration 0029 contributor shares table
+      expect(tables).toContain('contributor_shares');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -143,6 +146,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(triggers).toContain('commerce_reversal_cumulative_guard');
       expect(triggers).toContain('commerce_refund_finalization_guard');
       expect(triggers).toContain('commerce_refund_finalized_immutable');
+      expect(triggers).toContain('contributor_shares_economics_immutable');
+      expect(triggers).toContain('contributor_shares_status_forward_only');
     });
 
     it('should create all unique indices across the migration chain', () => {
@@ -156,6 +161,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(indices).toContain('idx_inbox_reply');
       expect(indices).toContain('idx_terminal_tickets_user_issued');
       expect(indices).toContain('idx_terminal_tickets_active');
+      expect(indices).toContain('idx_contributor_shares_attempt');
+      expect(indices).toContain('idx_contributor_shares_repo_status');
+      expect(indices).toContain('idx_contributor_shares_contributor');
     });
 
     it('should upgrade the legacy runtime-created vote table without losing valid votes', async () => {
@@ -942,6 +950,254 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(updated?.db_kind).toBe('postgres');
       expect(updated?.db_secret_path).toBe('/nsw/apps/dronehunter/db-url');
       expect(updated?.db_provisioned_at).toBeTruthy();
+
+      expect(ctx.runForeignKeyCheck()).toEqual([]);
+    });
+
+    it('should support contributor revenue sharing schema and invariants (migration 0029)', async () => {
+      // 1. Repositories grantable_bps column defaults to 0 and enforces [0, 10000]
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, storage_key, status)
+        VALUES ('repo_contrib_test', 'usr_nate', 'contrib-repo', 'storage_contrib_test', 'active')
+      `).run();
+
+      const repo = await ctx.d1.prepare('SELECT id, grantable_bps FROM repositories WHERE id = ?')
+        .bind('repo_contrib_test').first<{ id: string; grantable_bps: number }>();
+      expect(repo?.grantable_bps).toBe(0);
+
+      // Rejects grantable_bps < 0 or > 10000
+      await expect(
+        ctx.d1.prepare('UPDATE repositories SET grantable_bps = -1 WHERE id = ?')
+          .bind('repo_contrib_test').run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      await expect(
+        ctx.d1.prepare('UPDATE repositories SET grantable_bps = 10001 WHERE id = ?')
+          .bind('repo_contrib_test').run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Accepts valid grantable_bps
+      await ctx.d1.prepare('UPDATE repositories SET grantable_bps = 2500 WHERE id = ?')
+        .bind('repo_contrib_test').run();
+      const updatedRepo = await ctx.d1.prepare('SELECT grantable_bps FROM repositories WHERE id = ?')
+        .bind('repo_contrib_test').first<{ grantable_bps: number }>();
+      expect(updatedRepo?.grantable_bps).toBe(2500);
+
+      // 2. contributor_shares table constraints
+      // Rejects contributor == granted_by (self-grant check)
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points)
+          VALUES ('cs_self', 'repo_contrib_test', 'usr_nate', 'usr_nate', 500)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Rejects basis_points <= 0 or > 10000
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points)
+          VALUES ('cs_zero_bps', 'repo_contrib_test', 'usr_sam', 'usr_nate', 0)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points)
+          VALUES ('cs_over_bps', 'repo_contrib_test', 'usr_sam', 'usr_nate', 10001)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Inserts valid pending contributor share
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (
+          id, repository_id, contributor_user_id, granted_by_user_id,
+          merge_job_id, merge_attempt_id, merge_approval_id, basis_points
+        ) VALUES (
+          'cs_valid1', 'repo_contrib_test', 'usr_sam', 'usr_nate',
+          'mj_1', 'matt_1', 'mapp_1', 1000
+        )
+      `).run();
+
+      const share = await ctx.d1.prepare('SELECT * FROM contributor_shares WHERE id = ?')
+        .bind('cs_valid1').first<any>();
+      expect(share?.status).toBe('pending');
+      expect(share?.basis_points).toBe(1000);
+      expect(share?.activated_at).toBeNull();
+      expect(share?.revoked_at).toBeNull();
+
+      // Enforces UNIQUE(merge_attempt_id)
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (
+            id, repository_id, contributor_user_id, granted_by_user_id,
+            merge_job_id, merge_attempt_id, merge_approval_id, basis_points
+          ) VALUES (
+            'cs_dup_attempt', 'repo_contrib_test', 'usr_josh', 'usr_nate',
+            'mj_2', 'matt_1', 'mapp_2', 500
+          )
+        `).run()
+      ).rejects.toThrow(/UNIQUE constraint failed/);
+
+      // 3. contributor_shares triggers: economics-immutable
+      await expect(
+        ctx.d1.prepare('UPDATE contributor_shares SET basis_points = 1500 WHERE id = ?')
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET contributor_user_id = 'usr_josh' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET granted_by_user_id = 'usr_josh' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET merge_attempt_id = 'matt_2' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share economics are immutable/);
+
+      // 4. contributor_shares triggers: status forward-only
+      // pending -> active is allowed
+      await ctx.d1.prepare(`
+        UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind('cs_valid1').run();
+
+      const activeShare = await ctx.d1.prepare('SELECT status, activated_at FROM contributor_shares WHERE id = ?')
+        .bind('cs_valid1').first<any>();
+      expect(activeShare?.status).toBe('active');
+      expect(activeShare?.activated_at).toBeTruthy();
+
+      // active -> revoked must be rejected
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+
+      // active -> pending must be rejected
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending' WHERE id = ?")
+          .bind('cs_valid1').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+
+      // Insert another pending share and test pending -> revoked
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (
+          id, repository_id, contributor_user_id, granted_by_user_id,
+          merge_job_id, merge_attempt_id, merge_approval_id, basis_points
+        ) VALUES (
+          'cs_valid2', 'repo_contrib_test', 'usr_josh', 'usr_nate',
+          'mj_2', 'matt_2', 'mapp_2', 500
+        )
+      `).run();
+
+      await ctx.d1.prepare(`
+        UPDATE contributor_shares SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ?
+      `).bind('cs_valid2').run();
+
+      const revokedShare = await ctx.d1.prepare('SELECT status, revoked_at FROM contributor_shares WHERE id = ?')
+        .bind('cs_valid2').first<any>();
+      expect(revokedShare?.status).toBe('revoked');
+      expect(revokedShare?.revoked_at).toBeTruthy();
+
+      // revoked -> active must be rejected
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
+          .bind('cs_valid2').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+
+      // revoked -> pending must be rejected
+      await expect(
+        ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending' WHERE id = ?")
+          .bind('cs_valid2').run()
+      ).rejects.toThrow(/contributor share status transition is forward-only/);
+
+      // 5. Widened commerce_order_allocations accepts 'contributor' role
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, seller_user_id,
+          app_version, price_version, gross_cents, currency, lineage_snapshot_json, status
+        ) VALUES ('cord_contrib', 'checkout-contrib', 'usr_sam', 'dronehunter', 'usr_nate',
+                  'v1.0.0', 1, 2000, 'usd', '{}', 'fulfilled')
+      `).run();
+
+      // Insert maker allocation
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
+        ) VALUES ('calloc_maker', 'cord_contrib', 0, 'maker', 'usr_nate', 8000, 1600)
+      `).run();
+
+      // Insert contributor allocation
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
+        ) VALUES ('calloc_contrib', 'cord_contrib', 1, 'contributor', 'usr_sam', 'repo_contrib_test', 1000, 200)
+      `).run();
+
+      // Insert protocol_pool allocation
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
+        ) VALUES ('calloc_pool', 'cord_contrib', 2, 'protocol_pool', NULL, 1000, 200)
+      `).run();
+
+      // Verify recipient_user_id NULL check for contributor fails
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO commerce_order_allocations (
+            id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
+          ) VALUES ('calloc_contrib_null', 'cord_contrib', 3, 'contributor', NULL, 1000, 200)
+        `).run()
+      ).rejects.toThrow(/CHECK constraint failed/);
+
+      // Verify allocations immutability triggers still active
+      await expect(
+        ctx.d1.prepare('UPDATE commerce_order_allocations SET amount_cents = 300 WHERE id = ?')
+          .bind('calloc_contrib').run()
+      ).rejects.toThrow(/commerce order allocations are immutable/);
+
+      await expect(
+        ctx.d1.prepare('DELETE FROM commerce_order_allocations WHERE id = ?')
+          .bind('calloc_contrib').run()
+      ).rejects.toThrow(/commerce order allocations are immutable/);
+
+      // 6. commerce_outbox_requires_fulfilled_allocation accepts 'contributor' allocation
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_transfer_outbox (
+          id, order_id, allocation_id, destination_user_id, amount_cents, currency
+        ) VALUES ('cout_contrib', 'cord_contrib', 'calloc_contrib', 'usr_sam', 200, 'usd')
+      `).run();
+
+      const outbox = await ctx.d1.prepare('SELECT id, destination_user_id, amount_cents FROM commerce_transfer_outbox WHERE id = ?')
+        .bind('cout_contrib').first<any>();
+      expect(outbox?.id).toBe('cout_contrib');
+      expect(outbox?.destination_user_id).toBe('usr_sam');
+      expect(outbox?.amount_cents).toBe(200);
+
+      // 7. commerce_recovery_matches_order_allocation accepts 'contributor' allocation
+      await ctx.d1.prepare(`
+        INSERT INTO stripe_event_inbox (event_id, event_type, livemode, payload_json, payload_sha256)
+        VALUES ('evt_refund_contrib', 'charge.refund.updated', 0, '{}', ?)
+      `).bind('b'.repeat(64)).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_recovery_obligations (
+          id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
+          source_event_id, amount_cents, currency, status
+        ) VALUES (
+          'cro_contrib', 'cord_contrib', 'refund', 're_123', 'calloc_contrib', 'cout_contrib',
+          'evt_refund_contrib', 200, 'usd', 'pending'
+        )
+      `).run();
+
+      const obligation = await ctx.d1.prepare('SELECT id, allocation_id, amount_cents FROM commerce_recovery_obligations WHERE id = ?')
+        .bind('cro_contrib').first<any>();
+      expect(obligation?.id).toBe('cro_contrib');
+      expect(obligation?.allocation_id).toBe('calloc_contrib');
+      expect(obligation?.amount_cents).toBe(200);
 
       expect(ctx.runForeignKeyCheck()).toEqual([]);
     });
