@@ -12,6 +12,39 @@ const unavailable = (message = 'Profile service is temporarily unavailable') => 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const url = new URL(request.url);
+    const action = url.searchParams.get('action');
+
+    if (action === 'list-ssh-keys' || action === 'keys' || action === 'ssh-keys') {
+      const auth = await requireAuth(request, env);
+      if (auth.errorResponse) return auth.errorResponse;
+      const sessionUser = auth.user!;
+
+      if (!env || !env.DB) {
+        return unavailable('Database service is unavailable');
+      }
+
+      const { results: keys } = await env.DB.prepare(`
+        SELECT id, user_id AS userId, key_type AS keyType, key_base64 AS keyBase64,
+               key_prefix AS keyPrefix, label, created_at AS createdAt
+        FROM user_ssh_keys
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+      `).bind(sessionUser.id).all();
+
+      return Response.json({
+        success: true,
+        keys: (keys || []).map((k: any) => ({
+          id: k.id,
+          keyType: k.keyType,
+          keyBase64: k.keyBase64,
+          keyPrefix: k.keyPrefix,
+          label: k.label,
+          createdAt: k.createdAt,
+          fingerprint: k.keyBase64 ? k.keyBase64.slice(-8) : ''
+        }))
+      });
+    }
+
     const requestedUsername = url.searchParams.get('username')?.trim();
     const sessionUser = await getSessionUser(request, env);
 
@@ -141,6 +174,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   }
 };
 
+const ALLOWED_SSH_KEY_TYPES = ['ssh-ed25519', 'ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521'];
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
     const auth = await requireAuth(request, env);
@@ -157,6 +192,94 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     } catch {
       return Response.json({ success: false, error: 'Request body must be valid JSON' }, { status: 400 });
     }
+
+    const url = new URL(request.url);
+    const action = String(body?.action || url.searchParams.get('action') || '');
+
+    // Action: Add SSH Key
+    if (action === 'add-ssh-key') {
+      let keyType = String(body.keyType || '').trim();
+      let keyBase64 = String(body.keyBase64 || '').trim();
+      let label = typeof body.label === 'string' ? body.label.trim() : null;
+
+      const rawPublicKey = String(body.publicKey || body.sshKey || body.key || '').trim();
+      if (rawPublicKey && (!keyType || !keyBase64)) {
+        const parts = rawPublicKey.split(/\s+/);
+        if (parts.length >= 2) {
+          keyType = parts[0];
+          keyBase64 = parts[1];
+          if (!label && parts.length >= 3) {
+            label = parts.slice(2).join(' ');
+          }
+        } else {
+          return Response.json({ success: false, error: 'Malformed SSH public key string.' }, { status: 400 });
+        }
+      }
+
+      if (!keyType || !keyBase64) {
+        return Response.json({ success: false, error: 'keyType and keyBase64 or publicKey are required.' }, { status: 400 });
+      }
+
+      if (!ALLOWED_SSH_KEY_TYPES.includes(keyType)) {
+        return Response.json({ success: false, error: 'Unsupported SSH public key type.' }, { status: 400 });
+      }
+
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(keyBase64) || keyBase64.length > 16384) {
+        return Response.json({ success: false, error: 'Malformed SSH public key base64 blob.' }, { status: 400 });
+      }
+
+      const keyPrefix = `${keyType} ${keyBase64}`;
+      const keyId = `key_${crypto.randomUUID().replace(/-/g, '')}`;
+
+      try {
+        await env.DB.prepare(`
+          INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).bind(keyId, sessionUser.id, keyType, keyBase64, keyPrefix, label || null).run();
+      } catch (error: any) {
+        const msg = String(error?.message || '');
+        if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_user_ssh_keys_prefix') || msg.includes('user_ssh_keys.key_prefix')) {
+          return Response.json({ success: false, error: 'This SSH key is already registered.' }, { status: 409 });
+        }
+        console.error('Failed to insert user ssh key', error);
+        return Response.json({ success: false, error: 'Failed to register SSH key.' }, { status: 500 });
+      }
+
+      const created = await env.DB.prepare(`
+        SELECT id, user_id AS userId, key_type AS keyType, key_base64 AS keyBase64,
+               key_prefix AS keyPrefix, label, created_at AS createdAt
+        FROM user_ssh_keys
+        WHERE id = ?
+      `).bind(keyId).first();
+
+      return Response.json({
+        success: true,
+        message: 'SSH key added successfully',
+        key: created
+      }, { status: 201 });
+    }
+
+    // Action: Remove SSH Key
+    if (action === 'remove-ssh-key') {
+      const id = String(body?.id || url.searchParams.get('id') || '').trim();
+      if (!id) {
+        return Response.json({ success: false, error: 'Key id is required.' }, { status: 400 });
+      }
+
+      const result = await env.DB.prepare(`
+        DELETE FROM user_ssh_keys
+        WHERE id = ? AND user_id = ?
+      `).bind(id, sessionUser.id).run();
+
+      const changes = result?.meta?.changes ?? 0;
+      return Response.json({
+        success: true,
+        message: 'SSH key removed successfully',
+        removed: changes > 0
+      });
+    }
+
+    // Default: Legacy Profile Update
     const { displayName, avatar, bio, sshKey } = body;
 
     // Validate using domain rules
@@ -208,6 +331,44 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   } catch (error) {
     console.error('profile update failed', error);
     return Response.json({ success: false, error: 'Profile update could not be completed' }, { status: 500 });
+  }
+};
+
+export const onRequestDelete = async ({ request, env }: { request: Request; env: any }) => {
+  try {
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse) return auth.errorResponse;
+    const sessionUser = auth.user!;
+
+    if (!env || !env.DB) {
+      return unavailable('Database service is unavailable');
+    }
+
+    const url = new URL(request.url);
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {}
+
+    const id = String(body?.id || url.searchParams.get('id') || '').trim();
+    if (!id) {
+      return Response.json({ success: false, error: 'Key id is required.' }, { status: 400 });
+    }
+
+    const result = await env.DB.prepare(`
+      DELETE FROM user_ssh_keys
+      WHERE id = ? AND user_id = ?
+    `).bind(id, sessionUser.id).run();
+
+    const changes = result?.meta?.changes ?? 0;
+    return Response.json({
+      success: true,
+      message: 'SSH key removed successfully',
+      removed: changes > 0
+    });
+  } catch (error) {
+    console.error('remove ssh key failed', error);
+    return Response.json({ success: false, error: 'Failed to remove SSH key.' }, { status: 500 });
   }
 };
 

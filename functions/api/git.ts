@@ -460,11 +460,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       // prefix match. `.bind()` is positional; the prefix value is bound twice.
       const keyPrefix = `${keyType} ${keyBase64}`;
       const actor = await db.prepare(`
-        SELECT id FROM users
-        WHERE ssh_public_key = ?
-           OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' '
+        SELECT u.id FROM users u
+        WHERE u.id = (SELECT user_id FROM user_ssh_keys WHERE key_prefix = ? LIMIT 1)
+           OR u.ssh_public_key = ?
+           OR substr(u.ssh_public_key, 1, length(?) + 1) = ? || ' '
         LIMIT 1
-      `).bind(keyPrefix, keyPrefix, keyPrefix).first();
+      `).bind(keyPrefix, keyPrefix, keyPrefix, keyPrefix).first();
       if (!actor) return failure('SSH public key is not registered.', 401);
       return Response.json({ success: true, actorUserId: (actor as any).id });
     } catch (error: any) {
@@ -495,11 +496,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       // LIKE-free prefix match (D1 rejects long LIKE patterns; see gateway-identify-ssh-key).
       const keyPrefix = `${keyType} ${keyBase64}`;
       const actor = await db.prepare(`
-        SELECT id, username FROM users
-        WHERE ssh_public_key = ?
-           OR substr(ssh_public_key, 1, length(?) + 1) = ? || ' '
+        SELECT u.id, u.username FROM users u
+        WHERE u.id = (SELECT user_id FROM user_ssh_keys WHERE key_prefix = ? LIMIT 1)
+           OR u.ssh_public_key = ?
+           OR substr(u.ssh_public_key, 1, length(?) + 1) = ? || ' '
         LIMIT 1
-      `).bind(keyPrefix, keyPrefix, keyPrefix).first();
+      `).bind(keyPrefix, keyPrefix, keyPrefix, keyPrefix).first();
       if (!actor) return failure('SSH public key is not registered.', 401);
 
       const repository = await db.prepare(`

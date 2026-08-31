@@ -43,7 +43,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0024_canonical_repository_linkage.sql',
         '0025_app_origin_kind.sql',
         '0026_unique_hostname_index.sql',
-        '0027_app_postgres_addon.sql'
+        '0027_app_postgres_addon.sql',
+        '0028_user_ssh_keys.sql'
       ]);
     });
 
@@ -125,6 +126,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('drop_upvotes');
       // Migration 0018 ephemeral terminal sessions table
       expect(tables).toContain('terminal_session_tickets');
+      // Migration 0028 multi-SSH keys table
+      expect(tables).toContain('user_ssh_keys');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
@@ -156,6 +159,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(indices).toContain('idx_inbox_reply');
       expect(indices).toContain('idx_terminal_tickets_user_issued');
       expect(indices).toContain('idx_terminal_tickets_active');
+      expect(indices).toContain('idx_user_ssh_keys_prefix');
+      expect(indices).toContain('idx_user_ssh_keys_user');
     });
 
     it('should upgrade the legacy runtime-created vote table without losing valid votes', async () => {
@@ -389,6 +394,15 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/FOREIGN KEY constraint failed/);
     });
+
+    it('should reject user_ssh_keys (0028) referencing non-existent user_id', async () => {
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix)
+          VALUES ('key_inv', 'nonexistent_user', 'ssh-ed25519', 'AAAAC3...', 'ssh-ed25519 AAAAC3...')
+        `).run()
+      ).rejects.toThrow(/FOREIGN KEY constraint failed/);
+    });
   });
 
   // ==========================================================================
@@ -444,6 +458,11 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('jti_cascade', ?, 1000, 2000)
       `).bind(testUserId).run();
 
+      await ctx.d1.prepare(`
+        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+        VALUES ('key_cascade', ?, 'ssh-ed25519', 'AAAAC3...', 'ssh-ed25519 AAAAC3...', 'test')
+      `).bind(testUserId).run();
+
       // Verify all child rows exist
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_sessions WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM shelf_items WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
@@ -453,6 +472,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM inbox_messages WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM stripe_accounts WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM terminal_session_tickets WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
+      expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_ssh_keys WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
 
       // Delete parent user
       await ctx.d1.prepare('DELETE FROM users WHERE id = ?').bind(testUserId).run();
@@ -466,6 +486,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM inbox_messages WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM stripe_accounts WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM terminal_session_tickets WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
+      expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_ssh_keys WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
 
       // Verify foreign key integrity remains clean after cascade
       expect(ctx.runForeignKeyCheck()).toEqual([]);
@@ -942,6 +963,51 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(updated?.db_kind).toBe('postgres');
       expect(updated?.db_secret_path).toBe('/nsw/apps/dronehunter/db-url');
       expect(updated?.db_provisioned_at).toBeTruthy();
+
+      expect(ctx.runForeignKeyCheck()).toEqual([]);
+    });
+
+    it('should enforce UNIQUE constraint on user_ssh_keys(key_prefix)', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+        VALUES ('key_uniq_1', 'usr_sam', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIUniqKey', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUniqKey', 'key1')
+      `).run();
+
+      // Second key with identical key_prefix must fail UNIQUE constraint
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+          VALUES ('key_uniq_2', 'usr_josh', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIUniqKey', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUniqKey', 'key2')
+        `).run()
+      ).rejects.toThrow(/UNIQUE constraint failed/);
+    });
+
+    it('should support multi-SSH-key storage and backfill existing keys (migration 0028)', async () => {
+      // 1. Verify seed user usr_nate's legacy ssh_public_key was backfilled
+      const nateKeys = await ctx.d1.prepare(`
+        SELECT id, user_id, key_type, key_base64, key_prefix, label
+        FROM user_ssh_keys
+        WHERE user_id = 'usr_nate'
+      `).all();
+
+      expect(nateKeys.results?.length).toBe(1);
+      const nateKey = nateKeys.results?.[0] as any;
+      expect(nateKey.user_id).toBe('usr_nate');
+      expect(nateKey.key_type).toBe('ssh-ed25519');
+      expect(nateKey.key_base64).toBe('AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187');
+      expect(nateKey.key_prefix).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187');
+      expect(nateKey.label).toBe('migrated');
+
+      // 2. Add a second key for usr_nate
+      await ctx.d1.prepare(`
+        INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
+        VALUES ('key_nate_agent', 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIAgentKeyBlob', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAgentKeyBlob', 'agent')
+      `).run();
+
+      const updatedNateKeys = await ctx.d1.prepare(`
+        SELECT id, key_prefix, label FROM user_ssh_keys WHERE user_id = 'usr_nate' ORDER BY created_at
+      `).all();
+      expect(updatedNateKeys.results?.length).toBe(2);
 
       expect(ctx.runForeignKeyCheck()).toEqual([]);
     });
