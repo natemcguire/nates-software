@@ -75,11 +75,18 @@ END;
 ALTER TABLE repositories ADD COLUMN grantable_bps INTEGER NOT NULL DEFAULT 0 CHECK (grantable_bps >= 0 AND grantable_bps <= 10000);
 
 -- 3. Full 4-table rebuild in dependency order to widen role and recipient checks
--- Snapshot 4 tables in dependency order into temp tables
-CREATE TEMP TABLE _bak_recovery_obligations AS SELECT * FROM commerce_recovery_obligations;
-CREATE TEMP TABLE _bak_refund_allocations AS SELECT * FROM commerce_refund_allocations;
-CREATE TEMP TABLE _bak_transfer_outbox AS SELECT * FROM commerce_transfer_outbox;
-CREATE TEMP TABLE _bak_order_allocations AS SELECT * FROM commerce_order_allocations;
+-- Snapshot 4 tables into plain backup tables. NOTE: D1's statement authorizer
+-- rejects CREATE TEMP TABLE (SQLITE_AUTH), so these are regular tables cleaned up
+-- at the end. DROP IF EXISTS first for rerun hygiene. CREATE TABLE AS SELECT copies
+-- data only (no constraints/FKs), so the baks never interfere with the drops below.
+DROP TABLE IF EXISTS _bak_0029_recovery_obligations;
+DROP TABLE IF EXISTS _bak_0029_refund_allocations;
+DROP TABLE IF EXISTS _bak_0029_transfer_outbox;
+DROP TABLE IF EXISTS _bak_0029_order_allocations;
+CREATE TABLE _bak_0029_recovery_obligations AS SELECT * FROM commerce_recovery_obligations;
+CREATE TABLE _bak_0029_refund_allocations AS SELECT * FROM commerce_refund_allocations;
+CREATE TABLE _bak_0029_transfer_outbox AS SELECT * FROM commerce_transfer_outbox;
+CREATE TABLE _bak_0029_order_allocations AS SELECT * FROM commerce_order_allocations;
 
 -- Drop 4 tables in dependency order (children first)
 DROP TABLE commerce_recovery_obligations;
@@ -274,16 +281,16 @@ BEGIN
     SELECT RAISE(ABORT, 'recovery obligation must match a payable frozen allocation');
 END;
 
--- Restore data from temp tables parent-first
-INSERT INTO commerce_order_allocations SELECT * FROM _bak_order_allocations;
-INSERT INTO commerce_transfer_outbox SELECT * FROM _bak_transfer_outbox;
-INSERT INTO commerce_refund_allocations SELECT * FROM _bak_refund_allocations;
-INSERT INTO commerce_recovery_obligations SELECT * FROM _bak_recovery_obligations;
+-- Restore data from backup tables parent-first
+INSERT INTO commerce_order_allocations SELECT * FROM _bak_0029_order_allocations;
+INSERT INTO commerce_transfer_outbox SELECT * FROM _bak_0029_transfer_outbox;
+INSERT INTO commerce_refund_allocations SELECT * FROM _bak_0029_refund_allocations;
+INSERT INTO commerce_recovery_obligations SELECT * FROM _bak_0029_recovery_obligations;
 
--- Drop temp tables
-DROP TABLE _bak_order_allocations;
-DROP TABLE _bak_transfer_outbox;
-DROP TABLE _bak_refund_allocations;
-DROP TABLE _bak_recovery_obligations;
+-- Drop backup tables
+DROP TABLE _bak_0029_order_allocations;
+DROP TABLE _bak_0029_transfer_outbox;
+DROP TABLE _bak_0029_refund_allocations;
+DROP TABLE _bak_0029_recovery_obligations;
 
 PRAGMA foreign_key_check;
