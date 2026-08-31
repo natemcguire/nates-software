@@ -2,6 +2,12 @@ name = "nates-software-router"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+# Pin the account that owns the nates-software.com zone + D1/R2/KV. Worker routes
+# can only bind scripts in the zone's own account; wrangler's default account may
+# differ (this machine has multiple).
+account_id = "4219a576830c72b0e6e4ca358e61473a"
+# The router is only ever invoked via zone routes; no public workers.dev endpoint.
+workers_dev = false
 
 # CANARY_SECRET is a SECRET, not a var — never commit a value here (a plaintext
 # placeholder could become the effective prod value). Set it in prod with
@@ -19,8 +25,8 @@ database_id = "32dc20dc-b97b-4ea8-a108-45694cdd6e6c"
 binding = "STORAGE"
 bucket_name = "nates-software-storage"
 
-# Cloudflare KV (Host Resolution Cache)
+# Cloudflare KV (Host Resolution Cache) — real namespace created 2026-08-31
 [[kv_namespaces]]
 binding = "HOST_CACHE"
-id = "a99be7ce7e6d42639088dd57bc5ec0b7"
+id = "12658391a58044c282001a9b3578a296"
 

@@ -117,13 +117,24 @@ Run the following curl commands to verify D1 and R2 functionality:
 curl -i https://router-canary.nates-software.com/
 # Expected: 200 OK with {"success": true, "service": "nates-software-router", "canary": true}
 
-# 2. D1 Lookup Probe with Secret (Draft / Unbuilt App)
+# 2. D1 + R2 END-TO-END Probe (ACTIVE + HEALTHY app → serves bytes) — the best proof
 curl -i -H "x-canary-secret: $CANARY_SECRET" "https://router-canary.nates-software.com/?app=american-gardener"
-# Expected: 503 Service Unavailable with {"success": false, "error": "App 'american-gardener' does not have an active verified deployment..."}
+# Expected: 200 OK, Content-Type text/html, the real 1857 calendar HTML
+# (<title>The American Gardener's Calendar · 1857</title>). Proves D1 join +
+# healthy gate + R2 fetch all work end-to-end. dronehunter also works (active).
 
-# 3. D1 Lookup Probe with Secret (Non-existent App)
+# 3. D1 Lookup Probe (FAILED app → 503, healthy gate blocks it)
+curl -i -H "x-canary-secret: $CANARY_SECRET" "https://router-canary.nates-software.com/?app=wallart"
+# Expected: 503 with {"success": false, "error": "App 'wallart' does not have an active verified deployment..."}
+# (wallart is deployment_state='failed'.)
+
+# 4. D1 Lookup Probe (Non-existent App → 404)
 curl -i -H "x-canary-secret: $CANARY_SECRET" "https://router-canary.nates-software.com/?app=nonexistent-app-xyz"
-# Expected: 404 Not Found with {"success": false, "error": "App 'nonexistent-app-xyz' not found"}
+# Expected: 404 with {"success": false, "error": "App 'nonexistent-app-xyz' not found"}
+
+# 5. Canary WITHOUT secret → info-only, no D1 lookup
+curl -i "https://router-canary.nates-software.com/?app=american-gardener"
+# Expected: 200 canary-info JSON (NOT the app) — secret gate blocks the lookup.
 
 # 4. In-Worker Defense-in-Depth Allowlist Check (suffix guard / exclusion check)
 curl -i https://nates-software.com/
@@ -177,6 +188,9 @@ curl -i https://random-unknown-subdomain-123.nates-software.com/
 ```
 
 ---
+
+## ⚠️ Ongoing operational note — future subdomains
+Once the wildcard route `*.nates-software.com/*` is live, **any NEW proxied subdomain added to this zone** (a new Pages project, another cloudflared tunnel, etc.) will be intercepted by the router Worker unless you ALSO add an exclusion route (`<host>/*` → no worker) for it. When adding any new non-app subdomain, add its exclusion route first.
 
 ## 5. Rollback Procedure
 
