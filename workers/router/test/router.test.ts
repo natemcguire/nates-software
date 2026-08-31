@@ -955,7 +955,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const containerRecord: AppListingRecord = {
         id: 'api-container',
         origin_kind: 'cf_container',
-        origin_ref: 'https://api-container.example.com',
+        origin_ref: 'https://api-container.workers.dev',
         deployment_state: 'active',
         active_deployment_id: 'rev_api_1',
         revisionStatus: 'healthy'
@@ -990,7 +990,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const forwardedReq = mockFetch.mock.calls[0][0] as Request;
-      expect(forwardedReq.url).toBe('https://api-container.example.com/submit');
+      expect(forwardedReq.url).toBe('https://api-container.workers.dev/submit');
       expect(forwardedReq.method).toBe('POST');
       expect(forwardedReq.headers.get('Authorization')).toBe('Bearer test-token');
       expect(r2GetSpy).not.toHaveBeenCalled();
@@ -1003,7 +1003,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         const record: AppListingRecord = {
           id: `${originKind}-app`,
           origin_kind: originKind,
-          origin_ref: `https://${originKind}.internal.net`,
+          origin_ref: `https://${originKind}-app.workers.dev`,
           deployment_state: 'active',
           active_deployment_id: 'rev_1',
           revisionStatus: 'healthy'
@@ -1023,6 +1023,26 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         expect(await res.text()).toBe(`OK from ${originKind}`);
         expect(r2GetSpy).not.toHaveBeenCalled();
       }
+    });
+
+    it('rejects a non-allowlisted origin_ref with 502 SSRF guard and does not fetch it', async () => {
+      const { env, d1PrepareSpy } = createMockEnv();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope'));
+      const rec: AppListingRecord = {
+        id: 'evil-app', origin_kind: 'cf_container',
+        origin_ref: 'https://169.254.169.254/latest/meta-data',
+        deployment_state: 'active', active_deployment_id: 'rev_evil', revisionStatus: 'healthy'
+      };
+      d1PrepareSpy.mockReturnValue({ bind: vi.fn().mockReturnThis(), first: vi.fn().mockResolvedValue(rec) });
+      const res = await handleRequest(new Request('https://evil-app.nates-software.com/'), env);
+      expect(res.status).toBe(502);
+      const calledEvil = fetchSpy.mock.calls.some(c => {
+        const a = c[0] as any;
+        const u = typeof a === 'string' ? a : (a && a.url) || String(a);
+        return String(u).includes('169.254');
+      });
+      expect(calledEvil).toBe(false);
+      fetchSpy.mockRestore();
     });
 
     it('returns 503 when cf_container app is active+healthy but origin_ref is null', async () => {

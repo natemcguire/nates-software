@@ -235,6 +235,27 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
         }, 503);
       }
 
+      // Defense-in-depth: origin_ref is control-plane-set, but the router must
+      // never be turned into an open proxy by a bad D1 value. Only proxy to
+      // https origins on expected platform hosts (per-app workers.dev, CF
+      // Pages/tunnel, or the platform domain). Anything else fails closed.
+      let originHost: string;
+      try {
+        const o = new URL(originRef);
+        originHost = o.hostname.toLowerCase();
+        if (o.protocol !== 'https:') throw new Error('non-https origin');
+      } catch {
+        return json({ success: false, error: `App '${listing.id || subdomain}' has an invalid origin.` }, 502);
+      }
+      const originAllowed =
+        originHost.endsWith('.workers.dev') ||
+        originHost.endsWith('.nates-software.com') ||
+        originHost.endsWith('.pages.dev') ||
+        originHost.endsWith('.cfargotunnel.com');
+      if (!originAllowed) {
+        return json({ success: false, error: `App '${listing.id || subdomain}' origin host is not permitted.` }, 502);
+      }
+
       const targetUrl = new URL(url.pathname + url.search, originRef);
       const originRequest = new Request(targetUrl.toString(), request);
       return fetch(originRequest);
