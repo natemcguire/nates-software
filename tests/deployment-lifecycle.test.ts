@@ -2152,5 +2152,157 @@ dependencies = [
       expect(serveAssetRes.status).toBe(200);
       expect(serveAssetRes.headers.get('Content-Type')).toBe('image/png');
     });
+
+    it('provisions Postgres add-on, persists db_secret_path under CAS, and passes DB_SECRET_PATH in later poll deploy dispatch', async () => {
+      const pgAppId = 'flask-pg-lifecycle';
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_pg_life', 'pglife', 'PG Life Maker', 'user')
+      `).run();
+      const token = 'token_pg_life_123';
+      const tokenHash = await hashSessionToken(token);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_pg_life', datetime('now', '+1 hour'))
+      `).bind(tokenHash).run();
+
+      const storageKey = `repositories/${pgAppId}`;
+      const { commitOid } = createCommittedRepo(storageKey, {
+        'requirements.txt': 'Flask==3.0.0\ngunicorn==21.2.0\npsycopg2-binary==2.9.9\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)\n',
+        'slop.json': JSON.stringify({
+          name: 'Flask PG Lifecycle App',
+          postgres: true
+        })
+      });
+
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, deployment_state)
+        VALUES (?, 'Flask PG Lifecycle App', 'Tag', 'Desc', 'usr_pg_life', '1.0.0', 'MIT', '$10', 'None', '[]', '[]', '{}', 'draft')
+      `).bind(pgAppId).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_pg_life_1', ?, 'usr_pg_life', ?, 'public', 'sha1', 'refs/heads/main', ?, 'active')
+      `).bind(pgAppId, pgAppId, storageKey).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_refs (repository_id, ref_name, commit_oid)
+        VALUES ('repo_pg_life_1', 'refs/heads/main', ?)
+      `).bind(commitOid).run();
+
+      const awsCalls: { method: string; url: string; target: string; body: any }[] = [];
+      const mockAwsFetch: typeof fetch = async (input, init) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(req.url);
+        const target = req.headers.get('x-amz-target') || '';
+        let body: any = null;
+        try {
+          const text = await req.clone().text();
+          if (text) body = JSON.parse(text);
+        } catch {}
+        awsCalls.push({ method: req.method, url: req.url, target, body });
+
+        if (target === 'AmazonSSM.GetParameter') {
+          return Response.json({ __type: 'ParameterNotFound' }, { status: 400 });
+        }
+        if (target === 'AmazonSSM.PutParameter') {
+          return Response.json({ Version: 1 });
+        }
+        if (url.pathname.includes('/Execute')) {
+          return Response.json({ records: [], numberOfRecordsUpdated: 0 });
+        }
+        if (req.method === 'PUT' && url.hostname.includes('.s3.')) {
+          return new Response('', { status: 200 });
+        }
+        if (target === 'CodeBuild_20161006.StartBuild') {
+          return Response.json({
+            build: {
+              id: `${body?.projectName}:uuid-12345`,
+              buildStatus: 'IN_PROGRESS'
+            }
+          });
+        }
+        if (target === 'CodeBuild_20161006.BatchGetBuilds') {
+          return Response.json({
+            builds: [{
+              id: 'nsw-build:uuid-12345',
+              buildStatus: 'SUCCEEDED',
+              currentPhase: 'COMPLETED'
+            }]
+          });
+        }
+        if (target === 'AmazonEC2ContainerRegistry_V20150921.DescribeImages') {
+          return Response.json({
+            imageDetails: [{
+              registryId: '777772815966',
+              repositoryName: `nsw/${pgAppId}`,
+              imageDigest: 'sha256:1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff',
+              imageTags: [commitOid]
+            }]
+          });
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      // 1. Initial Deploy POST -> provisions DB and dispatches nsw-build
+      const deployReq = new Request('https://nates-software.com/api/deploy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ action: 'deploy', appId: pgAppId })
+      });
+
+      const postRes = await deployApi.onRequestPost({
+        request: deployReq,
+        env: {
+          DB: ctx.d1,
+          STORAGE: storage,
+          GITSMITH_REPOS_ROOT: reposRoot,
+          AWS_ACCESS_KEY_ID: 'test_key',
+          AWS_SECRET_ACCESS_KEY: 'test_secret',
+          AWS_REGION: 'us-east-2',
+          AWS_RDS_DATA_RETRY_DELAY_MS: 0,
+          __AWS_FETCH: mockAwsFetch
+        }
+      });
+
+      expect(postRes.status).toBe(202);
+      const postData: any = await postRes.json();
+      expect(postData.deploymentState).toBe('building');
+
+      // Assert row has persisted db_secret_path under CAS
+      const appRow = await ctx.d1.prepare(`
+        SELECT db_kind, db_secret_path, db_provisioned_at FROM app_listings WHERE id = ?
+      `).bind(pgAppId).first<any>();
+
+      expect(appRow.db_kind).toBe('postgres');
+      expect(appRow.db_secret_path).toBe(`/nsw/apps/${pgAppId}/db-url`);
+      expect(appRow.db_provisioned_at).toBeTruthy();
+
+      // 2. Later poll GET -> reads db_secret_path and triggers nsw-deploy with DB_SECRET_PATH
+      const getRes = await deployApi.onRequestGet({
+        request: new Request(`https://nates-software.com/api/deploy?appId=${pgAppId}`),
+        env: {
+          DB: ctx.d1,
+          AWS_ACCESS_KEY_ID: 'test_key',
+          AWS_SECRET_ACCESS_KEY: 'test_secret',
+          AWS_REGION: 'us-east-2',
+          __AWS_FETCH: mockAwsFetch
+        }
+      });
+
+      expect(getRes.status).toBe(200);
+      const getData: any = await getRes.json();
+      expect(getData.dbKind).toBe('postgres');
+      expect(getData.dbSecretPath).toBe(`/nsw/apps/${pgAppId}/db-url`);
+
+      const nswDeployCall = awsCalls.find(c => c.target === 'CodeBuild_20161006.StartBuild' && c.body?.projectName === 'nsw-deploy');
+      expect(nswDeployCall).toBeDefined();
+      expect(nswDeployCall?.body.environmentVariablesOverride).toContainEqual({
+        name: 'DB_SECRET_PATH',
+        value: `/nsw/apps/${pgAppId}/db-url`,
+        type: 'PLAINTEXT'
+      });
+    });
   });
 });

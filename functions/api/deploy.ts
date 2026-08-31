@@ -21,6 +21,7 @@ import {
   startCodeBuild,
   batchGetCodeBuilds,
   describeEcrImages,
+  provisionAppDatabase,
   DEFAULT_AWS_ACCOUNT_ID,
   DEFAULT_AWS_S3_BUILD_BUCKET,
   DEFAULT_NSW_ARTIFACT_BUCKET,
@@ -281,6 +282,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         a.active_commit_oid AS activeCommitOid,
         a.origin_kind AS originKind,
         a.origin_ref AS originRef,
+        a.db_kind AS dbKind,
+        a.db_secret_path AS dbSecretPath,
+        a.db_provisioned_at AS dbProvisionedAt,
         r.id AS repositoryId, r.default_ref AS defaultRef,
         dr.status AS revisionStatus, dr.url AS deploymentUrl, dr.deployed_at AS deployedAt
       FROM app_listings a
@@ -779,16 +783,21 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       // Trigger nsw-deploy for cf_container server apps
                       const deployProject = env?.AWS_CODEBUILD_DEPLOY_PROJECT || DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT || 'nsw-deploy';
                       const cfAccountId = env?.CF_ACCOUNT_ID || DEFAULT_CF_ACCOUNT_ID || '4219a576830c72b0e6e4ca358e61473a';
+                      const deployEnvOverrides: Record<string, string> = {
+                        APP_ID: appId,
+                        COMMIT_OID: commitOid,
+                        ECR_REPO: ecrRepo,
+                        CF_ACCOUNT_ID: cfAccountId,
+                        INSTANCE_TYPE: 'lite'
+                      };
+                      if (listing.dbSecretPath) {
+                        deployEnvOverrides.DB_SECRET_PATH = listing.dbSecretPath;
+                      }
+
                       const deployStart = await startCodeBuild(env, {
                         projectName: deployProject,
                         project: deployProject,
-                        envOverrides: {
-                          APP_ID: appId,
-                          COMMIT_OID: commitOid,
-                          ECR_REPO: ecrRepo,
-                          CF_ACCOUNT_ID: cfAccountId,
-                          INSTANCE_TYPE: 'lite'
-                        }
+                        envOverrides: deployEnvOverrides
                       });
 
                       if (!deployStart.success || !deployStart.buildId) {
@@ -1034,6 +1043,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       deploymentState: state,
       originKind: listing.originKind || (state === 'active' && listing.originRef ? 'cf_container' : 'r2_static'),
       originRef: listing.originRef || null,
+      dbKind: listing.dbKind || null,
+      dbSecretPath: listing.dbSecretPath || null,
+      dbProvisionedAt: listing.dbProvisionedAt || null,
       isVerifiedActive,
       deploymentError: listing.deploymentError,
       lastDeployError,
@@ -1086,6 +1098,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       SELECT 
         a.id, a.name, a.creator_id, a.version, a.deployment_state, a.deployment_error, a.repository_id,
         a.active_deployment_id, a.origin_ref, a.origin_kind, a.active_commit_oid,
+        a.db_kind, a.db_secret_path, a.db_provisioned_at,
         dr.status AS revisionStatus
       FROM app_listings a
       LEFT JOIN deployment_revisions dr ON dr.id = a.active_deployment_id
@@ -1413,9 +1426,64 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const plan = detection.plan;
       targetPlan = plan;
 
-      // Step 4a: Next.js (OpenNext) Worker lane dispatch
       const isNextWorker = plan.detectedType === 'next-worker';
+      const isServerApp = plan.detectedType === 'python' ||
+        plan.detectedType === 'rust' ||
+        plan.detectedType === 'go' ||
+        plan.detectedType === 'docker' ||
+        (plan.detectedType === 'node' && plan.startCommand !== 'static-pages-runtime');
 
+      // Fail-closed guard: slop.json postgres: true is ONLY supported for server/container (cf_container) apps.
+      // A static app with postgres: true fails closed (422).
+      if (plan.postgres && !isServerApp) {
+        const errorMsg = `Deployment failed for ${appListing.name}: Postgres add-on is only supported for server/container applications (cf_container), not static applications.`;
+        const evidence = {
+          stage: 'detection',
+          status: 'failed',
+          timestamp,
+          details: errorMsg,
+          lastDeployError: errorMsg,
+          repositoryId: repository.id,
+          commitOid,
+          plan
+        };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'active',
+            error: errorMsg,
+            lastDeployError: errorMsg,
+            evidence
+          }, 422);
+        }
+
+        await env.DB.prepare(`
+          UPDATE app_listings SET
+            deployment_state = 'failed',
+            deployment_error = ?,
+            deployment_evidence_json = ?,
+            detected_project_type = ?
+          WHERE id = ?
+        `).bind(errorMsg, JSON.stringify(evidence), plan.detectedType, appId).run();
+
+        return json({
+          success: false,
+          appId,
+          deploymentState: 'failed',
+          error: errorMsg,
+          evidence
+        }, 422);
+      }
+
+      // Step 4a: Next.js (OpenNext) Worker lane dispatch
       if (isNextWorker) {
         // Supersede prior running builds for this app/repository
         await env.DB.prepare(`
@@ -1686,13 +1754,70 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       // Step 4b: Server vs Static applications
-      const isServerApp = plan.detectedType === 'python' ||
-        plan.detectedType === 'rust' ||
-        plan.detectedType === 'go' ||
-        plan.detectedType === 'docker' ||
-        (plan.detectedType === 'node' && plan.startCommand !== 'static-pages-runtime');
-
       if (isServerApp) {
+        // Step 4b.1: Postgres add-on provisioning (if opt-in requested)
+        let dbSecretPath: string | null = appListing.db_secret_path || null;
+        if (plan.postgres) {
+          const dbResult = await provisionAppDatabase(env, appId);
+          if (!dbResult.success) {
+            const errorMsg = `Deployment failed for ${appListing.name}: Failed to provision database (${dbResult.error || 'provisioning error'}).`;
+            const failureEvidence = {
+              stage: 'database_provisioning',
+              status: 'failed',
+              timestamp: new Date().toISOString(),
+              details: errorMsg,
+              lastDeployError: errorMsg,
+              repositoryId: repository.id,
+              commitOid
+            };
+
+            if (isCurrentlyActive) {
+              await env.DB.prepare(`
+                UPDATE app_listings SET
+                  deployment_evidence_json = ?
+                WHERE id = ?
+              `).bind(JSON.stringify(failureEvidence), appId).run();
+
+              return json({
+                success: false,
+                appId,
+                deploymentState: 'active',
+                error: errorMsg,
+                lastDeployError: errorMsg,
+                evidence: failureEvidence
+              }, 422);
+            }
+
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_state = 'failed',
+                deployment_error = ?,
+                deployment_evidence_json = ?,
+                detected_project_type = ?
+              WHERE id = ?
+            `).bind(errorMsg, JSON.stringify(failureEvidence), plan.detectedType, appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'failed',
+              error: errorMsg,
+              evidence: failureEvidence
+            }, 422);
+          }
+
+          dbSecretPath = dbResult.secretPath || `/nsw/apps/${appId}/db-url`;
+
+          // Persist db columns on app_listings under CAS discipline
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              db_kind = 'postgres',
+              db_secret_path = ?,
+              db_provisioned_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).bind(dbSecretPath, appId).run();
+        }
+
         // Supersede prior running builds for this app/repository
         await env.DB.prepare(`
           UPDATE build_runs SET

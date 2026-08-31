@@ -85,6 +85,7 @@ export interface DeploymentPlan {
   readonly manifestApplied: boolean;
   readonly manifestFile?: string;
   readonly inferredFrom: string[];
+  readonly postgres?: boolean;
 }
 
 export interface DeploymentPlanResult {
@@ -138,6 +139,7 @@ export function parseManifestOverride(
   memoryMb?: number;
   volumes?: StorageVolumeDeclaration[];
   env?: Record<string, string>;
+  postgres?: boolean;
 } | null {
   try {
     const data = typeof manifestContent === 'string' ? JSON.parse(manifestContent) : manifestContent;
@@ -219,6 +221,13 @@ export function parseManifestOverride(
         }
       }
       result.env = cleanEnv;
+    }
+
+    // Postgres add-on opt-in
+    if (typeof data.postgres === 'boolean') {
+      result.postgres = data.postgres;
+    } else if (typeof data.postgres === 'string') {
+      result.postgres = data.postgres.toLowerCase() === 'true';
     }
 
     return result;
@@ -713,7 +722,8 @@ export function detectRigRuntime(
       volumes: manifestOverrides.volumes,
       manifestApplied: true,
       manifestFile,
-      inferredFrom: [manifestFile || 'manifest']
+      inferredFrom: [manifestFile || 'manifest'],
+      postgres: manifestOverrides.postgres
     };
 
     return {
@@ -758,7 +768,8 @@ function applyManifest(
     env: overrides.env ? { ...basePlan.env, ...overrides.env } : basePlan.env,
     manifestApplied: true,
     manifestFile,
-    inferredFrom: [...basePlan.inferredFrom, ...(manifestFile ? [manifestFile] : [])]
+    inferredFrom: [...basePlan.inferredFrom, ...(manifestFile ? [manifestFile] : [])],
+    postgres: overrides.postgres !== undefined ? overrides.postgres : basePlan.postgres
   };
 }
 

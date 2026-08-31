@@ -11,6 +11,9 @@ export const DEFAULT_NSW_ARTIFACT_BUCKET = 'nsw-build-artifacts-777772815966';
 export const DEFAULT_AWS_CODEBUILD_PROJECT = 'nsw-build';
 export const DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT = 'nsw-deploy';
 export const DEFAULT_CF_ACCOUNT_ID = '4219a576830c72b0e6e4ca358e61473a';
+export const DEFAULT_NSW_DB_CLUSTER_ARN = 'arn:aws:rds:us-east-2:777772815966:cluster:nsw-shared-pg';
+export const DEFAULT_NSW_DB_SECRET_ARN = 'arn:aws:secretsmanager:us-east-2:777772815966:secret:rds!cluster-cec8ae29-5aab-461b-a1e9-edfc93ec9a3a-kBp7SZ';
+export const DEFAULT_NSW_DB_HOST = 'nsw-shared-pg.cluster-cec8ae29-5aab-461b-a1e9-edfc93ec9a3a.us-east-2.rds.amazonaws.com';
 
 export const APP_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const COMMIT_OID_REGEX = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
@@ -437,4 +440,469 @@ export async function describeEcrImages(
       error: `ECR DescribeImages network failure: ${err?.message || String(err)}`
     };
   }
+}
+
+export interface ExecuteDataApiStatementOptions {
+  resourceArn?: string;
+  secretArn?: string;
+  database?: string;
+  sql: string;
+  maxRetries?: number;
+  retryDelayMs?: number;
+}
+
+export interface ExecuteDataApiStatementResult {
+  success: boolean;
+  records?: any[];
+  numberOfRecordsUpdated?: number;
+  error?: string;
+  errorCode?: string;
+  isResuming?: boolean;
+  alreadyExists?: boolean;
+  status?: number;
+}
+
+/**
+ * Executes a single SQL statement via RDS Data API (SigV4 service 'rds-data', rest-json).
+ * Retries on DatabaseResumingException (scale-to-zero resume).
+ */
+export async function executeDataApiStatement(
+  env: any,
+  params: ExecuteDataApiStatementOptions
+): Promise<ExecuteDataApiStatementResult> {
+  const creds = getAwsCredentials(env);
+  const region = creds.region || DEFAULT_AWS_REGION;
+  const resourceArn = params.resourceArn || env?.NSW_DB_CLUSTER_ARN || DEFAULT_NSW_DB_CLUSTER_ARN;
+  const secretArn = params.secretArn || env?.NSW_DB_SECRET_ARN || DEFAULT_NSW_DB_SECRET_ARN;
+  const url = `https://rds-data.${region}.amazonaws.com/Execute`;
+
+  const payload: any = {
+    resourceArn,
+    secretArn,
+    sql: params.sql
+  };
+  if (params.database) {
+    payload.database = params.database;
+  }
+
+  const maxRetries = typeof params.maxRetries === 'number' ? params.maxRetries : (env?.AWS_RDS_DATA_MAX_RETRIES ?? 3);
+  const baseDelay = typeof params.retryDelayMs === 'number' ? params.retryDelayMs : (env?.AWS_RDS_DATA_RETRY_DELAY_MS ?? 1000);
+
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    attempt++;
+    try {
+      const res = await awsFetch(env, {
+        service: 'rds-data',
+        method: 'POST',
+        url,
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data: any = await res.json().catch(() => null);
+
+      if (res.ok) {
+        return {
+          success: true,
+          records: data?.records,
+          numberOfRecordsUpdated: data?.numberOfRecordsUpdated,
+          status: res.status
+        };
+      }
+
+      const errType = String(data?.__type || data?.code || data?.name || '');
+      const errMsg = String(data?.message || data?.error || `RDS Data API Execute failed with HTTP ${res.status}`);
+      const isResuming = res.status === 503 ||
+        res.status === 504 ||
+        errType.includes('DatabaseResumingException') ||
+        errType.includes('DatabaseUnavailableException') ||
+        errType.includes('HttpEndpointNotEnabledException') ||
+        errMsg.toLowerCase().includes('resuming') ||
+        errMsg.toLowerCase().includes('paused') ||
+        errMsg.toLowerCase().includes('communications link failure');
+
+      // Check for Postgres "already exists" errors (42710 for role, 42P04 for database)
+      const isAlreadyExists = errMsg.includes('42710') ||
+        errMsg.includes('42P04') ||
+        errMsg.toLowerCase().includes('already exists') ||
+        errType.includes('DuplicateDatabaseException');
+
+      if (isResuming && attempt <= maxRetries) {
+        if (baseDelay > 0) {
+          await new Promise(r => setTimeout(r, baseDelay * attempt));
+        }
+        continue;
+      }
+
+      return {
+        success: false,
+        status: res.status,
+        error: errMsg,
+        errorCode: errType || (errMsg.includes('42710') ? '42710' : (errMsg.includes('42P04') ? '42P04' : undefined)),
+        isResuming,
+        alreadyExists: isAlreadyExists
+      };
+    } catch (err: any) {
+      if (attempt <= maxRetries) {
+        if (baseDelay > 0) {
+          await new Promise(r => setTimeout(r, baseDelay * attempt));
+        }
+        continue;
+      }
+      return {
+        success: false,
+        isResuming: true,
+        error: `RDS Data API network failure: ${err?.message || String(err)}`
+      };
+    }
+  }
+
+  return {
+    success: false,
+    isResuming: true,
+    error: 'RDS Data API timed out waiting for database resume'
+  };
+}
+
+export interface PutSsmParameterOptions {
+  name: string;
+  value: string;
+  type?: 'String' | 'StringList' | 'SecureString';
+  overwrite?: boolean;
+  description?: string;
+  keyId?: string;
+}
+
+/**
+ * Stores a parameter in AWS Systems Manager Parameter Store using SigV4 PutParameter (JSON-1.1).
+ */
+export async function putSsmParameter(
+  env: any,
+  params: PutSsmParameterOptions
+): Promise<{
+  success: boolean;
+  version?: number;
+  alreadyExists?: boolean;
+  error?: string;
+  status?: number;
+}> {
+  const creds = getAwsCredentials(env);
+  const region = creds.region || DEFAULT_AWS_REGION;
+  const url = `https://ssm.${region}.amazonaws.com/`;
+
+  const payload: any = {
+    Name: params.name,
+    Value: params.value,
+    Type: params.type || 'SecureString',
+    Overwrite: params.overwrite ?? false
+  };
+  if (params.description) payload.Description = params.description;
+  if (params.keyId) payload.KeyId = params.keyId;
+
+  try {
+    const res = await awsFetch(env, {
+      service: 'ssm',
+      method: 'POST',
+      url,
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AmazonSSM.PutParameter'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data: any = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const errType = String(data?.__type || '');
+      const errMsg = String(data?.message || data?.error || `SSM PutParameter failed with HTTP ${res.status}`);
+      const alreadyExists = errType.includes('ParameterAlreadyExists') || errMsg.toLowerCase().includes('already exists');
+
+      return {
+        success: false,
+        alreadyExists,
+        status: res.status,
+        error: errMsg
+      };
+    }
+
+    return {
+      success: true,
+      version: data?.Version,
+      status: res.status
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `SSM PutParameter network failure: ${err?.message || String(err)}`
+    };
+  }
+}
+
+export interface GetSsmParameterOptions {
+  name: string;
+  withDecryption?: boolean;
+}
+
+/**
+ * Retrieves a parameter from AWS Systems Manager Parameter Store using SigV4 GetParameter (JSON-1.1).
+ */
+export async function getSsmParameter(
+  env: any,
+  params: GetSsmParameterOptions
+): Promise<{
+  success: boolean;
+  value?: string;
+  parameter?: any;
+  exists?: boolean;
+  error?: string;
+  status?: number;
+}> {
+  const creds = getAwsCredentials(env);
+  const region = creds.region || DEFAULT_AWS_REGION;
+  const url = `https://ssm.${region}.amazonaws.com/`;
+
+  const payload = {
+    Name: params.name,
+    WithDecryption: params.withDecryption ?? true
+  };
+
+  try {
+    const res = await awsFetch(env, {
+      service: 'ssm',
+      method: 'POST',
+      url,
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AmazonSSM.GetParameter'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data: any = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const errType = String(data?.__type || '');
+      const errMsg = String(data?.message || data?.error || `SSM GetParameter failed with HTTP ${res.status}`);
+      const isNotFound = errType.includes('ParameterNotFound') || errMsg.toLowerCase().includes('not found') || res.status === 400;
+
+      return {
+        success: false,
+        exists: !isNotFound,
+        status: res.status,
+        error: errMsg
+      };
+    }
+
+    return {
+      success: true,
+      exists: true,
+      value: data?.Parameter?.Value,
+      parameter: data?.Parameter,
+      status: res.status
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `SSM GetParameter network failure: ${err?.message || String(err)}`
+    };
+  }
+}
+
+/**
+ * Generates a cryptographically secure alphanumeric password (32+ chars, [A-Za-z0-9] only).
+ */
+export function generateDbPassword(length = 32): string {
+  const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => charset[b % charset.length]).join('');
+}
+
+export interface ProvisionDatabaseResult {
+  success: boolean;
+  secretPath?: string;
+  dbKind?: 'postgres';
+  reused?: boolean;
+  retryable?: boolean;
+  isResuming?: boolean;
+  error?: string;
+}
+
+/**
+ * Provisions a dedicated per-app Postgres database and user on the shared Aurora Serverless v2 cluster.
+ * Steps:
+ * 1. Idempotency guard: if SSM /nsw/apps/<id>/db-url exists, reuse it.
+ * 2. Generate 32-char alphanumeric password.
+ * 3. CREATE ROLE "app_<id>" LOGIN PASSWORD '<pw>'
+ * 4. CREATE DATABASE "app_<id>" OWNER "app_<id>"
+ * 5. REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC
+ * 6. REVOKE ALL ON SCHEMA public FROM PUBLIC; GRANT ALL ON SCHEMA public TO "app_<id>"
+ * 7. Assemble DSN and store in SSM SecureString /nsw/apps/<id>/db-url.
+ */
+export async function provisionAppDatabase(
+  env: any,
+  appId: string,
+  options?: { maxRetries?: number; retryDelayMs?: number }
+): Promise<ProvisionDatabaseResult> {
+  if (!APP_ID_REGEX.test(appId)) {
+    return {
+      success: false,
+      error: `Invalid appId '${appId}': must match ^[a-z0-9][a-z0-9-]{0,62}$`
+    };
+  }
+
+  const ssmPath = `/nsw/apps/${appId}/db-url`;
+
+  // 1. Idempotency guard: check if SSM parameter already exists
+  try {
+    const existing = await getSsmParameter(env, { name: ssmPath, withDecryption: true });
+    if (existing.success && existing.value) {
+      return {
+        success: true,
+        secretPath: ssmPath,
+        dbKind: 'postgres',
+        reused: true
+      };
+    }
+  } catch {}
+
+  const dbHost = env?.NSW_DB_HOST || DEFAULT_NSW_DB_HOST;
+  const clusterArn = env?.NSW_DB_CLUSTER_ARN || DEFAULT_NSW_DB_CLUSTER_ARN;
+  const secretArn = env?.NSW_DB_SECRET_ARN || DEFAULT_NSW_DB_SECRET_ARN;
+  const password = generateDbPassword(32);
+  const dbName = `app_${appId}`;
+
+  const maxRetries = options?.maxRetries ?? (env?.AWS_RDS_DATA_MAX_RETRIES ?? 3);
+  const retryDelayMs = options?.retryDelayMs ?? (env?.AWS_RDS_DATA_RETRY_DELAY_MS ?? 1000);
+
+  const exec = async (sql: string, database?: string) => {
+    return executeDataApiStatement(env, {
+      resourceArn: clusterArn,
+      secretArn: secretArn,
+      database: database || 'postgres',
+      sql,
+      maxRetries,
+      retryDelayMs
+    });
+  };
+
+  // Step 3: CREATE ROLE "app_<id>" LOGIN PASSWORD '<pw>'
+  const roleRes = await exec(`CREATE ROLE "${dbName}" LOGIN PASSWORD '${password}'`, 'postgres');
+  if (!roleRes.success && !roleRes.alreadyExists && roleRes.errorCode !== '42710') {
+    if (roleRes.isResuming) {
+      return {
+        success: false,
+        retryable: true,
+        isResuming: true,
+        error: 'Database cluster is resuming from paused state. Please retry shortly.'
+      };
+    }
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to create database role'
+    };
+  }
+
+  // Step 4: CREATE DATABASE "app_<id>" OWNER "app_<id>"
+  const dbRes = await exec(`CREATE DATABASE "${dbName}" OWNER "${dbName}"`, 'postgres');
+  if (!dbRes.success && !dbRes.alreadyExists && dbRes.errorCode !== '42P04') {
+    if (dbRes.isResuming) {
+      return {
+        success: false,
+        retryable: true,
+        isResuming: true,
+        error: 'Database cluster is resuming from paused state. Please retry shortly.'
+      };
+    }
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to create database'
+    };
+  }
+
+  // Step 5: REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC
+  const revokeDbRes = await exec(`REVOKE ALL ON DATABASE "${dbName}" FROM PUBLIC`, 'postgres');
+  if (!revokeDbRes.success) {
+    if (revokeDbRes.isResuming) {
+      return {
+        success: false,
+        retryable: true,
+        isResuming: true,
+        error: 'Database cluster is resuming from paused state. Please retry shortly.'
+      };
+    }
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to revoke public access on database'
+    };
+  }
+
+  // Step 6a: REVOKE ALL ON SCHEMA public FROM PUBLIC (on database: app_<id>)
+  const revokeSchemaRes = await exec(`REVOKE ALL ON SCHEMA public FROM PUBLIC`, dbName);
+  if (!revokeSchemaRes.success) {
+    if (revokeSchemaRes.isResuming) {
+      return {
+        success: false,
+        retryable: true,
+        isResuming: true,
+        error: 'Database cluster is resuming from paused state. Please retry shortly.'
+      };
+    }
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to revoke public schema access'
+    };
+  }
+
+  // Step 6b: GRANT ALL ON SCHEMA public TO "app_<id>" (on database: app_<id>)
+  const grantSchemaRes = await exec(`GRANT ALL ON SCHEMA public TO "${dbName}"`, dbName);
+  if (!grantSchemaRes.success) {
+    if (grantSchemaRes.isResuming) {
+      return {
+        success: false,
+        retryable: true,
+        isResuming: true,
+        error: 'Database cluster is resuming from paused state. Please retry shortly.'
+      };
+    }
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to grant schema permissions to database role'
+    };
+  }
+
+  // Step 7: Assemble DSN
+  const dsn = `postgresql://${dbName}:${password}@${dbHost}:5432/${dbName}?sslmode=require`;
+
+  // Step 8: SSM PutParameter (SecureString, Overwrite=false)
+  const putRes = await putSsmParameter(env, {
+    name: ssmPath,
+    value: dsn,
+    type: 'SecureString',
+    overwrite: false
+  });
+
+  if (!putRes.success && !putRes.alreadyExists) {
+    return {
+      success: false,
+      retryable: false,
+      error: 'Failed to store database connection secret in SSM parameter store'
+    };
+  }
+
+  return {
+    success: true,
+    secretPath: ssmPath,
+    dbKind: 'postgres',
+    reused: false
+  };
 }
