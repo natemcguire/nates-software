@@ -516,6 +516,93 @@ describe('Authoritative Deployment Lifecycle Suite', () => {
       expect(result.plan?.startCommand).toBe('npm start');
     });
 
+    it('detects Flask + gunicorn from requirements.txt and derives gunicorn start command', () => {
+      const files = ['requirements.txt', 'app.py'];
+      const contents = {
+        'requirements.txt': 'Flask==3.0.0\ngunicorn==21.2.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('python');
+      expect(result.plan?.startCommand).toBe('gunicorn --bind 0.0.0.0:$PORT app:app');
+      expect(result.plan?.buildCommand).toBe('pip install -r requirements.txt');
+    });
+
+    it('detects FastAPI + uvicorn and derives uvicorn start command', () => {
+      const files = ['requirements.txt', 'main.py'];
+      const contents = {
+        'requirements.txt': 'fastapi>=0.100.0\nuvicorn[standard]>=0.20.0\n',
+        'main.py': 'from fastapi import FastAPI\napp = FastAPI()'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('python');
+      expect(result.plan?.startCommand).toBe('uvicorn main:app --host 0.0.0.0 --port $PORT');
+    });
+
+    it('fails closed when Flask is detected with no server and no Procfile', () => {
+      const files = ['requirements.txt', 'app.py'];
+      const contents = {
+        'requirements.txt': 'Flask==3.0.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(false);
+      expect(result.detectedType).toBe('python');
+      expect(result.reasons[0]).toBe("Add gunicorn (or uvicorn) to requirements.txt, or declare a Procfile 'web:' line.");
+      expect(result.error).toContain("Add gunicorn (or uvicorn) to requirements.txt, or declare a Procfile 'web:' line.");
+    });
+
+    it('detects FastAPI from pyproject.toml dependencies', () => {
+      const files = ['pyproject.toml', 'app.py'];
+      const contents = {
+        'pyproject.toml': `
+[project]
+name = "fastapi-demo"
+version = "0.1.0"
+dependencies = [
+    "fastapi>=0.100.0",
+]
+`,
+        'app.py': 'from fastapi import FastAPI\napp = FastAPI()'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('python');
+      expect(result.plan?.startCommand).toBe('uvicorn app:app --host 0.0.0.0 --port $PORT');
+    });
+
+    it('retains plain python start command when no web framework is detected in dependencies', () => {
+      const files = ['requirements.txt', 'main.py'];
+      const contents = {
+        'requirements.txt': 'requests==2.31.0\nnumpy==1.26.0\n',
+        'main.py': 'print("hello world")'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('python');
+      expect(result.plan?.startCommand).toBe('python main.py');
+    });
+
+    it('allows Flask when Procfile is present even if gunicorn is not in requirements', () => {
+      const files = ['requirements.txt', 'app.py', 'Procfile'];
+      const contents = {
+        'requirements.txt': 'Flask==3.0.0\n',
+        'app.py': 'from flask import Flask\napp = Flask(__name__)',
+        'Procfile': 'web: gunicorn app:app'
+      };
+
+      const result = detectRigRuntime(files, contents);
+      expect(result.isDeployable).toBe(true);
+      expect(result.detectedType).toBe('python');
+    });
+
     it('should fail closed when committed tree contains unsupported files', async () => {
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role) VALUES ('usr_hs_dev', 'hsdev', 'Haskell Dev', 'user')
