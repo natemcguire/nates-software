@@ -49,6 +49,7 @@ export interface Env {
   STORAGE: R2Bucket;
   HOST_CACHE?: KVNamespace;
   CANARY_SECRET?: string;
+  ORIGIN_SHARED_SECRET?: string;
 }
 
 export interface AppListingRecord {
@@ -256,8 +257,17 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
         return json({ success: false, error: `App '${listing.id || subdomain}' origin host is not permitted.` }, 502);
       }
 
+      const originSecret = env?.ORIGIN_SHARED_SECRET?.trim();
+      if (!originSecret) {
+        return json({
+          success: false,
+          error: 'Router origin auth secret is not configured.'
+        }, 503);
+      }
+
       const targetUrl = new URL(url.pathname + url.search, originRef);
       const originRequest = new Request(targetUrl.toString(), request);
+      originRequest.headers.set('X-NSW-Origin-Auth', originSecret);
       return fetch(originRequest);
     }
 
