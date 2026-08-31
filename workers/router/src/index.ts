@@ -221,11 +221,29 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }, 503);
     }
 
-    // 6. Origin kind dispatch (Phase 0 only supports r2_static)
+    // 6. Origin kind dispatch
+    if (
+      listing.origin_kind === 'cf_container' ||
+      listing.origin_kind === 'worker' ||
+      listing.origin_kind === 'fargate_warm'
+    ) {
+      const originRef = listing.origin_ref?.trim();
+      if (!originRef) {
+        return json({
+          success: false,
+          error: `App '${listing.id || subdomain}' has no origin configured.`
+        }, 503);
+      }
+
+      const targetUrl = new URL(url.pathname + url.search, originRef);
+      const originRequest = new Request(targetUrl.toString(), request);
+      return fetch(originRequest);
+    }
+
     if (listing.origin_kind !== 'r2_static') {
       return json({
         success: false,
-        error: `Unsupported origin_kind '${listing.origin_kind}' in Phase 0.`
+        error: `Unsupported origin_kind '${listing.origin_kind}'.`
       }, 501);
     }
 
