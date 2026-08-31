@@ -892,4 +892,299 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       });
     });
   });
+
+  // ==========================================================================
+  // 8. PHASE 3 ORIGIN KIND DISPATCH (CF_CONTAINER, WORKER, FARGATE_WARM)
+  // ==========================================================================
+  describe('8. Phase 3 Origin Kind Dispatch', () => {
+    it('proxies to origin_ref for active and healthy cf_container app preserving method, path, and query', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const containerRecord: AppListingRecord = {
+        id: 'container-app',
+        origin_kind: 'cf_container',
+        origin_ref: 'https://container-app-worker.internal.workers.dev',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_cnt_1',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      mockFetch.mockImplementation(async (req: Request) => {
+        return new Response(JSON.stringify({ message: 'Hello from container', url: req.url, method: req.method }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Container-Origin': 'true'
+          }
+        });
+      });
+
+      const req = new Request('https://container-app.nates-software.com/api/v1/items?limit=10&page=2', {
+        method: 'GET',
+        headers: {
+          'X-Custom-Header': 'custom-val'
+        }
+      });
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('X-Container-Origin')).toBe('true');
+      const data = await res.json();
+      expect(data).toEqual({
+        message: 'Hello from container',
+        url: 'https://container-app-worker.internal.workers.dev/api/v1/items?limit=10&page=2',
+        method: 'GET'
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const forwardedReq = mockFetch.mock.calls[0][0] as Request;
+      expect(forwardedReq.url).toBe('https://container-app-worker.internal.workers.dev/api/v1/items?limit=10&page=2');
+      expect(forwardedReq.method).toBe('GET');
+      expect(forwardedReq.headers.get('X-Custom-Header')).toBe('custom-val');
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('forwards POST request with body and headers to cf_container origin', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const containerRecord: AppListingRecord = {
+        id: 'api-container',
+        origin_kind: 'cf_container',
+        origin_ref: 'https://api-container.workers.dev',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_api_1',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      mockFetch.mockImplementation(async (req: Request) => {
+        const bodyText = await req.text();
+        return new Response(`RECEIVED:${bodyText}`, {
+          status: 201,
+          headers: { 'X-Created': 'true' }
+        });
+      });
+
+      const req = new Request('https://api-container.nates-software.com/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token'
+        },
+        body: JSON.stringify({ action: 'create', count: 42 })
+      });
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(201);
+      expect(res.headers.get('X-Created')).toBe('true');
+      expect(await res.text()).toBe('RECEIVED:{"action":"create","count":42}');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const forwardedReq = mockFetch.mock.calls[0][0] as Request;
+      expect(forwardedReq.url).toBe('https://api-container.workers.dev/submit');
+      expect(forwardedReq.method).toBe('POST');
+      expect(forwardedReq.headers.get('Authorization')).toBe('Bearer test-token');
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('proxies worker and fargate_warm origin kinds to origin_ref', async () => {
+      for (const originKind of ['worker', 'fargate_warm'] as const) {
+        const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+        const record: AppListingRecord = {
+          id: `${originKind}-app`,
+          origin_kind: originKind,
+          origin_ref: `https://${originKind}-app.workers.dev`,
+          deployment_state: 'active',
+          active_deployment_id: 'rev_1',
+          revisionStatus: 'healthy'
+        };
+
+        d1PrepareSpy.mockReturnValue({
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn().mockResolvedValue(record)
+        });
+
+        mockFetch.mockResolvedValue(new Response(`OK from ${originKind}`, { status: 200 }));
+
+        const req = new Request(`https://${originKind}-app.nates-software.com/status`);
+        const res = await handleRequest(req, env);
+
+        expect(res.status).toBe(200);
+        expect(await res.text()).toBe(`OK from ${originKind}`);
+        expect(r2GetSpy).not.toHaveBeenCalled();
+      }
+    });
+
+    it('rejects a non-allowlisted origin_ref with 502 SSRF guard and does not fetch it', async () => {
+      const { env, d1PrepareSpy } = createMockEnv();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope'));
+      const rec: AppListingRecord = {
+        id: 'evil-app', origin_kind: 'cf_container',
+        origin_ref: 'https://169.254.169.254/latest/meta-data',
+        deployment_state: 'active', active_deployment_id: 'rev_evil', revisionStatus: 'healthy'
+      };
+      d1PrepareSpy.mockReturnValue({ bind: vi.fn().mockReturnThis(), first: vi.fn().mockResolvedValue(rec) });
+      const res = await handleRequest(new Request('https://evil-app.nates-software.com/'), env);
+      expect(res.status).toBe(502);
+      const calledEvil = fetchSpy.mock.calls.some(c => {
+        const a = c[0] as any;
+        const u = typeof a === 'string' ? a : (a && a.url) || String(a);
+        return String(u).includes('169.254');
+      });
+      expect(calledEvil).toBe(false);
+      fetchSpy.mockRestore();
+    });
+
+    it('returns 503 when cf_container app is active+healthy but origin_ref is null', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const containerRecord: AppListingRecord = {
+        id: 'no-origin-app',
+        origin_kind: 'cf_container',
+        origin_ref: null,
+        deployment_state: 'active',
+        active_deployment_id: 'rev_no_orig',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      const req = new Request('https://no-origin-app.nates-software.com/dashboard');
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json).toEqual({
+        success: false,
+        error: "App 'no-origin-app' has no origin configured."
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns 503 when cf_container app is active+healthy but origin_ref is empty/whitespace', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const containerRecord: AppListingRecord = {
+        id: 'empty-origin-app',
+        origin_kind: 'cf_container',
+        origin_ref: '   ',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_empty_orig',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      const req = new Request('https://empty-origin-app.nates-software.com/');
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json).toEqual({
+        success: false,
+        error: "App 'empty-origin-app' has no origin configured."
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns 503 when cf_container app has revisionStatus=failed (healthy-gate not bypassed)', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const containerRecord: AppListingRecord = {
+        id: 'failed-container-app',
+        origin_kind: 'cf_container',
+        origin_ref: 'https://failed-container.workers.dev',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_failed',
+        revisionStatus: 'failed'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      const req = new Request('https://failed-container-app.nates-software.com/health');
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.error).toContain('does not have an active verified deployment');
+      // Mock fetch must NOT be called for origin
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns 503 when cf_container app is in draft state or missing active_deployment_id', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const containerRecord: AppListingRecord = {
+        id: 'draft-container-app',
+        origin_kind: 'cf_container',
+        origin_ref: 'https://draft-container.workers.dev',
+        deployment_state: 'draft',
+        active_deployment_id: null
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(containerRecord)
+      });
+
+      const req = new Request('https://draft-container-app.nates-software.com/');
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(503);
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns 501 for unknown origin_kind even when active and healthy', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const unknownRecord: AppListingRecord = {
+        id: 'unknown-app',
+        origin_kind: 'unsupported_substrate',
+        origin_ref: 'https://somewhere.internal',
+        deployment_state: 'active',
+        active_deployment_id: 'rev_unk_1',
+        revisionStatus: 'healthy'
+      };
+
+      d1PrepareSpy.mockReturnValue({
+        bind: vi.fn().mockReturnThis(),
+        first: vi.fn().mockResolvedValue(unknownRecord)
+      });
+
+      const req = new Request('https://unknown-app.nates-software.com/test');
+
+      const res = await handleRequest(req, env);
+      expect(res.status).toBe(501);
+      const json = await res.json();
+      expect(json).toEqual({
+        success: false,
+        error: "Unsupported origin_kind 'unsupported_substrate'."
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(r2GetSpy).not.toHaveBeenCalled();
+    });
+  });
 });
