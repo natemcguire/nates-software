@@ -23,12 +23,17 @@ import {
   describeEcrImages,
   DEFAULT_AWS_ACCOUNT_ID,
   DEFAULT_AWS_S3_BUILD_BUCKET,
+  DEFAULT_NSW_ARTIFACT_BUCKET,
   DEFAULT_AWS_CODEBUILD_PROJECT,
   DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT,
   DEFAULT_CF_ACCOUNT_ID,
   APP_ID_REGEX,
   COMMIT_OID_REGEX
 } from './_aws';
+import {
+  NSW_BUILD_NEXT_BUILDSPEC,
+  NSW_DEPLOY_NEXT_BUILDSPEC
+} from './_buildspecs';
 
 const json = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -61,8 +66,10 @@ function extractWorkerUrl(cbBuild: any): string | null {
     for (const phase of cbBuild.phases) {
       if (Array.isArray(phase.contexts)) {
         for (const ctx of phase.contexts) {
-          const match = String(ctx.message || '').match(/DEPLOYED_WORKER_URL=(https:\/\/[^\s\r\n]+)/);
-          if (match && match[1]) return match[1].trim();
+          if (typeof ctx.message === 'string') {
+            const match = ctx.message.match(/https:\/\/nsw-app-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev/);
+            if (match) return match[0];
+          }
         }
       }
     }
@@ -71,7 +78,7 @@ function extractWorkerUrl(cbBuild: any): string | null {
   return null;
 }
 
-const digest = (value: Buffer | string): string =>
+const digest = (value: Buffer | string | Uint8Array): string =>
   `sha256:${createHash('sha256').update(value).digest('hex')}`;
 
 function parseTimestampMs(val: any): number | null {
@@ -102,7 +109,8 @@ interface CommitVerification {
 
 const DEFAULT_MANIFEST_CANDIDATES = [
   'slop.json', 'deploy.json', 'rig.json', 'app.json', 'manifest.json',
-  'package.json', 'Dockerfile', 'dockerfile', 'requirements.txt',
+  'package.json', 'next.config.js', 'next.config.mjs', 'next.config.ts',
+  'Dockerfile', 'dockerfile', 'requirements.txt',
   'pyproject.toml', 'Cargo.toml', 'go.mod', 'wrangler.toml', 'index.html', 'index.htm'
 ];
 
@@ -353,8 +361,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             // user (prod's deployment_state CHECK has no 'deploying' value, and
             // recreating that CHECK on the most-FK-referenced table isn't worth it).
             const isDeployStage = runningBuild.build_command === 'nsw-deploy' ||
+              runningBuild.build_command === 'nsw-deploy-next' ||
               codeBuildId.startsWith('nsw-deploy:') ||
+              codeBuildId.startsWith('nsw-deploy') ||
               (env?.AWS_CODEBUILD_DEPLOY_PROJECT && codeBuildId.startsWith(env.AWS_CODEBUILD_DEPLOY_PROJECT + ':'));
+
+            const isNextLane = runningBuild.build_command === 'nsw-build-next' ||
+              runningBuild.build_command === 'nsw-deploy-next';
 
             const batchRes = await batchGetCodeBuilds(env, { buildIds: [codeBuildId] });
 
@@ -369,7 +382,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                 if (buildStatus === 'SUCCEEDED') {
                   const workerUrl = extractWorkerUrl(cbBuild);
                   if (!workerUrl) {
-                    const errorMsg = 'nsw-deploy succeeded but no DEPLOYED_WORKER_URL was found in build output';
+                    const errorMsg = isNextLane
+                      ? 'nsw-deploy-next succeeded but no DEPLOYED_WORKER_URL was found in build output'
+                      : 'nsw-deploy succeeded but no DEPLOYED_WORKER_URL was found in build output';
                     const failureEvidence = {
                       stage: 'deploy',
                       status: 'failed',
@@ -425,6 +440,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                     const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                     if (changes > 0) {
+                      const targetOriginKind = isNextLane ? 'worker' : 'cf_container';
                       const revRow: any = await env.DB.prepare(`
                         SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRev
                         FROM deployment_revisions
@@ -447,14 +463,16 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         runningBuild.id,
                         revisionNumber,
                         workerUrl,
-                        runningBuild.test_command || runningBuild.source_manifest_digest || 'cf_container',
+                        runningBuild.test_command || runningBuild.source_manifest_digest || targetOriginKind,
                         listing.creatorId || 'system'
                       ).run();
 
                       const promotionEvidence = {
                         stage: 'deploy',
                         status: 'passed',
-                        details: 'nsw-deploy succeeded. CF Container Worker deployed and runtime smoke verified.',
+                        details: isNextLane
+                          ? 'nsw-deploy-next succeeded. Next.js OpenNext Worker deployed and runtime smoke verified.'
+                          : 'nsw-deploy succeeded. CF Container Worker deployed and runtime smoke verified.',
                         codeBuildId,
                         workerUrl,
                         commitOid,
@@ -474,25 +492,25 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         ? await env.DB.prepare(`
                             UPDATE app_listings SET
                               deployment_state = 'active',
-                              origin_kind = 'cf_container',
+                              origin_kind = ?,
                               origin_ref = ?,
                               active_deployment_id = ?,
                               active_commit_oid = ?,
                               deployment_error = NULL,
                               deployment_evidence_json = ?
                             WHERE id = ? AND (active_deployment_id = ? OR active_deployment_id IS NULL)
-                          `).bind(workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId, oldActiveId).run()
+                          `).bind(targetOriginKind, workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId, oldActiveId).run()
                         : await env.DB.prepare(`
                             UPDATE app_listings SET
                               deployment_state = 'active',
-                              origin_kind = 'cf_container',
+                              origin_kind = ?,
                               origin_ref = ?,
                               active_deployment_id = ?,
                               active_commit_oid = ?,
                               deployment_error = NULL,
                               deployment_evidence_json = ?
                             WHERE id = ? AND active_deployment_id IS NULL
-                          `).bind(workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+                          `).bind(targetOriginKind, workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
 
                       const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
 
@@ -504,7 +522,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         `).bind(appId, revisionId).run();
 
                         listing.deploymentState = 'active';
-                        listing.originKind = 'cf_container';
+                        listing.originKind = targetOriginKind;
                         listing.originRef = workerUrl;
                         listing.activeDeploymentId = revisionId;
                         listing.activeCommitOid = commitOid;
@@ -573,13 +591,130 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                 // STAGE 1: Candidate Build Stage (nsw-build -> ECR -> trigger nsw-deploy)
                 // ==========================================
                 if (buildStatus === 'SUCCEEDED') {
-                  const ecrRepo = `nsw/${appId}`;
-                  const accountId = env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID;
-                  const ecrRes = await describeEcrImages(env, {
-                    repositoryName: ecrRepo,
-                    imageTag: commitOid,
-                    registryId: accountId
-                  });
+                  if (isNextLane) {
+                    // Candidate Next.js OpenNext build SUCCEEDED -> SKIP ECR check entirely!
+                    const artifactBucket = env?.NSW_ARTIFACT_BUCKET || env?.AWS_S3_BUILD_BUCKET || DEFAULT_NSW_ARTIFACT_BUCKET;
+                    const artifactDigest = `s3://${artifactBucket}/${appId}/${commitOid}/opennext.tar`;
+
+                    const casRes = await env.DB.prepare(`
+                      UPDATE build_runs SET
+                        status = 'passed',
+                        result_digest = ?,
+                        exit_code = 0,
+                        finished_at = CURRENT_TIMESTAMP
+                      WHERE id = ? AND status = 'running'
+                    `).bind(artifactDigest, runningBuild.id).run();
+
+                    const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
+                    if (changes > 0) {
+                      const deployProject = env?.AWS_CODEBUILD_DEPLOY_PROJECT || DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT || 'nsw-deploy';
+                      const cfAccountId = env?.CF_ACCOUNT_ID || DEFAULT_CF_ACCOUNT_ID || '4219a576830c72b0e6e4ca358e61473a';
+                      const deployStart = await startCodeBuild(env, {
+                        projectName: deployProject,
+                        project: deployProject,
+                        buildspecOverride: NSW_DEPLOY_NEXT_BUILDSPEC,
+                        envOverrides: {
+                          APP_ID: appId,
+                          COMMIT_OID: commitOid,
+                          CF_ACCOUNT_ID: cfAccountId,
+                          ARTIFACT_BUCKET: artifactBucket
+                        }
+                      });
+
+                      if (!deployStart.success || !deployStart.buildId) {
+                        const errorMsg = `Failed to trigger deploy in CodeBuild: ${deployStart.error || 'unknown deploy dispatch error'}`;
+                        const failureEvidence = {
+                          stage: 'deploy_dispatch',
+                          status: 'failed',
+                          details: errorMsg,
+                          lastDeployError: errorMsg,
+                          buildCodeBuildId: codeBuildId,
+                          commitOid,
+                          timestamp: new Date().toISOString()
+                        };
+
+                        if (isCurrentlyActive) {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(failureEvidence), appId).run();
+
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        } else {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'failed',
+                              deployment_error = ?,
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+                          listing.deploymentState = 'failed';
+                          listing.deploymentError = errorMsg;
+                          listing.deploymentEvidenceJson = JSON.stringify(failureEvidence);
+                        }
+                      } else {
+                        const deployCodeBuildId = deployStart.buildId;
+                        const deployRunId = `br_dep_${crypto.randomUUID().replace(/-/g, '')}`;
+
+                        await env.DB.prepare(`
+                          INSERT INTO build_runs (
+                            id, repository_id, commit_oid, purpose, status, runner_image_digest,
+                            build_command, test_command, source_manifest_digest, started_at
+                          ) VALUES (?, ?, ?, 'release', 'running', ?, 'nsw-deploy-next', ?, ?, CURRENT_TIMESTAMP)
+                        `).bind(
+                          deployRunId,
+                          listing.repositoryId || appId,
+                          commitOid,
+                          deployCodeBuildId,
+                          artifactDigest,
+                          artifactDigest
+                        ).run();
+
+                        const deployingEvidence = {
+                          stage: 'deploy',
+                          status: 'running',
+                          details: 'Candidate Next.js OpenNext build succeeded; nsw-deploy-next triggered.',
+                          buildCodeBuildId: codeBuildId,
+                          deployCodeBuildId,
+                          commitOid,
+                          timestamp: new Date().toISOString()
+                        };
+
+                        if (isCurrentlyActive) {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(deployingEvidence), appId).run();
+
+                          listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
+                        } else {
+                          await env.DB.prepare(`
+                            UPDATE app_listings SET
+                              deployment_state = 'building',
+                              origin_kind = 'worker',
+                              deployment_error = NULL,
+                              deployment_evidence_json = ?
+                            WHERE id = ?
+                          `).bind(JSON.stringify(deployingEvidence), appId).run();
+
+                          listing.deploymentState = 'building';
+                          listing.originKind = 'worker';
+                          listing.deploymentError = null;
+                          listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
+                        }
+                      }
+                    }
+                  } else {
+                    const ecrRepo = `nsw/${appId}`;
+                    const accountId = env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID;
+                    const ecrRes = await describeEcrImages(env, {
+                      repositoryName: ecrRepo,
+                      imageTag: commitOid,
+                      registryId: accountId
+                    });
 
                   if (ecrRes.repoMissing) {
                     const errorMsg = `ECR repo ${ecrRepo} not provisioned`;
@@ -809,12 +944,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       // Stays running (app stays building) for bounded retry on next GET
                     }
                   }
-                } else if (
-                  buildStatus === 'FAILED' ||
-                  buildStatus === 'FAULT' ||
-                  buildStatus === 'TIMED_OUT' ||
-                  buildStatus === 'STOPPED'
-                ) {
+                }
+              } else if (
+                buildStatus === 'FAILED' ||
+                buildStatus === 'FAULT' ||
+                buildStatus === 'TIMED_OUT' ||
+                buildStatus === 'STOPPED'
+              ) {
                   const failedPhase = cbBuild.phases?.find((p: any) => p.phaseStatus === 'FAILED');
                   const phaseCtx = failedPhase?.contexts?.[0]?.message || failedPhase?.phaseType || buildStatus;
                   const errorMsg = `CodeBuild candidate build failed: ${phaseCtx}`;
@@ -1277,7 +1413,279 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const plan = detection.plan;
       targetPlan = plan;
 
-      // Step 4: Server vs Static applications
+      // Step 4a: Next.js (OpenNext) Worker lane dispatch
+      const isNextWorker = plan.detectedType === 'next-worker';
+
+      if (isNextWorker) {
+        // Supersede prior running builds for this app/repository
+        await env.DB.prepare(`
+          UPDATE build_runs SET
+            status = 'cancelled',
+            finished_at = CURRENT_TIMESTAMP
+          WHERE (repository_id = ? OR repository_id = ?) AND status = 'running'
+        `).bind(repository.id, appId).run();
+
+        // Asynchronous AWS build substrate dispatch for Next.js OpenNext candidate build
+        const buildId = crypto.randomUUID();
+        const buildRunId = `br_${buildId.replace(/-/g, '')}`;
+        activeBuildRunId = buildRunId;
+
+        const archiveResult = await fetchSourceArchive(env, storageKey, commitOid);
+        if (!archiveResult.archive) {
+          const errorMsg = `Deployment failed for ${appListing.name}: Unable to fetch source archive from GITSMITH gateway (${archiveResult.error || 'unknown error'}).`;
+          const evidence = {
+            stage: 'source_archive',
+            status: 'failed',
+            timestamp,
+            details: archiveResult.error || 'Authoritative source archive could not be retrieved.',
+            lastDeployError: errorMsg,
+            repositoryId: repository.id,
+            commitOid
+          };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(evidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence
+            }, 422);
+          }
+
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'failed',
+              deployment_error = ?,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(errorMsg, JSON.stringify(evidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'failed',
+            error: errorMsg,
+            evidence
+          }, 422);
+        }
+
+        const sourceArchive = archiveResult.archive;
+        const sourceManifestDigest = digest(sourceArchive);
+        const s3Bucket = env?.AWS_S3_BUILD_BUCKET || DEFAULT_AWS_S3_BUILD_BUCKET;
+        const artifactBucket = env?.NSW_ARTIFACT_BUCKET || env?.AWS_S3_BUILD_BUCKET || DEFAULT_NSW_ARTIFACT_BUCKET;
+        const s3Key = `${buildId}.tar`;
+        const codebuildProject = env?.AWS_CODEBUILD_PROJECT || DEFAULT_AWS_CODEBUILD_PROJECT;
+
+        // S3 PutObject (SigV4)
+        const s3Result = await putS3SourceArchive(env, {
+          bucket: s3Bucket,
+          key: s3Key,
+          body: sourceArchive,
+          contentType: 'application/x-tar'
+        });
+
+        if (!s3Result.success) {
+          const errorMsg = `Deployment failed for ${appListing.name}: Failed to stage source tarball to S3 (${s3Result.error || 'upload error'}).`;
+          const failureEvidence = {
+            stage: 'source_staging',
+            status: 'failed',
+            timestamp: new Date().toISOString(),
+            details: errorMsg,
+            lastDeployError: errorMsg,
+            repositoryId: repository.id,
+            commitOid,
+            s3Bucket,
+            s3Key
+          };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(failureEvidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence: failureEvidence
+            }, 422);
+          }
+
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'failed',
+              deployment_error = ?,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'failed',
+            error: errorMsg,
+            evidence: failureEvidence
+          }, 422);
+        }
+
+        // CodeBuild StartBuild (SigV4) with OpenNext buildspec override
+        const cbResult = await startCodeBuild(env, {
+          projectName: codebuildProject,
+          buildspecOverride: NSW_BUILD_NEXT_BUILDSPEC,
+          envOverrides: {
+            SOURCE_BUCKET: s3Bucket,
+            SOURCE_KEY: s3Key,
+            APP_ID: appId,
+            COMMIT_OID: commitOid,
+            ARTIFACT_BUCKET: artifactBucket
+          }
+        });
+
+        if (!cbResult.success || !cbResult.buildId) {
+          const errorMsg = `Deployment failed for ${appListing.name}: Failed to start CodeBuild build (${cbResult.error || 'start build error'}).`;
+          const failureEvidence = {
+            stage: 'build_dispatch',
+            status: 'failed',
+            timestamp: new Date().toISOString(),
+            details: errorMsg,
+            lastDeployError: errorMsg,
+            repositoryId: repository.id,
+            commitOid,
+            projectName: codebuildProject
+          };
+
+          if (isCurrentlyActive) {
+            await env.DB.prepare(`
+              UPDATE app_listings SET
+                deployment_evidence_json = ?
+              WHERE id = ?
+            `).bind(JSON.stringify(failureEvidence), appId).run();
+
+            return json({
+              success: false,
+              appId,
+              deploymentState: 'active',
+              error: errorMsg,
+              lastDeployError: errorMsg,
+              evidence: failureEvidence
+            }, 422);
+          }
+
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'failed',
+              deployment_error = ?,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(errorMsg, JSON.stringify(failureEvidence), appId).run();
+
+          return json({
+            success: false,
+            appId,
+            deploymentState: 'failed',
+            error: errorMsg,
+            evidence: failureEvidence
+          }, 422);
+        }
+
+        const codeBuildId = cbResult.buildId;
+
+        await env.DB.prepare(`
+          INSERT INTO build_runs (
+            id, repository_id, commit_oid, purpose, status, runner_image_digest,
+            build_command, test_command, source_manifest_digest, started_at
+          ) VALUES (?, ?, ?, 'release', 'running', ?, 'nsw-build-next', ?, ?, CURRENT_TIMESTAMP)
+        `).bind(
+          buildRunId,
+          repository.id,
+          commitOid,
+          codeBuildId,
+          plan.healthCommand || null,
+          sourceManifestDigest
+        ).run();
+
+        const buildingEvidence = {
+          stage: 'build',
+          status: 'running',
+          timestamp: new Date().toISOString(),
+          details: `Candidate Next.js OpenNext build dispatched to AWS CodeBuild (${codeBuildId}).`,
+          buildId,
+          codeBuildId,
+          commitOid,
+          sourceBucket: s3Bucket,
+          sourceKey: s3Key,
+          plan
+        };
+
+        if (isCurrentlyActive) {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              detected_project_type = ?,
+              deployment_plan_json = ?,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(
+            plan.detectedType,
+            JSON.stringify(plan),
+            JSON.stringify(buildingEvidence),
+            appId
+          ).run();
+
+          return json({
+            success: true,
+            appId,
+            deploymentState: 'active',
+            buildId,
+            codeBuildId,
+            buildRunId,
+            commitOid,
+            message: `Candidate Next.js OpenNext build dispatched to AWS CodeBuild (${codeBuildId})`
+          }, 202);
+        } else {
+          await env.DB.prepare(`
+            UPDATE app_listings SET
+              deployment_state = 'building',
+              origin_kind = 'worker',
+              detected_project_type = ?,
+              deployment_plan_json = ?,
+              active_commit_oid = ?,
+              deployment_error = NULL,
+              deployment_evidence_json = ?
+            WHERE id = ?
+          `).bind(
+            plan.detectedType,
+            JSON.stringify(plan),
+            commitOid,
+            JSON.stringify(buildingEvidence),
+            appId
+          ).run();
+
+          return json({
+            success: true,
+            appId,
+            deploymentState: 'building',
+            buildId,
+            codeBuildId,
+            buildRunId,
+            commitOid,
+            message: `Candidate Next.js OpenNext build dispatched to AWS CodeBuild (${codeBuildId})`
+          }, 202);
+        }
+      }
+
+      // Step 4b: Server vs Static applications
       const isServerApp = plan.detectedType === 'python' ||
         plan.detectedType === 'rust' ||
         plan.detectedType === 'go' ||

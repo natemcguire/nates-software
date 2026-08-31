@@ -7,6 +7,7 @@ import { AwsClient } from 'aws4fetch';
 export const DEFAULT_AWS_REGION = 'us-east-2';
 export const DEFAULT_AWS_ACCOUNT_ID = '777772815966';
 export const DEFAULT_AWS_S3_BUILD_BUCKET = 'nsw-build-sources-777772815966';
+export const DEFAULT_NSW_ARTIFACT_BUCKET = 'nsw-build-artifacts-777772815966';
 export const DEFAULT_AWS_CODEBUILD_PROJECT = 'nsw-build';
 export const DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT = 'nsw-deploy';
 export const DEFAULT_CF_ACCOUNT_ID = '4219a576830c72b0e6e4ca358e61473a';
@@ -93,31 +94,36 @@ export async function awsFetch(env: any, options: AwsFetchOptions): Promise<Resp
   });
 }
 
+export interface S3PutObjectOptions {
+  bucket?: string;
+  key: string;
+  body: Uint8Array | Buffer | string;
+  contentType?: string;
+}
+
 /**
- * PUTs an authoritative source tarball into the S3 build sources staging bucket using SigV4.
+ * Uploads a file (such as a source tarball) to S3 using SigV4 PutObject.
  */
 export async function putS3SourceArchive(
   env: any,
-  params: {
-    bucket?: string;
-    key: string;
-    body: Buffer | Uint8Array;
-    contentType?: string;
-  }
-): Promise<{ success: boolean; error?: string; status?: number }> {
+  params: S3PutObjectOptions
+): Promise<{ success: boolean; eTag?: string; error?: string; status?: number }> {
   const creds = getAwsCredentials(env);
   const bucket = params.bucket || env?.AWS_S3_BUILD_BUCKET || DEFAULT_AWS_S3_BUILD_BUCKET;
   const region = creds.region || DEFAULT_AWS_REGION;
-  const url = `https://${bucket}.s3.${region}.amazonaws.com/${params.key}`;
+  const cleanKey = params.key.startsWith('/') ? params.key.slice(1) : params.key;
+  const url = `https://${bucket}.s3.${region}.amazonaws.com/${cleanKey}`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': params.contentType || 'application/x-tar'
+  };
 
   try {
     const res = await awsFetch(env, {
       service: 's3',
       method: 'PUT',
       url,
-      headers: {
-        'Content-Type': params.contentType || 'application/x-tar'
-      },
+      headers,
       body: params.body
     });
 
@@ -126,15 +132,20 @@ export async function putS3SourceArchive(
       return {
         success: false,
         status: res.status,
-        error: `S3 PutObject failed with HTTP ${res.status}: ${errText || res.statusText}`
+        error: `S3 PutObject failed with HTTP ${res.status}: ${errText}`
       };
     }
 
-    return { success: true, status: res.status };
+    const eTag = res.headers.get('etag')?.replace(/"/g, '') || undefined;
+    return {
+      success: true,
+      eTag,
+      status: res.status
+    };
   } catch (err: any) {
     return {
       success: false,
-      error: `S3 PutObject network failure: ${err?.message || String(err)}`
+      error: err.message || 'S3 PutObject failed'
     };
   }
 }
@@ -154,6 +165,7 @@ export async function startCodeBuild(
     projectName?: string;
     project?: string;
     envOverrides: Record<string, string>;
+    buildspecOverride?: string;
   }
 ): Promise<{
   success: boolean;
@@ -199,10 +211,14 @@ export async function startCodeBuild(
     type: 'PLAINTEXT'
   }));
 
-  const payload = {
+  // Ops assumption: the nsw-build / nsw-deploy CodeBuild projects must permit a StartBuild buildspec override.
+  const payload: any = {
     projectName,
     environmentVariablesOverride: envList
   };
+  if (params.buildspecOverride && params.buildspecOverride.trim()) {
+    payload.buildspecOverride = params.buildspecOverride;
+  }
 
   try {
     const res = await awsFetch(env, {
