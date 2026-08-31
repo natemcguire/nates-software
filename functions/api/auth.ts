@@ -2,9 +2,11 @@
 // POST /api/auth?action=login
 // POST /api/auth?action=logout
 // POST /api/auth?action=claim-credentials
+// POST /api/auth?action=create-cli-token
 // GET  /api/auth?action=me
 
 import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
+import { requireAuth } from './_auth';
 
 // Constant-time string comparison using SHA-256 digest XOR to prevent timing leaks
 async function timingSafeEqual(a: string, b: string): Promise<boolean> {
@@ -381,6 +383,41 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: true, message: 'Logged out' }, {
         headers: {
           'Set-Cookie': sessionCookie(request, '', 0)
+        }
+      });
+    }
+
+    if (action === 'create-cli-token') {
+      const { user, errorResponse } = await requireAuth(request, env);
+      if (errorResponse) {
+        return errorResponse;
+      }
+      if (!user) {
+        return Response.json({ success: false, error: 'Unauthorized: Valid authenticated session required' }, { status: 401 });
+      }
+
+      if (!env || !env.DB) {
+        return Response.json({ success: false, error: 'Authentication database unavailable' }, { status: 503 });
+      }
+
+      const token = generateSessionToken();
+      const expiresAt = Date.now() + 90 * 24 * 3600 * 1000;
+
+      await env.DB.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, ?, ?)
+      `).bind(await hashSessionToken(token), user.id, expiresAt).run();
+
+      return Response.json({
+        success: true,
+        token,
+        expiresAt,
+        user: {
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatar: user.avatar,
+          role: user.role
         }
       });
     }

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Key, HardDrive, MessageSquare, Check, Sparkles,
   DollarSign, RefreshCw, AlertTriangle, ExternalLink, Download,
-  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft
+  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
@@ -62,6 +62,43 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // CLI Access Token States
+  const [cliToken, setCliToken] = useState<string | null>(null);
+  const [isGeneratingCliToken, setIsGeneratingCliToken] = useState(false);
+  const [cliTokenError, setCliTokenError] = useState<string | null>(null);
+  const [cliTokenCopied, setCliTokenCopied] = useState(false);
+
+  const handleGenerateCliToken = async () => {
+    setCliTokenError(null);
+    setIsGeneratingCliToken(true);
+    playClickSound();
+    try {
+      const res = await fetch('/api/auth?action=create-cli-token', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Failed to generate CLI token (${res.status})`);
+      }
+      setCliToken(data.token);
+      playSuccessChime();
+    } catch (err: any) {
+      setCliTokenError(err.message || 'Failed to generate CLI token');
+    } finally {
+      setIsGeneratingCliToken(false);
+    }
+  };
+
+  const handleCopyCliToken = () => {
+    if (!cliToken) return;
+    playSuccessChime();
+    navigator.clipboard.writeText(cliToken);
+    setCliTokenCopied(true);
+    setTimeout(() => setCliTokenCopied(false), 2500);
+  };
 
   // Load Profile & Shelf Data
   const loadProfileAndShelf = useCallback(async () => {
@@ -655,6 +692,73 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                 placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... user@machine"
               />
               <p className="text-gray-500 text-[11px] mt-1">Registers this public key for GITSMITH authorization. A clone/push address appears only after that repository's SSH transport is activated.</p>
+            </div>
+
+            {/* CLI Access Section */}
+            <div className="bg-gray-50 border-2 border-gray-400 p-3 rounded space-y-2 mt-3">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
+                  <Terminal size={14} className="text-blue-700" />
+                  <span>CLI Access (<code className="font-mono">slop</code> CLI)</span>
+                </div>
+                {!cliToken && (
+                  <button
+                    type="button"
+                    onClick={handleGenerateCliToken}
+                    disabled={isGeneratingCliToken}
+                    className="btn-w95 px-3 py-1 text-xs font-bold flex items-center gap-1"
+                  >
+                    {isGeneratingCliToken ? <RefreshCw size={12} className="animate-spin" /> : <Key size={12} />}
+                    <span>{isGeneratingCliToken ? 'Generating...' : 'Generate CLI token'}</span>
+                  </button>
+                )}
+              </div>
+
+              <p className="text-gray-600 text-[11px]">
+                Generate a durable personal access token to authenticate the <code className="bg-gray-200 px-1 py-0.5 rounded font-mono text-gray-800">slop</code> CLI on your machine.
+              </p>
+
+              {cliTokenError && (
+                <div className="bg-red-50 border border-red-500 p-2 rounded text-red-800 text-xs flex items-center gap-1.5">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  <span>{cliTokenError}</span>
+                </div>
+              )}
+
+              {cliToken && (
+                <div className="space-y-2 pt-1 border-t border-gray-300">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={cliToken}
+                      onFocus={(e) => e.target.select()}
+                      className="flex-1 p-1.5 border border-gray-400 font-mono text-xs bg-white text-gray-900 select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyCliToken}
+                      className="btn-w95 btn-w95-primary px-3 py-1.5 text-xs font-bold flex items-center gap-1 shrink-0"
+                    >
+                      {cliTokenCopied ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{cliTokenCopied ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGenerateCliToken}
+                      disabled={isGeneratingCliToken}
+                      className="btn-w95 px-2.5 py-1.5 text-xs font-bold shrink-0"
+                      title="Generate a new token"
+                    >
+                      {isGeneratingCliToken ? <RefreshCw size={12} className="animate-spin" /> : 'New Token'}
+                    </button>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-300 p-2 rounded text-amber-900 text-xs flex items-center gap-1.5 font-medium">
+                    <Sparkles size={13} className="text-amber-600 shrink-0" />
+                    <span>Run <code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-black font-bold">slop login</code> and paste this token. It won't be shown again.</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="pt-3 border-t border-gray-300 flex justify-between items-center">

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Sparkles, Terminal, ArrowRight, Check, Copy, ShieldCheck, ExternalLink, Play, Bot } from 'lucide-react';
+import { Sparkles, Terminal, ArrowRight, Check, Copy, ShieldCheck, ExternalLink, Play, Key, RefreshCw } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
+import { ForkWithAiModal } from '../components/ForkWithAiModal';
 
 interface StarterApp {
   id: string;
@@ -62,6 +63,42 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   const [selectedStarter, setSelectedStarter] = useState<StarterApp>(STARTERS[0]);
   const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
   const [copiedCmd, setCopiedCmd] = useState(false);
+  const [isForkModalOpen, setIsForkModalOpen] = useState(false);
+  const [cliToken, setCliToken] = useState<string | null>(null);
+  const [isGeneratingCliToken, setIsGeneratingCliToken] = useState(false);
+  const [cliTokenCopied, setCliTokenCopied] = useState(false);
+
+  const handleGenerateCliToken = async () => {
+    setIsGeneratingCliToken(true);
+    playClickSound();
+    try {
+      const res = await fetch('/api/auth?action=create-cli-token', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Failed to generate CLI token (${res.status})`);
+      }
+      setCliToken(data.token);
+      playSuccessChime();
+      showAlert("CLI token generated! Run `slop login` in your terminal to authenticate.", "CLI Token Created", "success");
+    } catch (err: any) {
+      showAlert(err.message || 'Failed to generate CLI token', "Token Error", "error");
+    } finally {
+      setIsGeneratingCliToken(false);
+    }
+  };
+
+  const handleCopyCliToken = () => {
+    if (!cliToken) return;
+    playSuccessChime();
+    navigator.clipboard.writeText(cliToken);
+    setCliTokenCopied(true);
+    setTimeout(() => setCliTokenCopied(false), 2000);
+    showAlert("CLI token copied to clipboard.", "Token Copied", "success");
+  };
 
   const getCommandForTool = () => {
     return `slop fork nate/${selectedStarter.id}`;
@@ -152,6 +189,30 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               ))}
             </div>
 
+            {/* Primary 1-Click In-Browser Fork Action */}
+            <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 p-3 rounded border-2 border-blue-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="text-white">
+                <div className="font-bold text-xs flex items-center gap-1.5 text-amber-400">
+                  <Sparkles size={13} />
+                  <span>Primary Launchpad (In-Browser Fork)</span>
+                </div>
+                <div className="text-blue-200 text-[11px] mt-0.5">
+                  Provisions a real Git forge repository with immutable parent lineage and AI prompting.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setIsForkModalOpen(true);
+                }}
+                className="btn-w95 btn-w95-primary px-4 py-2 font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 shadow"
+              >
+                <Sparkles size={13} className="text-yellow-300" />
+                <span>1-Click Browser Fork</span>
+              </button>
+            </div>
+
             {/* Identity boundary */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono">
               <div className="space-y-0.5">
@@ -159,9 +220,41 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <div className="text-gray-500 text-[11px]">Create your maker username to publish and sell — or log in if you already have one.</div>
               </div>
               {user ? (
-                <div className="bg-emerald-50 border border-emerald-400 px-2.5 py-1 rounded text-emerald-900 font-bold flex items-center gap-1.5 shrink-0 self-start sm:self-auto text-xs">
-                  <Check size={13} className="text-emerald-600 shrink-0" />
-                  <span>Signed in as @{user.username}</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0 self-start sm:self-auto">
+                  <div className="bg-emerald-50 border border-emerald-400 px-2.5 py-1 rounded text-emerald-900 font-bold flex items-center gap-1.5 text-xs">
+                    <Check size={13} className="text-emerald-600 shrink-0" />
+                    <span>Signed in as @{user.username}</span>
+                  </div>
+                  {!cliToken ? (
+                    <button
+                      type="button"
+                      onClick={handleGenerateCliToken}
+                      disabled={isGeneratingCliToken}
+                      className="btn-w95 px-2.5 py-1 font-bold text-xs flex items-center gap-1 text-gray-800"
+                      title="Generate a durable personal access token for slop login"
+                    >
+                      {isGeneratingCliToken ? <RefreshCw size={12} className="animate-spin" /> : <Key size={12} />}
+                      <span>Generate CLI Token</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded">
+                      <input
+                        type="text"
+                        readOnly
+                        value={cliToken}
+                        onFocus={(e) => e.target.select()}
+                        className="w-24 p-1 border border-gray-400 font-mono text-[10px] bg-white select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCopyCliToken}
+                        className="btn-w95 btn-w95-primary px-2 py-0.5 text-[10px] font-bold flex items-center gap-1"
+                      >
+                        {cliTokenCopied ? <Check size={10} /> : <Copy size={10} />}
+                        <span>{cliTokenCopied ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
@@ -195,11 +288,11 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           <div className="space-y-4 max-w-2xl mx-auto w-full">
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
               <div className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
-                <Bot size={15} className="text-purple-600" />
-                <span>Step 2: Install, Then Start Your Engines</span>
+                <Terminal size={15} className="text-purple-600" />
+                <span>Step 2: Local CLI Development &amp; AI Engines (Optional)</span>
               </div>
               <p className="text-gray-600 text-xs">
-                Copy the install command into a native terminal. After <strong>{selectedStarter.name}</strong> is fully installed, SLOP asks which LLM or IDE to launch. Choosing nothing leaves the ready fork untouched.
+                To edit locally on your machine, authenticate once via <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop login</code> using your CLI token. Then run <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop fork</code> to clone <strong>{selectedStarter.name}</strong> into an isolated worktree and launch your AI coding engine.
               </p>
             </div>
 
@@ -229,24 +322,31 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             {/* Command Box */}
             <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
               <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
-                  <span>Native Terminal Install</span>
-                <span className="text-emerald-400">Runtime &amp; Storage Independent</span>
+                <span>Native Terminal Developer Commands</span>
+                <span className="text-emerald-400">Authenticated Lineage</span>
               </div>
 
-              <div className="text-emerald-300 whitespace-pre-wrap break-all leading-relaxed py-1 bg-black/50 p-2 rounded border border-slate-800 select-text">
-                {getCommandForTool()}
+              <div className="space-y-1.5 select-text py-1">
+                <div className="text-gray-400 text-[10px]"># 1. Authenticate CLI with your token from PROFILE.CFG:</div>
+                <div className="text-amber-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
+                  slop login
+                </div>
+                <div className="text-gray-400 text-[10px] pt-1"># 2. Fork and clone into local worktree:</div>
+                <div className="text-emerald-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
+                  {getCommandForTool()}
+                </div>
               </div>
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-slate-500 text-[10px]">
-                  Preferred engine: {activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : activeTool === 'cursor' ? 'Cursor' : 'choose later'} — selected only after install
+                  Preferred engine: {activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : activeTool === 'cursor' ? 'Cursor' : 'choose later'} — selected after install
                 </span>
                 <button
                   onClick={handleCopyCommand}
                   className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
                 >
                   {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copiedCmd ? 'Copied!' : 'Copy Install Command'}</span>
+                  <span>{copiedCmd ? 'Copied!' : 'Copy Fork Command'}</span>
                 </button>
               </div>
             </div>
@@ -378,6 +478,32 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* 1-Click In-Browser Fork Modal */}
+      <ForkWithAiModal
+        isOpen={isForkModalOpen}
+        onClose={() => setIsForkModalOpen(false)}
+        app={{
+          id: selectedStarter.id,
+          name: selectedStarter.name,
+          avatar: selectedStarter.avatar,
+          tagline: selectedStarter.tagline,
+          price: parseFloat(selectedStarter.price.replace(/[^0-9.]/g, '')) || 15,
+          category: selectedStarter.category,
+          hasCanonicalRepo: true,
+          isRepoActive: true,
+          repoSlug: `nate/${selectedStarter.id}`,
+          repoName: selectedStarter.id,
+          repoOwner: 'nate'
+        }}
+        onLaunchTerminal={(cmd) => {
+          setIsForkModalOpen(false);
+          if (onOpenTerminal) onOpenTerminal(cmd);
+        }}
+        onForkSuccess={(_forkData) => {
+          showAlert(`Successfully forked ${selectedStarter.name} on the GITSMITH forge!`, "Fork Created", "success");
+        }}
+      />
     </div>
   );
 };
