@@ -118,7 +118,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       const errMsg = err?.message || 'Upvote rejected';
       if (errMsg.includes('not found') || errMsg.includes('404')) {
         showAlert(
-          `Cannot upvote demo/offline drop on the live network. Only registered live D1 drops can receive cryptographic upvotes.`,
+          `You can only upvote real drops that are live on the board. This one is demo or offline data.`,
           "Upvote Rejected",
           "warning"
         );
@@ -356,7 +356,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                             <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
                           </div>
                           <div className="text-[10px] text-slate-600">
-                            {maker.bio || 'Verified Local-First shareware maker.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
+                            {maker.bio || 'Ships software people can own.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
                           </div>
                         </div>
                       </div>

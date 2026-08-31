@@ -223,7 +223,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                   ● NOT SIGNED IN
                 </span>
               </div>
-              <p className="text-blue-100 text-xs mt-0.5">Authenticate to manage your personal shelf, GITSMITH SSH keys, and lineage royalties.</p>
+              <p className="text-blue-100 text-xs mt-0.5">Sign in to see your shelf, your SSH keys, and what you've earned.</p>
             </div>
           </div>
         </div>
@@ -512,13 +512,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
               <div>
                 <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
                   <Sparkles size={13} className="text-amber-400" />
-                  <span>Lifetime Allocations · 70/20/10 Lineage Protocol</span>
+                  <span>Total earned · your 70% + 20% from forks</span>
                 </div>
                 <div className="text-3xl font-bold font-mono text-white mt-1">
                   {formatCentsToUsd(royalties.makerBalanceCents)} <span className="text-xs text-emerald-400 font-normal">USD</span>
                 </div>
                 <div className="text-xs text-slate-300 mt-0.5">
-                  {formatCentsToUsd(royalties.makerSalesCents)} Maker Sales (70%) · {formatCentsToUsd(royalties.lineageEarnedCents)} Ancestor Lineage (20%)
+                  {formatCentsToUsd(royalties.makerSalesCents)} from your sales (70%) · {formatCentsToUsd(royalties.lineageEarnedCents)} from forks of your apps (20%)
                 </div>
               </div>
 
@@ -531,14 +531,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
 
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
               <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
-                <span>Active Shareware Lineage Breakdown</span>
-                <span className="text-[10px] font-mono text-gray-500">Recorded from fulfilled-order allocations</span>
+                <span>Earnings by app</span>
+                <span className="text-[10px] font-mono text-gray-500">From completed orders</span>
               </div>
 
               {royalties.lineageBreakdown.length === 0 ? (
                 <div className="p-6 text-center text-gray-500 text-xs space-y-1">
-                  <p className="font-bold">No Active Lineage Allocations</p>
-                  <p>When users buy your software or downstream forks of your apps, 70% maker and 20% lineage splits appear here.</p>
+                  <p className="font-bold">Nothing here yet</p>
+                  <p>Sell an app and you keep 70%. When someone sells a fork of your app, you earn 20% of that too. It all shows up here.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -616,7 +616,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
               </div>
 
               <div>
-                <label className="font-bold text-gray-800 block mb-1 text-xs">Stripe Payouts (70% Maker / 20% Lineage):</label>
+                <label className="font-bold text-gray-800 block mb-1 text-xs">Get paid via Stripe (your 70% + 20% from forks):</label>
                 <div className="bg-green-50 border border-green-300 p-1.5 rounded flex items-center justify-between text-xs text-green-900">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold font-mono text-[11px]">

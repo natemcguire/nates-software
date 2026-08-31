@@ -556,9 +556,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             </div>
 
             <div className="border border-slate-700 rounded-lg p-3 bg-slate-900/60 space-y-2">
-              <div className="font-bold text-xs text-white">70 / 20 / 10 Revenue Settlement Rule</div>
+              <div className="font-bold text-xs text-white">How a sale splits: 70 / 20 / 10</div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                When any downstream maker forks <strong>{app.name}</strong> and receives license payments, the revenue protocol automatically deposits <strong>70%</strong> to the fork author, <strong>20%</strong> to @{app.author || app.creator}, and <strong>10%</strong> to the perpetual protocol pool.
+                Someone forks <strong>{app.name}</strong>, sells their version, and the money splits on its own: <strong>70%</strong> to whoever sold it, <strong>20%</strong> back to @{app.author || app.creator} for building the original, and <strong>10%</strong> to the platform.
               </p>
             </div>
 
@@ -700,7 +700,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               </div>
               <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between font-mono text-[11px]">
                 <code className="text-amber-300">git push origin my-feature-branch</code>
-                <span className="text-slate-500 text-[10px]">20% lineage royalty automatically settled to @{app.author || app.creator}</span>
+                <span className="text-slate-500 text-[10px]">If your version sells, @{app.author || app.creator} gets 20%</span>
               </div>
             </div>
 

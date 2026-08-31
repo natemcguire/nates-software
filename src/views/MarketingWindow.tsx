@@ -29,14 +29,48 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           Stop renting software. Own your files. Mod with AI.
         </div>
         <p className="text-gray-700 text-sm max-w-3xl mx-auto leading-relaxed">
-          Nate's Software is a consumer marketplace for shareware you actually keep.
-          You walk out with the running web app, a clean Git repository, runtime- and storage-independent architecture (with optional single-file persistence),
-          and native binaries for macOS (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.dmg</code>), Windows (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.exe</code>), Linux, and iOS.
+          A marketplace for software you buy once and keep. Every app comes with the running web version,
+          the full source in a Git repo, native installers (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.dmg</code>, <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.exe</code>, and more),
+          and a real license key with your name on it. No subscription, ever.
         </p>
       </div>
 
+      {/* How it works + Navigation Grid (shared scroll area) */}
+      <div className="flex-1 overflow-y-auto mb-3">
+
+      {/* How it works */}
+      <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
+        <div className="text-w95-blue font-bold text-base mb-2">How it works</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-700 text-xs leading-relaxed">
+          <div>
+            <div className="font-bold text-gray-900 mb-0.5">Buy it, own it</div>
+            Buy an app once. It's yours: the live web app, the source repo, native installers,
+            and a license key. Cancel nothing, because there's nothing to cancel.
+          </div>
+          <div>
+            <div className="font-bold text-gray-900 mb-0.5">Publish and sell</div>
+            Push your code to our forge and it builds and goes live on its own URL. No Dockerfile,
+            no servers to set up. List it, set a price, drop it on HOTWIRE, and people buy it.
+          </div>
+          <div>
+            <div className="font-bold text-gray-900 mb-0.5">Get paid on every sale</div>
+            You keep <strong className="text-green-800">70%</strong>. <strong>20%</strong> goes up the chain
+            to the makers you forked from. <strong>10%</strong> keeps the lights on here. Built something
+            original with no parents? That 20% comes back to you, so it's <strong>90% you / 10% us</strong>.
+          </div>
+          <div>
+            <div className="font-bold text-gray-900 mb-0.5">Fork and remix</div>
+            Fork anyone's app, change it with AI in SLOPSHOP or the <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI,
+            and sell your version. When your fork sells, the makers you built on earn that 20% too. Forks of forks pay everyone up the line.
+          </div>
+        </div>
+        <div className="text-[11px] text-gray-500 mt-2.5 border-t border-gray-200 pt-2">
+          Coming soon: put a slice of your app's future sales up for grabs. Contribute code that gets merged, and you earn a cut of every sale from then on.
+        </div>
+      </div>
+
       {/* 6 Standalone Engines & Navigation Grid */}
-      <div className="grid grid-cols-3 gap-3 flex-1 overflow-y-auto mb-3">
+      <div className="grid grid-cols-3 gap-3">
         {/* 1. HOTWIRE */}
         <div onClick={onOpenHotwire} className="bg-white border-2 border-gray-800 p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm">
           <div>
@@ -45,7 +79,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-gray-500 font-mono">DROPS</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Daily 12:01 AM drops leaderboard, maker streaks, and app moddability specs.
+              The daily 12:01 AM board where makers drop new apps and people vote them up.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Drops Board &rarr;</span>
@@ -59,7 +93,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-gray-500 font-mono">AI SHOP</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              The AI speed shop: 1-click forking, AST feature splicing &amp; Claude/Codex launchers.
+              Fork any app in one click, then add features with Claude or Codex right in the browser.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Enter Mod Bay &rarr;</span>
@@ -73,7 +107,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-gray-500 font-mono">RUNTIME</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Zero-fuss micro-container runtime with modular persistence &amp; scale-to-zero.
+              Runs your app in a sandboxed container. It sleeps when idle, so you don't pay for nothing.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Inspect Dynos (Ports 3001..3010) &rarr;</span>
@@ -115,11 +149,12 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               <span className="text-xs text-green-700 font-bold font-mono">@nate</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
-              Maker identity, verified SSH keys, protocol revenue wallet, and your Shareware shelf.
+              Your maker page, SSH keys, earnings, and the shelf of apps you own.
             </p>
           </div>
           <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Profile &amp; Shelf &rarr;</span>
         </div>
+      </div>
       </div>
 
       {/* Footer Controls */}

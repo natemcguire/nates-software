@@ -10,9 +10,11 @@ export interface CheckoutModalProps {
     name: string;
     version: string;
     creator?: string;
+    author?: string;
     creatorAvatar?: string;
     authorAvatar?: string;
     price?: string | number;
+    forkDepth?: number;
   };
 }
 
@@ -27,9 +29,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   if (app.id === 'american-gardener') priceCents = 2500;
   if (app.id === 'wallart') priceCents = 5900;
 
-  const makerCents = Math.floor(priceCents * 0.70);
-  const lineageCents = Math.floor(priceCents * 0.20);
-  const platformCents = priceCents - makerCents - lineageCents;
+  // Root/original apps (no ancestors) split 90% maker / 10% platform — there's no
+  // "forked from" app to pay. Forks split 70/20/10. This mirrors the real ledger
+  // (calculateAllocations): a root app's unused 20% lineage returns to the maker.
+  const isFork = (app.forkDepth ?? 0) > 0;
+  const platformCents = Math.floor(priceCents * 0.10);
+  const lineageCents = isFork ? Math.floor(priceCents * 0.20) : 0;
+  const makerCents = priceCents - lineageCents - platformCents;
 
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +87,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                   <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
                   <div>
                     <div className="font-bold text-gray-900 text-sm">{app.name}</div>
-                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Runtime &amp; storage defined by maker</div>
+                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Yours to keep: app, source, and license</div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -94,18 +100,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
               <div className="bg-blue-50 border border-blue-300 p-2.5 rounded font-mono text-[11px] space-y-1">
                 <div className="font-bold text-blue-950 flex items-center gap-1">
                   <Sparkles size={12} className="text-amber-600" />
-                  <span>Automated Lineage Royalty Split:</span>
+                  <span>Where your money goes:</span>
                 </div>
                 <div className="flex justify-between text-gray-700">
-                  <span>⚡ 70% Fork Maker (@nate):</span>
+                  <span>⚡ {isFork ? '70%' : '90%'} to the maker ({app.creator || app.author ? `@${app.creator || app.author}` : '@nate'}):</span>
                   <span className="font-bold">${(makerCents / 100).toFixed(2)}</span>
                 </div>
+                {isFork && (
+                  <div className="flex justify-between text-gray-700">
+                    <span>💎 20% to the apps it was forked from:</span>
+                    <span className="font-bold">${(lineageCents / 100).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-700">
-                  <span>💎 20% Lineage Ancestors:</span>
-                  <span className="font-bold">${(lineageCents / 100).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-700">
-                  <span>🛡️ 10% Protocol Pool:</span>
+                  <span>🛡️ 10% to the platform:</span>
                   <span className="font-bold">${(platformCents / 100).toFixed(2)}</span>
                 </div>
               </div>
@@ -115,8 +123,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 <div>
                   <div className="font-bold">Checkout is being commissioned.</div>
                   <div className="mt-1 leading-relaxed">
-                    Card details are not collected here. Purchases will open only after secure Stripe checkout,
-                    durable orders, license delivery, and lineage settlement are verified together.
+                    We don't take card details here yet. Buying turns on once Stripe checkout, your order,
+                    license delivery, and the payout split all work together end to end.
                   </div>
                 </div>
               </div>

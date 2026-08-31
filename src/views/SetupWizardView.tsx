@@ -112,10 +112,10 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
               <div className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
                 <Sparkles size={14} className="text-amber-500" />
-                <span>Step 1: Choose a Local-First Starter App to Fork</span>
+                <span>Step 1: Pick a starter app to fork</span>
               </div>
               <p className="text-gray-600 text-xs">
-                Pick one of Nate's 3 flagship shareware apps. Built with modular, runtime- and storage-independent architectures with automated 70/20/10 royalty lineage.
+                Fork one of Nate's apps to make it your own. If you sell your version later, you keep 70% and 20% flows back to the app you forked from.
               </p>
             </div>
 
@@ -230,7 +230,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
               <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
                   <span>Native Terminal Install</span>
-                <span className="text-emerald-400">Runtime &amp; Storage Independent</span>
+                <span className="text-emerald-400">Runs on your machine</span>
               </div>
 
               <div className="text-emerald-300 whitespace-pre-wrap break-all leading-relaxed py-1 bg-black/50 p-2 rounded border border-slate-800 select-text">
@@ -293,19 +293,19 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 text-white p-4 rounded border border-blue-700 shadow font-mono text-xs space-y-2">
               <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
                 <ShieldCheck size={14} />
-                <span>If You Later Publish and Complete a Sale:</span>
+                <span>If you publish and sell your fork:</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>⚡ Immediate fork maker:</span>
-                <span className="font-bold text-emerald-400">70% of distributable revenue</span>
+                <span>⚡ You, the seller:</span>
+                <span className="font-bold text-emerald-400">70% of the sale</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>💎 Eligible upstream lineage:</span>
-                <span className="font-bold text-blue-300">20% under frozen sale policy</span>
+                <span>💎 The app you forked from:</span>
+                <span className="font-bold text-blue-300">20%</span>
               </div>
               <div className="flex justify-between text-gray-300">
-                <span>🛡️ Protocol Liquidity Pool:</span>
-                <span className="font-bold text-purple-300">10% under frozen sale policy</span>
+                <span>🛡️ The platform:</span>
+                <span className="font-bold text-purple-300">10%</span>
               </div>
               <div className="text-[10px] text-blue-300 pt-1">No entitlement or payout is created by this wizard.</div>
             </div>
