@@ -3,8 +3,6 @@ import {
   IrcMessage,
   IrcUser,
   DEFAULT_CHANNEL,
-  INITIAL_ONLINE_USERS,
-  INITIAL_CHAT_MESSAGES,
   formatIrcTime,
   parseUserChatInput,
   filterUnexpiredIrcMessages
@@ -22,9 +20,10 @@ import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 
 export const ChatView: React.FC = () => {
-  const [messages, setMessages] = useState<IrcMessage[]>(INITIAL_CHAT_MESSAGES);
-  const [users, setUsers] = useState<IrcUser[]>(INITIAL_ONLINE_USERS);
-  const [currentNick, setCurrentNick] = useState<string>('nate');
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<IrcMessage[]>([]);
+  const [users, setUsers] = useState<IrcUser[]>([]);
+  const [currentNick, setCurrentNick] = useState<string>(user?.username || 'guest');
   const [inputVal, setInputVal] = useState<string>('');
   const [topic, setTopic] = useState<string>("Welcome to Nate's Software Global Lounge · 12:01 AM UTC Daily Releases & Indie Modding");
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
@@ -41,43 +40,79 @@ export const ChatView: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  const { user } = useAuth();
-
   // Sync current nick with logged-in user
   useEffect(() => {
-    if (user && user.username) {
-      setCurrentNick(user.username);
-    }
+    setCurrentNick(user?.username || 'guest');
   }, [user]);
 
-  // Live 3-Second Heartbeat Polling for #lounge
+  // Heartbeat: register online presence for authenticated users
+  useEffect(() => {
+    if (!user) return;
+
+    const sendHeartbeat = () => {
+      fetch('/api/chat?action=heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: DEFAULT_CHANNEL })
+      }).catch(() => {});
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 20000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Live Heartbeat & Message Polling for #lounge
   useEffect(() => {
     const fetchLatestMessages = () => {
-      fetch('/api/chat?channel=%23lounge')
+      fetch(`/api/chat?channel=${encodeURIComponent(DEFAULT_CHANNEL)}`)
         .then(res => res.json())
         .then(data => {
-          if (data.success && data.messages && data.messages.length > 0) {
-            const apiMsgs: IrcMessage[] = data.messages.map((m: any) => ({
-              id: m.id,
-              channel: m.channel,
-              sender: m.sender,
-              type: m.type || 'PRIVMSG',
-              text: m.text,
-              isOp: m.sender === 'nate' || m.sender === 'josh',
-              timestamp: m.timestamp || new Date().toISOString(),
-              timeFormatted: formatIrcTime(new Date(m.timestamp || Date.now()))
-            }));
+          if (data.success) {
+            // 1. Topic
+            if (typeof data.topic === 'string' && data.topic) {
+              setTopic(data.topic);
+            }
 
-            setMessages(prev => {
-              const existingIds = new Set(prev.map(p => p.id));
-              const newOnes = apiMsgs.filter(m => !existingIds.has(m.id));
-              if (newOnes.length > 0) {
-                // Play notification chime for incoming messages from others
-                const fromOther = newOnes.some(n => n.sender !== currentNick);
-                if (fromOther) playSuccessChime();
-              }
-              return filterUnexpiredIrcMessages([...prev, ...newOnes]);
-            });
+            // 2. Presence
+            if (Array.isArray(data.presence)) {
+              const liveUsers: IrcUser[] = data.presence.map((p: any) => ({
+                nick: p.nick,
+                displayName: p.displayName,
+                isOp: Boolean(p.isOp),
+                isVoiced: true,
+                avatar: p.avatar || (p.isOp ? '🎯' : '👤')
+              }));
+              setUsers(liveUsers);
+            }
+
+            // 3. Messages
+            if (Array.isArray(data.messages)) {
+              const apiMsgs: IrcMessage[] = data.messages.map((m: any) => ({
+                id: m.id,
+                channel: m.channel,
+                sender: m.sender,
+                type: m.type || 'PRIVMSG',
+                text: m.text,
+                isOp: Boolean(m.isOp),
+                timestamp: m.timestamp || new Date().toISOString(),
+                timeFormatted: formatIrcTime(new Date(m.timestamp || Date.now()))
+              }));
+
+              setMessages(prev => {
+                const existingIds = new Set(prev.map(p => p.id));
+                const newOnes = apiMsgs.filter(m => !existingIds.has(m.id));
+                if (newOnes.length > 0 && prev.length > 0) {
+                  // Play chime for incoming messages from others
+                  const myNick = user?.username || 'guest';
+                  const fromOther = newOnes.some(n => n.sender !== myNick && n.sender !== 'System');
+                  if (fromOther) playSuccessChime();
+                }
+                return filterUnexpiredIrcMessages(
+                  prev.length === 0 ? apiMsgs : [...prev, ...newOnes]
+                );
+              });
+            }
           }
         })
         .catch(() => {});
@@ -86,7 +121,7 @@ export const ChatView: React.FC = () => {
     fetchLatestMessages();
     const interval = setInterval(fetchLatestMessages, 3000);
     return () => clearInterval(interval);
-  }, [currentNick]);
+  }, [user]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,35 +144,58 @@ export const ChatView: React.FC = () => {
     }
 
     if (parsed.command === 'NICK') {
-      const newNick = parsed.args[0];
-      if (newNick) {
-        const oldNick = currentNick;
-        setCurrentNick(newNick);
-        setUsers(prev => prev.map(u => u.nick === oldNick ? { ...u, nick: newNick } : u));
-        const nickMsg: IrcMessage = {
-          id: `msg-${Date.now()}`,
-          channel: DEFAULT_CHANNEL,
-          sender: 'System',
-          type: 'NICK',
-          text: `*** ${oldNick} is now known as ${newNick}`,
-          timestamp: new Date().toISOString(),
-          timeFormatted: formatIrcTime()
-        };
-        setMessages(prev => [...prev, nickMsg]);
-      }
+      const boundNick = user ? `@${user.username}` : 'guest';
+      const nickMsg: IrcMessage = {
+        id: `msg-${Date.now()}`,
+        channel: DEFAULT_CHANNEL,
+        sender: 'System',
+        type: 'SYSTEM',
+        text: `*** Nicknames are bound to your authenticated account handle (${boundNick}). Nickname changes are not permitted.`,
+        timestamp: new Date().toISOString(),
+        timeFormatted: formatIrcTime()
+      };
+      setMessages(prev => [...prev, nickMsg]);
       return;
     }
 
     if (parsed.command === 'TOPIC') {
-      const newTopic = parsed.args[1];
+      const newTopic = parsed.args.slice(1).join(' ') || parsed.args[1];
       if (newTopic) {
-        setTopic(newTopic);
+        try {
+          const response = await fetch('/api/chat?action=topic', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              channel: DEFAULT_CHANNEL,
+              topic: newTopic
+            })
+          });
+          const data = await response.json();
+          if (!response.ok || !data?.success) {
+            throw new Error(data?.error || 'Topic update failed.');
+          }
+          setTopic(data.topic || newTopic);
+        } catch (error: any) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              channel: DEFAULT_CHANNEL,
+              sender: 'System',
+              type: 'SYSTEM',
+              text: `*** Topic update failed: ${error.message}`,
+              timestamp: new Date().toISOString(),
+              timeFormatted: formatIrcTime()
+            }
+          ]);
+        }
+      } else {
         const topicMsg: IrcMessage = {
           id: `msg-${Date.now()}`,
           channel: DEFAULT_CHANNEL,
           sender: 'System',
-          type: 'TOPIC',
-          text: `*** ${currentNick} changed topic to: "${newTopic}"`,
+          type: 'SYSTEM',
+          text: `*** Topic for ${DEFAULT_CHANNEL}: "${topic}"`,
           timestamp: new Date().toISOString(),
           timeFormatted: formatIrcTime()
         };
@@ -147,7 +205,9 @@ export const ChatView: React.FC = () => {
     }
 
     if (parsed.command === 'NAMES' || parsed.command === 'WHO') {
-      const namesList = users.map(u => (u.isOp ? `@${u.nick}` : u.isVoiced ? `+${u.nick}` : u.nick)).join(' ');
+      const namesList = users.length > 0
+        ? users.map(u => (u.isOp ? `@${u.nick}` : u.isVoiced ? `+${u.nick}` : u.nick)).join(' ')
+        : 'None';
       const namesMsg: IrcMessage = {
         id: `msg-${Date.now()}`,
         channel: DEFAULT_CHANNEL,
@@ -162,30 +222,30 @@ export const ChatView: React.FC = () => {
     }
 
     // Standard PRIVMSG or ACTION (/me)
+    const isUserOp = Boolean(user?.isSuperAdmin || user?.role === 'super_admin');
     const newMsg: IrcMessage = {
       id: `msg-${Date.now()}`,
       channel: DEFAULT_CHANNEL,
-      sender: currentNick,
+      sender: user?.username || 'guest',
       type: parsed.isAction ? 'ACTION' : 'PRIVMSG',
       text: parsed.messageText || raw,
       timestamp: new Date().toISOString(),
       timeFormatted: formatIrcTime(),
-      isOp: true
+      isOp: isUserOp
     };
 
     setMessages(prev => [...prev, newMsg]);
     playSuccessChime();
 
     try {
+      // POST sends channel, type, text. Sender and isOp are strictly derived server-side from session.
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channel: DEFAULT_CHANNEL,
-          sender: currentNick,
           type: newMsg.type,
-          text: newMsg.text,
-          isOp: 1
+          text: newMsg.text
         })
       });
       const data = await response.json();
@@ -196,6 +256,8 @@ export const ChatView: React.FC = () => {
         ...message,
         id: data.message.id,
         sender: data.message.sender,
+        type: data.message.type || message.type,
+        isOp: Boolean(data.message.isOp),
         timestamp: data.message.timestamp,
         timeFormatted: formatIrcTime(new Date(data.message.timestamp))
       } : message));
@@ -250,6 +312,11 @@ export const ChatView: React.FC = () => {
         {/* Left / Message Stream Window (Authentic IRC Slate & Retro styling) */}
         <div className="flex-1 win95-field bg-[#0f172a] text-slate-100 p-3 overflow-y-auto font-mono text-xs space-y-1.5 flex flex-col justify-between border-2 border-gray-600">
           <div className="space-y-1 overflow-y-auto flex-1 pr-1">
+            {messages.length === 0 && (
+              <div className="text-slate-500 text-xs italic py-4 text-center select-none">
+                *** No recent messages in #lounge (24-hour buffer). Say hello!
+              </div>
+            )}
             {messages.map((m) => {
               if (m.type === 'SYSTEM' || m.type === 'TOPIC') {
                 return (
@@ -280,7 +347,6 @@ export const ChatView: React.FC = () => {
               }
 
               // Standard PRIVMSG
-              // const isMe = m.sender === currentNick;
               return (
                 <div key={m.id} className="flex items-start gap-1.5 text-xs leading-relaxed hover:bg-slate-800/40 px-1 py-0.5 rounded transition-colors">
                   <span className="text-slate-500 shrink-0 select-none">[{m.timeFormatted}]</span>
@@ -306,8 +372,14 @@ export const ChatView: React.FC = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-1 font-mono text-xs divide-y divide-gray-100">
+            {users.length === 0 && (
+              <div className="text-gray-400 text-[11px] italic p-2 text-center">
+                No active users
+              </div>
+            )}
             {/* Ops first */}
             {users
+              .slice()
               .sort((a, b) => (b.isOp ? 1 : 0) - (a.isOp ? 1 : 0))
               .map((u) => {
                 const isCurrent = u.nick === currentNick;
@@ -340,7 +412,7 @@ export const ChatView: React.FC = () => {
           </div>
 
           <div className="border-t border-gray-300 pt-2 text-[10px] text-gray-500 font-mono text-center">
-            You are: <strong className="text-blue-900">@{currentNick}</strong>
+            You are: <strong className="text-blue-900">{user ? `@${user.username}` : 'guest'}</strong>
           </div>
         </div>
       </div>
@@ -350,13 +422,13 @@ export const ChatView: React.FC = () => {
         <form onSubmit={handleSendMessage} className="flex-1 flex gap-2">
           <div className="bg-white border-2 border-gray-600 border-t-black border-l-black flex-1 flex items-center px-2 py-1">
             <span className="font-mono text-gray-500 mr-2 text-xs select-none">
-              [{DEFAULT_CHANNEL}] &lt;@{currentNick}&gt;
+              [{DEFAULT_CHANNEL}] &lt;{user ? `@${user.username}` : 'guest'}&gt;
             </span>
             <input
               type="text"
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="Type message or IRC command (/nick, /me, /topic, /who, /clear, /help)..."
+              placeholder={user ? "Type message or IRC command (/me, /topic, /who, /clear, /help)..." : "Log in to post messages to #lounge..."}
               className="flex-1 text-xs font-mono outline-none bg-transparent"
               autoFocus
             />
@@ -388,8 +460,8 @@ export const ChatView: React.FC = () => {
 
             <div className="space-y-2 font-mono text-xs">
               <div className="bg-[#0f172a] p-2.5 rounded border border-slate-700 space-y-1">
-                <div className="text-yellow-300 font-bold">/nick &lt;newname&gt;</div>
-                <p className="text-[11px] text-slate-400">Changes your nickname in the chatroom.</p>
+                <div className="text-yellow-300 font-bold">/nick</div>
+                <p className="text-[11px] text-slate-400">Displays your authenticated account handle (nicknames are bound to your user account).</p>
               </div>
 
               <div className="bg-[#0f172a] p-2.5 rounded border border-slate-700 space-y-1">
