@@ -2,6 +2,9 @@
 // License creation belongs exclusively to the verified commerce fulfillment path.
 import { requireAuth } from './_auth';
 import { safePublishedArtifacts } from '../../src/lib/profileDomain';
+import { handleVerify } from './shelf/verify';
+
+export { handleVerify };
 
 const unavailable = () => Response.json(
   { success: false, error: 'Shelf service is temporarily unavailable' },
@@ -9,6 +12,11 @@ const unavailable = () => Response.json(
 );
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
+  const url = new URL(request.url);
+  if (url.searchParams.get('action') === 'verify') {
+    return handleVerify({ request, env });
+  }
+
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   if (!env?.DB) return unavailable();
