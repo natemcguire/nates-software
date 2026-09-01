@@ -1,5 +1,5 @@
 import { CatalogProvider, useCatalog } from './context/CatalogContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/AuthModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 export interface ResolvedRoute {
@@ -89,7 +89,7 @@ export function resolveAppRoute(
   return { type: 'desktop' };
 }
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GitsmithView } from './views/GitsmithView';
 import { EphemeralLiveApp } from './components/EphemeralLiveApp';
 import type { AppListing } from './data/mockData';
@@ -118,7 +118,37 @@ import { useAlert } from './context/AlertContext';
 function AppInner() {
   const { getApp, submitDrop } = useCatalog();
   const { showAlert } = useAlert();
+  const { isAuthenticated } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
+  const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
+
+  // Poll the lightweight global unread count for the INBOX desktop icon badge.
+  // Never loads message bodies; scoped server-side to the authenticated session.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setInboxUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    const loadUnreadCount = async () => {
+      try {
+        const res = await fetch('/api/inbox?action=unread-count', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data?.success) {
+          setInboxUnreadCount(Number(data.unreadCount) || 0);
+        }
+      } catch {
+        // Badge is best-effort; silently skip on network/parse failure.
+      }
+    };
+    loadUnreadCount();
+    const intervalId = setInterval(loadUnreadCount, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [isAuthenticated]);
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
@@ -427,6 +457,7 @@ function AppInner() {
           label="INBOX (Proposals)"
           icon="📫"
           onClick={() => { playClickSound(); openWindow('inbox'); }}
+          badge={inboxUnreadCount > 0 ? (inboxUnreadCount > 99 ? '99+' : String(inboxUnreadCount)) : undefined}
         />
         <DesktopIcon
           label="DYNO (Speedometer)"

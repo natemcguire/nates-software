@@ -43,6 +43,16 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
 
+    // 0. Global Unread Count Action (lightweight badge query; never loads message bodies)
+    if (action === 'unread-count') {
+      const row = await env.DB.prepare(`
+        SELECT COUNT(*) AS n
+        FROM inbox_messages
+        WHERE user_id = ? AND unread = 1 AND (sender_id IS NULL OR sender_id != ?)
+      `).bind(auth.user!.id, auth.user!.id).first();
+      return Response.json({ success: true, unreadCount: Number((row as any)?.n) || 0 });
+    }
+
     // 1. Proposal Diff Action
     if (action === 'diff') {
       const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId') || url.searchParams.get('mergeAttemptId');

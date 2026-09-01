@@ -9,6 +9,7 @@ import { AuthProvider } from '../src/context/AuthContext';
 import { InboxView } from '../src/views/InboxView';
 import { calculateFolderCounts, conversationForThread, filterThreadsByCategory, formatProposalStatus, InboxThread } from '../src/lib/inboxDomain';
 import { initBareRepo } from '../src/lib/gitsmith/gitStorage';
+import { hashSessionToken } from '../functions/api/_session';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 
 const authHeaders = { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' };
@@ -121,6 +122,61 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect((await (await get()).json() as any).threads).toEqual([]);
     const response = await inboxApi.onRequestGet({ request: new Request('http://localhost/api/inbox', { headers: authHeaders }), env: {} });
     expect(response.status).toBe(503);
+  });
+
+  it('GET ?action=unread-count requires authentication', async () => {
+    const response = await inboxApi.onRequestGet({
+      request: new Request('http://localhost/api/inbox?action=unread-count'),
+      env: { DB: ctx.d1 }
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('GET ?action=unread-count returns a truthful zero for an empty mailbox', async () => {
+    const response = await get('http://localhost/api/inbox?action=unread-count');
+    expect(response.status).toBe(200);
+    const data: any = await response.json();
+    expect(data).toEqual({ success: true, unreadCount: 0 });
+  });
+
+  it('GET ?action=unread-count counts only unread received messages, excluding read and sent mail', async () => {
+    await insertMessage(ownMessage('unread-1', { unread: 1 }));
+    await insertMessage(ownMessage('unread-2', { unread: 1 }));
+    await insertMessage(ownMessage('already-read', { unread: 0 }));
+    // A message the current user sent to someone else must never count, even if flagged unread.
+    await insertMessage({ ...ownMessage('sent-by-me'), user_id: 'usr_sam', sender_id: 'usr_nate', unread: 1 });
+
+    const response = await get('http://localhost/api/inbox?action=unread-count');
+    const data: any = await response.json();
+    expect(data).toEqual({ success: true, unreadCount: 2 });
+  });
+
+  it('GET ?action=unread-count is strictly scoped to the caller and never leaks another mailbox', async () => {
+    // Two unread messages belong to usr_sam; usr_nate (the authenticated caller) has none.
+    await insertMessage({ ...ownMessage('sam-unread-1'), user_id: 'usr_sam', sender_id: 'usr_josh', unread: 1 });
+    await insertMessage({ ...ownMessage('sam-unread-2'), user_id: 'usr_sam', sender_id: 'usr_josh', unread: 1 });
+
+    const nateResponse = await get('http://localhost/api/inbox?action=unread-count');
+    const nateData: any = await nateResponse.json();
+    expect(nateData).toEqual({ success: true, unreadCount: 0 });
+
+    // Mint a real session for usr_sam (not the hardcoded Vitest bypass user) and call the
+    // endpoint for real, proving the SQL binds to the authenticated caller's id, not a
+    // request-supplied value.
+    const samToken = 'real-session-token-for-sam';
+    await ctx.d1.prepare(`
+      INSERT INTO user_sessions (token_hash, user_id, expires_at)
+      VALUES (?, 'usr_sam', ?)
+    `).bind(await hashSessionToken(samToken), Date.now() + 3600 * 1000).run();
+
+    const samResponse = await inboxApi.onRequestGet({
+      request: new Request('http://localhost/api/inbox?action=unread-count', {
+        headers: { Authorization: `Bearer ${samToken}` }
+      }),
+      env: { DB: ctx.d1 }
+    });
+    const samData: any = await samResponse.json();
+    expect(samData).toEqual({ success: true, unreadCount: 2 });
   });
 
   it('uses persisted message_kind rather than guessing from message prose', async () => {
