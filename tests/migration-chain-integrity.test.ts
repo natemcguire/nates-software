@@ -47,7 +47,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0027_app_postgres_addon.sql',
         '0028_user_ssh_keys.sql',
         '0029_contributor_revenue_sharing.sql',
-        '0030_contributor_cap_triggers.sql'
+        '0030_contributor_cap_triggers.sql',
+        '0033_chat_presence_and_topic.sql'
       ]);
     });
 
@@ -133,6 +134,9 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('user_ssh_keys');
       // Migration 0029 contributor shares table
       expect(tables).toContain('contributor_shares');
+      // Migration 0033 chat channels and presence tables
+      expect(tables).toContain('chat_channels');
+      expect(tables).toContain('chat_presence');
     });
 
     it('should create views and triggers defined in migration 0006', () => {
