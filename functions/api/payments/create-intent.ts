@@ -3,7 +3,7 @@
 // Snapshot authoritative price & lineage DAG allocations in D1 and create Stripe PaymentIntent.
 
 import { requireAuth } from '../_auth';
-import { calculateAllocations, fetchRepositoryAncestry } from '../../../src/lib/commerceDomain';
+import { calculateAllocations, fetchRepositoryAncestry, CommerceValidationError, ContributorInput } from '../../../src/lib/commerceDomain';
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   // Fail-closed guard: payments disabled in production until durable commerce is fully commissioned
@@ -163,14 +163,68 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // Read repository lineage ancestry DAG from D1
     const ancestors = await fetchRepositoryAncestry(env.DB, repositoryId);
 
-    // Calculate deterministic allocations
-    const calculation = calculateAllocations({
-      grossCents: product.priceCents,
-      currency: product.currency,
-      sellerUserId: product.sellerUserId,
-      repositoryId,
-      ancestors
-    });
+    // Read active contributor revenue shares for this repository (dark/no-op when repositoryId is null)
+    let contributors: ContributorInput[] = [];
+    if (repositoryId) {
+      const contributorRows: any = await env.DB.prepare(`
+        SELECT contributor_user_id AS userId, basis_points AS basisPoints
+        FROM contributor_shares
+        WHERE repository_id = ? AND status = 'active'
+        ORDER BY created_at ASC, id ASC
+      `).bind(repositoryId).all();
+
+      contributors = (contributorRows?.results || []).map((row: any) => ({
+        userId: row.userId,
+        bps: row.basisPoints
+      }));
+    }
+
+    // Calculate deterministic allocations. Never call Stripe or fabricate a
+    // charge if contributor shares fail validation (e.g. an impossible
+    // over-cap state) — fail the order honestly instead.
+    let calculation;
+    try {
+      calculation = calculateAllocations({
+        grossCents: product.priceCents,
+        currency: product.currency,
+        sellerUserId: product.sellerUserId,
+        repositoryId,
+        ancestors,
+        contributors
+      });
+    } catch (allocErr: any) {
+      if (allocErr instanceof CommerceValidationError) {
+        console.error('[COMMERCE CONTRIBUTOR ALLOCATION INVALID]', allocErr);
+        const failedOrderId = `ord_${crypto.randomUUID().replace(/-/g, '')}`;
+        await env.DB.prepare(`
+          INSERT INTO commerce_orders (
+            id, idempotency_key, buyer_user_id, app_id, repository_id,
+            seller_user_id, app_version, price_version, gross_cents,
+            currency, lineage_policy, lineage_snapshot_json, status, failure_code,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'payment_failed', 'contributor_allocation_invalid', datetime('now'), datetime('now'))
+        `).bind(
+          failedOrderId,
+          trimmedIdempotencyKey,
+          buyer.id,
+          appId,
+          repositoryId,
+          product.sellerUserId,
+          appListing.version || 'v1.0.0',
+          product.priceVersion,
+          product.priceCents,
+          product.currency,
+          'maker_70_lineage_20_pool_10',
+          JSON.stringify({ error: allocErr.message })
+        ).run();
+
+        return Response.json(
+          { success: false, error: `Contributor allocation is invalid: ${allocErr.message}` },
+          { status: 500 }
+        );
+      }
+      throw allocErr;
+    }
 
     // Generate durable order ID and prepare atomic batch
     const orderId = `ord_${crypto.randomUUID().replace(/-/g, '')}`;

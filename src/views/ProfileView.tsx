@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Key, HardDrive, MessageSquare, Check, Sparkles,
   DollarSign, RefreshCw, AlertTriangle, ExternalLink, Download,
-  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy
+  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
@@ -22,7 +22,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
   const { isAuthenticated, openAuthModal } = useAuth();
 
   // Navigation & Target User State
-  const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'published' | 'activity'>('shelf');
+  const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'earnings' | 'profile' | 'published' | 'activity'>('shelf');
   const [viewingUsername, setViewingUsername] = useState<string | null>(initialUsername || null);
   const [searchHandleInput, setSearchHandleInput] = useState('');
 
@@ -57,6 +57,51 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
     lineageEarnedCents: 0,
     lineageBreakdown: [] as LineageBreakdownItem[]
   });
+
+  // Contributor Revenue Grants & Earnings (from /api/payments/grants)
+  interface ContributorGrant {
+    id: string;
+    repositoryId: string;
+    appId: string;
+    basisPoints: number;
+    status: 'pending' | 'active' | 'revoked';
+    createdAt: string;
+    activatedAt: string | null;
+  }
+  interface EarningsByRole {
+    role: string;
+    count: number;
+    totalCents: number;
+  }
+  interface PayoutByStatus {
+    status: string;
+    count: number;
+    totalCents: number;
+  }
+  const [grants, setGrants] = useState<ContributorGrant[]>([]);
+  const [earningsByRole, setEarningsByRole] = useState<EarningsByRole[]>([]);
+  const [payoutsByStatus, setPayoutsByStatus] = useState<PayoutByStatus[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(false);
+  const [grantsError, setGrantsError] = useState<string | null>(null);
+
+  const loadGrants = useCallback(async () => {
+    setGrantsLoading(true);
+    setGrantsError(null);
+    try {
+      const res = await fetch('/api/payments/grants');
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `Failed to load grants (HTTP ${res.status})`);
+      }
+      setGrants(Array.isArray(json.grants) ? json.grants : []);
+      setEarningsByRole(Array.isArray(json.earningsByRole) ? json.earningsByRole : []);
+      setPayoutsByStatus(Array.isArray(json.payouts?.byStatus) ? json.payouts.byStatus : []);
+    } catch (err: any) {
+      setGrantsError(err.message || 'Failed to load revenue grants');
+    } finally {
+      setGrantsLoading(false);
+    }
+  }, []);
 
   // Action Feedback States
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -159,8 +204,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
         if (Array.isArray(shelfJson.shelf)) {
           setShelfApps(shelfJson.shelf);
         }
+        // Fetch contributor revenue grants + earnings (own-scoped, best-effort;
+        // does not block the rest of the profile load on failure)
+        loadGrants();
       } else {
         setShelfApps([]);
+        setGrants([]);
+        setEarningsByRole([]);
+        setPayoutsByStatus([]);
       }
 
       setSyncStatus('synced');
@@ -170,7 +221,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, viewingUsername]);
+  }, [isAuthenticated, viewingUsername, loadGrants]);
 
   useEffect(() => {
     loadProfileAndShelf();
@@ -377,6 +428,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
               className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'royalties' ? 'btn-w95-primary' : 'text-black'}`}
             >
               <DollarSign size={13} /> Royalties ({formatCentsToUsd(royalties.makerBalanceCents)})
+            </button>
+          )}
+          {isOwner && (
+            <button
+              onClick={() => { playClickSound(); setActiveTab('earnings'); }}
+              className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'earnings' ? 'btn-w95-primary' : 'text-black'}`}
+            >
+              <GitBranch size={13} /> Earnings ({grants.length})
             </button>
           )}
           {isOwner && (
@@ -596,6 +655,116 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* TAB 3b: Contributor Revenue Grants & Earnings (Private to owner) */}
+        {!isLoading && activeTab === 'earnings' && isOwner && (
+          <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
+            <div className="border-b pb-2 mb-2 flex justify-between items-center">
+              <div>
+                <span className="font-bold text-base text-w95-blue flex items-center gap-1.5">
+                  <GitBranch size={15} /> Contributor Revenue Grants
+                </span>
+                <p className="text-gray-600 text-xs">Basis-point shares granted to you when a repository maintainer merges your feature, plus what's been paid out so far.</p>
+              </div>
+              <button
+                onClick={() => { playClickSound(); loadGrants(); }}
+                disabled={grantsLoading}
+                className="btn-w95 text-xs px-2.5 py-1 flex items-center gap-1 font-bold shrink-0"
+              >
+                <RefreshCw size={12} className={grantsLoading ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
+
+            {grantsError && (
+              <div className="bg-red-50 border-2 border-red-500 p-3 rounded text-red-800 text-xs flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>{grantsError}</span>
+              </div>
+            )}
+
+            {grantsLoading && !grantsError && grants.length === 0 && earningsByRole.length === 0 && (
+              <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
+                <RefreshCw size={14} className="animate-spin text-w95-blue" />
+                <span>Loading grants and earnings from D1...</span>
+              </div>
+            )}
+
+            {!grantsLoading && grants.length === 0 && !grantsError && (
+              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-2">
+                <GitBranch size={32} className="mx-auto text-gray-400" />
+                <p className="font-bold text-gray-700 text-sm">You have no revenue grants yet.</p>
+                <p className="text-gray-500 text-xs max-w-sm mx-auto">Contribute a merged feature to earn a share.</p>
+              </div>
+            )}
+
+            {grants.length > 0 && (
+              <>
+                {/* Realized earnings summary from fulfilled orders */}
+                <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg">
+                  <div className="text-[11px] text-emerald-400 font-mono uppercase tracking-wider">Realized earnings from fulfilled orders</div>
+                  {earningsByRole.length === 0 ? (
+                    <div className="text-xs text-slate-300 mt-1.5">No fulfilled orders have paid out to you yet.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-4 mt-1.5">
+                      {earningsByRole.map((row) => (
+                        <div key={row.role}>
+                          <div className="text-2xl font-bold font-mono text-white">{formatCentsToUsd(row.totalCents)}</div>
+                          <div className="text-[11px] text-slate-300">{row.count} {row.role} {row.count === 1 ? 'allocation' : 'allocations'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Pending / settled payouts from the outbox */}
+                <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
+                  <div className="font-bold text-gray-900 text-xs border-b border-gray-200 pb-2">Payout status</div>
+                  {payoutsByStatus.length === 0 ? (
+                    <p className="text-gray-500 text-xs p-2">No payout records yet. Payouts appear here once an order carrying your share is fulfilled.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {payoutsByStatus.map((row) => (
+                        <div key={row.status} className="bg-gray-50 p-2.5 rounded border border-gray-200 text-xs">
+                          <div className="font-bold text-gray-800 font-mono uppercase">{row.status}</div>
+                          <div className="font-bold text-green-800">{formatCentsToUsd(row.totalCents)}</div>
+                          <div className="text-[10px] text-gray-500">{row.count} {row.count === 1 ? 'transfer' : 'transfers'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Grant list */}
+                <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
+                  <div className="font-bold text-gray-900 text-xs border-b border-gray-200 pb-2">Your grants</div>
+                  <div className="space-y-2">
+                    {grants.map((grant) => (
+                      <div key={grant.id} className="bg-gray-50 p-2.5 rounded border border-gray-200 flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-bold text-blue-900">{grant.appId}</div>
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            Granted {grant.createdAt ? new Date(grant.createdAt).toLocaleDateString() : ''}
+                            {grant.activatedAt ? ` · Active since ${new Date(grant.activatedAt).toLocaleDateString()}` : ''}
+                          </div>
+                        </div>
+                        <div className="text-right font-mono flex items-center gap-2">
+                          <span className="font-bold text-gray-800">{(grant.basisPoints / 100).toFixed(2)}%</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono uppercase ${
+                            grant.status === 'active' ? 'bg-green-100 text-green-800 border border-green-300' :
+                            grant.status === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                            'bg-gray-200 text-gray-600 border border-gray-300'
+                          }`}>
+                            {grant.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
