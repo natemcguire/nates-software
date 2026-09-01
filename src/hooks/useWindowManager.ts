@@ -244,9 +244,48 @@ export function useWindowManager() {
     setWindows(curr => {
       const target = curr[id];
       if (!target) return curr;
+
+      // Smart placement: aim for the centered free spot; if another open window
+      // already sits there, cascade-offset until we find open space, wrapping
+      // back toward the top-left when we run past the usable area.
+      const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
+      const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
+      const taskbarH = 40;
+      const w = target.width;
+      const h = target.height;
+      const centerX = Math.max(20, Math.floor((screenW - w) / 2));
+      const centerY = Math.max(20, Math.floor((screenH - h - taskbarH) / 2));
+
+      // Top-left corners of other currently-open, non-minimized windows.
+      const occupied = Object.entries(curr)
+        .filter(([wid, ws]) => wid !== id && ws.isOpen && !ws.isMinimized)
+        .map(([, ws]) => ({ x: ws.x, y: ws.y }));
+
+      const STEP = 32;               // cascade step per collision
+      const NEAR = 24;               // how close counts as "same spot"
+      const maxX = Math.max(centerX, screenW - w - 20);
+      const maxY = Math.max(centerY, screenH - h - taskbarH - 20);
+
+      let x = centerX;
+      let y = centerY;
+      // Cascade until the slot is clear of other windows' top-lefts, capped so
+      // we never loop forever (fall back to a wrapped offset from center).
+      for (let i = 0; i < occupied.length + 1; i++) {
+        const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
+        if (!collides) break;
+        x += STEP;
+        y += STEP;
+        if (x > maxX || y > maxY) {
+          // Wrapped past the usable area — nudge back near center with a small
+          // varying offset so it doesn't land exactly on the centered stack.
+          x = Math.min(maxX, centerX + ((i % 5) + 1) * 16);
+          y = Math.min(maxY, centerY + ((i % 5) + 1) * 16);
+        }
+      }
+
       return {
         ...curr,
-        [id]: { ...target, isOpen: true, isMinimized: false }
+        [id]: { ...target, isOpen: true, isMinimized: false, x, y }
       };
     });
     focusWindow(id);
