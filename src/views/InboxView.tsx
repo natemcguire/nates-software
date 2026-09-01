@@ -47,6 +47,7 @@ export const InboxView: React.FC = () => {
   const [replyText, setReplyText] = useState('');
   const [reviewComment, setReviewComment] = useState('');
   const [rewardPercent, setRewardPercent] = useState<string>('0');
+  const [reviewAcknowledged, setReviewAcknowledged] = useState<boolean>(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
@@ -146,6 +147,7 @@ export const InboxView: React.FC = () => {
     setPrActiveTab('conversation');
     setCollapsedFiles(new Set());
     setRewardPercent('0');
+    setReviewAcknowledged(false);
   }, [selectedThreadId, fetchProposalDiff]);
 
   const toggleFileCollapse = (filePath: string) => {
@@ -162,6 +164,21 @@ export const InboxView: React.FC = () => {
 
   // Non-optimistic proposal approval
   const handleReviewProposal = async (id: string, decision: 'approve' | 'reject') => {
+    // Fail-closed client-side gate: approval must never fire without evidence that actually
+    // loaded, the OIDs the reviewer saw, and an explicit acknowledgement. The server re-checks
+    // all of this independently (see functions/api/inbox.ts) — this is a first line of defense,
+    // not the source of truth.
+    if (decision === 'approve') {
+      if (!diffData || diffData.success === false || !diffData.baseOid || !diffData.headOid) {
+        setActionError('Cannot approve: evidence has not successfully loaded. Reload the diff before approving.');
+        return;
+      }
+      if (!reviewAcknowledged) {
+        setActionError('Cannot approve: you must check "I have reviewed the changes and evidence" before approving.');
+        return;
+      }
+    }
+
     setActionPending(`${decision}_${id}`);
     setActionError(null);
     setActionSuccess(null);
@@ -176,7 +193,11 @@ export const InboxView: React.FC = () => {
           action: decision,
           messageId: id,
           comment: reviewComment,
-          grantBps: grantBps > 0 ? grantBps : undefined
+          grantBps: grantBps > 0 ? grantBps : undefined,
+          ...(decision === 'approve' ? {
+            reviewedTargetOid: diffData!.baseOid,
+            reviewedSourceOid: diffData!.headOid
+          } : {})
         })
       });
       const data = await res.json();
@@ -192,6 +213,7 @@ export const InboxView: React.FC = () => {
         setActionSuccess(data.message || 'Proposal approval recorded.');
         setReviewComment('');
         setRewardPercent('0');
+        setReviewAcknowledged(false);
         if (decision === 'approve') window.setTimeout(() => fetchInbox(), 750);
         setTimeout(() => setActionSuccess(null), 4000);
       } else {
@@ -757,8 +779,35 @@ export const InboxView: React.FC = () => {
                             const remainingPercentFormatted = (remainingBps / 100).toFixed(remainingBps % 100 === 0 ? 0 : 2);
                             const numericRewardPercent = parseFloat(rewardPercent) || 0;
 
+                            // Evidence gate: approval requires the diff/evidence to have actually
+                            // loaded (not merely "not currently loading") AND both OIDs present.
+                            // Never allow approval on missing or still-loading evidence.
+                            const evidenceLoaded = !isLoadingDiff && !diffError && Boolean(diffData) && diffData?.success !== false
+                              && Boolean(diffData?.baseOid) && Boolean(diffData?.headOid);
+                            const approveBlockedReason = !evidenceLoaded
+                              ? (isLoadingDiff ? 'Evidence is still loading.' : diffError ? 'Evidence failed to load — see transport error above.' : 'Evidence/OIDs are unavailable.')
+                              : !reviewAcknowledged
+                                ? 'Check the acknowledgement box to enable approval.'
+                                : null;
+
                             return (
                               <div className="space-y-2 pt-1 border-t border-gray-300">
+                                {/* Evidence transport-error banner: never allow approval on missing evidence */}
+                                {status.canApprove && diffError && (
+                                  <div className="p-2 bg-red-50 border border-red-300 text-red-800 text-[11px] rounded flex items-center gap-1.5">
+                                    <AlertCircle size={13} className="shrink-0" />
+                                    <span>Evidence failed to load: {diffError}. Approval is disabled until the diff loads successfully.</span>
+                                  </div>
+                                )}
+
+                                {/* OID display: the exact target + source OIDs the reviewer is approving */}
+                                {status.canApprove && evidenceLoaded && diffData && (
+                                  <div className="bg-gray-50 border border-gray-300 p-1.5 rounded font-mono text-[10px] space-y-0.5">
+                                    <div><span className="text-gray-500">Target OID (expected current):</span> <span className="font-bold text-gray-800">{diffData.baseOid}</span></div>
+                                    <div><span className="text-gray-500">Source tip OID (will land):</span> <span className="font-bold text-purple-800">{diffData.headOid}</span></div>
+                                  </div>
+                                )}
+
                                 <textarea
                                   value={reviewComment}
                                   onChange={e => setReviewComment(e.target.value)}
@@ -804,9 +853,25 @@ export const InboxView: React.FC = () => {
                                   </div>
                                 )}
 
+                                {/* Explicit reviewer acknowledgement — required before approval is enabled */}
+                                {status.canApprove && (
+                                  <label className={`flex items-start gap-1.5 text-[11px] p-1.5 rounded border ${evidenceLoaded ? 'border-gray-300 bg-white text-gray-800' : 'border-gray-200 bg-gray-100 text-gray-400'}`}>
+                                    <input
+                                      type="checkbox"
+                                      checked={reviewAcknowledged}
+                                      disabled={!evidenceLoaded}
+                                      onChange={e => setReviewAcknowledged(e.target.checked)}
+                                      className="mt-0.5"
+                                    />
+                                    <span>I have reviewed the changes and evidence (diff, commits, and OIDs above) for this exact result commit.</span>
+                                  </label>
+                                )}
+
                                 <div className="flex justify-between items-center">
                                   <div className="text-[10px] text-gray-500 max-w-[280px]">
-                                    Approving records an immutable review and enqueues exact fast-forward CAS landing.
+                                    {status.canApprove && approveBlockedReason
+                                      ? approveBlockedReason
+                                      : 'Approving records an immutable review and enqueues exact fast-forward CAS landing.'}
                                   </div>
                                   <div className="flex gap-2">
                                     {status.canReject && (
@@ -821,10 +886,11 @@ export const InboxView: React.FC = () => {
                                     {status.canApprove && (
                                       <button
                                         onClick={() => handleReviewProposal(selectedThread.id, 'approve')}
-                                        disabled={Boolean(actionPending)}
+                                        disabled={Boolean(actionPending) || !evidenceLoaded || !reviewAcknowledged}
+                                        title={approveBlockedReason || undefined}
                                         className="btn-w95 btn-w95-primary px-3 py-1.5 flex items-center gap-1 font-bold shadow-md disabled:opacity-50"
                                       >
-                                        <GitPullRequest size={12} /> Approve &amp; Land
+                                        <GitPullRequest size={12} /> Approve &amp; Fast-Forward Merge
                                       </button>
                                     )}
                                   </div>

@@ -401,7 +401,9 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         body: JSON.stringify({
           action: 'approve',
           messageId: 'proposal:attempt-pr-div',
-          comment: 'Attempting to approve divergent proposal.'
+          comment: 'Attempting to approve divergent proposal.',
+          reviewedTargetOid: commit4DivergedOid,
+          reviewedSourceOid: commit3Oid
         })
       });
       const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
@@ -442,7 +444,9 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         body: JSON.stringify({
           action: 'approve',
           messageId: 'proposal:attempt-pr-missing',
-          comment: 'Attempting to approve proposal with missing repo.'
+          comment: 'Attempting to approve proposal with missing repo.',
+          reviewedTargetOid: commit1Oid,
+          reviewedSourceOid: commit3Oid
         })
       });
       const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
@@ -468,7 +472,9 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         body: JSON.stringify({
           action: 'approve',
           messageId: 'proposal:attempt-pr',
-          comment: 'Approved for production landing.'
+          comment: 'Approved for production landing.',
+          reviewedTargetOid: commit1Oid,
+          reviewedSourceOid: commit3Oid
         })
       });
       const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });

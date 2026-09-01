@@ -76,14 +76,31 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
   });
 
-  const postInbox = (body: unknown) => inboxApi.onRequestPost({
-    request: new Request('http://localhost/api/inbox', {
-      method: 'POST',
-      headers: authHeaders,
-      body: JSON.stringify(body)
-    }),
-    env: { DB: d1Ctx.d1, GITSMITH_REPOS_ROOT: tempRoot }
-  });
+  // Auto-fills the reviewer-saw-OID confirmation fields for 'approve' actions from the
+  // merge attempt's current OIDs, unless the test already specified them (so tests that
+  // intentionally probe the evidence gate itself can still override/omit).
+  const postInbox = async (body: any) => {
+    let payload = body;
+    if (body && typeof body === 'object' && body.action === 'approve' && body.messageId &&
+        body.reviewedTargetOid === undefined && body.reviewedSourceOid === undefined) {
+      const row: any = await d1Ctx.d1.prepare(`
+        SELECT ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid
+        FROM inbox_messages m JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
+        WHERE m.id = ?
+      `).bind(body.messageId).first();
+      if (row) {
+        payload = { ...body, reviewedTargetOid: row.inputTargetOid, reviewedSourceOid: row.resultCommitOid };
+      }
+    }
+    return inboxApi.onRequestPost({
+      request: new Request('http://localhost/api/inbox', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(payload)
+      }),
+      env: { DB: d1Ctx.d1, GITSMITH_REPOS_ROOT: tempRoot }
+    });
+  };
 
   it('merge lands → pending contributor share becomes active with activated_at set', async () => {
     const repoId = 'repo-p3b-land-1';

@@ -74,10 +74,27 @@ describe('INBOX.EXE live-mode integrity', () => {
   const get = (url = 'http://localhost/api/inbox', authenticated = true) => inboxApi.onRequestGet({
     request: new Request(url, authenticated ? { headers: authHeaders } : undefined), env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
   });
-  const post = (body: unknown) => inboxApi.onRequestPost({
-    request: new Request('http://localhost/api/inbox', { method: 'POST', headers: authHeaders, body: JSON.stringify(body) }),
-    env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
-  });
+  // Auto-fills the reviewer-saw-OID confirmation fields for 'approve' actions from the
+  // merge attempt's current OIDs, unless the test already specified them (so tests that
+  // intentionally probe the evidence gate itself can still override/omit).
+  const post = async (body: any) => {
+    let payload = body;
+    if (body && typeof body === 'object' && body.action === 'approve' && body.messageId &&
+        body.reviewedTargetOid === undefined && body.reviewedSourceOid === undefined) {
+      const row: any = await ctx.d1.prepare(`
+        SELECT ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid
+        FROM inbox_messages m JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
+        WHERE m.id = ?
+      `).bind(body.messageId).first();
+      if (row) {
+        payload = { ...body, reviewedTargetOid: row.inputTargetOid, reviewedSourceOid: row.resultCommitOid };
+      }
+    }
+    return inboxApi.onRequestPost({
+      request: new Request('http://localhost/api/inbox', { method: 'POST', headers: authHeaders, body: JSON.stringify(payload) }),
+      env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
+    });
+  };
 
   it('computes folders from authoritative thread categories', () => {
     const threads = [
