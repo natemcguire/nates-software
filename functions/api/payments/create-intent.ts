@@ -294,6 +294,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       stripeParams.append('currency', calculation.currency);
       stripeParams.append('description', `Shareware License: ${appListing.name || appId}`);
       stripeParams.append('automatic_payment_methods[enabled]', 'true');
+      // Restrict to non-redirect methods (cards, wallets). The CheckoutModal
+      // confirms in-page with `redirect: 'if_required'` and provides no
+      // return_url, so redirect-based methods (which Stripe would otherwise
+      // offer with the default allow_redirects=always) cannot complete and
+      // would error at confirm time. 'never' keeps the in-modal flow honest.
+      stripeParams.append('automatic_payment_methods[allow_redirects]', 'never');
       stripeParams.append('metadata[orderId]', orderId);
       stripeParams.append('metadata[appId]', appId);
       stripeParams.append('metadata[buyerUserId]', buyer.id);
