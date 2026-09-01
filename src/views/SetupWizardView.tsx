@@ -26,12 +26,14 @@ export interface SetupWizardViewProps {
   onOpenSandbox?: (appId: string) => void;
   onOpenTerminal?: (initialCmd?: string) => void;
   onOpenForge?: (repoId: string) => void;
+  onBrowseDrops?: () => void;
 }
 
 export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   onOpenSandbox,
   onOpenTerminal,
-  onOpenForge
+  onOpenForge,
+  onBrowseDrops
 }) => {
   const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
@@ -156,7 +158,9 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
 
   const getCommandForTool = () => {
     if (!selectedStarter) return 'slop fork <app>';
-    return `slop fork ${selectedStarter.repoOwner}/${selectedStarter.repoName}`;
+    const owner = user?.username || selectedStarter.repoOwner || 'nate';
+    const appSlug = selectedStarter.id || selectedStarter.repoName;
+    return `slop fork ${owner}/${appSlug}`;
   };
 
   const handleCopyCommand = () => {
@@ -184,15 +188,15 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         {/* Step Indicator */}
         <div className="flex items-center gap-1 font-mono text-[11px]">
           <span className={`px-2 py-0.5 rounded border ${step === 1 ? 'bg-amber-400 text-black font-bold border-amber-500' : 'bg-blue-950 text-gray-400 border-blue-800'}`}>
-            1. Starter
+            1. Pick an app
           </span>
           <span className="text-gray-500">&rarr;</span>
           <span className={`px-2 py-0.5 rounded border ${step === 2 ? 'bg-amber-400 text-black font-bold border-amber-500' : 'bg-blue-950 text-gray-400 border-blue-800'}`}>
-            2. Launch Agent
+            2. Get it running
           </span>
           <span className="text-gray-500">&rarr;</span>
           <span className={`px-2 py-0.5 rounded border ${step === 3 ? 'bg-amber-400 text-black font-bold border-amber-500' : 'bg-blue-950 text-gray-400 border-blue-800'}`}>
-            3. Verify
+            3. Start building
           </span>
         </div>
       </div>
@@ -204,10 +208,10 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
               <div className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
                 <Sparkles size={14} className="text-amber-500" />
-                <span>Step 1: Pick a starter app to fork</span>
+                <span>Step 1: Pick an app</span>
               </div>
               <p className="text-gray-600 text-xs">
-                Fork one of Nate's apps to make it your own. If you sell your version later, you keep 70% and 20% flows back to the app you forked from.
+                Pick an app to try. You get the running app plus its full source — yours to fork, mod, and even resell.
               </p>
             </div>
 
@@ -280,7 +284,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
 
                     <div className="text-right font-mono shrink-0 pl-2">
                       <div className="text-xs font-bold text-green-800">{s.price}</div>
-                      <div className="text-[10px] text-gray-500">Fork policy: 70% if sold</div>
+                      <div className="text-[10px] text-gray-500">Full source included</div>
                     </div>
                   </button>
                 ))}
@@ -387,157 +391,238 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           <div className="space-y-4 max-w-2xl mx-auto w-full">
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
               <div className="font-bold text-sm text-blue-950 flex items-center gap-1.5">
-                <Terminal size={15} className="text-purple-600" />
-                <span>Step 2: Local CLI Development &amp; AI Engines (Optional)</span>
+                <Play size={15} className="text-emerald-600" />
+                <span>Step 2: Get it running</span>
               </div>
               <p className="text-gray-600 text-xs">
-                To edit locally on your machine, authenticate once via <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop login</code> using your CLI token. Then run <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop fork</code> to clone <strong>{selectedStarter?.name || 'your selected app'}</strong> into an isolated worktree and launch your AI coding engine.
+                Run <strong>{selectedStarter?.name || 'your selected app'}</strong> live in your browser with zero setup, or clone it to your local environment.
               </p>
             </div>
 
-            {/* Tool Tabs */}
-            <div className="flex gap-1 border-b border-gray-400 pb-1">
-              {[
-                { id: 'claude', name: 'Claude Code', icon: '🟣' },
-                { id: 'agy', name: 'Antigravity (AGY)', icon: '⚡' },
-                { id: 'cursor', name: 'Cursor / VS Code', icon: '🧠' },
-                { id: 'terminal', name: 'SLOP CLI', icon: '💻' }
-              ].map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => { playClickSound(); setActiveTool(t.id as any); }}
-                  className={`px-3 py-1 text-xs font-bold border-t border-l border-r rounded-t flex items-center gap-1 ${
-                    activeTool === t.id
-                      ? 'bg-slate-900 text-cyan-300 border-slate-700'
-                      : 'bg-w95-gray text-gray-700 border-gray-400 hover:bg-gray-200'
-                  }`}
-                >
-                  <span>{t.icon}</span>
-                  <span>{t.name}</span>
-                </button>
-              ))}
+            {/* PRIMARY ACTION: Run in the browser now */}
+            <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-blue-950 text-white p-4 rounded border-2 border-emerald-600 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
+                  <Play size={16} className="text-emerald-400 fill-emerald-400" />
+                  <span>Run {selectedStarter?.name || 'App'} in the browser now</span>
+                </div>
+                <div className="text-blue-100 text-xs leading-relaxed">
+                  Runs in a fresh cloud sandbox — nothing to install. Closes when you leave.
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={!selectedStarter}
+                onClick={() => {
+                  playSuccessChime();
+                  if (onOpenSandbox && selectedStarter) onOpenSandbox(selectedStarter.id);
+                }}
+                className="btn-w95 btn-w95-primary px-5 py-2.5 font-bold text-xs flex items-center justify-center gap-2 shrink-0 shadow-md text-black disabled:opacity-50"
+              >
+                <Play size={14} className="fill-current" />
+                <span>Run {selectedStarter?.name || 'App'} now</span>
+              </button>
             </div>
 
-            {/* Command Box */}
-            <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
-              <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
-                <span>Native Terminal Install</span>
-                <span className="text-emerald-400">Runs on your machine</span>
+            {/* SECONDARY PANEL: Prefer your own machine? Install with SLOP */}
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3.5 space-y-3">
+              <div className="border-b border-gray-300 pb-1.5 flex items-center justify-between">
+                <div className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
+                  <Terminal size={14} className="text-purple-600" />
+                  <span>Prefer your own machine? Install with SLOP</span>
+                </div>
+                <span className="text-gray-500 font-mono text-[10px]">Power-user workflow</span>
               </div>
 
-              <div className="space-y-1.5 select-text py-1">
-                <div className="text-gray-400 text-[10px]"># 1. Authenticate CLI with your token from PROFILE.CFG:</div>
-                <div className="text-amber-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
-                  slop login
+              <p className="text-gray-600 text-xs">
+                Authenticate once via <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop login</code> using your CLI token. Then clone <strong>{selectedStarter?.name || 'your app'}</strong> into a local worktree:
+              </p>
+
+              {/* Tool Tabs */}
+              <div className="flex gap-1 border-b border-gray-400 pb-1">
+                {[
+                  { id: 'claude', name: 'Claude Code', icon: '🟣' },
+                  { id: 'agy', name: 'Antigravity (AGY)', icon: '⚡' },
+                  { id: 'cursor', name: 'Cursor / VS Code', icon: '🧠' },
+                  { id: 'terminal', name: 'SLOP CLI', icon: '💻' }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => { playClickSound(); setActiveTool(t.id as any); }}
+                    className={`px-3 py-1 text-xs font-bold border-t border-l border-r rounded-t flex items-center gap-1 ${
+                      activeTool === t.id
+                        ? 'bg-slate-900 text-cyan-300 border-slate-700'
+                        : 'bg-w95-gray text-gray-700 border-gray-400 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{t.icon}</span>
+                    <span>{t.name}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Terminal Command Box */}
+              <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
+                <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
+                  <span>Native Terminal Install</span>
+                  <span className="text-emerald-400">Runs on your machine</span>
                 </div>
-                <div className="text-gray-400 text-[10px] pt-1"># 2. Fork and clone into local worktree:</div>
-                <div className="text-emerald-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
-                  {getCommandForTool()}
+
+                <div className="space-y-1.5 select-text py-1">
+                  <div className="text-gray-400 text-[10px]"># 1. Authenticate CLI with your token from PROFILE.CFG:</div>
+                  <div className="text-amber-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
+                    slop login
+                  </div>
+                  <div className="text-gray-400 text-[10px] pt-1"># 2. Fork and clone into local worktree:</div>
+                  <div className="text-emerald-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
+                    {getCommandForTool()}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                  <span className="text-slate-500 text-[10px]">
+                    Preferred engine: {activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : activeTool === 'cursor' ? 'Cursor' : 'choose later'} — selected after install
+                  </span>
+                  <button
+                    onClick={handleCopyCommand}
+                    className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
+                  >
+                    {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedCmd ? 'Copied!' : 'Copy Fork Command'}</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-slate-500 text-[10px]">
-                  Preferred engine: {activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : activeTool === 'cursor' ? 'Cursor' : 'choose later'} — selected after install
-                </span>
-                <button
-                  onClick={handleCopyCommand}
-                  className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-sm"
-                >
-                  {copiedCmd ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copiedCmd ? 'Copied!' : 'Copy Fork Command'}</span>
-                </button>
-              </div>
+              {onOpenTerminal && (
+                <div className="bg-gray-100 border border-gray-300 p-2 rounded flex items-center justify-between text-[11px]">
+                  <span className="text-gray-600">Want to test the CLI without installing?</span>
+                  <button
+                    onClick={() => {
+                      playClickSound();
+                      onOpenTerminal();
+                    }}
+                    className="btn-w95 px-2.5 py-1 font-bold text-xs flex items-center gap-1"
+                  >
+                    <Terminal size={12} />
+                    <span>Open TERMINAL.EXE</span>
+                  </button>
+                </div>
+              )}
             </div>
-
-            {/* Browser terminal boundary */}
-            {onOpenTerminal && (
-              <div className="bg-amber-50 border border-amber-300 p-3 rounded flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-amber-950 text-xs">Persistent or Disposable?</div>
-                  <div className="text-gray-600 text-[11px]">Use your native terminal to keep the fork. TERMINAL.EXE can run the same command in a real ephemeral VM when commissioned, but its entire workspace is deleted when the session ends.</div>
-                </div>
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    onOpenTerminal();
-                  }}
-                  className="btn-w95 px-4 py-1.5 font-bold text-xs flex items-center gap-1.5"
-                >
-                  <Terminal size={13} />
-                  <span>Try Ephemeral Terminal</span>
-                </button>
-              </div>
-            )}
           </div>
         )}
 
         {step === 3 && (
           <div className="space-y-4 max-w-2xl mx-auto w-full">
-            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1 text-center">
-              <div className="text-3xl">✅</div>
-              <div className="font-bold text-base text-gray-900">Verify the Native Install</div>
-              <p className="text-gray-600 text-xs">
-                This website cannot inspect your native filesystem. Your fork exists only after SLOP prints a successful worktree path and its install checks pass.
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-4 space-y-1.5 text-center">
+              <div className="text-3xl select-none">🚀</div>
+              <div className="font-bold text-base text-gray-900">You're in — what's next?</div>
+              <p className="text-gray-600 text-xs max-w-md mx-auto">
+                You've chosen <strong>{selectedStarter?.name || 'your starter app'}</strong>. Run it live in the cloud sandbox, explore its repository, or check out today's community drops.
               </p>
             </div>
 
-            <div className="bg-black text-green-300 border-2 border-gray-700 rounded p-3 font-mono text-xs space-y-1 select-text">
-              <div>$ {getCommandForTool()}</div>
-              <div className="text-gray-400">Expected proof: created directory, Git repository, dependency install, and test result.</div>
-              <div className="text-cyan-300">Only after that proof does SLOP ask: Start your engines?</div>
+            {/* Three Real Actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Action 1: Open {AppName} live */}
+              <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 flex flex-col justify-between space-y-2 shadow-sm">
+                <div>
+                  <div className="font-bold text-xs text-blue-950 flex items-center gap-1.5 mb-1">
+                    <Play size={14} className="text-emerald-600" />
+                    <span>1. Live Sandbox</span>
+                  </div>
+                  <p className="text-gray-600 text-[11px] leading-relaxed">
+                    Test <strong>{selectedStarter?.name || 'the app'}</strong> in a clean browser sandbox.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!selectedStarter}
+                  onClick={() => {
+                    playSuccessChime();
+                    if (onOpenSandbox && selectedStarter) onOpenSandbox(selectedStarter.id);
+                  }}
+                  className="btn-w95 btn-w95-primary w-full py-2 font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 text-black shadow"
+                >
+                  <Play size={12} className="fill-current" />
+                  <span>Open {selectedStarter?.name || 'App'} live</span>
+                </button>
+              </div>
+
+              {/* Action 2: See its code on GITSMITH */}
+              <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 flex flex-col justify-between space-y-2 shadow-sm">
+                <div>
+                  <div className="font-bold text-xs text-blue-950 flex items-center gap-1.5 mb-1">
+                    <ExternalLink size={14} className="text-purple-600" />
+                    <span>2. Source Forge</span>
+                  </div>
+                  <p className="text-gray-600 text-[11px] leading-relaxed">
+                    Inspect the source tree, commit history, and branches on GITSMITH.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!selectedStarter}
+                  onClick={() => {
+                    playClickSound();
+                    if (onOpenForge && selectedStarter) onOpenForge(selectedStarter.id);
+                  }}
+                  className="btn-w95 w-full py-2 font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 text-gray-900"
+                >
+                  <ExternalLink size={12} />
+                  <span>See code on GITSMITH</span>
+                </button>
+              </div>
+
+              {/* Action 3: Browse today's drops */}
+              <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 flex flex-col justify-between space-y-2 shadow-sm">
+                <div>
+                  <div className="font-bold text-xs text-blue-950 flex items-center gap-1.5 mb-1">
+                    <Sparkles size={14} className="text-amber-500" />
+                    <span>3. Daily Drops</span>
+                  </div>
+                  <p className="text-gray-600 text-[11px] leading-relaxed">
+                    Discover new shareware released at 12:01 AM UTC and vote on drops.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    if (onBrowseDrops) {
+                      onBrowseDrops();
+                    } else if (onOpenSandbox && selectedStarter) {
+                      onOpenSandbox(selectedStarter.id);
+                    }
+                  }}
+                  className="btn-w95 w-full py-2 font-bold text-xs flex items-center justify-center gap-1.5 text-gray-900"
+                >
+                  <span>Browse today's drops</span>
+                </button>
+              </div>
             </div>
 
-            {/* Conditional economic policy */}
-            <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 text-white p-4 rounded border border-blue-700 shadow font-mono text-xs space-y-2">
+            {/* Publishing & Royalty Economics Box */}
+            <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 text-white p-3.5 rounded border border-blue-700 shadow font-mono text-xs space-y-2">
               <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
                 <ShieldCheck size={14} />
-                <span>If you publish and sell your fork:</span>
+                <span>When you publish and sell your fork:</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>⚡ You, the seller:</span>
-                <span className="font-bold text-emerald-400">70% of the sale</span>
+                <span>⚡ You (the maker/seller):</span>
+                <span className="font-bold text-emerald-400">70% of every sale</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>💎 The app you forked from:</span>
+                <span>💎 Upstream creator chain:</span>
                 <span className="font-bold text-blue-300">20%</span>
               </div>
               <div className="flex justify-between text-gray-300">
-                <span>🛡️ The platform:</span>
+                <span>🛡️ Platform liquidity pool:</span>
                 <span className="font-bold text-purple-300">10%</span>
               </div>
-              <div className="text-[10px] text-blue-300 pt-1">No entitlement or payout is created by this wizard.</div>
-            </div>
-
-            {/* Next Steps Quick Action Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-              {onOpenSandbox && (
-                <button
-                  onClick={() => {
-                    playSuccessChime();
-                    if (selectedStarter) onOpenSandbox(selectedStarter.id);
-                  }}
-                  disabled={!selectedStarter}
-                  className="btn-w95 btn-w95-primary p-3 font-bold text-xs flex items-center justify-center gap-2 shadow disabled:opacity-50"
-                >
-                  <Play size={14} />
-                  <span>Open Upstream App Preview</span>
-                </button>
-              )}
-
-              {onOpenForge && (
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    if (selectedStarter) onOpenForge(selectedStarter.id);
-                  }}
-                  disabled={!selectedStarter}
-                  className="btn-w95 p-3 font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <ExternalLink size={13} />
-                  <span>Inspect Upstream on GITSMITH</span>
-                </button>
-              )}
+              <div className="text-[10px] text-blue-300 pt-0.5">
+                Root apps with no ancestors earn 90% maker / 10% platform. No entitlement or payout is created by this wizard.
+              </div>
             </div>
           </div>
         )}
@@ -576,7 +661,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               disabled={!selectedStarter}
               className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs disabled:opacity-50"
             >
-              Open Upstream Preview
+              Run {selectedStarter?.name || 'App'} in browser &rarr;
             </button>
           )}
         </div>
