@@ -15,9 +15,15 @@
 //     (same function functions/api/payments/process-transfers.ts calls). It fails
 //     closed on its own via `validatePayoutWorkerConfig` if PAYOUTS_ENABLED isn't
 //     'true', so this Worker also short-circuits before calling it.
+//   - Recovery drain (gated): src/lib/commerce/recoveryWorker.ts `processRecoveryBatch`
+//     reverses already-completed transfers for pending commerce_recovery_obligations
+//     (opened by refundProcessor.ts and disputeProcessor.ts). Same PAYOUTS_ENABLED
+//     gate as the transfer drain — reversing a payout makes no sense while payouts
+//     themselves are off, and it keeps both money-movement paths fail-closed together.
 
 import { processStripeInboxEvent } from '../../../src/lib/commerce/eventProcessor';
 import { processTransferBatch } from '../../../src/lib/commerce/transferWorker';
+import { processRecoveryBatch } from '../../../src/lib/commerce/recoveryWorker';
 
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -42,10 +48,13 @@ export interface Env {
   DRAIN_INBOX_BATCH_SIZE?: string;
   // Bounded batch size per tick for the transfer outbox drain. Optional; defaults below.
   DRAIN_TRANSFER_BATCH_SIZE?: string;
+  // Bounded batch size per tick for the recovery (reversal) drain. Optional; defaults below.
+  DRAIN_RECOVERY_BATCH_SIZE?: string;
 }
 
 export const DEFAULT_INBOX_BATCH_SIZE = 20;
 export const DEFAULT_TRANSFER_BATCH_SIZE = 10;
+export const DEFAULT_RECOVERY_BATCH_SIZE = 10;
 
 export interface InboxDrainSummary {
   ran: boolean;
@@ -70,9 +79,22 @@ export interface TransferDrainSummary {
   reason?: string;
 }
 
+export interface RecoveryDrainSummary {
+  ran: boolean;
+  enqueuedCount: number;
+  processedCount: number;
+  succeededCount: number;
+  retryableCount: number;
+  terminalCount: number;
+  ambiguousCount: number;
+  skippedCount: number;
+  reason?: string;
+}
+
 export interface DrainTickResult {
   inbox: InboxDrainSummary;
   transfers: TransferDrainSummary;
+  recovery: RecoveryDrainSummary;
 }
 
 function parseBatchSize(raw: string | undefined, fallback: number, max: number): number {
@@ -210,15 +232,65 @@ export async function runTransferDrain(env: Env, options?: { limit?: number }): 
 }
 
 /**
- * Executes one full drain tick: inbox re-drive (always) then payout drain
- * (gated). Structured, quiet logging — one line per tick, one line per
- * sub-path only when it actually ran or had something to report.
+ * Drains commerce_recovery_obligations using the SAME `processRecoveryBatch`
+ * function from src/lib/commerce/recoveryWorker.ts — reverses already-completed
+ * transfers for refund/dispute clawbacks. Only runs when `PAYOUTS_ENABLED ===
+ * 'true'`, the same gate as the transfer drain: reversing a payout makes no
+ * sense while payouts themselves are off. `processRecoveryBatch` also fails
+ * closed internally via `validatePayoutWorkerConfig`, so this is a
+ * belt-and-suspenders gate.
+ */
+export async function runRecoveryDrain(env: Env, options?: { limit?: number }): Promise<RecoveryDrainSummary> {
+  const base: RecoveryDrainSummary = {
+    ran: false,
+    enqueuedCount: 0,
+    processedCount: 0,
+    succeededCount: 0,
+    retryableCount: 0,
+    terminalCount: 0,
+    ambiguousCount: 0,
+    skippedCount: 0
+  };
+
+  if (env?.PAYOUTS_ENABLED !== 'true') {
+    return { ...base, reason: "PAYOUTS_ENABLED is not 'true'; recovery drain is off" };
+  }
+
+  if (!env?.DB) {
+    return { ...base, reason: 'DB binding is unavailable; skipping recovery drain for this tick' };
+  }
+
+  const limit = options?.limit ?? parseBatchSize(env.DRAIN_RECOVERY_BATCH_SIZE, DEFAULT_RECOVERY_BATCH_SIZE, 25);
+
+  try {
+    const batchResult = await processRecoveryBatch(env.DB, env, { limit });
+    return {
+      ran: true,
+      enqueuedCount: batchResult.enqueuedCount,
+      processedCount: batchResult.processedCount,
+      succeededCount: batchResult.succeededCount,
+      retryableCount: batchResult.retryableCount,
+      terminalCount: batchResult.terminalCount,
+      ambiguousCount: batchResult.ambiguousCount,
+      skippedCount: batchResult.skippedCount,
+      reason: batchResult.success ? undefined : (batchResult.results?.[0] as any)?.error
+    };
+  } catch (err: any) {
+    return { ...base, reason: `Recovery batch drain threw: ${err?.message || String(err)}` };
+  }
+}
+
+/**
+ * Executes one full drain tick: inbox re-drive (always) then payout drain and
+ * recovery drain (both gated). Structured, quiet logging — one line per tick,
+ * one line per sub-path only when it actually ran or had something to report.
  */
 export async function runDrainTick(env: Env): Promise<DrainTickResult> {
   const startedAt = Date.now();
 
   const inbox = await runInboxDrain(env);
   const transfers = await runTransferDrain(env);
+  const recovery = await runRecoveryDrain(env);
 
   const durationMs = Date.now() - startedAt;
 
@@ -244,10 +316,21 @@ export async function runDrainTick(env: Env): Promise<DrainTickResult> {
       ambiguous: transfers.ambiguousCount,
       skipped: transfers.skippedCount,
       reason: transfers.reason
+    },
+    recovery: {
+      ran: recovery.ran,
+      enqueued: recovery.enqueuedCount,
+      processed: recovery.processedCount,
+      succeeded: recovery.succeededCount,
+      retryable: recovery.retryableCount,
+      terminal: recovery.terminalCount,
+      ambiguous: recovery.ambiguousCount,
+      skipped: recovery.skippedCount,
+      reason: recovery.reason
     }
   }));
 
-  return { inbox, transfers };
+  return { inbox, transfers, recovery };
 }
 
 // Minimal local shapes for the Workers runtime cron contract. The repo does not

@@ -9,3 +9,6 @@ export * from './eventProcessor';
 export * from './transferWorker';
 export * from './recoveryDomain';
 export * from './refundProcessor';
+export * from './accountProcessor';
+export * from './disputeProcessor';
+export * from './recoveryWorker';

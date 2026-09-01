@@ -15,6 +15,8 @@ import {
 } from './licenseCrypto';
 import { ProcessEventResult } from './types';
 import { isRefundEventType, processRefundInboxEvent } from './refundProcessor';
+import { isAccountEventType, processAccountInboxEvent } from './accountProcessor';
+import { isDisputeEventType, processDisputeInboxEvent } from './disputeProcessor';
 
 export interface ProcessorOptions {
   claimToken?: string;
@@ -27,7 +29,10 @@ export interface ProcessorOptions {
  *
  * Requirements:
  * 1. Claims the inbox event with a conditional finite lease.
- * 2. If event type is unsupported (e.g. charge.refunded, dispute), durably marks terminal_failure with explicit reason.
+ * 2. Routes refund events (refundProcessor.ts), account.updated (accountProcessor.ts),
+ *    and charge.dispute.* events (disputeProcessor.ts) to their dedicated handlers.
+ *    Any other unsupported event type (e.g. charge.refunded, customer.subscription.*)
+ *    durably marks terminal_failure with an explicit reason.
  * 3. For payment_intent.succeeded: Re-fetches authoritative PaymentIntent from Stripe using STRIPE_SECRET_KEY.
  * 4. Validates Stripe status (succeeded), orderId metadata, paymentIntent ID, amount, currency, and livemode against immutable D1 order.
  * 5. Enforces monotonic order transition from requires_payment/processing to fulfilled.
@@ -114,6 +119,28 @@ export async function processStripeInboxEvent(
 
   if (isRefundEventType(eventType)) {
     return processRefundInboxEvent(
+      db,
+      env,
+      inboxRow,
+      event,
+      claimToken,
+      options?.stripeFetchOverride || globalThis.fetch
+    );
+  }
+
+  if (isAccountEventType(eventType)) {
+    return processAccountInboxEvent(
+      db,
+      env,
+      inboxRow,
+      event,
+      claimToken,
+      options?.stripeFetchOverride || globalThis.fetch
+    );
+  }
+
+  if (isDisputeEventType(eventType)) {
+    return processDisputeInboxEvent(
       db,
       env,
       inboxRow,
