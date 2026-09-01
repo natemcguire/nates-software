@@ -1335,6 +1335,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const failureDetail = status === 'stale'
         ? `CAS stale: expected ${(row as any).inputTargetOid}, actual ${actualTargetOid ?? 'null'}`
         : null;
+      const shareStatement = status === 'landed'
+        ? db.prepare(`
+            UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP
+            WHERE merge_attempt_id = ? AND status = 'pending'
+          `).bind(mergeAttemptId)
+        : db.prepare(`
+            UPDATE contributor_shares SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP
+            WHERE merge_attempt_id = ? AND status = 'pending'
+          `).bind(mergeAttemptId);
+
       await db.batch([
         db.prepare(`
           UPDATE merge_attempts SET status = ?, failure_detail = ?, finished_at = CURRENT_TIMESTAMP
@@ -1349,7 +1359,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         db.prepare(`
           UPDATE inbox_messages SET is_merged = ?
           WHERE merge_attempt_id = ?
-        `).bind(status === 'landed' ? 1 : 0, mergeAttemptId)
+        `).bind(status === 'landed' ? 1 : 0, mergeAttemptId),
+        shareStatement
       ]);
 
       return Response.json({
