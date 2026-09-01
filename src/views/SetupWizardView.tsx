@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Sparkles, Terminal, ArrowRight, Check, Copy, ShieldCheck, ExternalLink, Play, Key, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Sparkles, Terminal, ArrowRight, Check, Copy, ShieldCheck, ExternalLink, Play, Key, RefreshCw, AlertTriangle } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
@@ -13,37 +13,14 @@ interface StarterApp {
   price: string;
   category: string;
   suggestedPrompt: string;
+  hasCanonicalRepo: boolean;
+  isRepoActive: boolean;
+  repoSlug: string;
+  repoName: string;
+  repoOwner: string;
+  repoDefaultRef?: string;
+  repositoryId?: string | null;
 }
-
-const STARTERS: StarterApp[] = [
-  {
-    id: 'dronehunter',
-    name: 'DroneHunter 95',
-    avatar: '🎯',
-    tagline: 'Retro Duck Hunt arcade shooter with private, browser-local high scores and synthesized audio.',
-    price: '$15.00',
-    category: 'Arcade WASM Game',
-    suggestedPrompt: 'Add dual-wield laser shotguns and a new boss wave telemetry table in SQLite.'
-  },
-  {
-    id: 'certified-mailer',
-    name: 'Certified Mailer',
-    avatar: '📫',
-    tagline: 'Local letter preparation and user-recorded mailing evidence journal.',
-    price: '$25.00',
-    category: 'Legal / SaaS Utility',
-    suggestedPrompt: 'Add California Tenant Security Deposit statutory demand templates and CSV batch export.'
-  },
-  {
-    id: 'wallart',
-    name: 'WallArt Studio',
-    avatar: '🖼️',
-    tagline: 'Private multi-tenant photo-to-art studio with durable generation and print workflows.',
-    price: '$59.00',
-    category: 'Creative Studio',
-    suggestedPrompt: 'Add a new art treatment while preserving tenant isolation and durable job semantics.'
-  }
-];
 
 export interface SetupWizardViewProps {
   onOpenSandbox?: (appId: string) => void;
@@ -60,13 +37,90 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   const { showAlert } = useAlert();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selectedStarter, setSelectedStarter] = useState<StarterApp>(STARTERS[0]);
+  const [starters, setStarters] = useState<StarterApp[]>([]);
+  const [isLoadingStarters, setIsLoadingStarters] = useState<boolean>(true);
+  const [startersError, setStartersError] = useState<string | null>(null);
+  const [selectedStarter, setSelectedStarter] = useState<StarterApp | null>(null);
   const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [isForkModalOpen, setIsForkModalOpen] = useState(false);
   const [cliToken, setCliToken] = useState<string | null>(null);
   const [isGeneratingCliToken, setIsGeneratingCliToken] = useState(false);
   const [cliTokenCopied, setCliTokenCopied] = useState(false);
+
+  const fetchStarters = useCallback(async () => {
+    setIsLoadingStarters(true);
+    setStartersError(null);
+    try {
+      const res = await fetch('/api/drops?batch=all');
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success || !Array.isArray(data?.drops)) {
+        throw new Error(data?.error || `Failed to fetch starters (HTTP ${res.status})`);
+      }
+
+      const forkable = data.drops
+        .filter((d: any) => {
+          const hasRepo = Boolean(d.canonicalRepositoryId || d.repositoryId || (d.repoSlugName && d.repoStatus === 'active'));
+          const isRepoActive = d.repoStatus ? d.repoStatus === 'active' : hasRepo;
+          return hasRepo && isRepoActive;
+        })
+        .map((d: any) => {
+          const rawPrice = d.price;
+          let priceStr = '$0.00';
+          if (typeof rawPrice === 'number') {
+            priceStr = `$${(rawPrice / 100).toFixed(2)}`;
+          } else if (typeof rawPrice === 'string' && rawPrice.startsWith('$')) {
+            priceStr = rawPrice;
+          } else if (typeof rawPrice === 'string') {
+            priceStr = `$${rawPrice}`;
+          }
+
+          const category = Array.isArray(d.tags) && d.tags.length > 0
+            ? d.tags[0]
+            : (typeof d.tags === 'string' ? d.tags : 'Shareware App');
+
+          const repoOwner = d.repoOwnerUsername || d.creator || 'nate';
+          const repoSlugName = d.repoSlugName || d.id;
+
+          return {
+            id: d.id,
+            name: d.name || d.id,
+            avatar: d.creatorAvatar || '📦',
+            tagline: d.tagline || d.description || '',
+            price: priceStr,
+            category,
+            suggestedPrompt: `Implement a new feature for ${d.name || d.id}.`,
+            hasCanonicalRepo: true,
+            isRepoActive: true,
+            repoSlug: `${repoOwner}/${repoSlugName}`,
+            repoName: repoSlugName,
+            repoOwner,
+            repoDefaultRef: d.repoDefaultRef || 'refs/heads/main',
+            repositoryId: d.canonicalRepositoryId || d.repositoryId || null
+          } as StarterApp;
+        });
+
+      setStarters(forkable);
+      if (forkable.length > 0) {
+        setSelectedStarter(prev => {
+          if (prev && forkable.some((s: StarterApp) => s.id === prev.id)) return prev;
+          return forkable[0];
+        });
+      } else {
+        setSelectedStarter(null);
+      }
+    } catch (err: any) {
+      setStarters([]);
+      setSelectedStarter(null);
+      setStartersError(err?.message || 'Failed to load starters from canonical catalog');
+    } finally {
+      setIsLoadingStarters(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStarters();
+  }, [fetchStarters]);
 
   const handleGenerateCliToken = async () => {
     setIsGeneratingCliToken(true);
@@ -101,7 +155,8 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   };
 
   const getCommandForTool = () => {
-    return `slop fork nate/${selectedStarter.id}`;
+    if (!selectedStarter) return 'slop fork <app>';
+    return `slop fork ${selectedStarter.repoOwner}/${selectedStarter.repoName}`;
   };
 
   const handleCopyCommand = () => {
@@ -157,37 +212,80 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             </div>
 
             {/* Starters Grid */}
-            <div className="space-y-2">
-              {STARTERS.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => { playClickSound(); setSelectedStarter(s); }}
-                  className={`w-full text-left p-3 border-2 flex items-center justify-between transition-all ${
-                    selectedStarter.id === s.id
-                      ? 'bg-blue-50 border-t-black border-l-black border-b-white border-r-white shadow-inner font-bold'
-                      : 'bg-white border-t-white border-l-white border-b-black border-r-black hover:bg-gray-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl bg-white p-1 rounded border border-gray-300">{s.avatar}</span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-gray-900">{s.name}</span>
-                        <span className="bg-blue-100 text-blue-800 text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">
-                          {s.category}
-                        </span>
-                      </div>
-                      <div className="text-gray-600 text-xs mt-0.5 line-clamp-1">{s.tagline}</div>
-                    </div>
-                  </div>
+            {isLoadingStarters && (
+              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-6 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
+                <RefreshCw size={14} className="animate-spin text-blue-900" />
+                <span>Loading forkable starters from canonical catalog...</span>
+              </div>
+            )}
 
-                  <div className="text-right font-mono shrink-0 pl-2">
-                    <div className="text-xs font-bold text-green-800">{s.price}</div>
-                    <div className="text-[10px] text-gray-500">Fork policy: 70% if sold</div>
-                  </div>
+            {!isLoadingStarters && startersError && (
+              <div className="bg-red-50 border-2 border-red-400 p-4 rounded text-red-900 text-xs space-y-2 text-center">
+                <AlertTriangle size={20} className="mx-auto text-red-600" />
+                <div className="font-bold">Failed to load starters from catalog</div>
+                <div className="text-gray-600">{startersError}</div>
+                <button
+                  type="button"
+                  onClick={fetchStarters}
+                  className="btn-w95 px-3 py-1 font-bold text-xs inline-flex items-center gap-1 mx-auto"
+                >
+                  <RefreshCw size={12} />
+                  <span>Retry</span>
                 </button>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {!isLoadingStarters && !startersError && starters.length === 0 && (
+              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-6 rounded text-center space-y-2">
+                <Sparkles size={24} className="mx-auto text-gray-400" />
+                <div className="font-bold text-gray-700 text-sm">No Forkable Starters Available</div>
+                <p className="text-gray-500 text-xs max-w-sm mx-auto">
+                  There are currently no active applications with canonical repositories ready for forking.
+                </p>
+                <button
+                  type="button"
+                  onClick={fetchStarters}
+                  className="btn-w95 px-3 py-1 font-bold text-xs inline-flex items-center gap-1 mx-auto"
+                >
+                  <RefreshCw size={12} />
+                  <span>Refresh Catalog</span>
+                </button>
+              </div>
+            )}
+
+            {!isLoadingStarters && !startersError && starters.length > 0 && (
+              <div className="space-y-2">
+                {starters.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => { playClickSound(); setSelectedStarter(s); }}
+                    className={`w-full text-left p-3 border-2 flex items-center justify-between transition-all ${
+                      selectedStarter?.id === s.id
+                        ? 'bg-blue-50 border-t-black border-l-black border-b-white border-r-white shadow-inner font-bold'
+                        : 'bg-white border-t-white border-l-white border-b-black border-r-black hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl bg-white p-1 rounded border border-gray-300">{s.avatar}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-gray-900">{s.name}</span>
+                          <span className="bg-blue-100 text-blue-800 text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">
+                            {s.category}
+                          </span>
+                        </div>
+                        <div className="text-gray-600 text-xs mt-0.5 line-clamp-1">{s.tagline}</div>
+                      </div>
+                    </div>
+
+                    <div className="text-right font-mono shrink-0 pl-2">
+                      <div className="text-xs font-bold text-green-800">{s.price}</div>
+                      <div className="text-[10px] text-gray-500">Fork policy: 70% if sold</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Primary 1-Click In-Browser Fork Action */}
             <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 p-3 rounded border-2 border-blue-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -202,11 +300,12 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </div>
               <button
                 type="button"
+                disabled={!selectedStarter}
                 onClick={() => {
                   playClickSound();
                   setIsForkModalOpen(true);
                 }}
-                className="btn-w95 btn-w95-primary px-4 py-2 font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 shadow"
+                className="btn-w95 btn-w95-primary px-4 py-2 font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 shadow disabled:opacity-50"
               >
                 <Sparkles size={13} className="text-yellow-300" />
                 <span>1-Click Browser Fork</span>
@@ -292,7 +391,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <span>Step 2: Local CLI Development &amp; AI Engines (Optional)</span>
               </div>
               <p className="text-gray-600 text-xs">
-                To edit locally on your machine, authenticate once via <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop login</code> using your CLI token. Then run <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop fork</code> to clone <strong>{selectedStarter.name}</strong> into an isolated worktree and launch your AI coding engine.
+                To edit locally on your machine, authenticate once via <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop login</code> using your CLI token. Then run <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop fork</code> to clone <strong>{selectedStarter?.name || 'your selected app'}</strong> into an isolated worktree and launch your AI coding engine.
               </p>
             </div>
 
@@ -416,9 +515,10 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <button
                   onClick={() => {
                     playSuccessChime();
-                    onOpenSandbox(selectedStarter.id);
+                    if (selectedStarter) onOpenSandbox(selectedStarter.id);
                   }}
-                  className="btn-w95 btn-w95-primary p-3 font-bold text-xs flex items-center justify-center gap-2 shadow"
+                  disabled={!selectedStarter}
+                  className="btn-w95 btn-w95-primary p-3 font-bold text-xs flex items-center justify-center gap-2 shadow disabled:opacity-50"
                 >
                   <Play size={14} />
                   <span>Open Upstream App Preview</span>
@@ -429,9 +529,10 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <button
                   onClick={() => {
                     playClickSound();
-                    onOpenForge(selectedStarter.id);
+                    if (selectedStarter) onOpenForge(selectedStarter.id);
                   }}
-                  className="btn-w95 p-3 font-bold text-xs flex items-center justify-center gap-2"
+                  disabled={!selectedStarter}
+                  className="btn-w95 p-3 font-bold text-xs flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <ExternalLink size={13} />
                   <span>Inspect Upstream on GITSMITH</span>
@@ -460,7 +561,8 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 playClickSound();
                 setStep((prev) => (prev + 1) as any);
               }}
-              className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5"
+              disabled={!selectedStarter}
+              className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
             >
               <span>Continue</span>
               <ArrowRight size={13} />
@@ -469,9 +571,10 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             <button
               onClick={() => {
                 playSuccessChime();
-                if (onOpenSandbox) onOpenSandbox(selectedStarter.id);
+                if (onOpenSandbox && selectedStarter) onOpenSandbox(selectedStarter.id);
               }}
-              className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs"
+              disabled={!selectedStarter}
+              className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs disabled:opacity-50"
             >
               Open Upstream Preview
             </button>
@@ -480,30 +583,41 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
       </div>
 
       {/* 1-Click In-Browser Fork Modal */}
-      <ForkWithAiModal
-        isOpen={isForkModalOpen}
-        onClose={() => setIsForkModalOpen(false)}
-        app={{
-          id: selectedStarter.id,
-          name: selectedStarter.name,
-          avatar: selectedStarter.avatar,
-          tagline: selectedStarter.tagline,
-          price: parseFloat(selectedStarter.price.replace(/[^0-9.]/g, '')) || 15,
-          category: selectedStarter.category,
-          hasCanonicalRepo: true,
-          isRepoActive: true,
-          repoSlug: `nate/${selectedStarter.id}`,
-          repoName: selectedStarter.id,
-          repoOwner: 'nate'
-        }}
-        onLaunchTerminal={(cmd) => {
-          setIsForkModalOpen(false);
-          if (onOpenTerminal) onOpenTerminal(cmd);
-        }}
-        onForkSuccess={(_forkData) => {
-          showAlert(`Successfully forked ${selectedStarter.name} on the GITSMITH forge!`, "Fork Created", "success");
-        }}
-      />
+      {selectedStarter && (
+        <ForkWithAiModal
+          isOpen={isForkModalOpen}
+          onClose={() => setIsForkModalOpen(false)}
+          app={{
+            id: selectedStarter.id,
+            name: selectedStarter.name,
+            avatar: selectedStarter.avatar,
+            tagline: selectedStarter.tagline,
+            price: parseFloat(String(selectedStarter.price).replace(/[^0-9.]/g, '')) || 15,
+            category: selectedStarter.category,
+            hasCanonicalRepo: selectedStarter.hasCanonicalRepo,
+            isRepoActive: selectedStarter.isRepoActive,
+            repoSlug: selectedStarter.repoSlug,
+            repoName: selectedStarter.repoName,
+            repoOwner: selectedStarter.repoOwner,
+            repoDefaultRef: selectedStarter.repoDefaultRef,
+            repositoryId: selectedStarter.repositoryId
+          }}
+          onLaunchTerminal={(cmd) => {
+            setIsForkModalOpen(false);
+            if (onOpenTerminal) onOpenTerminal(cmd);
+          }}
+          onForkSuccess={(forkData) => {
+            const childSlug = forkData?.repository?.slug || selectedStarter.repoName || selectedStarter.id;
+            const owner = user?.username || 'you';
+            const nextCmd = `slop fork ${owner}/${childSlug}`;
+            showAlert(
+              `Forge fork created — clone it locally to build and run: ${nextCmd}`,
+              "Forge Fork Created",
+              "success"
+            );
+          }}
+        />
+      )}
     </div>
   );
 };

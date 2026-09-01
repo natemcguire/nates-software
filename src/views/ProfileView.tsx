@@ -57,6 +57,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
     lineageEarnedCents: 0,
     lineageBreakdown: [] as LineageBreakdownItem[]
   });
+  const [sellerOrders, setSellerOrders] = useState<any[]>([]);
+  const [isLedgerLoading, setIsLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
 
   // Contributor Revenue Grants & Earnings (from /api/payments/grants)
   interface ContributorGrant {
@@ -194,7 +197,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
         });
       }
 
-      // If viewing own profile and authenticated, fetch authoritative shelf
+      // If viewing own profile and authenticated, fetch authoritative shelf and seller ledger
       if (profileJson.isOwner && isAuthenticated) {
         const shelfRes = await fetch('/api/shelf');
         const shelfJson = await shelfRes.json();
@@ -207,11 +210,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
         // Fetch contributor revenue grants + earnings (own-scoped, best-effort;
         // does not block the rest of the profile load on failure)
         loadGrants();
+
+        // Fetch the seller payout ledger (own sales / allocations / transfer status)
+        try {
+          setIsLedgerLoading(true);
+          const ledgerRes = await fetch('/api/payments/ledger');
+          const ledgerJson = await ledgerRes.json();
+          if (ledgerRes.ok && ledgerJson.success && Array.isArray(ledgerJson.orders)) {
+            setSellerOrders(ledgerJson.orders);
+          } else {
+            setSellerOrders([]);
+          }
+        } catch (ledgerErr: any) {
+          setLedgerError(ledgerErr.message || 'Failed to load seller ledger');
+          setSellerOrders([]);
+        } finally {
+          setIsLedgerLoading(false);
+        }
       } else {
         setShelfApps([]);
         setGrants([]);
         setEarningsByRole([]);
         setPayoutsByStatus([]);
+        setSellerOrders([]);
       }
 
       setSyncStatus('synced');
@@ -450,7 +471,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
             onClick={() => { playClickSound(); setActiveTab('activity'); }}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'activity' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            <MessageSquare size={13} /> Activity
+            <MessageSquare size={13} /> Published &amp; Shelf
           </button>
         </div>
       </div>
@@ -652,6 +673,90 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Seller Sales & Payout Ledger */}
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
+              <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
+                <span className="flex items-center gap-1.5">
+                  <DollarSign size={14} className="text-emerald-700" />
+                  <span>Seller Sales &amp; Transfer Ledger</span>
+                </span>
+                <span className="text-[10px] font-mono text-gray-500">
+                  {sellerOrders.length} {sellerOrders.length === 1 ? 'Order' : 'Orders'}
+                </span>
+              </div>
+
+              {isLedgerLoading ? (
+                <div className="p-4 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
+                  <RefreshCw size={13} className="animate-spin text-w95-blue" />
+                  <span>Loading seller order ledger...</span>
+                </div>
+              ) : ledgerError ? (
+                <div className="bg-red-50 border border-red-400 p-2.5 rounded text-red-800 text-xs flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  <span>{ledgerError}</span>
+                </div>
+              ) : sellerOrders.length === 0 ? (
+                <div className="p-6 text-center text-gray-500 text-xs space-y-1">
+                  <p className="font-bold">No sales or royalty distributions recorded yet</p>
+                  <p>When buyers purchase your apps or downstream forks, your allocations and Stripe transfer outbox records will appear here.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-mono text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 border-b border-gray-300 text-gray-600 text-[11px]">
+                        <th className="p-1.5">Date / Order</th>
+                        <th className="p-1.5">App</th>
+                        <th className="p-1.5 text-right">Gross</th>
+                        <th className="p-1.5 text-right">Your Allocation</th>
+                        <th className="p-1.5 text-center">Payout Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {sellerOrders.map((order) => (
+                        <tr key={order.id} className="hover:bg-blue-50/50 transition-colors">
+                          <td className="p-1.5">
+                            <div className="font-bold text-gray-800 text-[11px]">
+                              {order.fulfilledAt ? new Date(order.fulfilledAt).toLocaleDateString() : new Date(order.createdAt).toLocaleDateString()}
+                            </div>
+                            <div className="text-[10px] text-gray-400">
+                              #{order.id.slice(0, 12)}
+                            </div>
+                          </td>
+                          <td className="p-1.5">
+                            <span className="font-bold text-blue-950 font-tahoma">{order.appName}</span>
+                            <span className="ml-1 text-[10px] text-gray-500">v{order.appVersion}</span>
+                          </td>
+                          <td className="p-1.5 text-right font-bold text-gray-800">
+                            {formatCentsToUsd(order.grossCents)}
+                          </td>
+                          <td className="p-1.5 text-right">
+                            <span className="font-bold text-green-800">
+                              {formatCentsToUsd(order.callerEarnedCents)}
+                            </span>
+                            <span className="block text-[10px] text-gray-500 uppercase">
+                              {order.callerRole || 'maker'}
+                            </span>
+                          </td>
+                          <td className="p-1.5 text-center">
+                            {order.isSettled ? (
+                              <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300">
+                                Settled
+                              </span>
+                            ) : (
+                              <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300">
+                                {order.transferStatus === 'pending' ? 'Pending' : order.transferStatus}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -948,21 +1053,91 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
           </form>
         )}
 
-        {/* TAB 5: Activity */}
+        {/* TAB 5: Published & Shelf Overview */}
         {!isLoading && activeTab === 'activity' && (
-          <div className="space-y-3 max-w-3xl mx-auto">
-            <div className="border-b pb-2 mb-2">
-              <span className="font-bold text-base text-w95-blue">Maker Discussions &amp; Activity</span>
-              <p className="text-gray-600 text-xs">Recent discussions, maker notes, and replies on 12:01 AM Daily Drops for @{profileData.username}.</p>
+          <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
+            <div className="border-b pb-2 mb-2 flex justify-between items-center">
+              <div>
+                <span className="font-bold text-base text-w95-blue">Published &amp; Shelf</span>
+                <p className="text-gray-600 text-xs">Summary overview derived directly from @{profileData.username}'s published shareware and owned shelf licenses.</p>
+              </div>
+              <div className="flex gap-2">
+                <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
+                  {publishedApps.length} Published
+                </span>
+                {isOwner && (
+                  <span className="bg-emerald-100 text-emerald-900 text-xs font-bold px-2 py-1 rounded">
+                    {shelfApps.length} Owned
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-2">
-              <MessageSquare size={32} className="mx-auto text-gray-400" />
-              <p className="font-bold text-gray-700 text-sm">No Recent Maker Discussions</p>
-              <p className="text-gray-500 text-xs max-w-sm mx-auto">
-                Participate in Daily Drop threads and comments to build maker reputation across the protocol.
-              </p>
+            {/* Section 1: Published Shareware */}
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
+              <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles size={13} className="text-blue-700" />
+                  <span>Published Shareware ({publishedApps.length})</span>
+                </span>
+                <span className="text-[10px] text-gray-500 font-mono">Daily registry drops</span>
+              </div>
+
+              {publishedApps.length === 0 ? (
+                <p className="text-gray-500 text-xs py-2 italic">
+                  No published applications registered yet for @{profileData.username}.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {publishedApps.map((app) => (
+                    <div key={app.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-blue-900">{app.name}</span>
+                        <span className="ml-2 font-mono text-[10px] text-gray-500">v{app.version}</span>
+                        {app.tagline && <p className="text-[11px] text-gray-600 mt-0.5">{app.tagline}</p>}
+                      </div>
+                      <div className="text-right text-[11px] text-gray-500 font-mono">
+                        {app.upvotes || 0} votes · {app.forks || 0} forks
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {/* Section 2: Owned Software Shelf */}
+            {isOwner && (
+              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
+                <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <HardDrive size={13} className="text-emerald-700" />
+                    <span>Owned Shelf Licenses ({shelfApps.length})</span>
+                  </span>
+                  <span className="text-[10px] text-gray-500 font-mono">Private title registry</span>
+                </div>
+
+                {shelfApps.length === 0 ? (
+                  <p className="text-gray-500 text-xs py-2 italic">
+                    No owned shelf items registered on your account.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {shelfApps.map((app) => (
+                      <div key={app.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-bold text-emerald-900">{app.name}</span>
+                          <span className="ml-2 font-mono text-[10px] text-gray-500">License: {app.maskedKey}</span>
+                          {app.tagline && <p className="text-[11px] text-gray-600 mt-0.5">{app.tagline}</p>}
+                        </div>
+                        <div className="text-right text-[11px] text-gray-500 font-mono">
+                          {app.purchasedDate ? new Date(app.purchasedDate).toLocaleDateString() : 'Active'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
