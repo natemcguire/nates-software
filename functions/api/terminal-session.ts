@@ -196,5 +196,3 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     expiresAt: (now + 60) * 1000
   }, { headers: { 'Cache-Control': 'no-store' } });
 };
-
-export { provesProductionTerminal };

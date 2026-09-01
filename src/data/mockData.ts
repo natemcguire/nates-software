@@ -289,8 +289,6 @@ export const INITIAL_APPS: AppListing[] = [
   }
 ];
 
-export const APPS_DATA = INITIAL_APPS;
-
 export const MAKER_PROFILES = [
   {
     id: 'nate',

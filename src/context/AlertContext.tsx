@@ -1,13 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { playClickSound, playErrorBeep, playSuccessChime } from '../lib/soundEngine';
 
-export interface AlertOptions {
-  title?: string;
-  message: string;
-  icon?: 'info' | 'warning' | 'error' | 'question' | 'success';
-  onOk?: () => void;
-}
-
 interface AlertContextType {
   showAlert: (message: string, title?: string, icon?: 'info' | 'warning' | 'error' | 'question' | 'success', onOk?: () => void) => void;
   showConfirm: (message: string, onConfirm: () => void, title?: string) => void;

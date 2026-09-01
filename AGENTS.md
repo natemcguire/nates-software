@@ -66,7 +66,7 @@
   * Atomic Compare-And-Swap (CAS) merge engine: validates `expectedOldSha` against `currentRemoteHeadSha` before moving `refs/heads/*`.
   * Multi-generational lineage ledger settlement engine.
   * SSH / Ed25519 commit signature verification.
-* **Backend:** `functions/api/git.ts`, `src/lib/gitsmithBackend.ts`, `src/lib/gitsmithDomain.ts`.
+* **Backend:** `functions/api/git.ts`, `src/lib/forgeDomain.ts`, `src/lib/gitsmith/*`.
 
 ### 5. `INBOX` — 3-Pane Async Mailbox & Merge Proposals
 * **Purpose:** Asynchronous developer mailbox for human-to-agent proposals, royalty notices, and discussion.
@@ -222,8 +222,8 @@ npm run deploy
 │   │   └── useWindowManager.ts  # Multi-window state manager
 │   ├── lib/                # Domain & Backend Logic
 │   │   ├── dynoDomain.ts
-│   │   ├── gitsmithBackend.ts
-│   │   ├── gitsmithDomain.ts
+│   │   ├── forgeDomain.ts
+│   │   ├── gitsmith/            # live bare-git forge engine (CAS, transport, outbox)
 │   │   ├── hotwireBackend.ts
 │   │   ├── hotwireDomain.ts
 │   │   ├── inboxDomain.ts
