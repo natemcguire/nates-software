@@ -422,10 +422,16 @@ export async function processStripeInboxEvent(
     )
   );
 
-  // E. One outbox row per positive maker/ancestor allocation (never protocol pool)
+  // E. One outbox row per positive payable allocation to a real recipient
+  // (maker, ancestor, or contributor). The protocol pool is never paid out —
+  // it has no recipientUserId and is excluded by that condition. Migration
+  // 0029 widened the outbox trigger to admit the 'contributor' role precisely
+  // so a granted contributor's carved share is queued for payout like any
+  // other recipient; omitting it here left contributor earnings recorded but
+  // never paid.
   let outboxRowCount = 0;
   for (const alloc of allocations) {
-    if ((alloc.role === 'maker' || alloc.role === 'ancestor') && alloc.amountCents > 0 && alloc.recipientUserId) {
+    if ((alloc.role === 'maker' || alloc.role === 'ancestor' || alloc.role === 'contributor') && alloc.amountCents > 0 && alloc.recipientUserId) {
       const outboxId = `cto_${crypto.randomUUID().replace(/-/g, '')}`;
       statements.push(
         db.prepare(`
