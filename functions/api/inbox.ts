@@ -410,6 +410,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
         return jsonError(`Merge job cannot be ${decision} from status ${proposal.jobStatus}`, 409);
       }
 
+      // Reviewer-saw-OID confirmation gate (fail closed on missing/mismatched evidence).
+      // The client must submit the exact target/source OIDs it displayed to the reviewer
+      // after successfully loading the diff/evidence. This is ADDITIONAL to the existing
+      // CAS and fast-forward checks below — it exists to catch the case where the reviewer
+      // approves based on stale evidence they saw before the underlying attempt moved.
+      if (decision === 'approved') {
+        const reviewedTargetOid = typeof body.reviewedTargetOid === 'string' ? body.reviewedTargetOid.trim() : '';
+        const reviewedSourceOid = typeof body.reviewedSourceOid === 'string' ? body.reviewedSourceOid.trim() : '';
+        if (!reviewedTargetOid || !reviewedSourceOid) {
+          return jsonError('Approval requires the reviewedTargetOid and reviewedSourceOid the reviewer saw in the loaded evidence; the client did not submit them', 422);
+        }
+        if (reviewedTargetOid !== proposal.inputTargetOid || reviewedSourceOid !== proposal.resultCommitOid) {
+          return jsonError('Cannot approve: the target or source OID has drifted since you loaded the evidence. Reload the proposal and re-review before approving.', 409);
+        }
+      }
+
       // Parse and validate contributor grant inputs
       const rawBps = body.grantBps ?? body.grant_bps ?? body.basisPoints ?? body.basis_points;
       const rawPct = body.grantPercent ?? body.grant_percent;
