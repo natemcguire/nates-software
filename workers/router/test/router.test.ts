@@ -980,7 +980,9 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer test-token'
+          // The platform's session credentials MUST NOT reach a tenant origin.
+          'Authorization': 'Bearer victim-session-token',
+          'Cookie': 'nsw_session=victim-token'
         },
         body: JSON.stringify({ action: 'create', count: 42 })
       });
@@ -994,7 +996,12 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const forwardedReq = mockFetch.mock.calls[0][0] as Request;
       expect(forwardedReq.url).toBe('https://api-container.workers.dev/submit');
       expect(forwardedReq.method).toBe('POST');
-      expect(forwardedReq.headers.get('Authorization')).toBe('Bearer test-token');
+      // Body + benign headers are forwarded, but the session credentials are
+      // STRIPPED so a hostile tenant app can never exfiltrate them (account
+      // takeover). Only the router→origin shared secret is added.
+      expect(forwardedReq.headers.get('Content-Type')).toBe('application/json');
+      expect(forwardedReq.headers.get('Authorization')).toBeNull();
+      expect(forwardedReq.headers.get('Cookie')).toBeNull();
       expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('test-origin-secret-xyz');
       expect(r2GetSpy).not.toHaveBeenCalled();
     });

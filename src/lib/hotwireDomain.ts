@@ -38,6 +38,12 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
     const trimmedId = drop.id.trim();
     if (!/^[a-zA-Z0-9_-]{2,64}$/.test(trimmedId)) {
       errors.push('Drop ID must be 2-64 characters using alphanumeric, dashes, or underscores.');
+    } else if (RESERVED_APP_IDS.has(trimmedId.toLowerCase())) {
+      // The app id becomes the tenant subdomain (<id>.nates-software.com), so a
+      // maker must not be able to register a first-party host name (apex, www,
+      // the app-shell subdomains, or infra names). Otherwise an attacker could
+      // claim e.g. inbox/chat/profile.nates-software.com and impersonate the shell.
+      errors.push(`Drop ID '${trimmedId}' is reserved and cannot be used.`);
     }
   }
 
@@ -46,6 +52,21 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
     errors
   };
 }
+
+// First-party host names that must never be claimable as a NEW tenant app
+// subdomain. This covers platform infrastructure and the app-shell subdomains —
+// names that, if grabbed, would let a maker impersonate the first-party shell.
+// It deliberately does NOT include the existing PRODUCT app ids (dronehunter,
+// certified-mailer, picfitai, american-gardener): those are real apps that
+// already own their subdomain, and their legitimate owner must be able to keep
+// publishing them. A *different* maker taking one is already blocked by the
+// listing/repository ownership guards in drops.ts, not by this name list.
+export const RESERVED_APP_IDS = new Set([
+  'www', 'apex', 'api', 'admin', 'app', 'auth', 'login', 'account', 'mail', 'static', 'assets',
+  'cdn', 'router', 'gateway', 'rig-provider', 'ops', 'status', 'help', 'support', 'docs',
+  // the app-shell / first-party product subdomains
+  'chat', 'git', 'gitsmith', 'hotwire', 'inbox', 'slopshop', 'rig', 'dyno', 'profile',
+]);
 
 export function parseAndValidatePrice(priceInput: any): { valid: boolean; priceStr: string; priceCents: number; error?: string } {
   if (priceInput === undefined || priceInput === null || priceInput === '') {

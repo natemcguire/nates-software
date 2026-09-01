@@ -267,6 +267,15 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
 
       const targetUrl = new URL(url.pathname + url.search, originRef);
       const originRequest = new Request(targetUrl.toString(), request);
+      // SECURITY: never forward the platform's session credentials to a tenant
+      // origin — tenant app code is attacker-controlled. Strip the session
+      // cookie and any Authorization/bearer before proxying, so a victim's
+      // nsw_session (or a bearer token) can never be exfiltrated to a hostile
+      // app even if it somehow rode the request. (The cookie is also host-only,
+      // so the browser won't send it here in the first place; this is
+      // defense-in-depth for the proxy path.)
+      originRequest.headers.delete('Cookie');
+      originRequest.headers.delete('Authorization');
       originRequest.headers.set('X-NSW-Origin-Auth', originSecret);
       return fetch(originRequest);
     }

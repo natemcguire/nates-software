@@ -98,21 +98,16 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
   });
 });
 
-describe('Seam regression: session cookie scope across apex + subdomains', () => {
+describe('Seam regression: session cookie is HOST-ONLY (never leaks to tenant subdomains)', () => {
   const cookieFor = (url: string) => sessionCookie(new Request(url), 'tok123');
 
-  it('scopes the cookie to .nates-software.com on the apex', () => {
-    expect(cookieFor('https://nates-software.com/api/auth')).toContain('Domain=.nates-software.com');
-  });
-
-  it('scopes the cookie to .nates-software.com on an app subdomain', () => {
-    expect(cookieFor('https://hotwire.nates-software.com/api/auth')).toContain('Domain=.nates-software.com');
-    expect(cookieFor('https://gitsmith.nates-software.com/api/auth')).toContain('Domain=.nates-software.com');
-  });
-
-  it('does NOT set a Domain on localhost or preview hosts (would break login)', () => {
+  it('sets NO Domain attribute — the cookie must never be sent to tenant subdomains', () => {
+    // CRITICAL: tenant apps are served at <app>.nates-software.com (attacker-
+    // controlled). A Domain=.nates-software.com cookie would be exfiltrated to
+    // them (account takeover). The cookie stays host-only, everywhere.
+    expect(cookieFor('https://nates-software.com/api/auth')).not.toContain('Domain=');
+    expect(cookieFor('https://hotwire.nates-software.com/api/auth')).not.toContain('Domain=');
     expect(cookieFor('http://localhost:3000/api/auth')).not.toContain('Domain=');
-    expect(cookieFor('https://abc123.nates-software.pages.dev/api/auth')).not.toContain('Domain=');
   });
 
   it('keeps HttpOnly + SameSite=Lax + Path=/ and adds Secure on https', () => {
@@ -124,19 +119,15 @@ describe('Seam regression: session cookie scope across apex + subdomains', () =>
   });
 });
 
-describe('Seam regression: cross-subdomain mutation is same-site, cross-site is blocked', () => {
+describe('Seam regression: cookie mutations require strict same-origin (CSRF guard)', () => {
   const post = (url: string, origin: string) =>
     new Request(url, { method: 'POST', headers: { 'Cookie': 'nsw_session=tok', 'Origin': origin } });
 
-  it('allows a cookie mutation from a TRUSTED app-shell subdomain to the apex', () => {
-    expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://hotwire.nates-software.com'))).toBe(true);
+  it('allows a cookie mutation from the exact same origin', () => {
+    expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://nates-software.com'))).toBe(true);
   });
-  it('allows a cookie mutation between two TRUSTED app-shell subdomains', () => {
-    expect(isSameOriginMutation(post('https://gitsmith.nates-software.com/api/git', 'https://inbox.nates-software.com'))).toBe(true);
-  });
-  it('BLOCKS a cookie mutation from an UNTRUSTED tenant subdomain (the CSRF hole)', () => {
-    // A hostile maker app served at evil.nates-software.com must NOT be trusted
-    // to forge authenticated mutations against the apex API with the shared cookie.
+  it('BLOCKS a cookie mutation from ANY other subdomain (incl. tenant apps)', () => {
+    expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://hotwire.nates-software.com'))).toBe(false);
     expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://evil.nates-software.com'))).toBe(false);
     expect(isSameOriginMutation(post('https://nates-software.com/api/payments/create-intent', 'https://dronehunter.nates-software.com'))).toBe(false);
   });
