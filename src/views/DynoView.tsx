@@ -56,12 +56,40 @@ export const DynoView: React.FC = () => {
   const [submitFeedback, setSubmitFeedback] = useState<{ success: boolean; message: string; runId?: string } | null>(null);
 
   // Setup tab state
-  const [selectedModel, setSelectedModel] = useState('gemini-3.7-flash-high');
-  const [selectedHarness, setSelectedHarness] = useState('Antigravity CLI');
-  const [agentCommand, setAgentCommand] = useState('agy --model gemini-3.7-flash-high -p "$DYNO_TASK_PROMPT"');
+  // DYNO does not ship pre-integrated model adapters — the form starts blank
+  // so the product never implies a "supported" model/harness/command that
+  // does not exist. The user configures their own subject.
+  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedHarness, setSelectedHarness] = useState('');
+  const [agentCommand, setAgentCommand] = useState('');
   const [selectedRepetitions, setSelectedRepetitions] = useState<number>(2);
   const [selectedNetworkPolicy, setSelectedNetworkPolicy] = useState<'none' | 'local_only' | 'isolated'>('none');
   const [activeFixtureIndex, setActiveFixtureIndex] = useState<number>(0);
+
+  // Verifier availability (Part 2 — honest verified-tier status)
+  const [verifierStatus, setVerifierStatus] = useState<{ acceptingJobs: boolean; message: string } | null>(null);
+  const [loadingVerifierStatus, setLoadingVerifierStatus] = useState(false);
+
+  const fetchVerifierStatus = async () => {
+    setLoadingVerifierStatus(true);
+    try {
+      const res = await fetch('/api/dyno-verifier-status');
+      const data = await res.json();
+      if (data && data.success) {
+        setVerifierStatus({ acceptingJobs: !!data.acceptingJobs, message: data.message || '' });
+      } else {
+        setVerifierStatus({ acceptingJobs: false, message: 'Unable to determine verifier availability.' });
+      }
+    } catch {
+      setVerifierStatus({ acceptingJobs: false, message: 'Unable to reach the verifier status endpoint.' });
+    } finally {
+      setLoadingVerifierStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVerifierStatus();
+  }, []);
 
   // Fetch canonical leaderboard on tab change or mount
   const fetchLeaderboard = async () => {
@@ -303,7 +331,12 @@ export const DynoView: React.FC = () => {
 *Evaluated deterministically via isolated local sandbox runner with SHA-256 attestation.*`;
   };
 
+  const isSubjectConfigured = selectedModel.trim() !== '' && selectedHarness.trim() !== '' && agentCommand.trim() !== '';
+
   const getCliCommand = () => {
+    if (!isSubjectConfigured) {
+      return '# Enter your model, agent harness, and run command above to generate a CLI command.';
+    }
     const shellQuote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
     const reps = selectedRepetitions > 1 ? ` --repetitions=${selectedRepetitions}` : '';
     const pol = selectedNetworkPolicy !== 'none' ? ` --policy=${selectedNetworkPolicy}` : '';
@@ -311,6 +344,7 @@ export const DynoView: React.FC = () => {
   };
 
   const copyCommand = () => {
+    if (!isSubjectConfigured) return;
     navigator.clipboard.writeText(getCliCommand());
     setCopiedCommand(true);
     setTimeout(() => setCopiedCommand(false), 2000);
@@ -398,6 +432,21 @@ export const DynoView: React.FC = () => {
           </div>
         </div>
 
+        {/* Verifier Availability Notice — honest, live status, no fabricated "path to verified" */}
+        {!loadingVerifierStatus && verifierStatus && (
+          <div className={`border p-2.5 rounded text-[11px] flex items-start gap-2 ${
+            verifierStatus.acceptingJobs
+              ? 'bg-green-50 border-green-300 text-green-950'
+              : 'bg-amber-50 border-amber-300 text-amber-950'
+          }`}>
+            <ShieldCheck size={16} className={`shrink-0 mt-0.5 ${verifierStatus.acceptingJobs ? 'text-green-700' : 'text-amber-700'}`} />
+            <div>
+              <strong>{verifierStatus.acceptingJobs ? 'Independent verification: online.' : 'Independent verification: offline.'}</strong>{' '}
+              {verifierStatus.message}
+            </div>
+          </div>
+        )}
+
         {/* ========================================================================= */}
         {/* TAB 1: RUNNER SETUP & CLI GUIDE */}
         {/* ========================================================================= */}
@@ -419,6 +468,7 @@ export const DynoView: React.FC = () => {
                   <input
                     value={selectedModel}
                     onChange={e => setSelectedModel(e.target.value)}
+                    placeholder="e.g. claude-opus-4-8"
                     className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
                     aria-label="Benchmark model identifier"
                   />
@@ -429,6 +479,7 @@ export const DynoView: React.FC = () => {
                   <input
                     value={selectedHarness}
                     onChange={e => setSelectedHarness(e.target.value)}
+                    placeholder="your agent harness"
                     className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
                     aria-label="Agent harness name"
                   />
@@ -466,6 +517,7 @@ export const DynoView: React.FC = () => {
                 <input
                   value={agentCommand}
                   onChange={e => setAgentCommand(e.target.value)}
+                  placeholder="your run command, e.g. my-agent -p &quot;$DYNO_TASK_PROMPT&quot;"
                   className="w-full border border-gray-400 p-1.5 rounded font-mono text-xs bg-gray-50"
                   aria-label="Agent command executed for each benchmark task"
                 />
@@ -482,7 +534,8 @@ export const DynoView: React.FC = () => {
                 </div>
                 <button
                   onClick={copyCommand}
-                  className="absolute top-2.5 right-2.5 btn-w95 text-[10px] py-0.5 px-2 bg-gray-800 text-gray-200 hover:bg-gray-700 border-gray-600 flex items-center gap-1"
+                  disabled={!isSubjectConfigured}
+                  className="absolute top-2.5 right-2.5 btn-w95 text-[10px] py-0.5 px-2 bg-gray-800 text-gray-200 hover:bg-gray-700 border-gray-600 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {copiedCommand ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
                   <span>{copiedCommand ? 'Copied' : 'Copy'}</span>
@@ -768,7 +821,10 @@ export const DynoView: React.FC = () => {
                 <Gauge size={28} className="mx-auto text-gray-400" />
                 <div className="font-bold text-gray-700 text-sm">No Reproducible Benchmark Runs Yet</div>
                 <p className="text-[11px] text-gray-500 max-w-md mx-auto">
-                  Run DYNO locally and submit a self-report for future independent replay. Self-reported uploads do not appear in ranked comparisons.
+                  Run DYNO locally and submit a self-report. Self-reported uploads do not appear in ranked comparisons
+                  {verifierStatus && !verifierStatus.acceptingJobs
+                    ? ' and independent replay is not currently available (verification offline).'
+                    : ' until independently reproduced.'}
                 </p>
                 <button
                   onClick={() => { playClickSound(); setActiveTab('import'); }}
