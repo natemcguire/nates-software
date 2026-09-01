@@ -52,6 +52,15 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         </div>
 
         <div
+          data-testid="start-menu-explainer"
+          onClick={() => handleItemClick('explainer')}
+          className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
+        >
+          <HelpCircle size={16} className="text-blue-700" />
+          <span className="font-bold">What is this?</span>
+        </div>
+
+        <div
           onClick={() => handleItemClick('mktg')}
           className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
         >

@@ -11,7 +11,8 @@ export interface ResolvedRoute {
 const RESERVED_VIEW_HOSTS = new Set([
   'gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile',
   'whitepapers', 'white-papers', 'terminal', 'editorial', 'lab', 'chat', 'irc',
-  'lounge', 'www', 'nates-software', 'api', 'router-canary', 'rig-provider'
+  'lounge', 'www', 'nates-software', 'api', 'router-canary', 'rig-provider',
+  'explainer', 'whatis', 'what'
 ]);
 
 function formatAppTitle(id: string): string {
@@ -31,6 +32,10 @@ export function resolveAppRoute(
   viewQuery: string = '',
   appIdQuery: string | null = null
 ): ResolvedRoute {
+  if (hostname.startsWith('explainer.') || hostname.startsWith('what.') || pathname.startsWith('/what') || pathname.startsWith('/explainer') || viewQuery === 'explainer' || viewQuery === 'what') {
+    return { type: 'standalone_view', id: 'explainer', title: "WHAT IS NATE'S SOFTWARE" };
+  }
+
   if (hostname.startsWith('chat.') || pathname.startsWith('/chat') || pathname.startsWith('/irc') || pathname.startsWith('/lounge') || viewQuery === 'chat') {
     return { type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' };
   }
@@ -102,6 +107,7 @@ import { AccountWidget } from './components/AccountWidget';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
+import { ExplainerView } from './views/ExplainerView';
 import { EditorialView } from './views/EditorialView';
 import { PostEditorView } from './views/PostEditorView';
 import { HotwireView } from './views/HotwireView';
@@ -269,6 +275,7 @@ export function AppInner() {
 
   if (route.type === 'standalone_view') {
     switch (route.id) {
+      case 'explainer': return renderStandaloneWrapper(route.title || "WHAT IS NATE'S SOFTWARE", <ExplainerView />);
       case 'editorial': return renderStandaloneWrapper(route.title || "EDITORIAL LAB", <EditorialView />);
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
       case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
@@ -406,6 +413,15 @@ export function AppInner() {
 
       {/* Top Right Controls & Greeting */}
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+        <button
+          data-testid="desktop-explainer-button"
+          onClick={() => { playClickSound(); openWindow('explainer'); }}
+          className="flex items-center gap-1.5 bg-black/40 hover:bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma font-bold cursor-pointer transition-colors shadow-sm"
+          title="What is Nate's Software and what does each app do?"
+        >
+          <span className="text-amber-300 font-bold">?</span>
+          <span>What is this?</span>
+        </button>
         {isAuthenticated && user && (
           <div
             data-testid="desktop-greeting"
@@ -439,7 +455,12 @@ export function AppInner() {
       </div>
 
       {/* Desktop App Icons Grid */}
-      <div className="absolute top-4 left-4 grid grid-flow-col grid-rows-7 gap-2 z-10">
+      <div className="absolute top-4 left-4 grid grid-flow-col grid-rows-8 gap-2 z-10">
+        <DesktopIcon
+          label="WHAT_IS_THIS.TXT"
+          icon="❓"
+          onClick={() => { playClickSound(); openWindow('explainer'); }}
+        />
         <DesktopIcon
           label="SETUP.EXE (START HERE)"
           icon="🚀"
@@ -589,6 +610,7 @@ export function AppInner() {
         >
           <MarketingWindow
             onOpenSetup={() => openWindow('setup')}
+            onOpenExplainer={() => openWindow('explainer')}
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
             onOpenRig={() => openWindow('rig')}
@@ -597,6 +619,38 @@ export function AppInner() {
             onOpenProfile={() => openWindow('profile')}
             onOpenWhitepapers={() => openWindow('papers')}
             onDismiss={() => closeWindow('mktg')}
+          />
+        </RetroWindow>
+      </ErrorBoundary>
+
+      {/* 0.1 Product Explainer — What is this? */}
+      <ErrorBoundary
+        key={`explainer-${windows.explainer?.isOpen}`}
+        fallbackTitle="WHAT_IS_THIS.TXT"
+        onDismiss={() => closeWindow('explainer')}
+        resetKeys={[windows.explainer?.isOpen]}
+      >
+        <RetroWindow
+          windowState={windows.explainer}
+          isActive={activeWindowId === 'explainer'}
+          onFocus={() => focusWindow('explainer')}
+          onClose={() => closeWindow('explainer')}
+          onMinimize={() => minimizeWindow('explainer')}
+          onToggleMaximize={() => toggleMaximizeWindow('explainer')}
+          onMove={(x, y) => updateWindowPosition('explainer', x, y)}
+          onResize={(w, h, x, y) => updateWindowSize('explainer', w, h, x, y)}
+        >
+          <ExplainerView
+            onOpenHotwire={() => openWindow('hotwire')}
+            onOpenSlopshop={() => openWindow('slopshop')}
+            onOpenGitsmith={() => openWindow('gitsmith')}
+            onOpenInbox={() => openWindow('inbox')}
+            onOpenDyno={() => openWindow('dyno')}
+            onOpenProfile={() => openWindow('profile')}
+            onOpenTerminal={() => openWindow('terminal')}
+            onOpenChat={() => openWindow('chat')}
+            onOpenWhitepapers={() => openWindow('papers')}
+            onDismiss={() => closeWindow('explainer')}
           />
         </RetroWindow>
       </ErrorBoundary>
