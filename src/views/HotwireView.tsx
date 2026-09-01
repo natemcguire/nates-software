@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { getCurrentBatchWindow, getTimeToNextDrop } from '../lib/hotwireBackend';
+import { useAuth } from '../context/AuthContext';
 
 interface HotwireViewProps {
   onOpenApp?: (appId: string) => void;
@@ -27,6 +28,7 @@ interface HotwireViewProps {
 
 export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor }) => {
   const { showAlert } = useAlert();
+  const { user, requireAuth, isAuthenticated } = useAuth();
   const {
     apps: catalogApps,
     upvoteApp: catalogUpvote,
@@ -41,7 +43,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const [apps, setApps] = useState<AppListing[]>(catalogApps);
   const [selectedApp, setSelectedApp] = useState<AppListing | null>(catalogApps[0] || null);
-  const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks'>('today');
+  const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks' | 'mine'>('today');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(votedAppIds || new Set());
   const [selectedBatch, setSelectedBatch] = useState<string>('today');
@@ -85,10 +87,10 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     refreshCatalog({ sort, batch });
   };
 
-  const handleFilterSelect = (filter: 'today' | 'forked' | 'alltime' | 'streaks') => {
+  const handleFilterSelect = (filter: 'today' | 'forked' | 'alltime' | 'streaks' | 'mine') => {
     playClickSound();
     setActiveFilter(filter);
-    if (filter !== 'streaks') {
+    if (filter !== 'streaks' && filter !== 'mine') {
       const sort = filter === 'forked' ? 'forks' : filter === 'alltime' ? 'alltime' : 'today';
       const batch = filter === 'alltime' ? 'all' : filter === 'today' ? 'today' : selectedBatch;
       setSelectedBatch(batch);
@@ -99,6 +101,15 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   // 12:01 AM UTC Live Ticker Countdown & Batch Window Calculation
   const [timeUntilNextDrop, setTimeUntilNextDrop] = useState<string>('00h 00m 00s');
   const [batchInfo, setBatchInfo] = useState(() => getCurrentBatchWindow());
+
+  const getNextDropLocalTime = () => {
+    const now = new Date();
+    const nextUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 1, 0, 0));
+    if (now.getTime() >= nextUtc.getTime()) {
+      nextUtc.setUTCDate(nextUtc.getUTCDate() + 1);
+    }
+    return nextUtc.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  };
 
   useEffect(() => {
     const updateCountdown = () => {
@@ -112,49 +123,51 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     return () => clearInterval(interval);
   }, []);
 
-  const handleUpvote = async (e: React.MouseEvent, appId: string) => {
+  const handleUpvote = (e: React.MouseEvent, appId: string) => {
     e.stopPropagation();
     if (upvotedApps.has(appId) || catalogHasVoted(appId)) {
       return;
     }
-    playClickSound();
 
-    setUpvotedApps(prev => new Set(prev).add(appId));
+    requireAuth('vote for this drop', async () => {
+      playClickSound();
+      setUpvotedApps(prev => new Set(prev).add(appId));
 
-    try {
-      // Single optimistic upvote layer handled authoritatively by CatalogContext
-      await catalogUpvote(appId);
-      playSuccessChime();
-    } catch (err: any) {
-      // Rollback upvoted visual state if this vote was rejected
-      setUpvotedApps(prev => {
-        const next = new Set(prev);
-        next.delete(appId);
-        return next;
-      });
+      try {
+        // Single optimistic upvote layer handled authoritatively by CatalogContext
+        await catalogUpvote(appId);
+        playSuccessChime();
+      } catch (err: any) {
+        // Rollback upvoted visual state if this vote was rejected
+        setUpvotedApps(prev => {
+          const next = new Set(prev);
+          next.delete(appId);
+          return next;
+        });
 
-      // Truthfully explain rejection and authenticated/network requirements
-      const errMsg = err?.message || 'Upvote rejected';
-      if (errMsg.includes('not found') || errMsg.includes('404')) {
-        showAlert(
-          `You can only upvote real drops that are live on the board. This one is demo or offline data.`,
-          "Upvote Rejected",
-          "warning"
-        );
-      } else if (errMsg.includes('auth') || errMsg.includes('401') || errMsg.includes('403')) {
-        showAlert(
-          `Authentication is required to record a verified upvote. Please sign in to vote for this drop.`,
-          "Sign In Required",
-          "warning"
-        );
-      } else {
-        showAlert(
-          `Upvote was rolled back because the server rejected the transaction: ${errMsg}`,
-          "Upvote Not Saved",
-          "error"
-        );
+        // Truthfully explain rejection and authenticated/network requirements
+        const errMsg = err?.message || 'Upvote rejected';
+        if (errMsg.includes('not found') || errMsg.includes('404')) {
+          showAlert(
+            `You can only upvote real drops that are live on the board. This one is demo or offline data.`,
+            "Upvote Rejected",
+            "warning"
+          );
+        } else if (errMsg.includes('auth') || errMsg.includes('401') || errMsg.includes('403')) {
+          showAlert(
+            `Authentication is required to record a verified upvote. Please sign in to vote for this drop.`,
+            "Sign In Required",
+            "warning"
+          );
+        } else {
+          showAlert(
+            `Upvote was rolled back because the server rejected the transaction: ${errMsg}`,
+            "Upvote Not Saved",
+            "error"
+          );
+        }
       }
-    }
+    });
   };
 
   const getFilteredApps = () => {
@@ -170,12 +183,17 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       );
     }
 
+    if (activeFilter === 'mine' && user?.username) {
+      list = list.filter(a => a.author === user.username || a.creator === user.username);
+    }
+
     switch (activeFilter) {
       case 'forked':
         return list.sort((a, b) => (b.forkCount || 0) - (a.forkCount || 0));
       case 'alltime':
         return list.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
       case 'today':
+      case 'mine':
       default:
         return list;
     }
@@ -185,32 +203,40 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const handleOpenNewDrop = () => {
     playClickSound();
-    if (onOpenPostEditor) {
-      const newDropTemplate: AppListing = {
-        id: '',
-        name: '',
-        tagline: '',
-        description: '',
-        author: 'guest',
-        authorAvatar: '⚡',
-        creator: 'guest',
-        creatorAvatar: '⚡',
-        version: 'v1.0.0',
-        upvotes: 0,
-        forkCount: 0,
-        forks: 0,
-        tags: ['Shareware'],
-        sqliteDatabase: '',
-        sqliteSize: 'Not specified',
-        screenshots: [],
-        comments: []
-      };
-      onOpenPostEditor(newDropTemplate);
-    }
+    requireAuth('submit a new drop to HOTWIRE', () => {
+      if (onOpenPostEditor) {
+        const newDropTemplate: AppListing = {
+          id: '',
+          name: '',
+          tagline: '',
+          description: '',
+          author: user?.username || 'guest',
+          authorAvatar: user?.avatar || '⚡',
+          creator: user?.username || 'guest',
+          creatorAvatar: user?.avatar || '⚡',
+          version: 'v1.0.0',
+          upvotes: 0,
+          forkCount: 0,
+          forks: 0,
+          tags: ['Shareware'],
+          sqliteDatabase: '',
+          sqliteSize: 'Not specified',
+          screenshots: [],
+          comments: []
+        };
+        onOpenPostEditor(newDropTemplate);
+      }
+    });
   };
 
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-sans text-xs select-none">
+      {/* Top Explanatory Definition Banner */}
+      <div className="bg-[#000050] text-blue-200 px-3 py-1 text-[11px] font-mono border-b border-blue-900 flex items-center justify-between flex-wrap gap-2">
+        <span>Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.</span>
+        <span className="text-blue-300 text-[10px]">12:01 AM UTC = {getNextDropLocalTime()} local</span>
+      </div>
+
       {/* 12:01 AM UTC Live Drops Header Banner */}
       <div className="bg-[#000080] text-white px-3 py-2 flex items-center justify-between flex-wrap gap-2 border-b-2 border-white shadow-inner">
         <div className="flex items-center gap-3">
@@ -220,7 +246,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           </div>
           <div className="flex items-center gap-1 text-[11px] bg-blue-900/80 px-2 py-0.5 rounded border border-blue-400 font-mono">
             <Timer size={12} className="text-yellow-300" />
-            <span>Next UTC Drop: <strong>{timeUntilNextDrop}</strong></span>
+            <span>Next Drop: <strong>{timeUntilNextDrop}</strong> ({getNextDropLocalTime()} local · 12:01 AM UTC)</span>
           </div>
         </div>
 
@@ -289,10 +315,10 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         {/* Left Column: Product Hunt Style Drops Leaderboard */}
         <div className="w-1/2 flex flex-col min-w-[320px]">
           {/* Filter Tabs */}
-          <div className="flex gap-1 mb-1">
+          <div className="flex gap-1 mb-1 flex-wrap">
             <button
               onClick={() => handleFilterSelect('today')}
-              className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
+              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'today' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
             >
@@ -300,7 +326,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             </button>
             <button
               onClick={() => handleFilterSelect('forked')}
-              className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
+              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'forked' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
             >
@@ -308,7 +334,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             </button>
             <button
               onClick={() => handleFilterSelect('alltime')}
-              className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
+              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'alltime' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
             >
@@ -316,12 +342,22 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             </button>
             <button
               onClick={() => handleFilterSelect('streaks')}
-              className={`win95-btn px-3 py-1 flex items-center gap-1 font-bold ${
+              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
                 activeFilter === 'streaks' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
               }`}
             >
               <Award size={13} className="text-purple-600" /> Streaks
             </button>
+            {user?.username && (
+              <button
+                onClick={() => handleFilterSelect('mine')}
+                className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
+                  activeFilter === 'mine' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
+                }`}
+              >
+                <span className="text-emerald-700 font-bold">●</span> Mine
+              </button>
+            )}
           </div>
 
           {/* Search Filter */}
@@ -515,6 +551,13 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         </span>
                         <span className="text-gray-500 text-[10px]">by @{app.author || app.creator || 'not supplied'}</span>
 
+                        {/* Submitted by User (Mine) Badge */}
+                        {user?.username && (app.author === user.username || app.creator === user.username) && (
+                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Submitted by you">
+                            MINE
+                          </span>
+                        )}
+
                         {/* Distinct Demo Data vs Live Drop Badge */}
                         {app.isDemo || !isAuthoritativeLive ? (
                           <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Seed Demo Data">
@@ -571,20 +614,40 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
                     {/* Upvote & Voter Badge Button */}
                     <div className="flex flex-col items-center gap-1">
-                      <button
-                        onClick={(e) => handleUpvote(e, app.id)}
-                        disabled={isUpvoted}
-                        className={`win95-btn px-2 py-1 flex flex-col items-center min-w-[42px] transition-all ${
-                          isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white'
-                        }`}
-                        title={isUpvoted ? "Already voted for this drop" : "Upvote drop"}
-                      >
-                        <Flame size={12} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-gray-600'} />
-                        <span className="font-mono text-xs mt-0.5">{app.upvotes}</span>
-                        {isUpvoted && (
-                          <span className="text-[8px] font-mono text-orange-800 font-bold uppercase">Voted</span>
-                        )}
-                      </button>
+                      {isSelected ? (
+                        <button
+                          onClick={(e) => handleUpvote(e, app.id)}
+                          disabled={isUpvoted}
+                          className={`win95-btn px-2.5 py-1 flex items-center gap-1 transition-all whitespace-nowrap ${
+                            isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white font-bold text-black'
+                          }`}
+                          title={isUpvoted ? "Already voted for this drop" : !isAuthenticated ? "Sign in to vote" : "Upvote drop"}
+                        >
+                          <Flame size={12} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-orange-600'} />
+                          <span className="font-mono text-xs">
+                            {!isAuthenticated
+                              ? 'Sign in to vote'
+                              : isUpvoted
+                                ? `Voted (${app.upvotes})`
+                                : `Upvote (${app.upvotes})`}
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => handleUpvote(e, app.id)}
+                          disabled={isUpvoted}
+                          className={`win95-btn px-2 py-1 flex flex-col items-center min-w-[42px] transition-all ${
+                            isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white'
+                          }`}
+                          title={isUpvoted ? "Already voted for this drop" : !isAuthenticated ? "Sign in to vote" : `Upvote (${app.upvotes})`}
+                        >
+                          <Flame size={12} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-gray-600'} />
+                          <span className="font-mono text-xs mt-0.5">{app.upvotes}</span>
+                          {isUpvoted && (
+                            <span className="text-[8px] font-mono text-orange-800 font-bold uppercase">Voted</span>
+                          )}
+                        </button>
+                      )}
 
                       {app.isDemo && app.voters && app.voters.length > 0 && (
                         <button

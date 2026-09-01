@@ -25,8 +25,10 @@ import {
   Info
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAuth } from '../context/AuthContext';
 
 export const DynoView: React.FC = () => {
+  const { user, requireAuth } = useAuth();
   const [activeTab, setActiveTab] = useState<'setup' | 'import' | 'leaderboard' | 'inspector' | 'export'>('setup');
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedReport, setCopiedReport] = useState(false);
@@ -35,6 +37,7 @@ export const DynoView: React.FC = () => {
 
   // Leaderboard data
   const [leaderboardRuns, setLeaderboardRuns] = useState<any[]>([]);
+  const [leaderboardFilter, setLeaderboardFilter] = useState<'all' | 'mine'>('all');
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardSuite, setLeaderboardSuite] = useState<any | null>(null);
@@ -247,40 +250,42 @@ export const DynoView: React.FC = () => {
   const handleSubmitBundle = async () => {
     if (!importValidation?.valid || !importValidation.parsedPayload) return;
 
-    setIsSubmitting(true);
-    setSubmitFeedback(null);
-    playClickSound();
+    requireAuth('submit a self-reported benchmark run', async () => {
+      setIsSubmitting(true);
+      setSubmitFeedback(null);
+      playClickSound();
 
-    try {
-      const res = await fetch('/api/dyno', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(importValidation.parsedPayload)
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        playSuccessChime();
-        setSubmitFeedback({
-          success: true,
-          message: `Successfully ingested run "${data.runId}" into canonical DYNO database. Score: ${data.score} (${data.verificationStatus}).`,
-          runId: data.runId
+      try {
+        const res = await fetch('/api/dyno', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(importValidation.parsedPayload)
         });
-        fetchLeaderboard();
-      } else {
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          playSuccessChime();
+          setSubmitFeedback({
+            success: true,
+            message: `Successfully ingested run "${data.runId}" into canonical DYNO database. Score: ${data.score} (${data.verificationStatus}).`,
+            runId: data.runId
+          });
+          fetchLeaderboard();
+        } else {
+          setSubmitFeedback({
+            success: false,
+            message: data.error || 'Server rejected submission payload.'
+          });
+        }
+      } catch (err: any) {
         setSubmitFeedback({
           success: false,
-          message: data.error || 'Server rejected submission payload.'
+          message: err.message || 'Failed to connect to /api/dyno'
         });
+      } finally {
+        setIsSubmitting(false);
       }
-    } catch (err: any) {
-      setSubmitFeedback({
-        success: false,
-        message: err.message || 'Failed to connect to /api/dyno'
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   // Formatted Markdown report
@@ -358,7 +363,7 @@ export const DynoView: React.FC = () => {
 
   const copyBadge = () => {
     const score = selectedRun?.run?.overall_score ?? selectedRun?.overall_score;
-    const username = selectedRun?.run?.username ?? selectedRun?.username;
+    const username = selectedRun?.run?.username ?? selectedRun?.username ?? user?.username;
     if (typeof score !== 'number' || !username) return;
     navigator.clipboard.writeText(generateBadgeMarkdown(username, score));
     setCopiedBadge(true);
@@ -782,7 +787,12 @@ export const DynoView: React.FC = () => {
         {/* ========================================================================= */}
         {/* TAB 3: VERIFIED LEADERBOARD */}
         {/* ========================================================================= */}
-        {activeTab === 'leaderboard' && (
+        {activeTab === 'leaderboard' && (() => {
+          const displayedRuns = leaderboardFilter === 'mine' && user?.username
+            ? leaderboardRuns.filter(r => (r.username === user.username || r.owner === user.username))
+            : leaderboardRuns;
+
+          return (
           <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
             <div className="flex items-center justify-between border-b border-gray-200 pb-2 flex-wrap gap-2">
               <div>
@@ -800,14 +810,33 @@ export const DynoView: React.FC = () => {
                 </p>
               </div>
 
-              <button
-                onClick={fetchLeaderboard}
-                disabled={loadingLeaderboard}
-                className="btn-w95 text-xs py-1 px-3 flex items-center gap-1.5 bg-gray-100 hover:bg-white"
-              >
-                <RefreshCw size={13} className={loadingLeaderboard ? 'animate-spin' : ''} />
-                <span>{loadingLeaderboard ? 'Querying D1...' : 'Refresh Leaderboard'}</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => { playClickSound(); setLeaderboardFilter('all'); }}
+                    className={`btn-w95 text-xs py-1 px-2.5 ${leaderboardFilter === 'all' ? 'btn-w95-primary' : 'bg-gray-100 hover:bg-white'}`}
+                  >
+                    All Runs ({leaderboardRuns.length})
+                  </button>
+                  {user?.username && (
+                    <button
+                      onClick={() => { playClickSound(); setLeaderboardFilter('mine'); }}
+                      className={`btn-w95 text-xs py-1 px-2.5 ${leaderboardFilter === 'mine' ? 'btn-w95-primary' : 'bg-gray-100 hover:bg-white'}`}
+                    >
+                      My Runs ({leaderboardRuns.filter(r => r.username === user.username || r.owner === user.username).length})
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  onClick={fetchLeaderboard}
+                  disabled={loadingLeaderboard}
+                  className="btn-w95 text-xs py-1 px-3 flex items-center gap-1.5 bg-gray-100 hover:bg-white"
+                >
+                  <RefreshCw size={13} className={loadingLeaderboard ? 'animate-spin' : ''} />
+                  <span>{loadingLeaderboard ? 'Querying D1...' : 'Refresh Leaderboard'}</span>
+                </button>
+              </div>
             </div>
 
             {leaderboardError && (
@@ -833,6 +862,20 @@ export const DynoView: React.FC = () => {
                   Go to Import Tab
                 </button>
               </div>
+            ) : leaderboardFilter === 'mine' && displayedRuns.length === 0 ? (
+              <div className="p-8 text-center bg-gray-50 border border-dashed border-gray-300 rounded space-y-2">
+                <Gauge size={28} className="mx-auto text-gray-400" />
+                <div className="font-bold text-gray-700 text-sm">No Runs Recorded For @{user?.username}</div>
+                <p className="text-[11px] text-gray-500 max-w-md mx-auto">
+                  Import a local benchmark execution bundle in the Import tab to submit and track your runs.
+                </p>
+                <button
+                  onClick={() => { playClickSound(); setActiveTab('import'); }}
+                  className="btn-w95 btn-w95-primary text-xs py-1 px-4 mt-2 font-bold"
+                >
+                  Go to Import Tab
+                </button>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse font-sans">
@@ -840,6 +883,7 @@ export const DynoView: React.FC = () => {
                     <tr className="bg-[#000080] text-white font-mono text-[11px]">
                       <th className="p-2">Rank</th>
                       <th className="p-2">Model &amp; Harness</th>
+                      <th className="p-2">Owner</th>
                       <th className="p-2">Environment</th>
                       <th className="p-2 text-center">Tasks</th>
                       <th className="p-2 text-center">Repetitions</th>
@@ -849,7 +893,7 @@ export const DynoView: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {leaderboardRuns.map((run, idx) => (
+                    {displayedRuns.map((run, idx) => (
                       <tr key={run.id} className="hover:bg-blue-50/50 font-mono text-[11px]">
                         <td className="p-2 font-bold text-blue-900">#{idx + 1}</td>
                         <td className="p-2 font-bold text-gray-900 font-sans">
@@ -857,6 +901,15 @@ export const DynoView: React.FC = () => {
                           <div className="text-[10px] text-purple-700 font-mono font-normal">
                             {run.agent_harness}
                           </div>
+                        </td>
+                        <td className="p-2 text-gray-700 text-[10px] font-mono">
+                          {run.username === user?.username ? (
+                            <span className="font-bold text-emerald-800">@{run.username} (you)</span>
+                          ) : run.username ? (
+                            <span>@{run.username}</span>
+                          ) : (
+                            <span className="text-gray-400">official</span>
+                          )}
                         </td>
                         <td className="p-2 text-gray-600 text-[10px]">
                           {run.os_name} {run.architecture}
@@ -901,7 +954,8 @@ export const DynoView: React.FC = () => {
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* ========================================================================= */}
         {/* TAB 4: RUN INSPECTOR & CRYPTOGRAPHIC EVIDENCE */}
@@ -1161,9 +1215,18 @@ export const DynoView: React.FC = () => {
                   <Gauge size={14} className="text-yellow-400" />
                   <span>DYNO Dev Benchmark: {selectedRun?.run?.overall_score ?? selectedRun?.overall_score ?? 'UNSCORED'} / 1000</span>
                 </div>
-                <span className="text-xs text-gray-600 font-mono">
-                  Markdown: `[![DYNO Real-World AI Benchmark](...)]`
-                </span>
+                {(() => {
+                  const badgeUser = selectedRun?.run?.username ?? selectedRun?.username ?? user?.username;
+                  const badgeScore = selectedRun?.run?.overall_score ?? selectedRun?.overall_score;
+                  const badgeMarkdown = typeof badgeScore === 'number' && badgeUser
+                    ? generateBadgeMarkdown(badgeUser, badgeScore)
+                    : null;
+                  return (
+                    <span className="text-xs text-gray-600 font-mono select-all break-all">
+                      {badgeMarkdown ? `Markdown: ${badgeMarkdown}` : 'Markdown: [![DYNO Real-World AI Benchmark](...)] (select a scored run)'}
+                    </span>
+                  );
+                })()}
               </div>
             </div>
           </div>

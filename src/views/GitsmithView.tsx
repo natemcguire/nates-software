@@ -225,6 +225,7 @@ export const GitsmithView: React.FC = () => {
   const [gatewayCheckState, setGatewayCheckState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [transportReady, setTransportReady] = useState(false);
   const [transportEndpoint, setTransportEndpoint] = useState<{ host: string; port: number } | null>(null);
+  const [filterMine, setFilterMine] = useState(false);
   const [showCreateRepo, setShowCreateRepo] = useState(false);
   const [newRepoSlug, setNewRepoSlug] = useState('');
   const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
@@ -295,6 +296,9 @@ export const GitsmithView: React.FC = () => {
     ? canonicalRepositories
     : showingShowcases ? GITSMITH_REPOS : [];
   const filteredRepos = repositoryCatalog.filter(repo => {
+    if (filterMine && user?.username && repo.owner !== user.username) {
+      return false;
+    }
     const q = searchQuery.toLowerCase();
     const matchName = repo.name.toLowerCase().includes(q) || repo.owner.toLowerCase().includes(q);
     const matchDesc = repo.description.toLowerCase().includes(q);
@@ -651,8 +655,35 @@ export const GitsmithView: React.FC = () => {
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1 font-mono">
-              <span className="font-bold text-slate-300">{filteredRepos.length} {showingShowcases ? 'Showcase Previews' : 'Repositories'}</span>
-              <span className={showingShowcases ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>{showingShowcases ? 'Bundled snapshots' : 'Canonical D1'}</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { playClickSound(); setFilterMine(false); }}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                    !filterMine
+                      ? 'bg-sky-600 text-white shadow-sm'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  All ({repositoryCatalog.length})
+                </button>
+                {user?.username && (
+                  <button
+                    type="button"
+                    onClick={() => { playClickSound(); setFilterMine(true); }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                      filterMine
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Mine ({repositoryCatalog.filter(r => r.owner === user.username).length})
+                  </button>
+                )}
+              </div>
+              <span className={showingShowcases ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+                {showingShowcases ? 'Bundled snapshots' : 'Canonical D1'}
+              </span>
             </div>
           </div>
 
@@ -679,8 +710,15 @@ export const GitsmithView: React.FC = () => {
                 </button>
               </div>
             )}
+            {filterMine && user?.username && filteredRepos.length === 0 && repositoryCatalog.length > 0 && (
+              <div className="p-4 text-center space-y-2 text-slate-400">
+                <p className="font-bold text-white text-xs">No repositories owned by @{user.username}</p>
+                <p className="text-[11px]">Click "New Repository" above to create your first forge repo.</p>
+              </div>
+            )}
             {filteredRepos.map(repo => {
               const isSelected = selectedRepo?.id === repo.id;
+              const isOwner = Boolean(user?.username && repo.owner === user.username);
               return (
                 <div
                   key={repo.id}
@@ -699,6 +737,11 @@ export const GitsmithView: React.FC = () => {
                     <div className="flex items-center gap-2 font-bold text-sm">
                       <span className="text-base">{repo.avatar}</span>
                       <span className={isSelected ? 'text-sky-300' : 'text-white'}>{repo.owner}/{repo.name}</span>
+                      {isOwner && (
+                        <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-700 font-bold">
+                          you
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px] font-mono text-slate-300 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
                       {repo.branch}
@@ -764,6 +807,11 @@ export const GitsmithView: React.FC = () => {
                   <span className="bg-slate-900 text-slate-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
                     {selectedRepo.visibility}
                   </span>
+                  {user?.username && selectedRepo.owner === user.username && (
+                    <span className="bg-emerald-950 text-emerald-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-700">
+                      Owned by you
+                    </span>
+                  )}
                   <span className={`${
                     selectedRepo.source === 'showcase'
                       ? 'bg-amber-950 text-amber-300 border-amber-700'
@@ -786,52 +834,60 @@ export const GitsmithView: React.FC = () => {
               </div>
 
               {/* Action Buttons: Live App, Fork, Clone */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {selectedRepo.liveUrl && <a
-                  href={selectedRepo.liveUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => playClickSound()}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md"
-                >
-                  <Play size={13} fill="currentColor" />
-                  <span>▷ View Live App</span>
-                  <ExternalLink size={12} />
-                </a>}
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedRepo.liveUrl && <a
+                    href={selectedRepo.liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => playClickSound()}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md"
+                  >
+                    <Play size={13} fill="currentColor" />
+                    <span>▷ View Live App</span>
+                    <ExternalLink size={12} />
+                  </a>}
 
-                <button
-                  onClick={() => {
-                    if (selectedRepo.source === 'showcase') {
-                      showAlert('Bundled showcase examples cannot be forked. Create or select a canonical repository to fork.', 'Demo Example', 'info');
-                      return;
-                    }
-                    if (!transportReady) {
-                      return showAlert('This repository is provisioned, but GITSMITH SSH transport has not been activated. No fork or remote was created.', 'SSH Transport Pending', 'error');
-                    }
-                    if (!selectedRepo.lastCommit?.sha || selectedRepo.lastCommit.sha === 'No projected ref') {
-                      return showAlert('This repository has no commits yet. Push the first commit before forking.', 'Source Not Pushed', 'info');
-                    }
-                    playSuccessChime();
-                    setShowForkModal(true);
-                  }}
-                  className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold px-3.5 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition-all shadow-md border border-amber-400"
-                  title="Fork into isolated worktree with Claude Code / AGY / Cursor"
-                >
-                  <Bot size={14} className="text-yellow-200" />
-                  <span>⚡ Fork with AI</span>
-                  <span className="bg-amber-900/60 px-1.5 py-0.5 rounded text-[10px] text-amber-200 font-mono">{selectedRepo.forks ?? 'local'}</span>
-                </button>
+                  <button
+                    onClick={() => {
+                      if (selectedRepo.source === 'showcase') {
+                        showAlert('Bundled showcase examples cannot be forked. Create or select a canonical repository to fork.', 'Demo Example', 'info');
+                        return;
+                      }
+                      if (!transportReady) {
+                        return showAlert('This repository is provisioned, but GITSMITH SSH transport has not been activated. No fork or remote was created.', 'SSH Transport Pending', 'error');
+                      }
+                      if (!selectedRepo.lastCommit?.sha || selectedRepo.lastCommit.sha === 'No projected ref') {
+                        return showAlert('This repository has no commits yet. Push the first commit before forking.', 'Source Not Pushed', 'info');
+                      }
+                      playSuccessChime();
+                      setShowForkModal(true);
+                    }}
+                    className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold px-3.5 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition-all shadow-md border border-amber-400"
+                    title="Fork into isolated worktree with Claude Code / AGY / Cursor"
+                  >
+                    <Bot size={14} className="text-yellow-200" />
+                    <span>⚡ Fork with AI</span>
+                    <span className="bg-amber-900/60 px-1.5 py-0.5 rounded text-[10px] text-amber-200 font-mono">{selectedRepo.forks ?? 'local'}</span>
+                  </button>
 
-                <button
-                  onClick={() => {
-                    handleCopyClone(selectedRepo);
-                  }}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
-                  title="Copy SLOP install command"
-                >
-                  {copiedClone ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-                  <span>{copiedClone ? 'Install copied!' : 'Install'}</span>
-                </button>
+                  <button
+                    onClick={() => {
+                      handleCopyClone(selectedRepo);
+                    }}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                    title="Copy SLOP install command"
+                  >
+                    {copiedClone ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    <span>{copiedClone ? 'Install copied!' : 'Install'}</span>
+                  </button>
+                </div>
+                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                  <span>your fork &rarr;</span>
+                  <span className="text-emerald-400 font-bold">
+                    @{user?.username || 'you'}/{selectedRepo.name}
+                  </span>
+                </div>
               </div>
             </div>
 

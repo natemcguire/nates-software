@@ -3,6 +3,7 @@ import { AppListing } from '../data/mockData';
 import { Save, Plus, Trash2, CheckCircle2, Copy, Check } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
+import { useAuth } from '../context/AuthContext';
 
 interface PostEditorViewProps {
   app: AppListing;
@@ -13,6 +14,7 @@ interface PostEditorViewProps {
 
 export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab = 'guide', onSave, onCancel }) => {
   const { showAlert } = useAlert();
+  const { user, requireAuth } = useAuth();
   const [activeTab, setActiveTab] = useState<'info' | 'media' | 'binaries' | 'guide' | 'pricing'>(initialTab);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -65,52 +67,61 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
       return;
     }
 
-    try {
-      setIsSaving(true);
-      const numericGrantable = typeof grantablePercent === 'number' ? grantablePercent : (parseFloat(String(grantablePercent)) || 0);
-      const clampedPercent = Math.max(0, Math.min(maxGrantablePercent, numericGrantable));
-      const grantableBps = Math.round(clampedPercent * 100);
+    requireAuth('submit drop to HOTWIRE', async () => {
+      try {
+        setIsSaving(true);
+        const numericGrantable = typeof grantablePercent === 'number' ? grantablePercent : (parseFloat(String(grantablePercent)) || 0);
+        const clampedPercent = Math.max(0, Math.min(maxGrantablePercent, numericGrantable));
+        const grantableBps = Math.round(clampedPercent * 100);
 
-      const updated: AppListing = {
-        ...app,
-        name: name.trim(),
-        tagline: tagline.trim(),
-        liveUrl: liveUrl.trim() || undefined,
-        description: description.trim(),
-        version: version.trim(),
-        price,
-        grantable_bps: grantableBps,
-        grantableBps: grantableBps,
-        tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-        screenshots,
-        binaries: {
-          ...app.binaries,
-          web: liveUrl.trim() || undefined,
-          mac: macBinary,
-          win: winBinary,
-          linux: linuxBinary,
-          ios: iosBinary
-        }
-      };
-      await onSave(updated);
-    } catch (err: any) {
-      showAlert(
-        `Drop persistence failed: ${err.message || 'Server rejected drop submission.'}`,
-        "Persistence Error",
-        "error"
-      );
-    } finally {
-      setIsSaving(false);
-    }
+        const updated: AppListing = {
+          ...app,
+          author: user?.username || app.author || 'guest',
+          authorAvatar: user?.avatar || app.authorAvatar || '⚡',
+          creator: user?.username || app.creator || 'guest',
+          creatorAvatar: user?.avatar || app.creatorAvatar || '⚡',
+          name: name.trim(),
+          tagline: tagline.trim(),
+          liveUrl: liveUrl.trim() || undefined,
+          description: description.trim(),
+          version: version.trim(),
+          price,
+          grantable_bps: grantableBps,
+          grantableBps: grantableBps,
+          tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+          screenshots,
+          binaries: {
+            ...app.binaries,
+            web: liveUrl.trim() || undefined,
+            mac: macBinary,
+            win: winBinary,
+            linux: linuxBinary,
+            ios: iosBinary
+          }
+        };
+        await onSave(updated);
+      } catch (err: any) {
+        showAlert(
+          `Drop persistence failed: ${err.message || 'Server rejected drop submission.'}`,
+          "Persistence Error",
+          "error"
+        );
+      } finally {
+        setIsSaving(false);
+      }
+    });
   };
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm">
       {/* Editor Header Navigation */}
       <div className="bg-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
-        <div>
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-base">Creator Studio &middot; Post Editor</span>
-          <span className="text-xs text-blue-200 ml-2 font-mono">[Editing: {app.id || 'New Drop'}]</span>
+          <span className="text-xs text-blue-200 font-mono">[Editing: {app.id || 'New Drop'}]</span>
+          <span className="text-xs text-emerald-300 font-mono bg-blue-950 px-2 py-0.5 rounded border border-blue-600">
+            Publishing as: <strong>@{user?.username || app.author || 'guest'}</strong>
+          </span>
         </div>
 
         {/* Tab Buttons */}
@@ -260,6 +271,21 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
         {/* Tab 1: App Info */}
         {activeTab === 'info' && (
           <div className="space-y-3 max-w-2xl mx-auto">
+            {/* Maker Attribution Card */}
+            <div className="bg-slate-50 border border-slate-300 p-2.5 rounded flex items-center justify-between text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{user?.avatar || app.authorAvatar || '⚡'}</span>
+                <div>
+                  <span className="text-slate-500 text-[10px] block">MAKER ATTRIBUTION</span>
+                  <span className="font-bold text-slate-800">@{user?.username || app.author || 'guest'}</span>
+                  {user?.username && <span className="text-emerald-600 text-[10px] ml-1.5 font-sans font-bold">(authenticated account)</span>}
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500 font-sans">
+                {user?.username ? 'Drop will be registered to your profile.' : 'Sign in to link drop to your verified profile.'}
+              </div>
+            </div>
+
             <div>
               <label className="font-bold text-gray-800 block mb-1">Application Name:</label>
               <input
