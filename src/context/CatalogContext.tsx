@@ -23,7 +23,6 @@ export interface CatalogContextType {
   upvoteApp: (appId: string) => Promise<boolean>;
   incrementForkCount: (appId: string) => void;
   submitDrop: (dropData: Partial<AppListing>) => Promise<{ success: boolean; id?: string; error?: string }>;
-  recordPurchase: (appId?: string, licenseKey?: string) => void | Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
@@ -320,10 +319,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     fetchAuthoritativeCatalog();
   }, [fetchAuthoritativeCatalog]);
 
-  const recordPurchase = useCallback(async (_appId?: string, _licenseKey?: string) => {
-    await fetchShelf();
-  }, [fetchShelf]);
-
   return (
     <CatalogContext.Provider
       value={{
@@ -345,8 +340,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         refreshShelf: fetchShelf,
         upvoteApp,
         incrementForkCount,
-        submitDrop,
-        recordPurchase
+        submitDrop
       }}
     >
       {children}

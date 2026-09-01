@@ -50,7 +50,17 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
   // Modals state
   const [showLineageModal, setShowLineageModal] = useState(false);
-  const [showAiModal, setShowAiModal] = useState(false);
+
+  // Deployment & authoritative URL gating
+  const hasActiveDeployment = Boolean(
+    (app.deploymentState === 'active' && (app.activeDeploymentId || app.liveUrl)) ||
+    app.liveUrl
+  );
+  const authoritativeLiveUrl = app.liveUrl || (
+    app.deploymentState === 'active' && (app.binaries as any)?.web
+      ? (app.binaries as any).web
+      : null
+  );
 
   // Comment state
   const [comments, setComments] = useState<AppComment[]>(app.comments || []);
@@ -261,19 +271,29 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             >
               <Play size={13} /> Live App
             </button>
-            <a
-              href={`https://${app.id}.nates-software.com`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-w95 text-xs py-1 px-2 ml-0.5 text-blue-900 font-bold flex items-center gap-1 hover:bg-blue-100"
-              title={`Open https://${app.id}.nates-software.com in new tab`}
-              onClick={() => {
-                playClickSound();
-              }}
-            >
-              <ExternalLink size={12} />
-              <span>{app.id}.nates-software.com</span>
-            </a>
+            {hasActiveDeployment && authoritativeLiveUrl ? (
+              <a
+                href={authoritativeLiveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-w95 text-xs py-1 px-2 ml-0.5 text-blue-900 font-bold flex items-center gap-1 hover:bg-blue-100"
+                title={`Open ${authoritativeLiveUrl} in new tab`}
+                onClick={() => {
+                  playClickSound();
+                }}
+              >
+                <ExternalLink size={12} />
+                <span>{authoritativeLiveUrl.replace(/^https?:\/\//, '')}</span>
+              </a>
+            ) : (
+              <span
+                className="btn-w95 text-xs py-1 px-2 ml-0.5 text-gray-400 cursor-not-allowed opacity-70 font-medium flex items-center gap-1"
+                title={`Deployment status: ${app.deploymentState || 'draft'} (no active host)`}
+              >
+                <ExternalLink size={12} />
+                <span>{app.deploymentState || 'draft'}</span>
+              </span>
+            )}
           </div>
           <button
             onClick={() => { setActiveTab('spec'); playClickSound(); }}
@@ -303,25 +323,32 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           <div className="h-full flex flex-col">
             <div className="bg-gray-100 p-2 border border-gray-300 mb-2 flex items-center justify-between text-xs font-mono flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-gray-700">Subdomain: <strong className="text-blue-800">{app.id}.nates-software.com</strong></span>
-                {app.deploymentState === 'active' || app.activeDeploymentId || app.liveUrl ? (
-                  <a
-                    href={app.liveUrl || `https://${app.id}.nates-software.com`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => playClickSound()}
-                    className="btn-w95 text-xs py-1 px-3 bg-blue-50 text-blue-900 font-bold flex items-center gap-1.5 hover:bg-blue-100 shadow-sm border border-blue-400"
-                    title={`Open https://${app.id}.nates-software.com in a new browser window`}
-                  >
-                    <ExternalLink size={13} /> Open in New Window
-                  </a>
+                {hasActiveDeployment && authoritativeLiveUrl ? (
+                  <>
+                    <span className="text-gray-700">Live URL: <strong className="text-blue-800 font-mono">{authoritativeLiveUrl}</strong></span>
+                    <a
+                      href={authoritativeLiveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => playClickSound()}
+                      className="btn-w95 text-xs py-1 px-3 bg-blue-50 text-blue-900 font-bold flex items-center gap-1.5 hover:bg-blue-100 shadow-sm border border-blue-400"
+                      title={`Open ${authoritativeLiveUrl} in a new browser window`}
+                    >
+                      <ExternalLink size={13} /> Open in New Window
+                    </a>
+                  </>
                 ) : (
-                  <span
-                    className="btn-w95 text-xs py-1 px-3 text-gray-400 cursor-not-allowed opacity-70 font-medium border border-gray-300 flex items-center gap-1.5"
-                    title="Subdomain not active for draft listing"
-                  >
-                    <ExternalLink size={13} /> Draft (Unpublished)
-                  </span>
+                  <>
+                    <span className="text-gray-600 font-mono text-[11px]">
+                      Deployment status: <strong className="text-gray-800 uppercase font-bold">{app.deploymentState || 'draft'}</strong> (no active host)
+                    </span>
+                    <span
+                      className="btn-w95 text-xs py-1 px-3 text-gray-400 cursor-not-allowed opacity-70 font-medium border border-gray-300 flex items-center gap-1.5"
+                      title="Host not active for draft listing"
+                    >
+                      <ExternalLink size={13} /> Draft (Unpublished)
+                    </span>
+                  </>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -540,9 +567,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               <span>Register License (${typeof app.price === 'number' ? app.price : (parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15)})</span>
             </button>
           )}
-          {app.deploymentState === 'active' || app.activeDeploymentId || app.liveUrl ? (
+          {hasActiveDeployment && authoritativeLiveUrl ? (
             <a
-              href={app.liveUrl || (app.binaries as any)?.web || `/serve/${app.id}/index.html`}
+              href={authoritativeLiveUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
@@ -552,7 +579,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           ) : (
             <span
               className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 text-gray-400 cursor-not-allowed opacity-70 font-medium"
-              title="Drop is draft metadata; app has not been deployed"
+              title={`Drop is ${app.deploymentState || 'draft'} metadata; app has not been deployed`}
             >
               <ExternalLink size={12} /> Not yet published
             </span>
@@ -619,148 +646,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                 className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-1.5 rounded font-bold font-mono"
               >
                 Close DAG View
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Interactive Local AI Pairing Session Modal */}
-      {showAiModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-xl w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
-              <div className="flex items-center gap-2">
-                <Bot size={16} className="text-purple-400" />
-                <span className="font-bold text-sm text-white font-mono">Local AI Agent Workflow · {app.name}</span>
-              </div>
-              <button onClick={() => setShowAiModal(false)} className="text-slate-400 hover:text-white">
-                <X size={16} />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-300 leading-relaxed">
-              We do not host AI models on our servers. You fork the code to your local machine, run your own local CLI agent to make changes, and push back up to GITSMITH.
-            </p>
-
-            {/* Step 1: Clone & Fork */}
-            <div className="space-y-1.5">
-              <div className="font-bold text-xs text-sky-400 font-mono flex items-center gap-1">
-                <span>Step 1:</span> Clone repo into isolated worktree
-              </div>
-              <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between font-mono text-[11px]">
-                <code className="text-sky-300">git clone https://github.com/natemcguire/{app.id}.git /tmp/slop-{app.id} && cd /tmp/slop-{app.id}</code>
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    navigator.clipboard.writeText(`git clone https://github.com/natemcguire/${app.id}.git /tmp/slop-${app.id} && cd /tmp/slop-${app.id}`);
-                    showAlert("Clone & cd command copied!", "Command Copied", "success");
-                  }}
-                  className="bg-sky-900 hover:bg-sky-800 text-sky-200 px-2 py-1 rounded text-[10px] ml-2 shrink-0"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-
-            {/* Step 2: 1-Click Chained Agent Launchers */}
-            <div className="space-y-2">
-              <div className="font-bold text-xs text-purple-400 font-mono flex items-center gap-1">
-                <span>Step 2:</span> Launch your local headless AI agent (1-Click Full Chained Command)
-              </div>
-
-              <div className="space-y-1.5 font-mono text-[11px]">
-                {/* Claude Code */}
-                <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between">
-                  <div className="truncate mr-2">
-                    <span className="text-purple-400 font-bold block text-[10px]">🟣 Claude Code (Anthropic)</span>
-                    <code className="text-purple-300">git clone https://github.com/natemcguire/{app.id}.git /tmp/slop-{app.id} && cd /tmp/slop-{app.id} && claude "Review code and add new feature"</code>
-                  </div>
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      navigator.clipboard.writeText(`git clone https://github.com/natemcguire/${app.id}.git /tmp/slop-${app.id} && cd /tmp/slop-${app.id} && claude "Review code and add new feature"`);
-                      showAlert("Full Claude Code 1-liner copied!", "Command Copied", "success");
-                    }}
-                    className="bg-purple-900 hover:bg-purple-800 text-purple-200 px-2.5 py-1.5 rounded text-[10px] shrink-0 font-bold"
-                  >
-                    Copy 1-Liner
-                  </button>
-                </div>
-
-                {/* Antigravity CLI (AGY) */}
-                <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between">
-                  <div className="truncate mr-2">
-                    <span className="text-sky-400 font-bold block text-[10px]">⚡ Antigravity CLI (AGY)</span>
-                    <code className="text-sky-300">git clone https://github.com/natemcguire/{app.id}.git /tmp/slop-{app.id} && cd /tmp/slop-{app.id} && agy "Implement features for {app.name}"</code>
-                  </div>
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      navigator.clipboard.writeText(`git clone https://github.com/natemcguire/${app.id}.git /tmp/slop-${app.id} && cd /tmp/slop-${app.id} && agy "Implement features for ${app.name}"`);
-                      showAlert("Full AGY 1-liner copied!", "Command Copied", "success");
-                    }}
-                    className="bg-sky-900 hover:bg-sky-800 text-sky-200 px-2.5 py-1.5 rounded text-[10px] shrink-0 font-bold"
-                  >
-                    Copy 1-Liner
-                  </button>
-                </div>
-
-                {/* Codex / Aider */}
-                <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between">
-                  <div className="truncate mr-2">
-                    <span className="text-emerald-400 font-bold block text-[10px]">🤖 Codex / Aider</span>
-                    <code className="text-emerald-300">git clone https://github.com/natemcguire/{app.id}.git /tmp/slop-{app.id} && cd /tmp/slop-{app.id} && aider --model sonnet</code>
-                  </div>
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      navigator.clipboard.writeText(`git clone https://github.com/natemcguire/${app.id}.git /tmp/slop-{app.id} && cd /tmp/slop-${app.id} && aider --model sonnet`);
-                      showAlert("Full Aider 1-liner copied!", "Command Copied", "success");
-                    }}
-                    className="bg-emerald-900 hover:bg-emerald-800 text-emerald-200 px-2.5 py-1.5 rounded text-[10px] shrink-0 font-bold"
-                  >
-                    Copy 1-Liner
-                  </button>
-                </div>
-
-                {/* Cursor / VS Code */}
-                <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between">
-                  <div className="truncate mr-2">
-                    <span className="text-pink-400 font-bold block text-[10px]">🧠 Cursor / Grok / VS Code</span>
-                    <code className="text-pink-300">git clone https://github.com/natemcguire/{app.id}.git /tmp/slop-{app.id} && cursor /tmp/slop-{app.id}</code>
-                  </div>
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      navigator.clipboard.writeText(`git clone https://github.com/natemcguire/${app.id}.git /tmp/slop-${app.id} && cursor /tmp/slop-${app.id}`);
-                      showAlert("Full Cursor 1-liner copied!", "Command Copied", "success");
-                    }}
-                    className="bg-pink-900 hover:bg-pink-800 text-pink-200 px-2.5 py-1.5 rounded text-[10px] shrink-0 font-bold"
-                  >
-                    Copy 1-Liner
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 3: Push Fork */}
-            <div className="space-y-1.5">
-              <div className="font-bold text-xs text-amber-400 font-mono flex items-center gap-1">
-                <span>Step 3:</span> Push your changes back to GITSMITH
-              </div>
-              <div className="bg-slate-950 p-2.5 rounded border border-slate-800 flex items-center justify-between font-mono text-[11px]">
-                <code className="text-amber-300">git push origin my-feature-branch</code>
-                <span className="text-slate-500 text-[10px]">If your version sells, @{app.author || app.creator} gets 20%</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-slate-700">
-              <button
-                onClick={() => setShowAiModal(false)}
-                className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-1.5 rounded font-bold font-mono text-xs"
-              >
-                Close
               </button>
             </div>
           </div>

@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
-import { Award, Flame, ThumbsUp } from 'lucide-react';
-import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { Award, Flame, ExternalLink, Info } from 'lucide-react';
+import { playClickSound } from '../lib/soundEngine';
+import { useCatalog } from '../context/CatalogContext';
 
 interface EditorialArticle {
   id: string;
-  badge: 'EDITOR CHOICE' | 'HARDWARE BENCHMARK' | 'MAKER SPOTLIGHT' | 'DEEP DIVE';
+  badge: 'EDITOR SAMPLE' | 'HARDWARE DISCUSSION' | 'MAKER SPOTLIGHT' | 'DEEP DIVE';
   badgeColor: string;
   title: string;
   author: string;
   date: string;
   summary: string;
   appId?: string;
-  ratingScore: number;
   specs: { label: string; value: string }[];
   content: string[];
 }
@@ -19,45 +19,43 @@ interface EditorialArticle {
 const ARTICLES: EditorialArticle[] = [
   {
     id: 'art_dronehunter',
-    badge: 'EDITOR CHOICE',
+    badge: 'EDITOR SAMPLE',
     badgeColor: 'bg-red-600 text-white',
-    title: "DroneHunter 95 Teardown: How 60 FPS Canvas Geometry & Web Audio Beat Electron Bloat",
-    author: "Nate McGuire (Editor-in-Chief)",
+    title: "DroneHunter 95 Architecture Breakdown: Canvas Geometry & Web Audio Synthesis",
+    author: "Nate McGuire (Sample Reviewer)",
     date: "Aug 29, 2026",
-    summary: "A pure retro canvas shooter that boots in under 12ms. Zero framework overhead, Local-First state persistence, and instant sound synthesis.",
+    summary: "Illustrative breakdown of an arcade canvas shooter concept. Pure canvas rendering, browser-local state, and Web Audio synthesis.",
     appId: 'dronehunter',
-    ratingScore: 9.8,
     specs: [
-      { label: "Bundle Size", value: "38 KB (Zero NPM bloat)" },
-      { label: "Frame Rate", value: "60 FPS rock solid" },
-      { label: "Audio Engine", value: "Pure Web Audio API Synthesizers" },
-      { label: "Shareware Split", value: "70% Maker / 20% Lineage / 10% Pool" }
+      { label: "Rendering", value: "HTML5 Canvas (Client-side)" },
+      { label: "Audio Engine", value: "Web Audio API Synthesizers" },
+      { label: "Shareware Split", value: "70% Maker / 20% Lineage / 10% Pool" },
+      { label: "Review Status", value: "Illustrative Sample (Not Verified)" }
     ],
     content: [
-      "In an era where basic desktop calculators consume 400MB of RAM via Chromium containers, DroneHunter 95 is a masterclass in shareware restraint.",
-      "The entire game logic, weapon physics, duck/drone trajectory trigonometry, and sound synthesizer fit in a single self-contained bundle.",
-      "Forking this app via SLOP CLI takes under 400ms and yields a completely functional local worktree with hot-reloading."
+      "In an era where basic desktop utilities often consume hundreds of megabytes of RAM via Chromium containers, DroneHunter 95 is designed with retro shareware restraint.",
+      "The game logic, duck and drone trajectories, and audio synthesizers run entirely within the client runtime with zero framework bloat.",
+      "Note: This article is an illustrative demo review demonstrating editorial layout and formatting; quantitative metrics are unverified sample estimates."
     ]
   },
   {
     id: 'art_m4max_bench',
-    badge: 'HARDWARE BENCHMARK',
+    badge: 'HARDWARE DISCUSSION',
     badgeColor: 'bg-blue-600 text-white',
-    title: "Apple M4 Max vs Nvidia RTX 4090: Local AI Token Velocity & TTFT Benchmark Lab",
-    author: "Nate's Software Lab Team",
+    title: "Unified Memory vs Discrete GPU Architectures for Local LLM Inference",
+    author: "Nate's Software Lab Team (Illustrative Sample)",
     date: "Aug 28, 2026",
-    summary: "Benchmarking 16-core Apple Silicon Unified Memory bandwidth against dedicated GDDR6X on local LLM prompt caching and code synthesis.",
-    ratingScore: 9.6,
+    summary: "Illustrative discussion comparing unified memory architectures against discrete GPUs for prompt caching and local model execution.",
     specs: [
-      { label: "M4 Max Throughput", value: "168.2 tok/s (Metal Performance Shaders)" },
-      { label: "Memory Bandwidth", value: "410 GB/s Unified" },
-      { label: "TTFT (First Token)", value: "42ms" },
-      { label: "Needle Recall", value: "99.2% at 128k context" }
+      { label: "Architecture", value: "Unified Memory vs Dedicated VRAM" },
+      { label: "Bandwidth Comparison", value: "Theoretical Hardware Specs" },
+      { label: "Benchmark Status", value: "Sample Data (Not Verified Measurement)" },
+      { label: "Verified Benchmarks", value: "See DYNO suite for reproducible runs" }
     ],
     content: [
-      "We tested local LLM inference engines stressing unified memory architectures under heavy speculative decoding loads.",
-      "Apple Silicon's unified 64GB memory pool enables instant zero-copy prompt cache reuse, eliminating PCIe bus bottlenecks encountered on discrete GPUs.",
-      "Note: Raw token velocity benchmarks measure hardware and inference kernel speed, distinct from the DYNO developer benchmark which evaluates AI model + harness + tool autonomy on 50 software engineering tasks."
+      "This is an illustrative sample article demonstrating editorial review layouts. Verified model and agent benchmark results are recorded in the DYNO benchmark suite.",
+      "Unified memory architectures provide zero-copy prompt cache reuse, while discrete GPUs offer high raw compute throughput.",
+      "Quantitative hardware throughput numbers in sample editorial reviews are illustrative placeholders and do not represent verified laboratory measurements."
     ]
   },
   {
@@ -65,32 +63,45 @@ const ARTICLES: EditorialArticle[] = [
     badge: 'MAKER SPOTLIGHT',
     badgeColor: 'bg-emerald-600 text-white',
     title: "Certified Mailer: A Private, Local Correspondence Journal",
-    author: "Josh McGuire",
+    author: "Josh McGuire (Sample Reviewer)",
     date: "Aug 27, 2026",
     summary: "Draft, review, print, and organize user-recorded mailing evidence locally without pretending the browser is a postal provider.",
     appId: 'certified-mailer',
-    ratingScore: 9.5,
     specs: [
-      { label: "Postal Integration", value: "Not Connected" },
-      { label: "Output", value: "Browser Print" },
-      { label: "Journal", value: "Unencrypted Browser-Local" },
-      { label: "License Price", value: "$25.00 Lifetime" }
+      { label: "Postal Integration", value: "Not Connected (Browser-Local Only)" },
+      { label: "Output Format", value: "Browser Print" },
+      { label: "Storage", value: "Unencrypted Browser-Local" },
+      { label: "Review Status", value: "Illustrative Sample" }
     ],
     content: [
       "Certified Mailer keeps drafts and user-entered evidence in the browser while making no claim that a letter was submitted, delivered, or legally compliant.",
-      "The app is useful today as a private preparation journal; verified postage, tracking, and receipts require a future postal-provider adapter."
+      "The app is useful today as a private preparation journal; verified postage, tracking, and receipts require a future postal-provider adapter.",
+      "This sample review demonstrates how maker spotlights are formatted in the editorial section."
     ]
   }
 ];
 
 export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = ({ onOpenApp }) => {
   const [selectedArticle, setSelectedArticle] = useState<EditorialArticle>(ARTICLES[0]);
-  const [claps, setClaps] = useState<Record<string, number>>({ art_dronehunter: 142, art_m4max_bench: 98, art_certified_mailer: 76 });
 
-  const handleClap = (id: string) => {
-    playSuccessChime();
-    setClaps(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-  };
+  // Safely resolve catalog context if available
+  let catalogContext: ReturnType<typeof useCatalog> | null = null;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    catalogContext = useCatalog();
+  } catch {
+    catalogContext = null;
+  }
+
+  const targetApp = selectedArticle.appId
+    ? catalogContext?.getApp(selectedArticle.appId) ||
+      catalogContext?.demoApps.find(a => a.id === selectedArticle.appId)
+    : undefined;
+
+  const hasActiveDeployment = Boolean(
+    targetApp &&
+    (targetApp.deploymentState === 'active' || targetApp.activeDeploymentId || targetApp.liveUrl)
+  );
 
   return (
     <div className="h-full flex flex-col bg-[#c0c0c0] text-black font-sans select-none overflow-hidden">
@@ -102,14 +113,14 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
             <div className="flex items-center gap-2">
               <h1 className="font-bold text-sm tracking-wider font-mono">NATE'S SOFTWARE &amp; EDITORIAL LAB</h1>
               <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold px-1.5 py-0.2 rounded text-[9px] font-mono">
-                DEMO REVIEWS
+                DEMO SAMPLES (UNVERIFIED)
               </span>
             </div>
-            <p className="text-[11px] text-gray-300">Independent Shareware Teardowns, Hardware Benchmarks &amp; Editor's Choice Awards</p>
+            <p className="text-[11px] text-gray-300">Illustrative Editorial Reviews &amp; Architecture Teardowns (Demo Samples)</p>
           </div>
         </div>
         <div className="bg-yellow-400 text-black px-2 py-0.5 font-mono font-bold text-xs border border-black shadow">
-          VOLUME 95 · ISSUE 42
+          SAMPLE ISSUE
         </div>
       </div>
 
@@ -118,7 +129,7 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
         {/* Article Index Column */}
         <div className="w-80 border-r-2 border-gray-400 bg-gray-100 flex flex-col">
           <div className="p-2 bg-[#d4d0c8] border-b border-gray-300 font-bold text-xs font-mono uppercase text-gray-700 flex items-center justify-between">
-            <span>Featured Reviews</span>
+            <span>Sample Reviews</span>
             <span className="text-[10px] font-normal">{ARTICLES.length} ARTICLES</span>
           </div>
 
@@ -139,8 +150,8 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
                     <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded font-mono ${art.badgeColor}`}>
                       {art.badge}
                     </span>
-                    <span className={`font-mono font-bold text-[10px] ${isSelected ? 'text-yellow-300' : 'text-blue-700'}`}>
-                      ★ {art.ratingScore} / 10
+                    <span className={`font-mono text-[9px] uppercase font-bold ${isSelected ? 'text-yellow-300' : 'text-gray-500'}`}>
+                      Sample
                     </span>
                   </div>
                   <h3 className="font-bold line-clamp-2 text-[11px] leading-tight mb-1">{art.title}</h3>
@@ -160,7 +171,7 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
               <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded font-mono ${selectedArticle.badgeColor}`}>
                 {selectedArticle.badge}
               </span>
-              <span className="text-xs text-gray-500 font-mono">Published {selectedArticle.date} by {selectedArticle.author}</span>
+              <span className="text-xs text-gray-500 font-mono">Sample Article · {selectedArticle.date}</span>
             </div>
 
             <h1 className="text-xl font-bold font-sans text-black leading-snug border-b pb-2">
@@ -170,9 +181,9 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
             {/* Spec Scorecard Box */}
             <div className="bg-gray-50 border-2 border-gray-300 p-3 rounded font-sans text-xs space-y-2">
               <div className="flex items-center justify-between border-b pb-1">
-                <span className="font-bold text-gray-700 font-mono uppercase">Lab Benchmark Scorecard</span>
-                <span className="font-bold text-blue-900 font-mono text-sm bg-yellow-200 px-2 py-0.5 rounded border border-yellow-400">
-                  {selectedArticle.ratingScore} / 10.0 (Gold Award)
+                <span className="font-bold text-gray-700 font-mono uppercase">Illustrative Spec Overview</span>
+                <span className="font-bold text-amber-900 font-mono text-xs bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                  Sample / Not a verified benchmark
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
@@ -194,22 +205,35 @@ export const EditorialView: React.FC<{ onOpenApp?: (appId: string) => void }> = 
 
             {/* Bottom Actions */}
             <div className="pt-4 border-t flex items-center justify-between font-sans">
-              <button
-                onClick={() => handleClap(selectedArticle.id)}
-                className="btn-w95 text-xs py-1.5 px-3 font-bold flex items-center space-x-1.5 bg-gray-200 hover:bg-white"
-              >
-                <ThumbsUp className="w-3.5 h-3.5 text-blue-800" />
-                <span>Editorial Clap ({claps[selectedArticle.id] || 0})</span>
-              </button>
+              <div className="text-xs text-gray-500 font-mono flex items-center gap-1.5 py-1 px-2 bg-gray-100 border border-gray-300 rounded">
+                <Info className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                <span>Illustrative editorial sample — not a verified measurement</span>
+              </div>
 
               {selectedArticle.appId && onOpenApp && (
-                <button
-                  onClick={() => { playClickSound(); if (selectedArticle.appId) onOpenApp(selectedArticle.appId); }}
-                  className="btn-w95 text-xs py-1.5 px-4 font-bold bg-blue-700 text-white hover:bg-blue-800 flex items-center space-x-1.5 shadow"
-                >
-                  <Flame className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>Launch {selectedArticle.appId} in Sandbox</span>
-                </button>
+                hasActiveDeployment ? (
+                  <button
+                    onClick={() => {
+                      playClickSound();
+                      if (selectedArticle.appId) onOpenApp(selectedArticle.appId);
+                    }}
+                    className="btn-w95 text-xs py-1.5 px-4 font-bold bg-blue-700 text-white hover:bg-blue-800 flex items-center space-x-1.5 shadow"
+                  >
+                    <Flame className="w-3.5 h-3.5 text-yellow-300" />
+                    <span>Launch {targetApp?.name || selectedArticle.appId} in Sandbox</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      playClickSound();
+                      if (selectedArticle.appId) onOpenApp(selectedArticle.appId);
+                    }}
+                    className="btn-w95 text-xs py-1.5 px-4 font-bold bg-gray-200 text-gray-800 hover:bg-gray-100 flex items-center space-x-1.5 shadow border border-gray-400"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-gray-600" />
+                    <span>View draft listing</span>
+                  </button>
+                )
               )}
             </div>
           </div>

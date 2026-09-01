@@ -12,7 +12,7 @@ export interface AuthUser {
   isBot?: boolean;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isSuperAdmin: boolean;

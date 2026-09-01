@@ -132,6 +132,34 @@ export class TerminalClient {
     }
   }
 
+  async checkReadiness(): Promise<TerminalReadiness> {
+    try {
+      const res = await fetch('/api/terminal-session', { credentials: 'same-origin', cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ready) {
+        return {
+          success: false,
+          ready: false,
+          configured: Boolean(data.configured),
+          error: data.error || `Ephemeral terminal service returned HTTP ${res.status}`
+        };
+      }
+      return {
+        success: true,
+        ready: true,
+        configured: true,
+        capabilities: data.capabilities
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        ready: false,
+        configured: false,
+        error: err?.message || 'Failed to check terminal gateway readiness'
+      };
+    }
+  }
+
   async connect(): Promise<void> {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
