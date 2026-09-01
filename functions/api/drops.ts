@@ -307,15 +307,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     // Determine initial deployment state: publication sets draft or source_ready (NEVER active)
     let initialDeploymentState = 'draft';
-    let linkedRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
+    // The client-supplied repositoryId is only a CANDIDATE. linkedRepositoryId
+    // is set below strictly from an ownership-verified lookup — it must never
+    // retain the raw client value, or a maker could link (and write
+    // grantable_bps onto) a repository owned by someone else (a cross-user
+    // economic write). Unowned / unknown candidate => stays null (no link).
+    const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
+    let linkedRepositoryId: string | null = null;
     let repositoryHasCommit = false;
     try {
+      // Only ever link a repository the AUTHENTICATED maker owns (owner_user_id = creatorId).
       const repoRecord = await env.DB.prepare(`
         SELECT r.id, rf.commit_oid AS defaultCommitOid
         FROM repositories r
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
-        WHERE r.id = ? OR r.app_id = ? OR r.slug = ?
-      `).bind(linkedRepositoryId || dropId, dropId, dropId).first();
+        WHERE (r.id = ? OR r.app_id = ? OR r.slug = ?) AND r.owner_user_id = ?
+      `).bind(candidateRepositoryId || dropId, dropId, dropId, creatorId).first();
       if (repoRecord) {
         linkedRepositoryId = repoRecord.id;
         if (repoRecord.defaultCommitOid) {
@@ -392,12 +399,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }, { status: 422 });
         }
       } else {
-        // Lineage lookup for root vs fork cap (Root <= 9000, Fork <= 6000 per Phase-0 decision)
+        // Lineage lookup for root vs fork grantable cap. The cap MUST equal the
+        // buy-path contributor carve cap (commerceDomain calculateAllocations:
+        // makerBasisPoints - MAKER_FLOOR_BPS), i.e. root 9000-1000=8000, fork
+        // 7000-1000=6000. Allowing a higher grantable pool here would let an
+        // owner grant more than the buy path can carve, permanently failing
+        // checkout closed once those grants activate (they are irrevocable).
         const forkEdge = await env.DB.prepare(
           'SELECT 1 FROM repository_forks WHERE child_repository_id = ? LIMIT 1'
         ).bind(linkedRepositoryId).first();
         const isRoot = !forkEdge;
-        const maxAllowedBps = isRoot ? 9000 : 6000;
+        const maxAllowedBps = isRoot ? 8000 : 6000;
 
         if (rawGrantableBps > maxAllowedBps) {
           return Response.json({

@@ -77,7 +77,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
   // 1. SET AT DROP-SUBMIT & DATABASE PERSISTENCE
   // =========================================================================
   describe('1. Drop Submission and Atomic grantable_bps Persistence', () => {
-    it('sets grantable_bps on a root repository up to 9000 bps (90%) and round-trips via GET', async () => {
+    it('sets grantable_bps on a root repository up to 8000 bps (the buy-path carve cap) and round-trips via GET', async () => {
       const submitReq = new Request('http://localhost/api/drops', {
         method: 'POST',
         headers: {
@@ -90,7 +90,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
           version: '1.0.0',
           price: '$25',
           repositoryId: 'repo_root',
-          grantableBps: 9000
+          grantableBps: 8000
         })
       });
 
@@ -103,7 +103,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       const repoRow = await ctx.d1.prepare('SELECT grantable_bps FROM repositories WHERE id = ?')
         .bind('repo_root')
         .first<{ grantable_bps: number }>();
-      expect(repoRow?.grantable_bps).toBe(9000);
+      expect(repoRow?.grantable_bps).toBe(8000);
 
       // Verify GET /api/drops returns grantable_bps and grantableBps
       const getReq = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
@@ -112,8 +112,8 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       const getData = await getRes.json();
       const drop = getData.drops.find((d: any) => d.id === 'app_root_idea');
       expect(drop).toBeDefined();
-      expect(drop.grantable_bps).toBe(9000);
-      expect(drop.grantableBps).toBe(9000);
+      expect(drop.grantable_bps).toBe(8000);
+      expect(drop.grantableBps).toBe(8000);
       expect(drop.repositoryId).toBe('repo_root');
     });
 
@@ -174,7 +174,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
   // 2. SET-TIME VALIDATION & FAIL-CLOSED GUARDS
   // =========================================================================
   describe('2. Fail-Closed Validation Rules', () => {
-    it('rejects root idea exceeding 9000 bps cap with 422', async () => {
+    it('rejects root idea exceeding the 8000 bps cap with 422', async () => {
       const submitReq = new Request('http://localhost/api/drops', {
         method: 'POST',
         headers: {
@@ -195,7 +195,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       expect(submitRes.status).toBe(422);
       const data = await submitRes.json();
       expect(data.success).toBe(false);
-      expect(data.error).toContain('exceeds maximum allowable cap of 9000 bps (90%) for root repository');
+      expect(data.error).toContain('exceeds maximum allowable cap of 8000 bps (80%) for root repository');
     });
 
     it('rejects fork idea exceeding 6000 bps cap with 422', async () => {
@@ -256,7 +256,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       expect((repo as any).status).toBe('provisioning');
     });
 
-    it('still rejects grantableBps above the 9000 root cap even against a freshly-provisioned repository', async () => {
+    it('still rejects grantableBps above the 8000 root cap even against a freshly-provisioned repository', async () => {
       const submitReq = new Request('http://localhost/api/drops', {
         method: 'POST',
         headers: {
@@ -452,7 +452,7 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       const appWithGrantable: AppListing = {
         ...baseApp,
         grantable_bps: 9000,
-        grantableBps: 9000
+        grantableBps: 8000
       };
 
       const html = renderToString(
