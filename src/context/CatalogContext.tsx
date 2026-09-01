@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { AppListing, INITIAL_APPS } from '../data/mockData';
 import { MakerLeaderboardEntry } from '../lib/hotwireBackend';
+import { AuthContext } from './AuthContext';
 
 export interface CatalogContextType {
   apps: AppListing[];
@@ -16,10 +17,11 @@ export interface CatalogContextType {
   getApp: (id: string) => AppListing | undefined;
   isOwned: (appId: string) => boolean;
   refreshCatalog: (opts?: { sort?: string; batch?: string }) => Promise<void>;
+  refreshShelf: () => Promise<void>;
   upvoteApp: (appId: string) => Promise<boolean>;
   incrementForkCount: (appId: string) => void;
   submitDrop: (dropData: Partial<AppListing>) => Promise<{ success: boolean; id?: string; error?: string }>;
-  recordPurchase: (appId: string, licenseKey: string) => void;
+  recordPurchase: (appId?: string, licenseKey?: string) => void | Promise<void>;
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
@@ -40,10 +42,34 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [currentSort, setCurrentSort] = useState<string>('today');
   const [currentBatch, setCurrentBatch] = useState<string>('today');
 
+  const auth = useContext(AuthContext);
+  const user = auth?.user ?? null;
+
   const sortRef = React.useRef(currentSort);
   const batchRef = React.useRef(currentBatch);
   sortRef.current = currentSort;
   batchRef.current = currentBatch;
+
+  const fetchShelf = useCallback(async () => {
+    try {
+      const shelfRes = await fetch('/api/shelf');
+      if (shelfRes.ok) {
+        const shelfData = await shelfRes.json();
+        if (shelfData.success && Array.isArray(shelfData.shelf)) {
+          const owned = new Set<string>(shelfData.shelf.map((item: any) => item.appId || item.id));
+          setShelfAppIds(owned);
+          return;
+        }
+      }
+      setShelfAppIds(new Set<string>());
+    } catch {
+      // Shelf fetch failures do not overwrite existing state
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchShelf();
+  }, [user, fetchShelf]);
 
   const fetchAuthoritativeCatalog = useCallback(async (opts?: { sort?: string; batch?: string }) => {
     try {
@@ -145,18 +171,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       // 2. Fetch authoritative shelf ownership (Never grant seed ownership to guests)
-      try {
-        const shelfRes = await fetch('/api/shelf');
-        if (shelfRes.ok) {
-          const shelfData = await shelfRes.json();
-          if (shelfData.success && Array.isArray(shelfData.shelf)) {
-            const owned = new Set<string>(shelfData.shelf.map((item: any) => item.appId || item.id));
-            setShelfAppIds(owned);
-          }
-        }
-      } catch {
-        // Shelf fetch failures do not overwrite existing state
-      }
+      await fetchShelf();
     } catch (err: any) {
       setApps(SEED_DEMO_APPS);
       setIsAuthoritativeLive(false);
@@ -164,7 +179,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fetchShelf]);
 
   useEffect(() => {
     fetchAuthoritativeCatalog();
@@ -260,9 +275,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setApps(prev => prev.map(a => a.id === appId ? { ...a, forkCount: (a.forkCount || 0) + 1, forks: (a.forks || 0) + 1 } : a));
   }, []);
 
-  const recordPurchase = useCallback((appId: string, _licenseKey: string) => {
-    setShelfAppIds(prev => new Set(prev).add(appId));
-  }, []);
+  const recordPurchase = useCallback(async (_appId?: string, _licenseKey?: string) => {
+    await fetchShelf();
+  }, [fetchShelf]);
 
   return (
     <CatalogContext.Provider
@@ -280,6 +295,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getApp,
         isOwned,
         refreshCatalog: fetchAuthoritativeCatalog,
+        refreshShelf: fetchShelf,
         upvoteApp,
         incrementForkCount,
         submitDrop,
