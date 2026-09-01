@@ -9,6 +9,7 @@ import {
 } from '../lib/inboxDomain';
 import { useAuth } from '../context/AuthContext';
 import { LocalAgentMailbox } from '../components/LocalAgentMailbox';
+import { MarketplacePane } from '../components/MarketplacePane';
 import {
   Check,
   GitPullRequest,
@@ -33,9 +34,10 @@ import {
 
 export const InboxView: React.FC = () => {
   const { user, isAuthenticated, openAuthModal } = useAuth();
-  // Top-level mailbox mode: cloud merge-proposals (default) vs local agent mailbox.
-  // Local mode swaps the entire 3-pane body for LocalAgentMailbox; cloud logic below is untouched.
-  const [mailboxMode, setMailboxMode] = useState<'cloud' | 'local'>('cloud');
+  // Top-level mailbox mode: cloud merge-proposals (default), local agent mailbox,
+  // or the contribution marketplace (discovery + owner grant history).
+  // Local/marketplace modes swap the entire 3-pane body; cloud logic below is untouched.
+  const [mailboxMode, setMailboxMode] = useState<'cloud' | 'local' | 'marketplace'>('cloud');
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<string>('all');
@@ -333,6 +335,18 @@ export const InboxView: React.FC = () => {
       >
         🖥 Local Agent Mailbox
       </button>
+      <button
+        role="tab"
+        aria-selected={mailboxMode === 'marketplace'}
+        onClick={() => setMailboxMode('marketplace')}
+        className={`flex-1 px-2 py-1 text-[11px] font-bold border-2 flex items-center justify-center gap-1 ${
+          mailboxMode === 'marketplace'
+            ? 'bg-white border-gray-800 text-w95-blue'
+            : 'bg-w95-gray border-gray-400 text-gray-700 hover:bg-gray-100'
+        }`}
+      >
+        🏪 Marketplace
+      </button>
     </div>
   );
 
@@ -342,6 +356,16 @@ export const InboxView: React.FC = () => {
     return (
       <div className="h-full overflow-hidden font-tahoma text-xs">
         <LocalAgentMailbox modeToggle={modeToggle} />
+      </div>
+    );
+  }
+
+  // Marketplace mode: swap the whole 3-pane body for the contribution
+  // marketplace discovery + owner grant-history pane.
+  if (mailboxMode === 'marketplace') {
+    return (
+      <div className="h-full overflow-hidden font-tahoma text-xs">
+        <MarketplacePane modeToggle={modeToggle} isAuthenticated={isAuthenticated} />
       </div>
     );
   }

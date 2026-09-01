@@ -14,6 +14,7 @@ import {
   DropRankingInput
 } from '../../src/lib/hotwireBackend';
 import { validateDropSubmission, parseAndValidatePrice } from '../../src/lib/hotwireDomain';
+import { buildRepositoryStorageKey } from '../../src/lib/forgeDomain';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -307,6 +308,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // Determine initial deployment state: publication sets draft or source_ready (NEVER active)
     let initialDeploymentState = 'draft';
     let linkedRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
+    let repositoryHasCommit = false;
     try {
       const repoRecord = await env.DB.prepare(`
         SELECT r.id, rf.commit_oid AS defaultCommitOid
@@ -318,6 +320,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         linkedRepositoryId = repoRecord.id;
         if (repoRecord.defaultCommitOid) {
           initialDeploymentState = 'source_ready';
+          repositoryHasCommit = true;
         }
       }
     } catch {}
@@ -325,6 +328,43 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const initialDeploymentError = initialDeploymentState === 'draft'
       ? `No deployable revision exists for ${name.trim()}. Source has not been imported into GITSMITH and built by RIG.`
       : null;
+
+    // Fix 1 (HOTWIRE #6): provision the real product loop. If the maker has no
+    // repository linked yet, commission one now (server-derived owner, honest
+    // 'provisioning' status — no git objects exist yet, so it is NOT 'active')
+    // so the drop is actually forkable and has a lineage root the moment it's
+    // published. This is inserted into the SAME atomic D1 batch as the listing
+    // and commerce product below — never a partial write.
+    let newRepositoryStmt: any = null;
+    let newRepositoryId: string | null = null;
+    if (!linkedRepositoryId) {
+      newRepositoryId = `repo_${crypto.randomUUID()}`;
+      // Suffix with a slice of the repository UUID so two drops whose names
+      // slugify identically never collide on the (owner_user_id, slug) unique
+      // index — no retry loop needed for a server-generated ID.
+      const baseSlug = (dropId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'drop')
+        .slice(0, 80) + '-' + newRepositoryId.slice(-8);
+      const storageKey = buildRepositoryStorageKey(newRepositoryId);
+      // Guarded with "WHERE EXISTS (... owned by creatorId)" instead of a bare
+      // VALUES insert: the listing write above can lose an ownership race (a
+      // concurrent claim on the same drop ID) and report 0 rows written
+      // without D1 throwing — a bare INSERT here would still commit inside
+      // the same batch/transaction and leave an ORPHANED repository owned by
+      // the loser of the race. Tying this insert to the listing's actual
+      // post-write ownership means it only ever lands together with a
+      // genuinely successful, correctly-owned listing write.
+      newRepositoryStmt = env.DB.prepare(`
+        INSERT INTO repositories (
+          id, app_id, owner_user_id, slug, visibility, object_format,
+          default_ref, storage_key, status, created_at, updated_at
+        )
+        SELECT ?, ?, ?, ?, 'public', 'sha1', 'refs/heads/main', ?, 'provisioning', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        WHERE EXISTS (SELECT 1 FROM app_listings WHERE id = ? AND creator_id = ?)
+      `).bind(newRepositoryId, dropId, creatorId, baseSlug, storageKey, dropId, creatorId);
+      linkedRepositoryId = newRepositoryId;
+      // A freshly-provisioned repository has no commit yet — deployment state
+      // stays honestly 'draft' regardless of the earlier lookup.
+    }
 
     // Validate grantable pool basis points (Phase A)
     const hasGrantableField = 'grantableBps' in body || 'grantable_bps' in body;
@@ -384,6 +424,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
+    // NOTE on ordering: repositories.app_id references app_listings(id), and
+    // app_listings.repository_id references repositories(id) — a genuine
+    // circular FK pair. When we're provisioning a BRAND NEW repository in
+    // this same request, the listing must be written FIRST with
+    // repository_id NULL (so repositories.app_id has a row to point at),
+    // THEN the repository, THEN a follow-up UPDATE binds repository_id onto
+    // the listing. All of this stays inside the one atomic D1 batch below —
+    // still never a partial/fake write, just FK-legal statement order.
     const listingStmt = env.DB.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error, repository_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
@@ -420,26 +468,47 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       JSON.stringify(mergedBinaries),
       initialDeploymentState,
       initialDeploymentError,
-      linkedRepositoryId
+      // A brand-new repository doesn't exist as a row yet — bind it onto the
+      // listing in the follow-up UPDATE once it's been inserted below.
+      newRepositoryStmt ? null : linkedRepositoryId
     );
 
-    // Synchronize with commerce_products so the drop is immediately purchasable
-    // Atomic listing + commerce product write using D1 batch
+    const linkRepositoryToListingStmt = newRepositoryStmt
+      ? env.DB.prepare(`UPDATE app_listings SET repository_id = ? WHERE id = ? AND creator_id = ?`)
+          .bind(newRepositoryId, dropId, creatorId)
+      : null;
+
+    // Synchronize with commerce_products so the product record exists the
+    // moment a drop is published. Fix 1 (HOTWIRE #6): status must reflect
+    // REAL readiness, never a fake 'active'. A product is only 'active'
+    // (immediately purchasable) once its repository is genuinely deployable
+    // (has a resolvable default-ref commit); otherwise it is honestly 'draft'
+    // until GITSMITH/RIG actually produce a deployable revision.
     const productPriceCents = priceValidation.priceCents;
+    const honestProductStatus = repositoryHasCommit ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
-      INSERT INTO commerce_products (app_id, seller_user_id, price_cents, currency, status)
-      SELECT id, creator_id, ?, 'usd', 'active'
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status)
+      SELECT id, ?, creator_id, ?, 'usd', ?
       FROM app_listings
       WHERE id = ? AND creator_id = ?
       ON CONFLICT(app_id) DO UPDATE SET
+        repository_id = excluded.repository_id,
         price_cents = excluded.price_cents,
-        status = 'active',
+        status = excluded.status,
         updated_at = CURRENT_TIMESTAMP
       WHERE commerce_products.seller_user_id = excluded.seller_user_id
       RETURNING app_id
-    `).bind(productPriceCents, dropId, creatorId);
+    `).bind(linkedRepositoryId, productPriceCents, honestProductStatus, dropId, creatorId);
 
-    const statements = [listingStmt, productStmt];
+    // Statement order matters for FK legality: listing (repo_id NULL for a
+    // new repo) -> new repository (app_id now resolvable) -> link update ->
+    // product (repository_id now resolvable) -> optional grantable_bps.
+    // All execute atomically in one D1 batch — if any leg fails, nothing is
+    // persisted (never a partial/fake write).
+    const statements: any[] = [listingStmt];
+    if (newRepositoryStmt) statements.push(newRepositoryStmt);
+    if (linkRepositoryToListingStmt) statements.push(linkRepositoryToListingStmt);
+    statements.push(productStmt);
     if (linkedRepositoryId && validatedGrantableBps !== null) {
       statements.push(
         env.DB.prepare('UPDATE repositories SET grantable_bps = ? WHERE id = ?').bind(validatedGrantableBps, linkedRepositoryId)
@@ -447,11 +516,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     const batchResults = await env.DB.batch(statements);
-    const listingWritten = Boolean(batchResults?.[0]?.results?.[0]);
-    const productWritten = Boolean(batchResults?.[1]?.results?.[0]);
     if (!batchResults || batchResults.length < statements.length || batchResults.some((r: any) => !r.success)) {
       return Response.json({ success: false, error: 'Failed to atomically persist listing and commerce product' }, { status: 500 });
     }
+    const productResultIdx = statements.indexOf(productStmt);
+    const listingWritten = Boolean(batchResults?.[0]?.results?.[0]);
+    const productWritten = Boolean(batchResults?.[productResultIdx]?.results?.[0]);
     if (!listingWritten || !productWritten) {
       return Response.json({ success: false, error: 'Drop ID was claimed concurrently by another maker' }, { status: 409 });
     }
@@ -462,8 +532,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       success: true,
       id: dropId,
       deploymentState: initialDeploymentState,
+      repositoryId: linkedRepositoryId,
+      repositoryProvisioned: Boolean(newRepositoryStmt),
+      productStatus: honestProductStatus,
       batchWindow,
-      message: 'Drop published successfully to Cloudflare D1'
+      message: honestProductStatus === 'active'
+        ? 'Drop published successfully to Cloudflare D1'
+        : 'Drop published as a draft — link a deployable repository (slop push / GITSMITH build) before it can be sold as active.'
     });
   } catch (err: any) {
     console.error('HOTWIRE drop publication failed', err);

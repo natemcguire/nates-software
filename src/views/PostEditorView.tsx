@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
 import { AppListing } from '../data/mockData';
-import { Save, Plus, Trash2, CheckCircle2, Copy, Check } from 'lucide-react';
+import { Save, Plus, Trash2, CheckCircle2, Copy, Check, AlertTriangle } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
 import { useAuth } from '../context/AuthContext';
 
+export interface DropPersistResult {
+  productStatus?: string;
+  deploymentState?: string;
+  repositoryProvisioned?: boolean;
+  message?: string;
+}
+
 interface PostEditorViewProps {
   app: AppListing;
   initialTab?: 'info' | 'media' | 'binaries' | 'guide' | 'pricing';
-  onSave: (updatedApp: AppListing) => Promise<void> | void;
+  onSave: (updatedApp: AppListing) => Promise<DropPersistResult | void> | DropPersistResult | void;
   onCancel: () => void;
 }
 
@@ -18,6 +25,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [activeTab, setActiveTab] = useState<'info' | 'media' | 'binaries' | 'guide' | 'pricing'>(initialTab);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastResult, setLastResult] = useState<DropPersistResult | null>(null);
 
   const [name, setName] = useState(app.name);
   const [tagline, setTagline] = useState(app.tagline);
@@ -99,7 +107,8 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
             ios: iosBinary
           }
         };
-        await onSave(updated);
+        const result = await onSave(updated);
+        setLastResult(result || null);
       } catch (err: any) {
         showAlert(
           `Drop persistence failed: ${err.message || 'Server rejected drop submission.'}`,
@@ -468,6 +477,30 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 Set registered software copy pricing, descendant fork split policy, and the contributor reward pool percentage.
               </p>
             </div>
+
+            {lastResult && (
+              <div className={`border-2 p-3 rounded text-xs space-y-1 ${
+                lastResult.productStatus === 'active'
+                  ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                  : 'bg-amber-50 border-amber-400 text-amber-900'
+              }`}>
+                <div className="font-bold flex items-center gap-1.5">
+                  {lastResult.productStatus === 'active' ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                  Honest product state after last save:
+                  <span className="font-mono uppercase">{lastResult.productStatus || 'draft'}</span>
+                </div>
+                <div className="text-[11px] leading-relaxed">{lastResult.message}</div>
+                {lastResult.repositoryProvisioned && (
+                  <div className="text-[11px] font-mono">A new forkable repository was provisioned for this drop.</div>
+                )}
+                {lastResult.productStatus !== 'active' && (
+                  <div className="text-[11px]">
+                    This app is <b>not yet purchasable</b>. It stays a draft until source is pushed to GITSMITH and
+                    built by RIG into a deployable revision — never fake-flipped to "active" before that's true.
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>

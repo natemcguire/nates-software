@@ -22,7 +22,16 @@ export interface CatalogContextType {
   refreshShelf: () => Promise<void>;
   upvoteApp: (appId: string) => Promise<boolean>;
   incrementForkCount: (appId: string) => void;
-  submitDrop: (dropData: Partial<AppListing>) => Promise<{ success: boolean; id?: string; error?: string }>;
+  submitDrop: (dropData: Partial<AppListing>) => Promise<{
+    success: boolean;
+    id?: string;
+    error?: string;
+    deploymentState?: string;
+    productStatus?: string;
+    repositoryId?: string | null;
+    repositoryProvisioned?: boolean;
+    message?: string;
+  }>;
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
@@ -272,7 +281,16 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [apps]);
 
-  const submitDrop = useCallback(async (dropData: Partial<AppListing>): Promise<{ success: boolean; id?: string; error?: string }> => {
+  const submitDrop = useCallback(async (dropData: Partial<AppListing>): Promise<{
+    success: boolean;
+    id?: string;
+    error?: string;
+    deploymentState?: string;
+    productStatus?: string;
+    repositoryId?: string | null;
+    repositoryProvisioned?: boolean;
+    message?: string;
+  }> => {
     try {
       setIsLoading(true);
       const res = await fetch('/api/drops', {
@@ -306,7 +324,15 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       // Refresh catalog from authoritative live backend after successful persistence
       await fetchAuthoritativeCatalog({ sort: 'today', batch: 'today' });
-      return { success: true, id: data.id };
+      return {
+        success: true,
+        id: data.id,
+        deploymentState: data.deploymentState,
+        productStatus: data.productStatus,
+        repositoryId: data.repositoryId,
+        repositoryProvisioned: data.repositoryProvisioned,
+        message: data.message
+      };
     } catch (err: any) {
       return { success: false, error: err.message || 'Network error during drop persistence' };
     } finally {
