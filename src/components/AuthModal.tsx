@@ -6,8 +6,12 @@ import { playClickSound } from '../lib/soundEngine';
 const AVATAR_PRESETS = ['👤', '⛵', '🎯', '💻', '🎨', '🚀', '⚡', '🤖', '☕', '🛠️'];
 
 export const AuthModal: React.FC = () => {
-  const { isAuthModalOpen, closeAuthModal, authModalTab, login, register } = useAuth();
+  const { isAuthModalOpen, closeAuthModal, authModalTab, actionDescription, login, register } = useAuth();
   const [tab, setTab] = useState<'login' | 'register'>(authModalTab);
+
+  React.useEffect(() => {
+    setTab(authModalTab);
+  }, [authModalTab, isAuthModalOpen]);
 
   // Form Fields
   const [username, setUsername] = useState('');
@@ -58,7 +62,7 @@ export const AuthModal: React.FC = () => {
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5">
             <Lock size={13} className="text-yellow-300" />
-            <span>NATE'S SOFTWARE SECURITY &amp; AUTHENTICATION</span>
+            <span>{tab === 'register' ? "Join Nate's Software" : "Welcome back"}</span>
           </div>
           <button
             onClick={closeAuthModal}
@@ -88,8 +92,25 @@ export const AuthModal: React.FC = () => {
                 : 'bg-gray-300 border-gray-400 text-gray-600'
             }`}
           >
-            Create Account
+            Create account
           </button>
+        </div>
+
+        {/* Benefit Line & Contextual Action Header */}
+        <div className="p-3 bg-w95-gray border-b border-gray-300 space-y-2">
+          <p className="text-gray-700 text-xs leading-normal">
+            Create an account to keep your forks, vote on drops, and earn 70% when you sell.
+          </p>
+          {actionDescription && (
+            <div className="bg-blue-100 border border-blue-400 text-blue-950 px-2.5 py-1.5 rounded flex items-center gap-2 font-mono text-[11px]">
+              <Lock size={12} className="shrink-0 text-blue-700" />
+              <span>
+                {/^(sign in|log in|create an account|create account)\b/i.test(actionDescription)
+                  ? actionDescription
+                  : `Sign in to ${actionDescription}`}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Form Body */}
@@ -189,7 +210,7 @@ export const AuthModal: React.FC = () => {
               className="btn-w95 btn-w95-primary px-6 py-1 font-bold text-xs flex items-center gap-1"
             >
               <Check size={12} />
-              <span>{isSubmitting ? 'Authenticating...' : tab === 'login' ? 'Log In' : 'Create Account'}</span>
+              <span>{isSubmitting ? 'Authenticating...' : tab === 'login' ? 'Log In' : 'Create account'}</span>
             </button>
           </div>
         </form>
