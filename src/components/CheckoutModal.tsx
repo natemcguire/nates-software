@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
-import { ShieldCheck, Lock, Sparkles, AlertTriangle } from 'lucide-react';
-import { playClickSound } from '../lib/soundEngine';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ShieldCheck, Lock, Sparkles, AlertTriangle, Check, Copy, ExternalLink, Download, LogIn, RefreshCw } from 'lucide-react';
+import { loadStripe, Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js';
+import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { useAuth } from '../context/AuthContext';
+import { useCatalog } from '../context/CatalogContext';
+import { publishedArtifactLinks } from '../lib/profileDomain';
 
 export interface CheckoutModalProps {
   isOpen: boolean;
@@ -18,55 +22,342 @@ export interface CheckoutModalProps {
   };
 }
 
+interface AllocationItem {
+  role: string;
+  recipientUserId: string | null;
+  amountCents: number;
+  basisPoints: number;
+  lineageDepth?: number | null;
+}
+
+interface ServerIntentQuote {
+  orderId: string;
+  clientSecret: string;
+  paymentIntentId: string;
+  amountCents: number;
+  currency: string;
+  publishableKey: string;
+  lineageSnapshot: any;
+  allocations: AllocationItem[];
+}
+
+interface FulfilledOrder {
+  id: string;
+  appId: string;
+  appName: string;
+  appVersion: string;
+  status: string;
+  amountCents: number;
+  currency: string;
+  license?: {
+    id: string;
+    licenseKey: string;
+    licenseKeyLast4: string;
+    maskedKey: string;
+    status: string;
+    issuedAt: string;
+  };
+  binaries?: Record<string, string>;
+  storage?: string;
+}
+
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, app }) => {
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { isAuthenticated, openAuthModal } = useAuth();
+  const { refreshCatalog, refreshShelf } = useCatalog();
+
+  // Per-attempt idempotency key (retained across retries of the same attempt)
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => crypto.randomUUID());
+
+  // Checkout lifecycle status:
+  // 'auth_required' | 'init' | 'commissioning' | 'ready' | 'processing' | 'polling' | 'fulfilled' | 'timeout' | 'error'
+  const [status, setStatus] = useState<string>(() => (!isAuthenticated ? 'auth_required' : 'init'));
+  const [quote, setQuote] = useState<ServerIntentQuote | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isStripeReady, setIsStripeReady] = useState(false);
+  const [isKeyCopied, setIsKeyCopied] = useState(false);
+  const [fulfilledOrder, setFulfilledOrder] = useState<FulfilledOrder | null>(null);
 
-  if (!isOpen) return null;
+  const stripeRef = useRef<Stripe | null>(null);
+  const elementsRef = useRef<StripeElements | null>(null);
+  const paymentElementRef = useRef<StripePaymentElement | null>(null);
+  const paymentContainerRef = useRef<HTMLDivElement | null>(null);
+  const pollTimerRef = useRef<any>(null);
 
-  let priceCents = 1500;
-  if (app.id === 'certified-mailer') priceCents = 2500;
-  if (app.id === 'american-gardener') priceCents = 2500;
-  if (app.id === 'wallart') priceCents = 5900;
+  // Clean up on close / unmount
+  const cleanupStripe = useCallback(() => {
+    if (paymentElementRef.current) {
+      try {
+        paymentElementRef.current.destroy();
+      } catch {}
+      paymentElementRef.current = null;
+    }
+    elementsRef.current = null;
+    stripeRef.current = null;
+    setIsStripeReady(false);
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
 
-  // Root/original apps (no ancestors) split 90% maker / 10% platform — there's no
-  // "forked from" app to pay. Forks split 70/20/10. This mirrors the real ledger
-  // (calculateAllocations): a root app's unused 20% lineage returns to the maker.
-  const isFork = (app.forkDepth ?? 0) > 0;
-  const platformCents = Math.floor(priceCents * 0.10);
-  const lineageCents = isFork ? Math.floor(priceCents * 0.20) : 0;
-  const makerCents = priceCents - lineageCents - platformCents;
+  // Initialize fresh idempotency key when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setIdempotencyKey(crypto.randomUUID());
+      setQuote(null);
+      setCheckoutError(null);
+      setFulfilledOrder(null);
+      setIsKeyCopied(false);
+      if (!isAuthenticated) {
+        setStatus('auth_required');
+      } else {
+        setStatus('init');
+      }
+    } else {
+      cleanupStripe();
+    }
+  }, [isOpen, isAuthenticated, cleanupStripe]);
 
+  // Fetch authoritative intent & quote from server
+  const fetchIntent = useCallback(async (currentKey: string) => {
+    if (!isAuthenticated) {
+      setStatus('auth_required');
+      return;
+    }
+
+    setStatus('init');
+    setCheckoutError(null);
+    cleanupStripe();
+
+    try {
+      const res = await fetch('/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': currentKey
+        },
+        body: JSON.stringify({ appId: app.id })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 503) {
+        setStatus('commissioning');
+        setCheckoutError(data.error || 'Checkout is temporarily unavailable while settlement is being commissioned.');
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        setStatus('error');
+        setCheckoutError(data.error || 'Failed to initialize secure checkout session.');
+        return;
+      }
+
+      if (!data.publishableKey || !data.clientSecret) {
+        setStatus('commissioning');
+        setCheckoutError('Stripe publishable key is not configured on the server.');
+        return;
+      }
+
+      const serverQuote: ServerIntentQuote = {
+        orderId: data.orderId,
+        clientSecret: data.clientSecret,
+        paymentIntentId: data.paymentIntentId,
+        amountCents: data.amountCents,
+        currency: data.currency || 'usd',
+        publishableKey: data.publishableKey,
+        lineageSnapshot: data.lineageSnapshot,
+        allocations: data.allocations || []
+      };
+
+      setQuote(serverQuote);
+      setStatus('ready');
+    } catch (err: any) {
+      setStatus('error');
+      setCheckoutError(err?.message || 'Network error while contacting checkout server.');
+    }
+  }, [isAuthenticated, app.id, cleanupStripe]);
+
+  // Trigger intent fetch when opening or when auth status changes
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!isAuthenticated) {
+      setStatus('auth_required');
+    } else {
+      fetchIntent(idempotencyKey);
+    }
+  }, [isOpen, isAuthenticated, idempotencyKey, fetchIntent]);
+
+  // Mount Stripe Elements when quote is ready
+  useEffect(() => {
+    if (status !== 'ready' || !quote || !paymentContainerRef.current) return;
+
+    let isMounted = true;
+
+    async function mountElement() {
+      try {
+        const stripe = await loadStripe(quote!.publishableKey);
+        if (!stripe || !isMounted) return;
+
+        stripeRef.current = stripe;
+        const elements = stripe.elements({
+          clientSecret: quote!.clientSecret,
+          appearance: {
+            theme: 'flat',
+            variables: {
+              fontFamily: 'Tahoma, sans-serif',
+              fontSizeBase: '12px',
+              colorPrimary: '#000080',
+              colorBackground: '#ffffff',
+              colorText: '#000000',
+              colorDanger: '#df1b41',
+              borderRadius: '0px'
+            }
+          }
+        });
+        elementsRef.current = elements;
+
+        const paymentElement = elements.create('payment');
+        paymentElementRef.current = paymentElement;
+
+        paymentElement.on('ready', () => {
+          if (isMounted) setIsStripeReady(true);
+        });
+
+        if (paymentContainerRef.current) {
+          paymentElement.mount(paymentContainerRef.current);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          console.error('[STRIPE MOUNT ERROR]', err);
+          setCheckoutError(err?.message || 'Failed to initialize payment form.');
+        }
+      }
+    }
+
+    mountElement();
+
+    return () => {
+      isMounted = false;
+      cleanupStripe();
+    };
+  }, [status, quote, cleanupStripe]);
+
+  // Poll buyer-scoped order fulfillment endpoint
+  const pollOrderFulfillment = useCallback(async (orderId: string, maxAttempts = 25) => {
+    setStatus('polling');
+    let attempts = 0;
+
+    const checkStatus = async () => {
+      attempts++;
+      try {
+        const res = await fetch(`/api/payments/orders/${encodeURIComponent(orderId)}`);
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.success && data.order) {
+          const order: FulfilledOrder = data.order;
+          if (order.status === 'fulfilled') {
+            setFulfilledOrder(order);
+            setStatus('fulfilled');
+            playSuccessChime();
+            try {
+              await refreshShelf();
+              await refreshCatalog();
+            } catch {}
+            return;
+          }
+
+          if (order.status === 'payment_failed') {
+            setStatus('error');
+            setCheckoutError(order.status || 'Order fulfillment failed.');
+            return;
+          }
+        }
+      } catch (pollErr) {
+        console.warn('[ORDER POLL WARN]', pollErr);
+      }
+
+      if (attempts < maxAttempts) {
+        pollTimerRef.current = setTimeout(checkStatus, 1000);
+      } else {
+        // Polling timeout fallback
+        setStatus('timeout');
+        try {
+          await refreshShelf();
+          await refreshCatalog();
+        } catch {}
+      }
+    };
+
+    checkStatus();
+  }, [refreshShelf, refreshCatalog]);
+
+  // Form submission handler
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
+    if (!stripeRef.current || !elementsRef.current || !quote) return;
+
+    setStatus('processing');
     setCheckoutError(null);
     playClickSound();
 
     try {
-      const intentRes = await fetch('/api/payments/create-intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ appId: app.id })
+      const result = await stripeRef.current.confirmPayment({
+        elements: elementsRef.current,
+        redirect: 'if_required'
       });
-      const intentData = await intentRes.json();
-      setIsProcessing(false);
-      if (!intentRes.ok || !intentData.success) {
-        setCheckoutError(intentData.error || 'Checkout is currently unavailable.');
+
+      if (result.error) {
+        setStatus('error');
+        setCheckoutError(result.error.message || 'Payment confirmation failed. Please check your payment details.');
         return;
       }
-      setCheckoutError('Secure Stripe payment element is not yet available. No charge was made.');
-    } catch (error: any) {
-      setIsProcessing(false);
-      setCheckoutError(error?.message || 'Checkout network request failed. No charge was made.');
+
+      const pi = result.paymentIntent;
+      if (pi && (pi.status === 'succeeded' || pi.status === 'processing' || pi.status === 'requires_capture')) {
+        // Begin polling authoritative order fulfillment
+        await pollOrderFulfillment(quote.orderId);
+      } else if (pi?.status === 'requires_action') {
+        setStatus('error');
+        setCheckoutError('Additional authentication was required and could not be completed.');
+      } else {
+        await pollOrderFulfillment(quote.orderId);
+      }
+    } catch (err: any) {
+      setStatus('error');
+      setCheckoutError(err?.message || 'Payment submission failed.');
     }
   };
 
+  const handleCopyLicenseKey = (key: string) => {
+    playSuccessChime();
+    navigator.clipboard.writeText(key);
+    setIsKeyCopied(true);
+    setTimeout(() => setIsKeyCopied(false), 2500);
+  };
+
+  if (!isOpen) return null;
+
+  // Authoritative calculations from server quote (NO client guessing)
+  const formattedPrice = quote
+    ? `$${(quote.amountCents / 100).toFixed(2)}`
+    : typeof app.price === 'number'
+      ? `$${app.price.toFixed(2)}`
+      : `$${(parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15).toFixed(2)}`;
+
+  // Parse authoritative allocations for display
+  const makerAlloc = quote?.allocations?.find(a => a.role === 'maker');
+  const poolAlloc = quote?.allocations?.find(a => a.role === 'protocol_pool');
+  const ancestorAllocs = quote?.allocations?.filter(a => a.role === 'ancestor') || [];
+  const contributorAllocs = quote?.allocations?.filter(a => a.role === 'contributor') || [];
+
+  const artifactLinks = fulfilledOrder?.binaries ? publishedArtifactLinks(fulfilledOrder.binaries) : [];
+
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4 font-tahoma text-xs">
-      <div className="w-full max-w-md bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1">
-        {/* Title bar */}
-        <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
+      <div className="w-full max-w-lg bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1 max-h-[95vh] flex flex-col">
+        {/* Win95 Blue Title Bar */}
+        <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs shrink-0">
           <div className="flex items-center gap-1.5">
             <Lock size={13} className="text-yellow-300" />
             <span>SECURE STRIPE MARKETPLACE CHECKOUT</span>
@@ -79,61 +370,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
           </button>
         </div>
 
-        <div className="p-4 bg-w95-gray space-y-4">
-          <form onSubmit={handlePay} className="space-y-3">
-              {/* Product Header */}
-              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
-                  <div>
-                    <div className="font-bold text-gray-900 text-sm">{app.name}</div>
-                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Yours to keep: app, source, and license</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold font-mono text-base text-green-800">${(priceCents / 100).toFixed(2)}</div>
-                  <div className="text-[10px] text-gray-500">One-Time License</div>
-                </div>
-              </div>
-
-              {/* 70/20/10 Lineage Breakdown */}
-              <div className="bg-blue-50 border border-blue-300 p-2.5 rounded font-mono text-[11px] space-y-1">
-                <div className="font-bold text-blue-950 flex items-center gap-1">
-                  <Sparkles size={12} className="text-amber-600" />
-                  <span>Where your money goes:</span>
-                </div>
-                <div className="flex justify-between text-gray-700">
-                  <span>⚡ {isFork ? '70%' : '90%'} to the maker ({app.creator || app.author ? `@${app.creator || app.author}` : '@nate'}):</span>
-                  <span className="font-bold">${(makerCents / 100).toFixed(2)}</span>
-                </div>
-                {isFork && (
-                  <div className="flex justify-between text-gray-700">
-                    <span>💎 20% to the apps it was forked from:</span>
-                    <span className="font-bold">${(lineageCents / 100).toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-gray-700">
-                  <span>🛡️ 10% to the platform:</span>
-                  <span className="font-bold">${(platformCents / 100).toFixed(2)}</span>
-                </div>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-500 p-3 text-amber-950 flex items-start gap-2">
-                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+        <div className="p-4 bg-w95-gray space-y-4 overflow-y-auto flex-1">
+          {/* STATE 1: Unauthenticated */}
+          {status === 'auth_required' && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border-2 border-amber-500 p-3 text-amber-950 flex items-start gap-2.5">
+                <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-600" />
                 <div>
-                  <div className="font-bold">Checkout is being commissioned.</div>
-                  <div className="mt-1 leading-relaxed">
-                    We don't take card details here yet. Buying turns on once Stripe checkout, your order,
-                    license delivery, and the payout split all work together end to end.
+                  <div className="font-bold text-xs">Authentication Required to Purchase</div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-amber-900">
+                    Purchases on Nate's Software are cryptographically signed and permanently bound to your buyer profile.
+                    Sign in or create an account to proceed with checkout.
                   </div>
                 </div>
               </div>
-
-              {checkoutError && (
-                <div role="alert" className="bg-red-50 border border-red-600 p-2 text-red-900">
-                  {checkoutError}
-                </div>
-              )}
 
               <div className="flex items-center justify-between pt-2 border-t border-gray-300">
                 <button
@@ -145,15 +395,310 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </button>
 
                 <button
-                  type="submit"
-                  disabled={isProcessing}
-                  className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5"
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    openAuthModal('login');
+                  }}
+                  className="btn-w95 btn-w95-primary px-5 py-1.5 font-bold text-xs flex items-center gap-1.5"
                 >
-                  <ShieldCheck size={14} />
-                  <span>{isProcessing ? 'Checking...' : 'Check checkout availability'}</span>
+                  <LogIn size={13} />
+                  <span>Log In or Register to Buy</span>
                 </button>
               </div>
-          </form>
+            </div>
+          )}
+
+          {/* STATE 2: Commissioning / Not Configured */}
+          {status === 'commissioning' && (
+            <div className="space-y-4">
+              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
+                  <div>
+                    <div className="font-bold text-gray-900 text-sm">{app.name}</div>
+                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · One-Time License</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold font-mono text-base text-green-800">{formattedPrice}</div>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-500 p-3 text-amber-950 flex items-start gap-2">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Checkout is being commissioned.</div>
+                  <div className="mt-1 leading-relaxed text-[11px]">
+                    {checkoutError || "Stripe test mode and settlement secrets are being configured on the server. Buying turns on once Stripe keys, order fulfillment, and payout splits all work together end to end."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-2 border-t border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => { playClickSound(); onClose(); }}
+                  className="btn-w95 px-5 py-1.5 text-xs font-bold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STATE 3: Loading quote / intent */}
+          {status === 'init' && (
+            <div className="p-8 text-center space-y-3">
+              <RefreshCw size={24} className="animate-spin text-w95-blue mx-auto" />
+              <div className="font-bold text-gray-800 text-xs">Requesting authoritative quote from Lineage Ledger...</div>
+              <div className="text-gray-500 text-[11px] font-mono">Verifying ancestry DAG and product price</div>
+            </div>
+          )}
+
+          {/* STATE 4 & 5: Ready to Pay / Processing / Error */}
+          {(status === 'ready' || status === 'processing' || status === 'error') && (
+            <form onSubmit={handlePay} className="space-y-3">
+              {/* Product Header with Authoritative Price */}
+              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
+                  <div>
+                    <div className="font-bold text-gray-900 text-sm">{app.name}</div>
+                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Yours to keep: app, source, and license</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold font-mono text-base text-green-800">{formattedPrice}</div>
+                  <div className="text-[10px] text-gray-500 font-mono">One-Time License</div>
+                </div>
+              </div>
+
+              {/* Authoritative Lineage Allocation Breakdown from Server Quote */}
+              {quote && (
+                <div className="bg-blue-50 border border-blue-300 p-2.5 rounded font-mono text-[11px] space-y-1">
+                  <div className="font-bold text-blue-950 flex items-center gap-1">
+                    <Sparkles size={12} className="text-amber-600" />
+                    <span>Authoritative Lineage Split:</span>
+                  </div>
+
+                  {/* Maker Allocation */}
+                  {makerAlloc && (
+                    <div className="flex justify-between text-gray-700">
+                      <span>
+                        ⚡ {(makerAlloc.basisPoints / 100).toFixed(0)}% to maker ({makerAlloc.recipientUserId ? `@${makerAlloc.recipientUserId}` : (app.creator || app.author || '@maker')}):
+                      </span>
+                      <span className="font-bold">${(makerAlloc.amountCents / 100).toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  {/* Ancestor Allocations */}
+                  {ancestorAllocs.map((anc, idx) => (
+                    <div key={idx} className="flex justify-between text-gray-700">
+                      <span>
+                        💎 {(anc.basisPoints / 100).toFixed(0)}% to ancestor ({anc.recipientUserId ? `@${anc.recipientUserId}` : `Depth ${anc.lineageDepth ?? idx + 1}`}):
+                      </span>
+                      <span className="font-bold">${(anc.amountCents / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+
+                  {/* Contributor Allocations */}
+                  {contributorAllocs.map((cnt, idx) => (
+                    <div key={idx} className="flex justify-between text-gray-700">
+                      <span>
+                        🤝 {(cnt.basisPoints / 100).toFixed(0)}% to contributor (@{cnt.recipientUserId}):
+                      </span>
+                      <span className="font-bold">${(cnt.amountCents / 100).toFixed(2)}</span>
+                    </div>
+                  ))}
+
+                  {/* Protocol Pool Allocation */}
+                  {poolAlloc && (
+                    <div className="flex justify-between text-gray-700">
+                      <span>🛡️ {(poolAlloc.basisPoints / 100).toFixed(0)}% to platform &amp; protocol pool:</span>
+                      <span className="font-bold">${(poolAlloc.amountCents / 100).toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Stripe Payment Element Container */}
+              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 min-h-[160px] relative">
+                {!isStripeReady && status !== 'error' && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                    <div className="flex items-center gap-2 text-gray-600 font-mono text-xs">
+                      <RefreshCw size={14} className="animate-spin text-w95-blue" />
+                      <span>Loading secure card inputs...</span>
+                    </div>
+                  </div>
+                )}
+                <div ref={paymentContainerRef} id="payment-element" />
+              </div>
+
+              {checkoutError && (
+                <div role="alert" className="bg-red-50 border border-red-600 p-2 text-red-900 text-xs">
+                  {checkoutError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2 border-t border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => { playClickSound(); onClose(); }}
+                  disabled={status === 'processing'}
+                  className="btn-w95 px-4 py-1 text-xs"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={status === 'processing' || !isStripeReady}
+                  className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                >
+                  {status === 'processing' ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Confirming Payment...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} />
+                      <span>Pay {formattedPrice}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* STATE 6: Polling fulfillment */}
+          {status === 'polling' && (
+            <div className="p-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-blue-100 border-2 border-w95-blue rounded-full flex items-center justify-center mx-auto text-w95-blue">
+                <RefreshCw size={24} className="animate-spin" />
+              </div>
+              <div>
+                <div className="font-bold text-gray-900 text-sm">Payment Confirmed!</div>
+                <div className="text-gray-600 text-xs mt-1">
+                  Settling order on Lineage Ledger and minting your cryptographic license...
+                </div>
+              </div>
+              <div className="bg-gray-100 border border-gray-300 p-2 rounded text-[11px] font-mono text-gray-500">
+                Polling order: {quote?.orderId}
+              </div>
+            </div>
+          )}
+
+          {/* STATE 7: Fulfilled Success */}
+          {status === 'fulfilled' && (
+            <div className="space-y-4">
+              <div className="bg-emerald-50 border-2 border-emerald-600 p-3.5 rounded flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-600 text-white rounded-full flex items-center justify-center shrink-0 shadow-sm">
+                  <Check size={22} className="font-bold" />
+                </div>
+                <div>
+                  <div className="font-bold text-emerald-950 text-sm">Purchase Complete &amp; Verified!</div>
+                  <div className="text-emerald-800 text-[11px] mt-0.5">
+                    {app.name} ({app.version}) is now owned on your permanent shelf.
+                  </div>
+                </div>
+              </div>
+
+              {/* License Key Box */}
+              {fulfilledOrder?.license && (
+                <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
+                  <div className="flex items-center justify-between text-gray-700">
+                    <span className="font-bold text-xs flex items-center gap-1">
+                      <Lock size={12} className="text-amber-600" />
+                      <span>Your Software License Key:</span>
+                    </span>
+                    <span className="text-[10px] font-mono bg-green-100 text-green-800 px-1.5 py-0.5 rounded font-bold">
+                      ACTIVE
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={fulfilledOrder.license.licenseKey}
+                      onFocus={(e) => e.target.select()}
+                      className="flex-1 p-1.5 border border-gray-400 font-mono text-xs bg-gray-50 select-all font-bold text-gray-900"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLicenseKey(fulfilledOrder.license!.licenseKey)}
+                      className="btn-w95 btn-w95-primary px-3 py-1.5 text-xs font-bold flex items-center gap-1 shrink-0"
+                    >
+                      {isKeyCopied ? <Check size={12} /> : <Copy size={12} />}
+                      <span>{isKeyCopied ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-gray-500 font-mono">
+                    Order ID: {fulfilledOrder.id} · Stored securely on your shelf
+                  </div>
+                </div>
+              )}
+
+              {/* Download / Launch Actions */}
+              {artifactLinks.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="font-bold text-gray-800 text-xs">Downloads &amp; Access:</div>
+                  <div className="flex flex-wrap gap-2">
+                    {artifactLinks.map(link => (
+                      <a
+                        key={link.kind}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-w95 px-3 py-1 text-xs font-bold flex items-center gap-1 bg-white hover:bg-gray-100"
+                      >
+                        {link.kind === 'web' || link.kind === 'ios' ? <ExternalLink size={12} /> : <Download size={12} />}
+                        <span>{link.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end pt-2 border-t border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => { playClickSound(); onClose(); }}
+                  className="btn-w95 btn-w95-primary px-6 py-1.5 text-xs font-bold"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STATE 8: Polling Timeout */}
+          {status === 'timeout' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border-2 border-blue-600 p-3.5 rounded flex items-center gap-3">
+                <ShieldCheck size={28} className="text-blue-700 shrink-0" />
+                <div>
+                  <div className="font-bold text-blue-950 text-sm">Payment Confirmed</div>
+                  <div className="text-blue-800 text-[11px] mt-0.5 leading-relaxed">
+                    Your payment was received. Settlement and license delivery are processing asynchronously in the background.
+                    Your license will appear on your Shelf shortly.
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-2 border-t border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => { playClickSound(); onClose(); }}
+                  className="btn-w95 btn-w95-primary px-6 py-1.5 text-xs font-bold"
+                >
+                  Got It
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
