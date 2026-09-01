@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
+import { useAuth } from '../context/AuthContext';
 import {
   getAppCoordinates,
   getAppCoordinate,
@@ -36,13 +37,22 @@ import {
 
 export const SlopshopView: React.FC = () => {
   const { showAlert } = useAlert();
+  const { user, isAuthenticated } = useAuth();
 
   // Selected state
   const [selectedAppId, setSelectedAppId] = useState<string>('dronehunter');
   const [selectedAgent, setSelectedAgent] = useState<AgentToolId>('agy');
   const [activeTab, setActiveTab] = useState<'spec' | 'command' | 'evidence' | 'gateway'>('spec');
-  const [makerHandle, setMakerHandle] = useState<string>('@nate');
+  const [makerHandle, setMakerHandle] = useState<string>(
+    user?.username ? `@${user.username}` : '@nate'
+  );
   const [forgeCoordinates, setForgeCoordinates] = useState<RepoCoordinate[] | null>(null);
+
+  useEffect(() => {
+    if (user?.username) {
+      setMakerHandle(`@${user.username}`);
+    }
+  }, [user?.username]);
 
   // Active coordinate & presets
   const coordinate: RepoCoordinate = forgeCoordinates?.find(item => item.appId === selectedAppId)
@@ -499,7 +509,7 @@ export const SlopshopView: React.FC = () => {
 
                 {/* Draft attribution and conditional sale policy */}
                 <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between flex-wrap gap-3 font-mono text-xs">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-slate-400">Draft Maker Attribution:</span>
                     <input
                       type="text"
@@ -508,6 +518,15 @@ export const SlopshopView: React.FC = () => {
                       className="bg-slate-900 border border-slate-700 px-2 py-1 rounded text-amber-300 font-bold outline-none w-28 text-xs"
                       placeholder="@handle"
                     />
+                    {isAuthenticated && user?.username ? (
+                      <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">
+                        signed in as @{user.username}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        (editable draft handle)
+                      </span>
+                    )}
                   </div>
                   <div className="text-slate-400 text-[11px] flex items-center gap-2">
                     <span>Proposed Sale Policy (verified only on publication + sale):</span>
@@ -770,8 +789,17 @@ export const SlopshopView: React.FC = () => {
                 <p className="text-slate-300 text-xs leading-relaxed">
                   Because Nate's Software Web OS runs client-side in the browser, it <strong>does not invoke local host shells</strong> or fabricate fake git commits. Feature code generation, test assertions, and git commits must take place locally on your workstation.
                 </p>
-                <div className="text-[11px] text-amber-300/80 font-mono pt-1">
-                  Status: <code className="bg-slate-950 px-2 py-0.5 rounded border border-amber-900/50">{gatewayState === 'ready' ? 'Gateway Ready · Awaiting Local Execution Proof' : gatewayState === 'checking' ? 'Checking Gateway Readiness' : 'Gateway Unavailable'}</code>
+                <div className="text-[11px] text-amber-300/80 font-mono pt-1 flex items-center justify-between flex-wrap gap-2">
+                  <span>Status: <code className="bg-slate-950 px-2 py-0.5 rounded border border-amber-900/50">{gatewayState === 'ready' ? 'Gateway Ready · Awaiting Local Execution Proof' : gatewayState === 'checking' ? 'Checking Gateway Readiness' : 'Gateway Unavailable'}</code></span>
+                  {isAuthenticated && user?.username ? (
+                    <span className="text-emerald-400 font-bold bg-slate-950/80 px-2 py-0.5 rounded border border-emerald-800/60">
+                      Signed in as @{user.username}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 bg-slate-950/80 px-2 py-0.5 rounded border border-slate-800">
+                      Not signed in (using draft {makerHandle})
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -789,6 +817,10 @@ export const SlopshopView: React.FC = () => {
                   <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
                     <div className="text-slate-400 font-bold">CAS Parameters:</div>
                     <div className="space-y-1 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Maker Ref:</span>
+                        <span className="text-emerald-400 font-bold">{makerHandle}</span>
+                      </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500">Target Branch:</span>
                         <span className="text-sky-300 font-bold">refs/heads/main</span>

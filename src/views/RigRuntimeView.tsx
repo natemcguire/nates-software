@@ -400,12 +400,21 @@ export const RigRuntimeView: React.FC = () => {
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
       {/* Top Header Navigation */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Cpu size={16} className="text-cyan-400" />
           <span className="font-bold text-sm text-cyan-300 font-mono">RIG.EXE CONTROL-PLANE PREVIEW</span>
           <span className="bg-blue-950 text-cyan-200 text-[10px] font-bold px-2 py-0.5 rounded border border-cyan-600 font-mono">
             RUNTIME &amp; STORAGE AGNOSTIC
           </span>
+          {user?.username ? (
+            <span className="bg-emerald-950/90 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-500/80 font-mono">
+              @{user.username}'s fleet
+            </span>
+          ) : (
+            <span className="bg-slate-900 text-slate-400 text-[10px] font-bold px-2 py-0.5 rounded border border-slate-700 font-mono">
+              Guest fleet
+            </span>
+          )}
         </div>
 
         {/* Boundary Indicator */}
@@ -761,8 +770,10 @@ export const RigRuntimeView: React.FC = () => {
                     className={`btn-w95 text-xs py-1 px-2.5 flex items-center gap-1.5 whitespace-nowrap ${
                       selectedInstanceId === inst.spec.id ? 'btn-w95-primary' : 'text-black'
                     }`}
+                    title={`Owner: @${user?.username || 'guest'}`}
                   >
                     <span>{inst.spec.name}</span>
+                    <span className="text-[10px] opacity-75 font-mono">(@{user?.username || 'guest'})</span>
                     {getStatusBadge(inst.observed.lifecycle)}
                   </button>
                 ))}
@@ -780,7 +791,7 @@ export const RigRuntimeView: React.FC = () => {
                           {getStatusBadge(selectedInstance.observed.lifecycle)}
                         </div>
                         <div className="text-[11px] text-gray-500 font-mono mt-0.5">
-                          App: {selectedInstance.spec.appId} | Source: {selectedInstance.spec.source} | Adapter: {selectedInstance.spec.runtime.adapter}
+                          App: {selectedInstance.spec.appId} | Owner: @{user?.username || 'guest'} | Source: {selectedInstance.spec.source} | Adapter: {selectedInstance.spec.runtime.adapter}
                         </div>
                       </div>
 

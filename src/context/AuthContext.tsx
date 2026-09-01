@@ -133,10 +133,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
+const DEFAULT_AUTH_CONTEXT: AuthContextType = {
+  user: null,
+  isAuthenticated: false,
+  isSuperAdmin: false,
+  isAuthModalOpen: false,
+  authModalTab: 'login',
+  openAuthModal: () => {},
+  closeAuthModal: () => {},
+  login: async () => ({ success: false, error: 'AuthProvider not found' }),
+  register: async () => ({ success: false, error: 'AuthProvider not found' }),
+  logout: async () => {},
+  requireAuth: (_actionDescription: string, _onAuthenticated: () => void) => {}
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  return context || DEFAULT_AUTH_CONTEXT;
 };
