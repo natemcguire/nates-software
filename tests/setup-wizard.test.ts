@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveAppRoute } from '../src/App';
 
-describe('First-Time User Onboarding & Setup Wizard Flow', () => {
+describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
   it('should resolve desktop mode for root visits so SETUP.EXE launches automatically', () => {
     const route = resolveAppRoute('nates-software.com', '/', '');
     expect(route.type).toBe('desktop');
@@ -17,20 +17,55 @@ describe('First-Time User Onboarding & Setup Wizard Flow', () => {
     expect(installCmd).not.toContain('claude');
   });
 
-  it('does not claim a native fork, entitlement, or payout before CLI proof', () => {
+  it('replaces Verify dead-end with "You\'re in — what\'s next" and preserves no-entitlement honesty', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Verify the Native Install');
+    expect(source).toContain("You're in — what's next?");
+    expect(source).not.toContain('Verify the Native Install');
     expect(source).toContain('No entitlement or payout is created by this wizard.');
-    expect(source).toContain('Your fork exists only after SLOP prints');
     expect(source).not.toContain('Your Local-First Fork is Ready!');
     expect(source).not.toContain('Your Guaranteed Lineage Royalty Contract:');
     expect(source).not.toContain("useState<string>(user?.username || 'josh')");
   });
 
-  it('explains that browser VM workspaces are intentionally disposable', () => {
+  it('relabels step indicators to plain actions (O3)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Use your native terminal to keep the fork.');
-    expect(source).toContain('workspace is deleted when the session ends');
+    expect(source).toContain('1. Pick an app');
+    expect(source).toContain('2. Get it running');
+    expect(source).toContain('3. Start building');
+    expect(source).not.toContain('2. Launch Agent');
+    expect(source).not.toContain('3. Verify');
+  });
+
+  it('leads with buyer benefit in Step 1 subhead and removes 70/20/10 from Step 1 (O4)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('Pick an app to try. You get the running app plus its full source — yours to fork, mod, and even resell.');
+    expect(source).toContain('Full source included');
+  });
+
+  it('makes running in the browser the primary Step 2 action with feature-framed copy (O1)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('Runs in a fresh cloud sandbox — nothing to install. Closes when you leave.');
+    expect(source).toContain('Run {selectedStarter?.name || \'App\'} in the browser now');
+    expect(source).toContain('Prefer your own machine? Install with SLOP');
+  });
+
+  it('offers three real actions in Step 3 and interpolates real app name into preview labels (O2, C1)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('Open {selectedStarter?.name || \'App\'} live');
+    expect(source).toContain('See code on GITSMITH');
+    expect(source).toContain("Browse today's drops");
+    expect(source).toContain("Run {selectedStarter?.name || 'App'} in browser");
+  });
+
+  it('uses logged-in username for fork command when authenticated (#14)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain("const owner = user?.username || selectedStarter.repoOwner || 'nate';");
+  });
+
+  it('reframes browser sandbox as a feature without throwaway warning (O1)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('Runs in a fresh cloud sandbox — nothing to install. Closes when you leave.');
+    expect(source).not.toContain('workspace is deleted when the session ends');
   });
 
   it('provides real web auth entrypoints (Create username / Log in) instead of static CLI login chip', () => {
@@ -41,5 +76,26 @@ describe('First-Time User Onboarding & Setup Wizard Flow', () => {
     expect(source).toContain("openAuthModal('login')");
     expect(source).toContain('Create username');
     expect(source).toContain('Signed in as @');
+  });
+
+  it('wires MarketingWindow hero to "Try an app now →", outcome CTAs, and user badge (O5)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/views/MarketingWindow.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('Try an app now &rarr;');
+    expect(source).toContain("Browse today's drops &rarr;");
+    expect(source).toContain('Mod an app with AI &rarr;');
+    expect(source).toContain("See what's running &rarr;");
+    expect(source).toContain('Browse the code &rarr;');
+    expect(source).toContain('Open your mailbox &rarr;');
+    expect(source).toContain('See your profile &amp; shelf &rarr;');
+    expect(source).toContain('Free to browse and fork. Create a maker account when you\'re ready to publish.');
+    expect(source).toContain("const userBadge = user?.username ? `@${user.username}` : '@nate';");
+  });
+
+  it('wires SETUP desktop icon with START HERE and gates first-run auto-open in App.tsx (#6, F5)', () => {
+    const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('SETUP.EXE (START HERE)');
+    expect(source).toContain('nsw_setup_wizard_seen');
+    expect(source).toContain('closeWindow(\'setup\')');
+    expect(source).toContain('liveSandboxApp');
   });
 });

@@ -1,7 +1,10 @@
 import React from 'react';
 import { Flame, Wrench, Cpu, GitMerge, Mail, User, Sparkles, BookOpen } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { playClickSound } from '../lib/soundEngine';
 
 interface MarketingWindowProps {
+  onOpenSetup?: () => void;
   onOpenHotwire: () => void;
   onOpenSlopshop: () => void;
   onOpenRig: () => void;
@@ -13,6 +16,7 @@ interface MarketingWindowProps {
 }
 
 export const MarketingWindow: React.FC<MarketingWindowProps> = ({
+  onOpenSetup,
   onOpenHotwire,
   onOpenSlopshop,
   onOpenRig,
@@ -22,6 +26,9 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onOpenWhitepapers,
   onDismiss
 }) => {
+  const { user } = useAuth();
+  const userBadge = user?.username ? `@${user.username}` : '@nate';
+
   return (
     <div className="flex flex-col h-full font-tahoma text-sm">
       <div className="text-center py-2.5 border-b border-gray-300 mb-3">
@@ -33,6 +40,22 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           the full source in a Git repo, native installers (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.dmg</code>, <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-xs font-bold text-black">.exe</code>, and more),
           and a real license key with your name on it. No subscription, ever.
         </p>
+        <div className="mt-2.5 flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              playClickSound();
+              if (onOpenSetup) onOpenSetup();
+            }}
+            className="btn-w95 btn-w95-primary px-5 py-2 font-bold text-xs flex items-center gap-1.5 shadow"
+          >
+            <Sparkles size={14} className="text-yellow-300" />
+            <span>Try an app now &rarr;</span>
+          </button>
+        </div>
+        <div className="text-xs text-gray-500 mt-2 font-sans">
+          Free to browse and fork. Create a maker account when you're ready to publish.
+        </div>
       </div>
 
       {/* How it works + Navigation Grid (shared scroll area) */}
@@ -82,7 +105,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               The daily 12:01 AM board where makers drop new apps and people vote them up.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Drops Board &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Browse today's drops &rarr;</span>
         </div>
 
         {/* 2. SLOPSHOP */}
@@ -96,7 +119,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               Fork any app in one click, then add features with Claude or Codex right in the browser.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Enter Mod Bay &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Mod an app with AI &rarr;</span>
         </div>
 
         {/* 3. RIG.EXE */}
@@ -110,7 +133,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               Runs your app in a sandboxed container. It sleeps when idle, so you don't pay for nothing.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Inspect Dynos (Ports 3001..3010) &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">See what's running &rarr;</span>
         </div>
 
         {/* 4. GITSMITH */}
@@ -124,7 +147,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               GitHub-style bare Git forge over SSH with all repos, search, and 1-click live preview links.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Explore Bare Repos &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Browse the code &rarr;</span>
         </div>
 
         {/* 5. INBOX */}
@@ -138,7 +161,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               3-pane async email client for human and agent discussions &amp; 1-click merge approvals.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Mailbox (3) &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open your mailbox &rarr;</span>
         </div>
 
         {/* 6. MY PROFILE (Replaces Multi-Platform) */}
@@ -146,13 +169,13 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           <div>
             <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
               <span className="flex items-center gap-2"><User size={18} className="text-blue-900" /> My Profile</span>
-              <span className="text-xs text-green-700 font-bold font-mono">@nate</span>
+              <span className="text-xs text-green-700 font-bold font-mono">{userBadge}</span>
             </div>
             <p className="text-gray-600 text-xs leading-relaxed">
               Your maker page, SSH keys, earnings, and the shelf of apps you own.
             </p>
           </div>
-          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">Open Profile &amp; Shelf &rarr;</span>
+          <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">See your profile &amp; shelf &rarr;</span>
         </div>
       </div>
       </div>
@@ -173,8 +196,18 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           <button onClick={onOpenHotwire} className="btn-w95">
             <Flame size={14} className="text-orange-600" /> Browse HOTWIRE Drops
           </button>
-          <button onClick={onOpenSlopshop} className="btn-w95 btn-w95-primary">
-            <Sparkles size={14} /> Fork in SLOPSHOP &rarr;
+          <button
+            onClick={() => {
+              playClickSound();
+              if (onOpenSetup) {
+                onOpenSetup();
+              } else {
+                onOpenSlopshop();
+              }
+            }}
+            className="btn-w95 btn-w95-primary"
+          >
+            <Sparkles size={14} /> Try an app now &rarr;
           </button>
         </div>
       </div>

@@ -120,6 +120,7 @@ function AppInner() {
   const { showAlert } = useAlert();
   const { isAuthenticated } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
+  const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
 
   // Poll the lightweight global unread count for the INBOX desktop icon badge.
@@ -298,6 +299,19 @@ function AppInner() {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
+  // Auto-open SETUP on first-run only (persisting a 'seen' flag) and/or when logged out.
+  // Don't re-nag returning logged-in users.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const SETUP_SEEN_KEY = 'nsw_setup_wizard_seen';
+    const hasSeenSetup = localStorage.getItem(SETUP_SEEN_KEY);
+    if (isAuthenticated && hasSeenSetup) {
+      closeWindow('setup');
+    } else {
+      localStorage.setItem(SETUP_SEEN_KEY, 'true');
+    }
+  }, [isAuthenticated, closeWindow]);
+
   const getInitialScale = () => {
     if (typeof window === 'undefined') return 1.0;
     const w = window.innerWidth;
@@ -409,7 +423,7 @@ function AppInner() {
       {/* Desktop App Icons Grid */}
       <div className="absolute top-4 left-4 grid grid-flow-col grid-rows-7 gap-2 z-10">
         <DesktopIcon
-          label="SETUP.EXE (Quickstart)"
+          label="SETUP.EXE (START HERE)"
           icon="🚀"
           onClick={() => { playClickSound(); openWindow('setup'); }}
         />
@@ -501,14 +515,38 @@ function AppInner() {
           onResize={(w, h, x, y) => updateWindowSize('setup', w, h, x, y)}
         >
           <SetupWizardView
-            onOpenSandbox={() => {
-              openWindow('hotwire');
+            onOpenSandbox={(appId) => {
+              playClickSound();
+              const targetApp = getApp(appId) || {
+                id: appId,
+                name: formatAppTitle(appId),
+                tagline: `${appId} — Shareware App`,
+                description: `Live preview for ${appId}`,
+                author: 'nate',
+                authorAvatar: '⚡',
+                creator: 'nate',
+                creatorAvatar: '⚡',
+                version: 'v1.0.0',
+                upvotes: 0,
+                forkCount: 0,
+                tags: ['Shareware', 'App'],
+                sqliteDatabase: '',
+                sqliteSize: 'Not specified',
+                screenshots: [],
+                comments: [],
+                deploymentState: 'draft' as const,
+                deploymentError: `No deployable revision exists for ${appId}. Source has not been imported into GITSMITH and built by RIG.`
+              };
+              setLiveSandboxApp(targetApp);
             }}
             onOpenTerminal={() => {
               openWindow('terminal');
             }}
             onOpenForge={() => {
               openWindow('gitsmith');
+            }}
+            onBrowseDrops={() => {
+              openWindow('hotwire');
             }}
           />
         </RetroWindow>
@@ -532,6 +570,7 @@ function AppInner() {
           onResize={(w, h, x, y) => updateWindowSize('mktg', w, h, x, y)}
         >
           <MarketingWindow
+            onOpenSetup={() => openWindow('setup')}
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
             onOpenRig={() => openWindow('rig')}
@@ -819,6 +858,34 @@ function AppInner() {
                 }}
               />
             </ErrorBoundary>
+          </div>
+        </div>
+      )}
+
+      {/* Live Sandbox Modal Overlay */}
+      {liveSandboxApp && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl h-[85vh] bg-[#ece9d8] border-2 border-white shadow-2xl flex flex-col font-tahoma">
+            <div className="bg-w95-blue text-white px-2.5 py-1.5 flex items-center justify-between border-b-2 border-gray-800 select-none">
+              <div className="flex items-center gap-2">
+                <span>{liveSandboxApp.creatorAvatar || liveSandboxApp.authorAvatar || '🚀'}</span>
+                <span className="font-bold text-xs font-mono">{liveSandboxApp.name} — Live Cloud Sandbox</span>
+              </div>
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setLiveSandboxApp(null);
+                }}
+                className="btn-w95 px-2 py-0.5 text-xs font-bold text-black bg-gray-200 hover:bg-white"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ErrorBoundary fallbackTitle={liveSandboxApp.name} onDismiss={() => setLiveSandboxApp(null)}>
+                <EphemeralLiveApp app={liveSandboxApp} />
+              </ErrorBoundary>
+            </div>
           </div>
         </div>
       )}
