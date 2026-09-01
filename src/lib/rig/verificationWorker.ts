@@ -108,8 +108,38 @@ export class RigVerificationWorker {
       const resultDigest = digest(JSON.stringify({ commitOid: payload.resultCommitOid, runnerImageDigest: payload.runnerImageDigest,
         toolchainVersion: payload.toolchainVersion, testPolicyVersion: payload.testPolicyVersion,
         exitCode: run.exitCode, outputDigest: digest(run.output) }));
+      // Evidence handed to the control plane so it can assemble one signed,
+      // immutable R2 bundle. The worker never uploads to R2 itself — only the
+      // control plane (which holds env.STORAGE) may write the authoritative
+      // bundle, so a compromised/rogue worker cannot forge evidence.
+      const isolationAttestation = {
+        containerRuntime: 'docker',
+        networkMode: 'bridge',
+        memoryLimit: '256m',
+        pidsLimit: 128,
+        cpus: 1,
+        capDrop: 'ALL',
+        securityOpt: 'no-new-privileges',
+        readOnlyRootfs: true,
+        tmpfs: '/tmp:rw,noexec,nosuid,size=64m'
+      };
+      const runtimeIdentity = {
+        runnerImageDigest: payload.runnerImageDigest,
+        toolchainVersion: payload.toolchainVersion,
+        testPolicyVersion: payload.testPolicyVersion,
+        commitOid: payload.resultCommitOid,
+        sourceManifestDigest: payload.sourceManifestDigest
+      };
+      const testReport = {
+        buildCommand: payload.buildCommand,
+        testCommand: payload.testCommand,
+        exitCode: run.exitCode,
+        timedOut: run.timedOut,
+        outputDigest: digest(run.output)
+      };
       await this.post({ action: 'complete', eventId: claim.eventId, claimToken: claim.claimToken, status,
-        resultDigest: status === 'passed' ? resultDigest : undefined, exitCode: run.exitCode, durationMs: Date.now() - started });
+        resultDigest: status === 'passed' ? resultDigest : undefined, exitCode: run.exitCode, durationMs: Date.now() - started,
+        evidence: { logs: run.output, testReport, isolationAttestation, runtimeIdentity } });
     } finally {
       fs.rmSync(jobRoot, { recursive: true, force: true });
     }

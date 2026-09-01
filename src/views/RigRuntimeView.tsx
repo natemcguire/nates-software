@@ -58,6 +58,16 @@ export const RigRuntimeView: React.FC = () => {
   const [isWorking, setIsWorking] = useState(false);
   const [liveLogs, setLiveLogs] = useState<string | null>(null);
 
+  // Fix 2 (RIG spec): deploy-readiness preflight. Gates the "Launch Isolated
+  // Provider Instance" publish control — a live app launch is never offered
+  // as available until GET /api/product-readiness?appId=...&deploy=1 reports
+  // ready:true. Fails closed: unknown/unchecked/error states never enable
+  // the control, they only ever show honest blocking reasons.
+  const [deployPreflight, setDeployPreflight] = useState<{
+    status: 'idle' | 'checking' | 'ready' | 'not-ready' | 'error';
+    reasons: string[];
+  }>({ status: 'idle', reasons: [] });
+
   const timersRef = useRef<NodeJS.Timeout[]>([]);
 
   const refreshState = () => {
@@ -109,6 +119,38 @@ export const RigRuntimeView: React.FC = () => {
     };
   }, [user?.id]);
 
+  // Fix 2 (RIG spec): re-check deploy readiness whenever provider mode is
+  // active and the target appId changes. Never offer the live launch control
+  // as available while this is 'checking', 'not-ready', or 'error' — only an
+  // explicit ready:true from the server flips it.
+  useEffect(() => {
+    const cleanAppId = appId.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
+    if (fleetMode !== 'provider' || !cleanAppId) {
+      setDeployPreflight({ status: 'idle', reasons: [] });
+      return;
+    }
+    const controller = new AbortController();
+    setDeployPreflight({ status: 'checking', reasons: [] });
+    fetch(`/api/product-readiness?appId=${encodeURIComponent(cleanAppId)}&deploy=1`, {
+      cache: 'no-store', credentials: 'same-origin', signal: controller.signal
+    })
+      .then(async response => ({ response, body: await response.json().catch(() => null) }))
+      .then(({ response, body }) => {
+        const deploy = body?.readiness?.deploy;
+        if (!response.ok || !body?.success || !deploy) {
+          setDeployPreflight({ status: 'error', reasons: [body?.error || 'Deploy readiness could not be determined.'] });
+          return;
+        }
+        setDeployPreflight({ status: deploy.ready ? 'ready' : 'not-ready', reasons: deploy.reasons || [] });
+      })
+      .catch(error => {
+        if (error?.name !== 'AbortError') {
+          setDeployPreflight({ status: 'error', reasons: ['The deploy readiness preflight request failed.'] });
+        }
+      });
+    return () => controller.abort();
+  }, [fleetMode, appId]);
+
   const handleLaunchPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -146,6 +188,10 @@ export const RigRuntimeView: React.FC = () => {
       }
       if (fleetMode === 'provider' && adapter !== 'docker') {
         setFormError('The commissioned live provider currently accepts only the Docker adapter.');
+        return;
+      }
+      if (fleetMode === 'provider' && deployPreflight.status !== 'ready') {
+        setFormError(deployPreflight.reasons[0] || 'The deploy readiness preflight has not passed for this app; publish is not available yet.');
         return;
       }
       if (fleetMode === 'provider' && !imageDigest.trim()) {
@@ -692,10 +738,38 @@ export const RigRuntimeView: React.FC = () => {
                 </label>
               </div>}
 
+              {/* Deploy-readiness preflight (Fix 2, RIG spec): honest blocking
+                  reasons shown BEFORE the publish control is offered — never a
+                  dead-end publish attempt. */}
+              {fleetMode === 'provider' && deployPreflight.status !== 'idle' && (
+                <div
+                  data-testid="deploy-preflight-panel"
+                  className={`border rounded p-2 text-[10px] space-y-1 ${
+                    deployPreflight.status === 'ready'
+                      ? 'bg-green-50 border-green-400 text-green-800'
+                      : deployPreflight.status === 'checking'
+                        ? 'bg-gray-50 border-gray-300 text-gray-600'
+                        : 'bg-yellow-50 border-yellow-400 text-yellow-900'
+                  }`}
+                >
+                  <div className="font-bold flex items-center gap-1">
+                    {deployPreflight.status === 'ready' && <>✓ DEPLOY PREFLIGHT: READY</>}
+                    {deployPreflight.status === 'checking' && <>Checking deploy readiness…</>}
+                    {deployPreflight.status === 'not-ready' && <><AlertTriangle size={11} /> DEPLOY PREFLIGHT: NOT READY</>}
+                    {deployPreflight.status === 'error' && <><AlertTriangle size={11} /> DEPLOY PREFLIGHT: UNKNOWN</>}
+                  </div>
+                  {deployPreflight.reasons.length > 0 && (
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {deployPreflight.reasons.map(reason => <li key={reason}>{reason}</li>)}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               {/* Launch Action */}
               <button
                 type="submit"
-                disabled={isWorking || (fleetMode === 'provider' && providerState === 'checking')}
+                disabled={isWorking || (fleetMode === 'provider' && (providerState === 'checking' || deployPreflight.status !== 'ready'))}
                 className="btn-w95 btn-w95-primary w-full py-2 text-xs flex items-center justify-center gap-1.5 font-bold shadow"
               >
                 <Play size={13} /> {isWorking ? 'Working…' : fleetMode === 'provider' ? 'Launch Isolated Provider Instance' : 'Launch Demo Plan (Simulation)'}

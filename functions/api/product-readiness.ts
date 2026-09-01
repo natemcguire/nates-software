@@ -1,4 +1,4 @@
-// GET /api/product-readiness[?appId=...]
+// GET /api/product-readiness[?appId=...][&deploy=1]
 // Unified, server-computed product-readiness projection.
 //
 // Today "is this app real" is scattered across commerce_products.status,
@@ -12,6 +12,22 @@
 // Public read (no auth) — the projection only exposes fields that are
 // already public on /hotwire and the app listing itself. No seller PII
 // (emails, Stripe account IDs, session data, etc.) is included.
+//
+// Deploy-readiness preflight (Fix 2, RIG spec): when `?appId=` is given
+// together with `&deploy=1`, the projection additionally includes `deploy`,
+// a preflight over the prerequisites the publish/deploy control needs
+// (build substrate config, per-app ECR repository, R2 artifact storage,
+// router binding). This is opt-in and per-app only — it is never computed
+// for the "all apps" catalog sweep, because unlike the rest of this
+// projection it is NOT a pure D1 read: per-app ECR provisioning is never
+// persisted in D1 (functions/api/deploy.ts checks it live against AWS on
+// every deploy attempt — see AGENTS.md notes), so an honest preflight has to
+// make the same live, idempotent AWS call deploy.ts itself relies on. When
+// AWS credentials aren't configured in this environment, the ECR field
+// fails closed to `null` ("not verifiable here") rather than fabricating
+// `true`.
+
+import { getAwsCredentials, createEcrRepository, DEFAULT_AWS_ACCOUNT_ID } from './_aws';
 
 export interface ProductReadiness {
   appId: string;
@@ -36,6 +52,22 @@ export interface ProductReadiness {
     deploymentState: string | null;
   };
   overall: 'buyable' | 'forkable' | 'draft' | 'unavailable';
+  deploy?: DeployReadiness;
+}
+
+export interface DeployReadiness {
+  ready: boolean;
+  reasons: string[];
+  checks: {
+    repositoryLinked: boolean;
+    routerBindable: boolean;
+    storageConfigured: boolean;
+    buildSubstrateConfigured: boolean;
+    // true/false when live-verifiable against AWS; null when AWS credentials
+    // are not configured in this environment (honestly "not verifiable here",
+    // never fabricated as ready).
+    ecrRepositoryProvisioned: boolean | null;
+  };
 }
 
 /**
@@ -143,6 +175,69 @@ async function buildReadiness(db: any, appId: string): Promise<ProductReadiness>
   };
 }
 
+/**
+ * Deploy-readiness preflight for the publish/deploy control (Fix 2).
+ *
+ * Gates what the UI is allowed to offer, NOT what the server enforces —
+ * functions/api/deploy.ts keeps its own fail-closed checks unconditionally;
+ * this preflight exists purely so the client doesn't lead a user into a dead
+ * publish attempt. It fails closed the same way: any prerequisite that can't
+ * be confirmed leaves `ready: false` with an honest reason, never `true`.
+ */
+async function buildDeployReadiness(db: any, env: any, appId: string, repositoryActive: boolean): Promise<DeployReadiness> {
+  const reasons: string[] = [];
+
+  const listing: any = await db.prepare(`
+    SELECT origin_kind AS originKind, origin_ref AS originRef, hostname
+    FROM app_listings WHERE id = ?
+  `).bind(appId).first();
+
+  const repositoryLinked = repositoryActive;
+  if (!repositoryLinked) reasons.push('No active repository is linked to this app; there is no source to build.');
+
+  // Router binding: the wildcard router Worker resolves purely from
+  // app_listings.hostname + origin_kind/origin_ref at request time (there is
+  // no separate "router commissioned" row) — a bindable hostname plus a
+  // valid origin_kind is the full honest signal this projection can read.
+  const routerBindable = Boolean(listing?.hostname) &&
+    ['r2_static', 'worker', 'cf_container', 'fargate_warm'].includes(String(listing?.originKind || ''));
+  if (!routerBindable) reasons.push('No routable hostname/origin is configured for this app; the router cannot bind it.');
+
+  const storageConfigured = Boolean(env?.STORAGE);
+  if (!storageConfigured) reasons.push('Artifact storage (R2 STORAGE) is not bound in this environment.');
+
+  const buildSubstrateConfigured = Boolean(
+    env?.AWS_CODEBUILD_DEPLOY_PROJECT || env?.AWS_CODEBUILD_BUILD_PROJECT ||
+    env?.AWS_ACCESS_KEY_ID // presence of any AWS wiring is the closest honest signal without a dedicated CodeBuild project lookup
+  );
+  if (!buildSubstrateConfigured) reasons.push('No AWS build substrate (CodeBuild project / credentials) is configured in this environment.');
+
+  // ECR per-app repository: genuinely NOT tracked in D1 — deploy.ts checks
+  // this live against AWS on every attempt (createEcrRepository is
+  // idempotent: it treats "already exists" as success, same call deploy.ts
+  // makes at its ecr_provisioning stage). Mirror that exact call here rather
+  // than fabricating a persisted flag. Only attempted when AWS credentials
+  // are present; otherwise fails closed to null (not verifiable), never true.
+  let ecrRepositoryProvisioned: boolean | null = null;
+  const creds = getAwsCredentials(env);
+  if (creds.accessKeyId && creds.secretAccessKey) {
+    const ecrResult = await createEcrRepository(env, { repositoryName: `nsw/${appId}`, registryId: env?.AWS_ACCOUNT_ID || DEFAULT_AWS_ACCOUNT_ID })
+      .catch((error: any) => ({ success: false, error: error?.message || 'ECR check failed' }));
+    ecrRepositoryProvisioned = Boolean((ecrResult as any).success);
+    if (!ecrRepositoryProvisioned) reasons.push(`Per-app ECR repository is not provisioned or unreachable: ${(ecrResult as any).error || 'unknown ECR error'}.`);
+  } else {
+    reasons.push('AWS credentials are not configured in this environment; ECR provisioning cannot be verified.');
+  }
+
+  const ready = repositoryLinked && routerBindable && storageConfigured && buildSubstrateConfigured && ecrRepositoryProvisioned === true;
+
+  return {
+    ready,
+    reasons,
+    checks: { repositoryLinked, routerBindable, storageConfigured, buildSubstrateConfigured, ecrRepositoryProvisioned }
+  };
+}
+
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   if (!env?.DB) {
     return Response.json(
@@ -154,9 +249,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   try {
     const url = new URL(request.url);
     const appId = (url.searchParams.get('appId') || '').trim();
+    const includeDeploy = ['1', 'true'].includes((url.searchParams.get('deploy') || '').trim().toLowerCase());
 
     if (appId) {
       const readiness = await buildReadiness(env.DB, appId);
+      if (includeDeploy) {
+        readiness.deploy = await buildDeployReadiness(env.DB, env, appId, readiness.repository.active);
+      }
       return Response.json({ success: true, readiness });
     }
 

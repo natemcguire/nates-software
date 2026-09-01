@@ -69,6 +69,18 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
+  // (Fix 1, RIG spec) can be satisfied by this pre-existing OID-gate suite.
+  const storage = {
+    store: new Map<string, Uint8Array>(),
+    async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
+    async get(key: string) {
+      const bytes = this.store.get(key);
+      if (!bytes) return null;
+      return { arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+    }
+  };
+
   async function seedProposal(opts: {
     repoId: string; jobId: string; attemptId: string; messageId: string;
     inputTargetOid: string; resultCommitOid: string; attemptStatus?: string; jobStatus?: string;
@@ -89,6 +101,23 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
       (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
       VALUES (?, 'usr_nate','usr_sam','feat: PR','Preview','Please review','refs/heads/feature',?,0,1,'proposal',?)`)
       .bind(opts.messageId, opts.resultCommitOid, opts.attemptId).run();
+
+    // Seed a passing build_runs row + matching signed R2 evidence bundle so
+    // the Fix 1 approval gate is satisfied — this suite tests the OID gate
+    // specifically, not the evidence-bundle gate (see rig-verification-evidence-bundle.test.ts).
+    const buildId = `build-${opts.attemptId}`;
+    const bytes = new TextEncoder().encode(JSON.stringify({ logs: 'ok', mergeAttemptId: opts.attemptId }));
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    const r2Key = `verification-evidence/${buildId}/auto.json`;
+    const sha256 = `sha256:${hex}`;
+    await storage.put(r2Key, bytes);
+    await ctx.d1.prepare(`INSERT INTO build_runs
+      (id,repository_id,commit_oid,merge_attempt_id,purpose,status,runner_image_digest,build_command,test_command,source_manifest_digest,
+       evidence_bundle_r2_key,evidence_bundle_sha256,evidence_bundle_recorded_at)
+      VALUES (?,?,?,?,'verification','passed',?,'npm run build','npm test',?,?,?,CURRENT_TIMESTAMP)`)
+      .bind(buildId, opts.repoId, opts.resultCommitOid, opts.attemptId,
+        `node@sha256:${'c'.repeat(64)}`, `sha256:${'d'.repeat(64)}`, r2Key, sha256).run();
   }
 
   function approveRequest(body: unknown) {
@@ -96,7 +125,7 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
       request: new Request('http://localhost/api/inbox', {
         method: 'POST', headers: authHeaders, body: JSON.stringify(body)
       }),
-      env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
+      env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any }
     });
   }
 
@@ -253,6 +282,18 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
       (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
       VALUES ('msg-e7','usr_nate','usr_sam','feat: PR','Preview','Please review','refs/heads/feature',?,0,1,'proposal','attempt-e7')`)
       .bind(headOid).run();
+    {
+      const bytes = new TextEncoder().encode(JSON.stringify({ logs: 'ok', mergeAttemptId: 'attempt-e7' }));
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+      await storage.put('verification-evidence/build-e7/auto.json', bytes);
+      await ctx.d1.prepare(`INSERT INTO build_runs
+        (id,repository_id,commit_oid,merge_attempt_id,purpose,status,runner_image_digest,build_command,test_command,source_manifest_digest,
+         evidence_bundle_r2_key,evidence_bundle_sha256,evidence_bundle_recorded_at)
+        VALUES ('build-e7','repo-e7',?,'attempt-e7','verification','passed',?,'npm run build','npm test',?,?,?,CURRENT_TIMESTAMP)`)
+        .bind(headOid, `node@sha256:${'c'.repeat(64)}`, `sha256:${'d'.repeat(64)}`,
+          'verification-evidence/build-e7/auto.json', `sha256:${hex}`).run();
+    }
 
     const res = await approveRequest({
       action: 'approve', messageId: 'msg-e7', comment: 'Repo storage unavailable.',
