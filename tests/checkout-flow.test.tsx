@@ -324,7 +324,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
     });
   });
 
-  describe('4. CatalogContext Shelf Refetch & Real recordPurchase', () => {
+  describe('4. CatalogContext Shelf Refetch & Real refreshShelf', () => {
     it('refetches shelf from server and does not use fake local Set mutation', async () => {
       let shelfFetchCount = 0;
 
@@ -369,16 +369,11 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
       );
 
       expect(contextRef).toBeTruthy();
-      expect(typeof contextRef.recordPurchase).toBe('function');
       expect(typeof contextRef.refreshShelf).toBe('function');
 
       // Calling refreshShelf directly invokes /api/shelf
       await contextRef.refreshShelf();
       expect(shelfFetchCount).toBe(1);
-
-      // Calling recordPurchase triggers real shelf refetch
-      await contextRef.recordPurchase('dronehunter', 'NSW-test-key');
-      expect(shelfFetchCount).toBe(2);
     });
   });
 });

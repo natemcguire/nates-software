@@ -15,13 +15,17 @@ export const TerminalView: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const gateway = useTerminalGateway();
 
-  // Mode: 'gateway' (real PTY) or 'local' (browser console)
+  // Mode: 'gateway' (real PTY) or 'local' (browser command emulator)
   const [activeMode, setActiveMode] = useState<'gateway' | 'local'>('gateway');
 
-  // Fallback Local Console State
+  // Follow-up Note (Low Priority, TERMINAL #3):
+  // Shell history persistence across browser sessions/reloads is deferred to a future iteration.
+
+  // Browser Command Guide & Emulator State (Canned Responses)
   const [history, setHistory] = useState<TerminalLine[]>([
-    { text: "Nate's Software Browser Command Console v2.5.0", type: 'system' },
-    { text: "This is not a host shell: Git, npm, and local LLM CLIs run in your native terminal.", type: 'system' },
+    { text: "Nate's Software Command Guide & Emulator v2.5.0", type: 'system' },
+    { text: "Local mode is a browser command emulator with canned responses. It has no filesystem or process execution.", type: 'system' },
+    { text: "Switch to 'Real PTY Gateway' mode or type 'gateway' to connect to a real ephemeral Linux container.", type: 'system' },
     { text: "", type: 'output' }
   ]);
   const [localInputVal, setLocalInputVal] = useState('');
@@ -148,7 +152,8 @@ export const TerminalView: React.FC = () => {
     switch (root) {
       case 'help':
         newLines.push(
-          { text: "Nate's Software Terminal Help Index:", type: 'system' },
+          { text: "Nate's Software Command Guide & Emulator Help Index:", type: 'system' },
+          { text: "  [NOTICE] Local mode prints canned emulator responses; only gateway mode executes for real.", type: 'system' },
           { text: "  gateway                - Connect to real ephemeral Linux PTY gateway", type: 'output' },
           { text: "  slop <command>         - Preview browser-safe SLOP commands", type: 'output' },
           { text: "    slop fork <slug>     - Fork an app into an isolated worktree", type: 'output' },
@@ -159,10 +164,10 @@ export const TerminalView: React.FC = () => {
           { text: "    slop list            - Query 12:01 AM daily drops on Cloudflare D1", type: 'output' },
           { text: "    slop shelf           - Display owned software titles & license keys", type: 'output' },
           { text: "  whoami                 - Print authenticated user handle & permissions", type: 'output' },
-          { text: "  ls [/data]             - List files in current Local-First volume", type: 'output' },
+          { text: "  ls [/data]             - List files in current volume (emulator canned message)", type: 'output' },
           { text: "  neofetch               - Display system hardware & OS telemetry", type: 'output' },
           { text: "  matrix                 - Render falling code matrix stream", type: 'output' },
-          { text: "  clear                  - Clear terminal buffer", type: 'output' },
+          { text: "  clear                  - Clear emulator buffer", type: 'output' },
           { text: "  date                   - Output current ISO timestamp", type: 'output' }
         );
         break;
@@ -183,8 +188,8 @@ export const TerminalView: React.FC = () => {
       case 'cursor':
         playErrorBeep();
         newLines.push(
-          { text: `The browser command console cannot run '${root}'.`, type: 'error' },
-          { text: "Connect to the ephemeral VM when it is available, then use 'command -v " + root + "' to check whether that image includes it.", type: 'system' },
+          { text: `The command emulator cannot run '${root}'.`, type: 'error' },
+          { text: "Connect to the real PTY gateway when available, or run in your native terminal.", type: 'system' },
           { text: "SLOP asks which engine to start only after an app finishes installing; it never auto-launches AGY.", type: 'output' }
         );
         break;
@@ -208,7 +213,7 @@ export const TerminalView: React.FC = () => {
 
       case 'ls':
         newLines.push(
-          { text: 'The browser command console has no filesystem to list.', type: 'error' },
+          { text: 'The command emulator has no filesystem to list.', type: 'error' },
           { text: "Use 'gateway' for a real disposable filesystem, or run ls in your native terminal.", type: 'system' }
         );
         break;
@@ -221,10 +226,10 @@ export const TerminalView: React.FC = () => {
         newLines.push(
           { text: "       .---.       browser@terminal.exe", type: 'system' },
           { text: "      /     \\      --------------------", type: 'system' },
-          { text: "     | () () |     Mode: Browser command console", type: 'output' },
-          { text: "      \\  -  /      Host access: None", type: 'output' },
+          { text: "     | () () |     Mode: Command guide / emulator (canned responses)", type: 'output' },
+          { text: "      \\  -  /      Process execution: None (browser emulation only)", type: 'output' },
           { text: "       `---'       Filesystem: None", type: 'output' },
-          { text: "                   VM session: Disconnected", type: 'output' }
+          { text: "                   Real PTY Gateway: Disconnected", type: 'output' }
         );
         break;
 
@@ -240,7 +245,7 @@ export const TerminalView: React.FC = () => {
       default:
         playErrorBeep();
         newLines.push({
-          text: `Command not found: '${cmd}'. Type 'help' or 'slop help' for valid commands.`,
+          text: `Command not found: '${cmd}'. Type 'help' or 'slop help' for command guide.`,
           type: 'error'
         });
         break;
@@ -251,10 +256,25 @@ export const TerminalView: React.FC = () => {
   };
 
   const isolationBadge = () => {
-    if (!gateway.isConnected || !gateway.sessionInfo) {
+    if (activeMode === 'local') {
       return (
-        <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded text-[10px] border border-zinc-700">
-          OFFLINE (LOCAL CONSOLE)
+        <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded text-[10px] border border-zinc-700 font-mono">
+          LOCAL EMULATOR (CANNED RESPONSES)
+        </span>
+      );
+    }
+
+    if (!gateway.isConnected || !gateway.sessionInfo) {
+      if (gateway.gatewayReadiness && !gateway.gatewayReadiness.ready) {
+        return (
+          <span className="bg-red-950 text-red-300 px-2 py-0.5 rounded text-[10px] border border-red-800 font-mono flex items-center gap-1 font-bold">
+            <ShieldAlert size={11} /> REAL TERMINAL OFFLINE
+          </span>
+        );
+      }
+      return (
+        <span className="bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded text-[10px] border border-zinc-700 font-mono">
+          OFFLINE (GATEWAY DISCONNECTED)
         </span>
       );
     }
@@ -283,6 +303,90 @@ export const TerminalView: React.FC = () => {
     );
   };
 
+  const renderGatewayStatusBanner = () => {
+    if (activeMode !== 'gateway' || gateway.isConnected) return null;
+
+    const isOffline = gateway.gatewayReadiness && !gateway.gatewayReadiness.ready;
+    const isReady = gateway.gatewayReadiness && gateway.gatewayReadiness.ready;
+
+    if (isOffline) {
+      return (
+        <div className="bg-red-950/40 border border-red-800/80 text-red-300 p-2 mb-2 rounded text-[11px] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={14} className="text-red-400 shrink-0" />
+            <div>
+              <span className="font-bold text-red-200">Real Terminal Offline</span> — {gateway.gatewayReadiness?.error || gateway.lastError || 'Ephemeral terminal service is unavailable.'}
+              <span className="block text-[10px] text-red-400 mt-0.5">
+                Local mode provides a command guide/emulator with canned responses. Real process execution requires an active gateway.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => gateway.probeReadiness()}
+              disabled={gateway.isProbing}
+              className="flex items-center gap-1 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-[10px] font-mono"
+            >
+              <RefreshCw size={10} className={gateway.isProbing ? 'animate-spin' : ''} />
+              {gateway.isProbing ? 'Checking...' : 'Re-check Service'}
+            </button>
+            <button
+              onClick={() => {
+                playClickSound();
+                setActiveMode('local');
+              }}
+              className="bg-green-950 hover:bg-green-900 text-green-300 border border-green-800 px-2 py-1 rounded text-[10px] font-mono font-bold"
+            >
+              Use Emulator
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (isReady) {
+      return (
+        <div className="bg-emerald-950/40 border border-emerald-800/80 text-emerald-300 p-2 mb-2 rounded text-[11px] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Radio size={14} className="text-emerald-400 shrink-0 animate-pulse" />
+            <div>
+              <span className="font-bold text-emerald-200">Real Terminal Gateway Online</span> — Ephemeral Linux container session ready to launch.
+            </div>
+          </div>
+          <button
+            onClick={() => user ? gateway.connect() : openAuthModal('login')}
+            disabled={gateway.isConnecting}
+            className="flex items-center gap-1 bg-emerald-900 hover:bg-emerald-800 text-emerald-100 border border-emerald-600 px-2.5 py-1 rounded text-[10px] shrink-0 font-bold font-mono"
+          >
+            <RefreshCw size={10} className={gateway.isConnecting ? 'animate-spin' : ''} />
+            {gateway.isConnecting ? 'Starting Session...' : user ? 'Start Real Session' : 'Log In to Start'}
+          </button>
+        </div>
+      );
+    }
+
+    // Checking / Probing state or initial unprobed state
+    return (
+      <div className="bg-zinc-900/90 border border-zinc-700 text-zinc-300 p-2 mb-2 rounded text-[11px] flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <RefreshCw size={14} className={`text-zinc-400 shrink-0 ${gateway.isProbing || gateway.isConnecting ? 'animate-spin' : ''}`} />
+          <div>
+            <span className="font-bold text-zinc-200">Ephemeral Terminal</span> — {gateway.isProbing ? 'Checking gateway service availability...' : user ? 'Probing real terminal gateway readiness...' : 'Log in to connect to real terminal gateway.'}
+            {gateway.lastError && <span className="block text-red-300 mt-0.5">{gateway.lastError}</span>}
+          </div>
+        </div>
+        <button
+          onClick={() => user ? (gateway.gatewayReadiness ? gateway.connect() : gateway.probeReadiness()) : openAuthModal('login')}
+          disabled={gateway.isConnecting || gateway.isProbing}
+          className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-600 px-2 py-1 rounded text-[10px] shrink-0 font-bold font-mono"
+        >
+          <RefreshCw size={10} className={gateway.isConnecting || gateway.isProbing ? 'animate-spin' : ''} />
+          {gateway.isConnecting ? 'Connecting...' : gateway.isProbing ? 'Checking...' : user ? 'Check & Connect' : 'Log In'}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="h-full flex flex-col bg-black text-green-400 font-mono text-xs p-3 overflow-hidden select-text">
       {/* Top terminal badge & controls */}
@@ -290,7 +394,7 @@ export const TerminalView: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <TerminalIcon size={13} className="text-green-500" />
           <span className="font-bold tracking-wide">
-            TERMINAL.EXE {activeMode === 'gateway' && gateway.isConnected ? '(REAL EPHEMERAL PTY)' : '(COMMAND CONSOLE)'}
+            TERMINAL.EXE {activeMode === 'gateway' ? (gateway.isConnected ? '(REAL EPHEMERAL PTY)' : '(REAL PTY GATEWAY)') : '(COMMAND GUIDE / EMULATOR)'}
           </span>
         </div>
 
@@ -309,33 +413,13 @@ export const TerminalView: React.FC = () => {
             }}
             className="px-2 py-0.5 rounded text-[10px] border border-green-800 bg-green-950/60 hover:bg-green-900 text-green-300 transition-colors"
           >
-            {activeMode === 'gateway' ? 'Switch to Local Console' : 'Switch to Real PTY'}
+            {activeMode === 'gateway' ? 'Switch to Command Guide / Emulator' : 'Switch to Real PTY Gateway'}
           </button>
         </div>
       </div>
 
-      {/* Gateway Offline Banner if in gateway mode but not connected */}
-      {activeMode === 'gateway' && !gateway.isConnected && (
-        <div className="bg-zinc-900/90 border border-yellow-800/80 text-yellow-300 p-2 mb-2 rounded text-[11px] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldAlert size={14} className="text-yellow-400 shrink-0" />
-            <div>
-              <span className="font-bold">Disposable Terminal</span> — {user
-                ? 'Availability is checked before a VM is requested. Unconfigured infrastructure fails closed.'
-                : 'Log in to check whether the ephemeral VM service is available.'}
-              {gateway.lastError && <span className="block text-red-300 mt-0.5">{gateway.lastError}</span>}
-            </div>
-          </div>
-          <button
-            onClick={() => user ? gateway.connect() : openAuthModal('login')}
-            disabled={gateway.isConnecting}
-            className="flex items-center gap-1 bg-yellow-950 hover:bg-yellow-900 text-yellow-200 border border-yellow-700 px-2 py-1 rounded text-[10px] shrink-0 font-bold"
-          >
-            <RefreshCw size={10} className={gateway.isConnecting ? 'animate-spin' : ''} />
-            {gateway.isConnecting ? 'Checking service...' : user ? 'Check & Start VM' : 'Log In'}
-          </button>
-        </div>
-      )}
+      {/* Gateway Offline / Readiness Banner before session open */}
+      {renderGatewayStatusBanner()}
 
       {/* Ephemeral Workspace Session Header if Connected */}
       {activeMode === 'gateway' && gateway.isConnected && gateway.sessionInfo && (
@@ -392,7 +476,7 @@ export const TerminalView: React.FC = () => {
               value={localInputVal}
               onChange={(e) => setLocalInputVal(e.target.value)}
               onKeyDown={handleLocalKeyDown}
-              placeholder="type 'slop help' or 'gateway'..."
+              placeholder="type 'help' for emulator guide or 'gateway' to connect..."
               className="flex-1 bg-transparent text-green-300 font-mono outline-none text-xs caret-green-400"
               autoFocus
               spellCheck={false}

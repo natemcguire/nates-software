@@ -3,6 +3,7 @@ import {
   TerminalClient,
   type TerminalCapabilities,
   type TerminalSessionInfo,
+  type TerminalReadiness,
   type ConnectionState,
   getDefaultGatewayUrl
 } from '../lib/terminalClient';
@@ -18,11 +19,30 @@ export function useTerminalGateway(options: UseTerminalGatewayOptions = {}) {
   const [sessionInfo, setSessionInfo] = useState<TerminalSessionInfo | null>(null);
   const [outputStream, setOutputStream] = useState<string>('');
   const [lastError, setLastError] = useState<string | null>(null);
+  const [gatewayReadiness, setGatewayReadiness] = useState<TerminalReadiness | null>(null);
+  const [isProbing, setIsProbing] = useState<boolean>(false);
 
   const clientRef = useRef<TerminalClient | null>(null);
   const outputListenersRef = useRef(new Set<(chunk: string) => void>());
 
   const gatewayUrl = options.gatewayUrl || getDefaultGatewayUrl();
+
+  const probeReadiness = useCallback(async (): Promise<TerminalReadiness> => {
+    if (!clientRef.current) {
+      return { success: false, ready: false, configured: false, error: 'Terminal client not initialized' };
+    }
+    setIsProbing(true);
+    try {
+      const readiness = await clientRef.current.checkReadiness();
+      setGatewayReadiness(readiness);
+      if (!readiness.ready && readiness.error) {
+        setLastError(readiness.error);
+      }
+      return readiness;
+    } finally {
+      setIsProbing(false);
+    }
+  }, []);
 
   // Initialize and check gateway availability
   useEffect(() => {
@@ -47,11 +67,12 @@ export function useTerminalGateway(options: UseTerminalGatewayOptions = {}) {
     });
 
     clientRef.current = client;
+    void probeReadiness();
 
     return () => {
       client.disconnect();
     };
-  }, [gatewayUrl]);
+  }, [gatewayUrl, probeReadiness]);
 
   const connect = useCallback(() => {
     if (!clientRef.current) return;
@@ -95,6 +116,9 @@ export function useTerminalGateway(options: UseTerminalGatewayOptions = {}) {
     sessionInfo,
     outputStream,
     lastError,
+    gatewayReadiness,
+    isProbing,
+    probeReadiness,
     connect,
     disconnect,
     sendInput,
