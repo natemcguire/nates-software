@@ -23,24 +23,29 @@ async function smoke(baseUrl, label) {
     { path: '/api/git', status: 200, json: body => body.status === 'gateway_required' },
     { path: '/api/git?service=git-upload-pack', status: 501, json: body => body.success === false },
     {
+      // Payments ENABLED: an unauthenticated create-intent must require auth (401),
+      // not the old commissioned-off 503.
       path: '/api/payments/create-intent',
-      status: 503,
+      status: 401,
       init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"appId":"dronehunter"}' },
       json: body => body.success === false
     },
     {
+      // onboard is gated on PAYMENTS_ENABLED; unauthenticated -> 401.
       path: '/api/payments/onboard',
-      status: 503,
+      status: 401,
       init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"userId":"release-smoke"}' },
       json: body => body.success === false
     },
     {
+      // webhook is enabled; an unsigned POST fails signature verification (400).
       path: '/api/payments/webhook',
-      status: 503,
+      status: 400,
       init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"type":"payment_intent.succeeded"}' },
       json: body => body.success === false
     },
     {
+      // process-transfers stays gated on PAYOUTS_ENABLED (still off) -> 503.
       path: '/api/payments/process-transfers',
       status: 503,
       init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"limit":1}' },
