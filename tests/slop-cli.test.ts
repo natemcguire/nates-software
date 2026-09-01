@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+
+// These tests drive real git worktree operations via execSync, which is I/O-heavy
+// and can exceed vitest's default 5s timeout when the full suite runs many files
+// in parallel (observed as a flaky timeout on the fork tests under contention).
+// Give the file generous headroom so it's deterministic under load; the work
+// itself completes in ~12s in isolation.
+vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
 import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync, symlinkSync, statSync, lstatSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
