@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { recordInboxEvent, hashPayload, claimInboxEvent } from '../src/lib/commerce/stripeInbox';
 import { generateBase64EncryptionKey } from '../src/lib/commerce/licenseCrypto';
-import { runInboxDrain, runTransferDrain, runDrainTick } from '../workers/drain/src/index';
+import { runInboxDrain, runTransferDrain, runRecoveryDrain, runDrainTick } from '../workers/drain/src/index';
 
 describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
   let ctx: TestD1Context;
@@ -298,6 +298,48 @@ describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
       expect(result.inbox.succeededCount).toBe(1);
       expect(result.transfers.ran).toBe(false);
       expect(transferCallSeen).toBe(false);
+      expect(result.recovery.ran).toBe(false);
+    });
+  });
+
+  describe('Recovery drain gating', () => {
+    it('skips the recovery drain entirely when PAYOUTS_ENABLED is not \'true\'', async () => {
+      const spy = vi.fn();
+      globalThis.fetch = spy as any;
+
+      const summary = await runRecoveryDrain({ ...defaultEnv(), PAYOUTS_ENABLED: 'false' });
+
+      expect(summary.ran).toBe(false);
+      expect(summary.reason).toMatch(/PAYOUTS_ENABLED/i);
+      expect(summary.processedCount).toBe(0);
+      expect(summary.enqueuedCount).toBe(0);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('skips the recovery drain when PAYOUTS_ENABLED is unset', async () => {
+      const { PAYOUTS_ENABLED, ...rest } = defaultEnv();
+      const summary = await runRecoveryDrain(rest as any);
+      expect(summary.ran).toBe(false);
+    });
+
+    it('a full tick never touches Stripe reversal calls while payouts are off', async () => {
+      let reversalCallSeen = false;
+      globalThis.fetch = vi.fn().mockImplementation(async (input: any) => {
+        const url = typeof input === 'string' ? input : input?.url || '';
+        if (url.includes('/reversals')) reversalCallSeen = true;
+        return { ok: true, json: async () => ({ status: 'requires_action' }) };
+      }) as any;
+
+      const result = await runDrainTick(defaultEnv());
+      expect(result.recovery.ran).toBe(false);
+      expect(reversalCallSeen).toBe(false);
+    });
+
+    it('runs the recovery drain as part of a full tick once payouts are enabled', async () => {
+      const summary = await runRecoveryDrain({ ...defaultEnv(), PAYOUTS_ENABLED: 'true' });
+      expect(summary.ran).toBe(true);
+      expect(summary.processedCount).toBe(0);
+      expect(summary.enqueuedCount).toBe(0);
     });
   });
 });
