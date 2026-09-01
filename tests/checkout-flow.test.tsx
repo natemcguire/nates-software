@@ -1,4 +1,3 @@
-import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CheckoutModal } from '../src/components/CheckoutModal';
@@ -20,7 +19,7 @@ const mockPaymentElementOn = vi.fn((event: string, callback: () => void) => {
 const mockPaymentElementDestroy = vi.fn();
 
 const mockElements = {
-  create: vi.fn((type: string) => ({
+  create: vi.fn((_type: string) => ({
     mount: mockPaymentElementMount,
     on: mockPaymentElementOn,
     destroy: mockPaymentElementDestroy
@@ -115,8 +114,6 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
 
   describe('2. Authoritative Server Quote & Lineage Split Rendering', () => {
     it('renders server-provided price and lineage allocations rather than client guesswork', async () => {
-      const authValue = createAuthContextValue(authenticatedUser);
-
       const serverQuote = {
         success: true,
         orderId: 'ord_authoritative_999',
