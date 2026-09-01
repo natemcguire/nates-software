@@ -73,12 +73,17 @@ export interface CanonicalRepositoryProjection {
 export function mapCanonicalRepository(repo: CanonicalRepositoryProjection): GitsmithRepo {
   const owner = repo.ownerUsername || repo.ownerUserId;
   const commitOid = repo.defaultCommitOid || '';
+  const isPushed = Boolean(commitOid && commitOid !== 'No projected ref' && !commitOid.startsWith('-'));
+  const status = repo.status === 'provisioning'
+    ? 'provisioning'
+    : (!isPushed ? 'source not pushed' : repo.status);
+
   return {
     id: repo.id,
     name: repo.slug,
     owner,
     avatar: '🔩',
-    description: `Canonical ${repo.visibility} repository. Gateway state: ${repo.status}.`,
+    description: `Canonical ${repo.visibility} repository. Gateway state: ${status}.`,
     stars: null,
     forks: Number(repo.forkCount || 0),
     language: 'Not reported',
@@ -86,17 +91,17 @@ export function mapCanonicalRepository(repo: CanonicalRepositoryProjection): Git
     sqlitePath: 'Application-defined',
     branch: repo.defaultRef.replace(/^refs\/heads\//, ''),
     lastCommit: {
-      sha: commitOid ? commitOid.slice(0, 12) : 'No projected ref',
-      message: commitOid ? 'Authoritative default-ref projection' : `Repository ${repo.status}`,
+      sha: isPushed ? commitOid.slice(0, 12) : 'No projected ref',
+      message: isPushed ? 'Authoritative default-ref projection' : (repo.status === 'provisioning' ? 'Repository provisioning' : 'Source not pushed yet'),
       author: owner,
       time: repo.updatedAt || 'Not reported',
       verified: false
     },
-    tags: ['Canonical', repo.visibility, repo.status, repo.objectFormat || 'git'],
+    tags: ['Canonical', repo.visibility, status, repo.objectFormat || 'git'],
     files: [],
     source: 'canonical',
     visibility: repo.visibility,
-    status: repo.status
+    status
   };
 }
 
@@ -203,8 +208,11 @@ export const GitsmithView: React.FC = () => {
   const { showAlert } = useAlert();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo>(GITSMITH_REPOS[0]);
-  const [activeFile, setActiveFile] = useState<any>(GITSMITH_REPOS[0].files.find(f => f.type === 'file') || GITSMITH_REPOS[0].files[0]);
+  const [selectedRepo, setSelectedRepo] = useState<GitsmithRepo | null>(null);
+  const [activeFile, setActiveFile] = useState<{ name: string; type: 'file' | 'dir'; size?: string; content?: string } | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [copiedClone, setCopiedClone] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -232,15 +240,28 @@ export const GitsmithView: React.FC = () => {
         setCanonicalRepoCount(mapped.length);
         setCanonicalLoadState('loaded');
         if (mapped.length > 0) {
-          setSelectedRepo(current => mapped.find(repo => repo.id === current.id) || mapped[0]);
-          setActiveFile(undefined);
+          setSelectedRepo(current => {
+            if (current?.source === 'canonical') {
+              const existing = mapped.find(repo => repo.id === current.id);
+              if (existing) return existing;
+            }
+            return mapped[0];
+          });
+          setActiveFile(null);
+        } else {
+          setSelectedRepo(current => (showBundledExamples && current?.source === 'showcase' ? current : null));
+          if (!showBundledExamples) {
+            setActiveFile(null);
+          }
         }
         return;
       }
       setCanonicalLoadState('error');
+      setSelectedRepo(current => (showBundledExamples && current?.source === 'showcase' ? current : null));
     } catch {
       setCanonicalRepoCount(null);
       setCanonicalLoadState('error');
+      setSelectedRepo(current => (showBundledExamples && current?.source === 'showcase' ? current : null));
     }
   };
 
@@ -268,6 +289,120 @@ export const GitsmithView: React.FC = () => {
     void refreshCanonicalRepositories();
     void refreshGatewayReadiness();
   }, [user?.id]);
+
+  const showingShowcases = canonicalRepositories.length === 0 && showBundledExamples;
+  const repositoryCatalog = canonicalRepositories.length > 0
+    ? canonicalRepositories
+    : showingShowcases ? GITSMITH_REPOS : [];
+  const filteredRepos = repositoryCatalog.filter(repo => {
+    const q = searchQuery.toLowerCase();
+    const matchName = repo.name.toLowerCase().includes(q) || repo.owner.toLowerCase().includes(q);
+    const matchDesc = repo.description.toLowerCase().includes(q);
+    const matchTag = repo.tags.some(t => t.toLowerCase().includes(q));
+    const matchLang = repo.language.toLowerCase().includes(q);
+    return matchName || matchDesc || matchTag || matchLang;
+  });
+
+  const candidateFiles: { name: string; type: 'file' | 'dir'; size?: string; content?: string }[] = [
+    { name: 'README.md', type: 'file' },
+    { name: 'spec.md', type: 'file' },
+    { name: 'slop.config.json', type: 'file' },
+    { name: 'package.json', type: 'file' }
+  ];
+  const displayedFiles = selectedRepo
+    ? (selectedRepo.source === 'showcase'
+        ? selectedRepo.files
+        : (selectedRepo.files.length > 0 ? selectedRepo.files : candidateFiles))
+    : [];
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!selectedRepo) {
+      setFileContent(null);
+      setFileError(null);
+      setFileLoading(false);
+      return;
+    }
+
+    if (selectedRepo.source === 'showcase') {
+      const showcaseFile = activeFile || selectedRepo.files.find(f => f.type === 'file') || selectedRepo.files[0];
+      setFileContent(showcaseFile?.content || null);
+      setFileError(null);
+      setFileLoading(false);
+      return;
+    }
+
+    // Canonical repository
+    if (selectedRepo.status === 'provisioning' || !selectedRepo.lastCommit.sha || selectedRepo.lastCommit.sha === 'No projected ref') {
+      setFileContent(null);
+      setFileError('Repository has no commits yet. Push the first commit to main to browse files.');
+      setFileLoading(false);
+      return;
+    }
+
+    if (selectedRepo.visibility === 'private' || selectedRepo.visibility === 'unlisted') {
+      setFileContent(null);
+      setFileError('HTTP file browsing proxy is restricted to public repositories. Use SSH clone to inspect private repository files.');
+      setFileLoading(false);
+      return;
+    }
+
+    const fileName = activeFile?.name || 'README.md';
+    setFileLoading(true);
+    setFileError(null);
+    setFileContent(null);
+
+    const query = selectedRepo.id
+      ? `repoId=${encodeURIComponent(selectedRepo.id)}`
+      : `owner=${encodeURIComponent(selectedRepo.owner)}&slug=${encodeURIComponent(selectedRepo.name)}`;
+    const url = `/api/repo-file?${query}&path=${encodeURIComponent(fileName)}`;
+
+    fetch(url, { credentials: 'same-origin' })
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const text = await res.text();
+          setFileContent(text);
+          setFileError(null);
+        } else if (res.status === 404) {
+          setFileContent(null);
+          setFileError(`File "${fileName}" not found in repository (HTTP 404).`);
+        } else if (res.status === 502) {
+          setFileContent(null);
+          setFileError('Repository gateway unreachable (HTTP 502). File browsing requires an active GITSMITH object gateway.');
+        } else if (res.status === 413) {
+          setFileContent(null);
+          setFileError(`File "${fileName}" exceeds maximum allowed file size (HTTP 413).`);
+        } else {
+          setFileContent(null);
+          setFileError(`Failed to retrieve "${fileName}" from repository (HTTP ${res.status}).`);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setFileContent(null);
+        setFileError(`Transport error: ${err?.message || 'Network request failed'}`);
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setFileLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    selectedRepo?.id,
+    selectedRepo?.owner,
+    selectedRepo?.name,
+    selectedRepo?.source,
+    selectedRepo?.status,
+    selectedRepo?.visibility,
+    selectedRepo?.lastCommit?.sha,
+    activeFile?.name
+  ]);
 
   const handleCreateRepository = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -355,42 +490,31 @@ export const GitsmithView: React.FC = () => {
     document.body.style.userSelect = 'none';
   };
 
-  const showingShowcases = canonicalRepositories.length === 0 && showBundledExamples;
-  const repositoryCatalog = canonicalRepositories.length > 0
-    ? canonicalRepositories
-    : showingShowcases ? GITSMITH_REPOS : [];
-  const filteredRepos = repositoryCatalog.filter(repo => {
-    const q = searchQuery.toLowerCase();
-    const matchName = repo.name.toLowerCase().includes(q) || repo.owner.toLowerCase().includes(q);
-    const matchDesc = repo.description.toLowerCase().includes(q);
-    const matchTag = repo.tags.some(t => t.toLowerCase().includes(q));
-    const matchLang = repo.language.toLowerCase().includes(q);
-    return matchName || matchDesc || matchTag || matchLang;
-  });
-
   const handleCopyClone = (repo: GitsmithRepo) => {
     playClickSound();
-    const source = repo.source === 'canonical' && transportEndpoint
-      ? `ssh://git@${transportEndpoint.host}:${transportEndpoint.port}/${repo.owner}/${repo.name}.git`
-      : `${repo.owner}/${repo.name}`;
+    if (repo.source === 'showcase') {
+      showAlert('Bundled showcase examples cannot be installed or cloned. They are static local snapshots for demonstration only.', 'Showcase Demo Only', 'info');
+      return;
+    }
+    if (!transportReady || !transportEndpoint) {
+      showAlert('GITSMITH SSH transport is pending. Clone endpoint is not active yet.', 'SSH Transport Pending', 'error');
+      return;
+    }
+    const source = `ssh://git@${transportEndpoint.host}:${transportEndpoint.port}/${repo.owner}/${repo.name}.git`;
     navigator.clipboard.writeText(`slop fork ${source}`);
     setCopiedClone(true);
     setTimeout(() => setCopiedClone(false), 2000);
   };
 
   const handleCopyCode = () => {
-    if (!activeFile?.content) return;
+    if (!fileContent) return;
     playClickSound();
-    navigator.clipboard.writeText(activeFile.content);
+    navigator.clipboard.writeText(fileContent);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-
-
-  const codeLines = (activeFile?.content || (selectedRepo.source === 'canonical'
-    ? `# ${selectedRepo.owner}/${selectedRepo.name}\n\nCanonical repository metadata is loaded from the control plane.\nFile browsing requires a commissioned GITSMITH object gateway.`
-    : `# ${selectedRepo.name}\n\nBundled showcase snapshot; this is not a live forge checkout.`)).split('\n');
+  const codeLines = fileContent !== null ? fileContent.split('\n') : [];
 
   return (
     <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
@@ -483,8 +607,17 @@ export const GitsmithView: React.FC = () => {
 
       {/* Main Forge Body Grid with Resizable Split Panes */}
       {showingShowcases ? (
-        <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono">
-          BUNDLED EXAMPLES — Their files and commit labels are local UI snapshots, not repositories, gateway objects, or live forge evidence.
+        <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono flex items-center justify-between">
+          <span>DEMO GALLERY — Bundled showcase snapshots for UI preview only. Not canonical repositories, gateway objects, or live forge state.</span>
+          <button
+            onClick={() => {
+              setShowBundledExamples(false);
+              setSelectedRepo(canonicalRepositories.length > 0 ? canonicalRepositories[0] : null);
+            }}
+            className="text-amber-300 hover:text-white underline text-[11px] ml-3 shrink-0"
+          >
+            Close Demo Gallery
+          </button>
         </div>
       ) : canonicalRepositories.length > 0 ? (
         <div className="bg-emerald-950/80 border-b border-emerald-700 px-4 py-2 text-[11px] text-emerald-200 font-mono">
@@ -531,7 +664,7 @@ export const GitsmithView: React.FC = () => {
                 <p className="text-[11px] leading-relaxed text-slate-400">
                   {canonicalLoadState === 'error'
                     ? 'The control plane could not be reached. Retry before creating, cloning, or forking anything.'
-                    : user ? 'Create a repository to provision its authoritative bare Git storage.' : 'Sign in to create a repository, or inspect clearly labeled local examples.'}
+                    : user ? 'Create a repository to provision its authoritative bare Git storage.' : 'Sign in to create a repository, or explore the demo gallery.'}
                 </p>
                 <button
                   type="button"
@@ -542,19 +675,19 @@ export const GitsmithView: React.FC = () => {
                   }}
                   className="w-full border border-amber-700 bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 rounded px-3 py-2 text-[11px] font-bold"
                 >
-                  Open Bundled Examples
+                  Open Demo Gallery (Bundled Examples)
                 </button>
               </div>
             )}
             {filteredRepos.map(repo => {
-              const isSelected = selectedRepo.id === repo.id;
+              const isSelected = selectedRepo?.id === repo.id;
               return (
                 <div
                   key={repo.id}
                   onClick={() => {
                     playClickSound();
                     setSelectedRepo(repo);
-                    setActiveFile(repo.files.find(f => f.type === 'file') || repo.files[0]);
+                    setActiveFile(repo.files.find(f => f.type === 'file') || repo.files[0] || null);
                   }}
                   className={`p-3.5 cursor-pointer transition-all ${
                     isSelected
@@ -598,10 +731,16 @@ export const GitsmithView: React.FC = () => {
 
         {/* Right Column: Selected Repo Detail View (GitHub IDE Style) */}
         <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3 min-w-0">
-          {repositoryCatalog.length === 0 ? (
+          {!selectedRepo || repositoryCatalog.length === 0 ? (
             <div className="m-auto max-w-xl rounded-lg border border-slate-700 bg-slate-900 p-6 text-center shadow-xl">
               <Code size={36} className="mx-auto mb-3 text-sky-400" />
-              <h1 className="text-lg font-bold text-white">{canonicalLoadState === 'loading' ? 'Loading the forge…' : 'Start with an authoritative repository'}</h1>
+              <h1 className="text-lg font-bold text-white">
+                {canonicalLoadState === 'loading'
+                  ? 'Loading the forge…'
+                  : canonicalLoadState === 'error'
+                    ? 'Forge Control Plane Unavailable'
+                    : 'Start with an authoritative repository'}
+              </h1>
               <p className="mt-2 text-sm leading-relaxed text-slate-400">
                 {canonicalLoadState === 'error'
                   ? 'GITSMITH could not load the canonical catalog. Nothing from the bundled examples is being presented as live repository state.'
@@ -625,8 +764,20 @@ export const GitsmithView: React.FC = () => {
                   <span className="bg-slate-900 text-slate-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
                     {selectedRepo.visibility}
                   </span>
-                  <span className={`${selectedRepo.source === 'canonical' ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-amber-950 text-amber-300 border-amber-700'} text-[11px] font-bold px-2 py-0.5 rounded-full border`}>
-                    {selectedRepo.source === 'canonical' ? selectedRepo.status : 'Bundled Showcase'}
+                  <span className={`${
+                    selectedRepo.source === 'showcase'
+                      ? 'bg-amber-950 text-amber-300 border-amber-700'
+                      : selectedRepo.status === 'active' && selectedRepo.lastCommit.sha !== 'No projected ref'
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                        : 'bg-amber-950 text-amber-300 border-amber-700'
+                  } text-[11px] font-bold px-2 py-0.5 rounded-full border`}>
+                    {selectedRepo.source === 'canonical'
+                      ? (selectedRepo.status === 'provisioning'
+                          ? 'Provisioning'
+                          : selectedRepo.lastCommit.sha === 'No projected ref'
+                            ? 'Source not pushed'
+                            : 'Active')
+                      : 'Demo Showcase'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
@@ -650,8 +801,15 @@ export const GitsmithView: React.FC = () => {
 
                 <button
                   onClick={() => {
-                    if (selectedRepo.source === 'canonical' && !transportReady) {
+                    if (selectedRepo.source === 'showcase') {
+                      showAlert('Bundled showcase examples cannot be forked. Create or select a canonical repository to fork.', 'Demo Example', 'info');
+                      return;
+                    }
+                    if (!transportReady) {
                       return showAlert('This repository is provisioned, but GITSMITH SSH transport has not been activated. No fork or remote was created.', 'SSH Transport Pending', 'error');
+                    }
+                    if (!selectedRepo.lastCommit?.sha || selectedRepo.lastCommit.sha === 'No projected ref') {
+                      return showAlert('This repository has no commits yet. Push the first commit before forking.', 'Source Not Pushed', 'info');
                     }
                     playSuccessChime();
                     setShowForkModal(true);
@@ -666,9 +824,6 @@ export const GitsmithView: React.FC = () => {
 
                 <button
                   onClick={() => {
-                    if (selectedRepo.source === 'canonical' && !transportReady) {
-                      return showAlert('No install command was copied because the canonical repository has no active SSH transport yet.', 'SSH Transport Pending', 'error');
-                    }
                     handleCopyClone(selectedRepo);
                   }}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
@@ -693,11 +848,15 @@ export const GitsmithView: React.FC = () => {
               {/* Verified Commit Badge */}
               <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded border border-slate-700">
                 <Clock size={13} className="text-slate-400" />
-                <span className="text-slate-400">Bundled snapshot:</span>
+                <span className="text-slate-400">
+                  {selectedRepo.source === 'canonical' ? 'Authoritative ref:' : 'Bundled snapshot:'}
+                </span>
                 <span className="text-sky-400 font-bold">{selectedRepo.lastCommit.sha}</span>
                 <span className="text-white">"{selectedRepo.lastCommit.message}"</span>
                 <span className="bg-slate-800 text-slate-300 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-slate-600">
-                  Signature not checked
+                  {selectedRepo.source === 'canonical'
+                    ? (selectedRepo.lastCommit.sha === 'No projected ref' ? 'NO REF PROJECTED' : 'D1 PROJECTION')
+                    : 'DEMO ONLY'}
                 </span>
               </div>
             </div>
@@ -746,15 +905,18 @@ export const GitsmithView: React.FC = () => {
                   <FileCode size={15} className="text-sky-400" />
                   <span>{selectedRepo.name}</span>
                   <span className="text-slate-500">/</span>
-                  <span className="text-sky-300">{activeFile?.name || 'README.md'}</span>
+                  <span className="text-sky-300">{activeFile?.name || (displayedFiles[0]?.name || 'README.md')}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-slate-400 text-[11px]">
-                    {codeLines.length} lines · {activeFile?.size || 'Raw UTF-8'}
-                  </span>
+                  {fileContent !== null && (
+                    <span className="text-slate-400 text-[11px]">
+                      {codeLines.length} lines · {activeFile?.size || 'Raw UTF-8'}
+                    </span>
+                  )}
                   <button
                     onClick={handleCopyCode}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2 py-1 rounded text-[11px] flex items-center gap-1 font-mono transition-colors"
+                    disabled={!fileContent}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-600 px-2 py-1 rounded text-[11px] flex items-center gap-1 font-mono transition-colors"
                   >
                     {copiedCode ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
                     <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
@@ -771,14 +933,14 @@ export const GitsmithView: React.FC = () => {
                   <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 tracking-wider font-mono">
                     Repository Files
                   </div>
-                  {selectedRepo.files.map((file, idx) => {
-                    const isFileActive = activeFile?.name === file.name;
+                  {displayedFiles.map((file, idx) => {
+                    const isFileActive = (activeFile?.name || displayedFiles[0]?.name || 'README.md') === file.name;
                     return (
                       <button
                         key={idx}
                         onClick={() => {
                           playClickSound();
-                          if (file.content) setActiveFile(file);
+                          setActiveFile(file);
                         }}
                         className={`w-full text-left px-3 py-1.5 rounded-md flex items-center justify-between text-xs font-mono transition-colors ${
                           isFileActive
@@ -809,24 +971,48 @@ export const GitsmithView: React.FC = () => {
                   <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
                 </div>
 
-                {/* Line-Numbered Code Editor Viewport */}
-                <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-auto text-slate-100 flex min-w-0">
-                  {/* Line Numbers Gutter */}
-                  <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1 shrink-0">
-                    {codeLines.map((_: string, i: number) => (
-                      <div key={i} className="leading-relaxed">{i + 1}</div>
-                    ))}
+                {/* Code Editor Viewport */}
+                {fileLoading ? (
+                  <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs text-slate-400 flex items-center justify-center">
+                    <div className="flex items-center gap-2">
+                      <Clock size={16} className="animate-spin text-sky-400" />
+                      <span>Loading file from repository…</span>
+                    </div>
                   </div>
-
-                  {/* Code Text Content */}
-                  <div className="pl-4 flex-1 space-y-1 overflow-x-auto select-text font-mono text-slate-200">
-                    {codeLines.map((line: string, i: number) => (
-                      <div key={i} className="leading-relaxed whitespace-pre font-mono">
-                        {line || ' '}
+                ) : fileError ? (
+                  <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs overflow-auto flex items-start">
+                    <div className="max-w-xl p-4 bg-rose-950/50 border border-rose-800 rounded-lg text-rose-300 space-y-2">
+                      <div className="font-bold flex items-center gap-2 text-rose-400 text-sm">
+                        <X size={16} className="text-rose-400" />
+                        <span>File Read Unavailable</span>
                       </div>
-                    ))}
+                      <p className="text-xs leading-relaxed text-rose-200">{fileError}</p>
+                      <p className="text-[11px] text-rose-400/80">Authoritative Git storage is queried via /api/repo-file. No synthetic fallback is generated.</p>
+                    </div>
                   </div>
-                </div>
+                ) : fileContent !== null ? (
+                  <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-auto text-slate-100 flex min-w-0">
+                    {/* Line Numbers Gutter */}
+                    <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1 shrink-0">
+                      {codeLines.map((_: string, i: number) => (
+                        <div key={i} className="leading-relaxed">{i + 1}</div>
+                      ))}
+                    </div>
+
+                    {/* Code Text Content */}
+                    <div className="pl-4 flex-1 space-y-1 overflow-x-auto select-text font-mono text-slate-200">
+                      {codeLines.map((line: string, i: number) => (
+                        <div key={i} className="leading-relaxed whitespace-pre font-mono">
+                          {line || ' '}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs text-slate-500 flex items-center justify-center">
+                    <span>Select a file from the repository to view its contents.</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -898,7 +1084,7 @@ export const GitsmithView: React.FC = () => {
         </div>
       </div>
       {/* 1-Click Fork & Code with AI Modal */}
-      {repositoryCatalog.length > 0 && <ForkWithAiModal
+      {selectedRepo && repositoryCatalog.length > 0 && selectedRepo.source === 'canonical' && <ForkWithAiModal
         isOpen={showForkModal}
         onClose={() => setShowForkModal(false)}
         app={{
@@ -908,7 +1094,14 @@ export const GitsmithView: React.FC = () => {
           author: selectedRepo.owner,
           creator: selectedRepo.owner,
           avatar: selectedRepo.avatar,
-          creatorAvatar: selectedRepo.avatar
+          creatorAvatar: selectedRepo.avatar,
+          hasCanonicalRepo: true,
+          repositoryId: selectedRepo.id,
+          isRepoActive: selectedRepo.status === 'active',
+          repoSlug: selectedRepo.name,
+          repoStatus: selectedRepo.status,
+          repoVisibility: selectedRepo.visibility,
+          repoDefaultRef: selectedRepo.branch
         }}
       />}
     </div>

@@ -77,9 +77,9 @@ export function formatProposalStatus(thread: InboxThread, diffData?: PRDiffData 
 } {
   if (thread.isMerged && thread.mergeStatus === 'landed') {
     return {
-      badgeLabel: 'Merged · Landed by GITSMITH',
+      badgeLabel: 'Landed · Fast-forward landed by GITSMITH',
       badgeStyle: 'bg-green-700 text-white',
-      description: 'GITSMITH reports that this exact result commit is now the target ref.',
+      description: 'GITSMITH reports that this exact result commit is now the target ref via fast-forward landing.',
       canApprove: false,
       canReject: false,
       isDiverged: false,
@@ -90,7 +90,7 @@ export function formatProposalStatus(thread: InboxThread, diffData?: PRDiffData 
   if (thread.approvalStatus === 'approved') return {
     badgeLabel: 'Approved · GITSMITH landing',
     badgeStyle: 'bg-blue-700 text-white',
-    description: 'The immutable attempt is approved and queued. GITSMITH is performing the authoritative compare-and-swap.',
+    description: 'The immutable attempt is approved and queued. GITSMITH is performing the authoritative fast-forward compare-and-swap.',
     canApprove: false,
     canReject: false,
     isDiverged: false,
@@ -130,9 +130,9 @@ export function formatProposalStatus(thread: InboxThread, diffData?: PRDiffData 
   }
 
   return {
-    badgeLabel: 'Open · Fast-forwardable',
+    badgeLabel: 'Open · Fast-forward landable',
     badgeStyle: 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold',
-    description: 'Approve this exact result commit to queue an authoritative GITSMITH compare-and-swap.',
+    description: 'Approve this exact result commit to queue an authoritative GITSMITH fast-forward compare-and-swap.',
     canApprove: true,
     canReject: true,
     isDiverged: false,
