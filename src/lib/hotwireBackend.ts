@@ -162,7 +162,7 @@ export interface JsonFeedItem {
     license: string;
     price: string;
     storage: string;
-    moddabilityScore: number;
+    moddabilityScore?: number;
   };
 }
 
@@ -1010,11 +1010,11 @@ export function generateRssFeed(
   const itemsXml = (drops || []).map(drop => {
     const dropUrl = `${homePageUrl}/#drop-${drop.id}`;
     const pubDate = normalizeDate(drop.createdAt || new Date()).toUTCString();
-    const creator = drop.creator || 'nate';
+    const creator = drop.creator || 'anonymous';
     const version = drop.version || 'v1.0.0';
     const price = drop.price || 'Free ($0) or Registered Copy';
     const storage = drop.storage || 'App-managed storage';
-    const moddability = drop.moddabilityScore || 95;
+    const moddability = drop.moddabilityScore !== undefined ? `${drop.moddabilityScore}/100` : 'Not measured';
     const upvotes = drop.upvotes || 0;
     const forks = drop.forks || 0;
 
@@ -1043,7 +1043,7 @@ export function generateRssFeed(
         <li><b>License:</b> ${escapeXml(drop.license || 'MIT')}</li>
         <li><b>Price:</b> ${escapeXml(price)}</li>
         <li><b>Storage:</b> ${escapeXml(storage)}</li>
-        <li><b>Moddability Score:</b> ${moddability}/100</li>
+        <li><b>Moddability Score:</b> ${moddability}</li>
         <li><b>Upvotes:</b> ${upvotes} | <b>Forks:</b> ${forks}</li>
       </ul>
       ${binariesHtml}
@@ -1093,11 +1093,11 @@ export function generateJsonFeed(
   const items: JsonFeedItem[] = (drops || []).map(drop => {
     const dropUrl = `${homePageUrl}/#drop-${drop.id}`;
     const pubDate = normalizeDate(drop.createdAt || new Date()).toISOString();
-    const creator = drop.creator || 'nate';
+    const creator = drop.creator || 'anonymous';
     const version = drop.version || 'v1.0.0';
     const price = drop.price || 'Free ($0) or Registered Copy';
     const storage = drop.storage || 'App-managed storage';
-    const moddability = drop.moddabilityScore || 95;
+    const moddabilityFormatted = drop.moddabilityScore !== undefined ? `${drop.moddabilityScore}/100` : 'Not measured';
 
     let binariesHtml = '';
     const attachments: JsonFeedItem['attachments'] = [];
@@ -1128,7 +1128,7 @@ export function generateJsonFeed(
         <li><b>License:</b> ${escapeXml(drop.license || 'MIT')}</li>
         <li><b>Price:</b> ${escapeXml(price)}</li>
         <li><b>Storage:</b> ${escapeXml(storage)}</li>
-        <li><b>Moddability Score:</b> ${moddability}/100</li>
+        <li><b>Moddability Score:</b> ${moddabilityFormatted}</li>
         <li><b>Upvotes:</b> ${drop.upvotes || 0} | <b>Forks:</b> ${drop.forks || 0}</li>
       </ul>
       ${binariesHtml}
@@ -1159,7 +1159,7 @@ export function generateJsonFeed(
         license: drop.license || 'MIT',
         price,
         storage,
-        moddabilityScore: moddability
+        moddabilityScore: drop.moddabilityScore
       }
     };
   });

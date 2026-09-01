@@ -11,7 +11,7 @@ export const NatesLLMSpecsCard: React.FC<NatesLLMSpecsCardProps> = ({ app }) => 
       <div className="flex items-center justify-between border-b pb-1.5 mb-2">
         <span className="font-bold text-w95-blue text-sm">📊 Nate's App Moddability Specs</span>
         <span className="bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded border border-green-400">
-          Score: {app.moddabilityScore}/100
+          Score: {app.moddabilityScore !== undefined ? `${app.moddabilityScore}/100` : 'Not measured'}
         </span>
       </div>
 
@@ -19,11 +19,13 @@ export const NatesLLMSpecsCard: React.FC<NatesLLMSpecsCardProps> = ({ app }) => 
         <tbody>
           <tr className="border-b border-gray-200">
             <td className="py-1 text-gray-600 font-medium">LLM Moddability Score</td>
-            <td className="py-1 font-bold text-right">{app.moddabilityScore} / 100 (Claude/Codex Verified)</td>
+            <td className="py-1 font-bold text-right">
+              {app.moddabilityScore !== undefined ? `${app.moddabilityScore} / 100 (Claude/Codex Verified)` : 'Not measured'}
+            </td>
           </tr>
           <tr className="border-b border-gray-200">
             <td className="py-1 text-gray-600 font-medium">AST Branch Cleanliness</td>
-            <td className="py-1 font-bold text-right text-green-700">{app.mergeCleanliness}</td>
+            <td className="py-1 font-bold text-right text-green-700">{app.mergeCleanliness || 'Not measured'}</td>
           </tr>
           <tr className="border-b border-gray-200">
             <td className="py-1 text-gray-600 font-medium">Storage / Persistence</td>

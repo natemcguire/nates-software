@@ -83,6 +83,7 @@ export interface AppListing {
   voters?: { name: string; avatar: string; handle: string }[];
   makerPitch?: string;
   isDemo?: boolean;
+  hasVoted?: boolean;
 }
 
 export const INITIAL_APPS: AppListing[] = [

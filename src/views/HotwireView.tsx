@@ -32,6 +32,8 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     upvoteApp: catalogUpvote,
     makerLeaderboard,
     isAuthoritativeLive,
+    votedAppIds,
+    hasVoted: catalogHasVoted,
     isLoading,
     error: catalogError,
     refreshCatalog
@@ -41,7 +43,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const [selectedApp, setSelectedApp] = useState<AppListing | null>(catalogApps[0] || null);
   const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks'>('today');
   const [searchQuery, setSearchQuery] = useState('');
-  const [upvotedApps, setUpvotedApps] = useState<Set<string>>(new Set());
+  const [upvotedApps, setUpvotedApps] = useState<Set<string>>(votedAppIds || new Set());
   const [selectedBatch, setSelectedBatch] = useState<string>('today');
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
 
@@ -58,6 +60,23 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       setSelectedApp(null);
     }
   }, [catalogApps, isAuthoritativeLive]);
+
+  // Hydrate upvoted state from authoritative catalog
+  useEffect(() => {
+    if (votedAppIds && votedAppIds.size > 0) {
+      setUpvotedApps(prev => {
+        const next = new Set(prev);
+        votedAppIds.forEach(id => next.add(id));
+        return next;
+      });
+    } else if (catalogApps.some(a => a.hasVoted)) {
+      setUpvotedApps(prev => {
+        const next = new Set(prev);
+        catalogApps.filter(a => a.hasVoted).forEach(a => next.add(a.id));
+        return next;
+      });
+    }
+  }, [votedAppIds, catalogApps]);
 
   const handleBatchSelect = (batch: string) => {
     playClickSound();
@@ -95,9 +114,11 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const handleUpvote = async (e: React.MouseEvent, appId: string) => {
     e.stopPropagation();
+    if (upvotedApps.has(appId) || catalogHasVoted(appId)) {
+      return;
+    }
     playClickSound();
 
-    const wasUpvoted = upvotedApps.has(appId);
     setUpvotedApps(prev => new Set(prev).add(appId));
 
     try {
@@ -106,13 +127,11 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       playSuccessChime();
     } catch (err: any) {
       // Rollback upvoted visual state if this vote was rejected
-      if (!wasUpvoted) {
-        setUpvotedApps(prev => {
-          const next = new Set(prev);
-          next.delete(appId);
-          return next;
-        });
-      }
+      setUpvotedApps(prev => {
+        const next = new Set(prev);
+        next.delete(appId);
+        return next;
+      });
 
       // Truthfully explain rejection and authenticated/network requirements
       const errMsg = err?.message || 'Upvote rejected';
@@ -230,8 +249,8 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               ● D1 LIVE ({apps.length} drops)
             </span>
           ) : (
-            <span className="bg-amber-900 text-amber-200 border border-amber-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Displaying seed catalog demo drops">
-              ● SEED / DEMO DATA
+            <span className="bg-red-950 text-red-200 border border-red-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Disconnected / offline">
+              ● OFFLINE / DISCONNECTED
             </span>
           )}
 
@@ -250,7 +269,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         <div className="bg-amber-100 border-b-2 border-amber-400 px-3 py-1.5 flex items-center justify-between text-amber-900 font-mono text-[11px]">
           <span className="flex items-center gap-1.5">
             <span>⚠️</span>
-            <span>Live Catalog Notice: {catalogError} (Viewing offline preview dataset)</span>
+            <span>Live Catalog Error: {catalogError}</span>
           </span>
           <button
             onClick={() => {
@@ -326,9 +345,9 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                     <Award size={14} className="text-purple-600" />
                     <span>Verified Maker Streak Leaderboard</span>
                   </div>
-                  {isAuthoritativeLive && makerLeaderboard && makerLeaderboard.length > 0 ? (
+                  {isAuthoritativeLive ? (
                     <span className="text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 font-mono">
-                      ● D1 Live Verified Makers
+                      ● D1 Live Verified Makers ({makerLeaderboard?.length || 0})
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 font-mono">
@@ -336,38 +355,83 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                     </span>
                   )}
                 </div>
-                {(isAuthoritativeLive && makerLeaderboard && makerLeaderboard.length > 0 ? makerLeaderboard : MAKER_PROFILES).map((maker: any, idx: number) => {
-                  const isLiveEntry = Boolean(maker.badgeInfo);
-                  const avatar = maker.avatar || '⚡';
-                  const name = maker.displayName || maker.name;
-                  const handle = maker.username ? `@${maker.username}` : maker.handle;
-                  const badgeText = isLiveEntry ? `${maker.badgeInfo.icon} ${maker.currentStreak} Day${maker.currentStreak === 1 ? '' : 's'}` : maker.streakBadge;
-                  const tierTitle = isLiveEntry ? maker.badgeInfo.title : maker.streakTier;
-                  const dropCount = isLiveEntry ? maker.totalDrops : (maker.totalDrops || 0);
+                {isAuthoritativeLive ? (
+                  makerLeaderboard && makerLeaderboard.length > 0 ? (
+                    makerLeaderboard.map((maker: any, idx: number) => {
+                      const avatar = maker.avatar || '⚡';
+                      const name = maker.displayName || maker.username || 'Maker';
+                      const handle = maker.username ? `@${maker.username}` : '@anonymous';
+                      const badgeText = maker.badgeInfo
+                        ? `${maker.badgeInfo.icon} ${maker.currentStreak} Day${maker.currentStreak === 1 ? '' : 's'}`
+                        : `${maker.currentStreak || 1} Day streak`;
+                      const tierTitle = maker.badgeInfo?.title || 'Rookie Maker';
+                      const dropCount = maker.totalDrops || 0;
 
-                  return (
-                    <div key={maker.id || idx} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
-                        <span className="text-xl">{avatar}</span>
-                        <div>
-                          <div className="font-bold text-xs text-slate-800">
-                            {name} <span className="text-slate-500 font-normal">{handle}</span>
-                            <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
+                      return (
+                        <div key={maker.id || idx} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
+                            <span className="text-xl">{avatar}</span>
+                            <div>
+                              <div className="font-bold text-xs text-slate-800">
+                                {name} <span className="text-slate-500 font-normal">{handle}</span>
+                                <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
+                              </div>
+                              <div className="text-[10px] text-slate-600">
+                                {maker.bio || 'Ships software people can own.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-[10px] text-slate-600">
-                            {maker.bio || 'Ships software people can own.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
+                          <div className="text-right">
+                            <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
+                              {badgeText}
+                            </span>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
-                          {badgeText}
-                        </span>
-                      </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-8 text-center space-y-2">
+                      <div className="text-2xl">🌱</div>
+                      <div className="font-bold text-xs text-slate-700">No Maker Streaks Recorded</div>
+                      <p className="text-[11px] text-slate-500">
+                        Publish daily shareware drops to build an active streak and earn maker rank.
+                      </p>
                     </div>
-                  );
-                })}
+                  )
+                ) : (
+                  MAKER_PROFILES.map((maker: any, idx: number) => {
+                    const avatar = maker.avatar || '⚡';
+                    const name = maker.displayName || maker.name;
+                    const handle = maker.username ? `@${maker.username}` : maker.handle;
+                    const badgeText = maker.streakBadge;
+                    const tierTitle = maker.streakTier;
+                    const dropCount = maker.totalDrops || 0;
+
+                    return (
+                      <div key={maker.id || idx} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
+                          <span className="text-xl">{avatar}</span>
+                          <div>
+                            <div className="font-bold text-xs text-slate-800">
+                              {name} <span className="text-slate-500 font-normal">{handle}</span>
+                              <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
+                            </div>
+                            <div className="text-[10px] text-slate-600">
+                              {maker.bio || 'Ships software people can own.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
+                            {badgeText}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             ) : isLoading && apps.length === 0 ? (
               <div className="p-8 text-center space-y-2">
@@ -387,7 +451,9 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         ? 'No Historical Archived Drops'
                         : isAuthoritativeLive
                           ? `No Live Drops in Today's 12:01 AM Batch (#${batchInfo.batchNumber})`
-                          : 'No drops found'}
+                          : catalogError
+                            ? 'Unable to load live drops'
+                            : 'No drops found'}
                 </div>
                 <p className="text-[11px] text-slate-500">
                   {searchQuery.trim()
@@ -398,9 +464,22 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         ? `No older archived drops found before current batch window.`
                         : isAuthoritativeLive
                           ? `The live 12:01 AM batch (#${batchInfo.batchNumber}) is currently empty. Be the first creator to launch a drop today!`
-                          : 'No drops available in this category.'}
+                          : catalogError
+                            ? `Failed to retrieve drops from the live registry: ${catalogError}`
+                            : 'No drops available in this category.'}
                 </p>
-                {isAuthoritativeLive && !searchQuery.trim() && (
+                {catalogError ? (
+                  <button
+                    onClick={() => {
+                      playClickSound();
+                      refreshCatalog();
+                    }}
+                    className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Retry Connection</span>
+                  </button>
+                ) : isAuthoritativeLive && !searchQuery.trim() ? (
                   <button
                     onClick={handleOpenNewDrop}
                     className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2"
@@ -408,12 +487,12 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                     <Plus size={13} />
                     <span>Submit First Drop</span>
                   </button>
-                )}
+                ) : null}
               </div>
             ) : (
               filteredApps.map((app, index) => {
                 const isSelected = selectedApp?.id === app.id;
-                const isUpvoted = upvotedApps.has(app.id);
+                const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
 
                 return (
                   <div
@@ -434,7 +513,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">
                           {app.version}
                         </span>
-                        <span className="text-gray-500 text-[10px]">by @{app.author || app.creator}</span>
+                        <span className="text-gray-500 text-[10px]">by @{app.author || app.creator || 'not supplied'}</span>
 
                         {/* Distinct Demo Data vs Live Drop Badge */}
                         {app.isDemo || !isAuthoritativeLive ? (
@@ -476,12 +555,14 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                       </p>
 
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[10px]">
-                        {app.tags.slice(0, 3).map(tag => (
+                        {app.tags && app.tags.slice(0, 3).map(tag => (
                           <span key={tag} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-300 font-mono">
                             {tag}
                           </span>
                         ))}
-                        <span className="text-gray-400 font-mono">|</span>
+                        {app.tags && app.tags.length > 0 && (
+                          <span className="text-gray-400 font-mono">|</span>
+                        )}
                         <span className="text-gray-500 font-mono flex items-center gap-0.5">
                           <GitFork size={10} /> {app.forkCount || 0} forks
                         </span>
@@ -492,16 +573,20 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                     <div className="flex flex-col items-center gap-1">
                       <button
                         onClick={(e) => handleUpvote(e, app.id)}
+                        disabled={isUpvoted}
                         className={`win95-btn px-2 py-1 flex flex-col items-center min-w-[42px] transition-all ${
-                          isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold' : 'bg-[#dfdfdf]'
+                          isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white'
                         }`}
-                        title="Upvote drop"
+                        title={isUpvoted ? "Already voted for this drop" : "Upvote drop"}
                       >
                         <Flame size={12} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-gray-600'} />
                         <span className="font-mono text-xs mt-0.5">{app.upvotes}</span>
+                        {isUpvoted && (
+                          <span className="text-[8px] font-mono text-orange-800 font-bold uppercase">Voted</span>
+                        )}
                       </button>
 
-                      {app.voters && app.voters.length > 0 && (
+                      {app.isDemo && app.voters && app.voters.length > 0 && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

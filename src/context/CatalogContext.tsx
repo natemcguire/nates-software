@@ -7,6 +7,7 @@ export interface CatalogContextType {
   apps: AppListing[];
   demoApps: AppListing[];
   shelfAppIds: Set<string>;
+  votedAppIds: Set<string>;
   makerLeaderboard: MakerLeaderboardEntry[];
   isLoading: boolean;
   isAuthoritativeLive: boolean;
@@ -16,6 +17,7 @@ export interface CatalogContextType {
   currentBatch: string;
   getApp: (id: string) => AppListing | undefined;
   isOwned: (appId: string) => boolean;
+  hasVoted: (appId: string) => boolean;
   refreshCatalog: (opts?: { sort?: string; batch?: string }) => Promise<void>;
   refreshShelf: () => Promise<void>;
   upvoteApp: (appId: string) => Promise<boolean>;
@@ -32,9 +34,10 @@ const SEED_DEMO_APPS: AppListing[] = INITIAL_APPS.map(app => ({
 }));
 
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Guest first-run initial state: Seed apps marked as demo, shelf completely empty
-  const [apps, setApps] = useState<AppListing[]>(SEED_DEMO_APPS);
+  // Authoritative catalog starts empty; live D1 drops populate on mount
+  const [apps, setApps] = useState<AppListing[]>([]);
   const [shelfAppIds, setShelfAppIds] = useState<Set<string>>(new Set<string>());
+  const [votedAppIds, setVotedAppIds] = useState<Set<string>>(new Set<string>());
   const [makerLeaderboard, setMakerLeaderboard] = useState<MakerLeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthoritativeLive, setIsAuthoritativeLive] = useState<boolean>(false);
@@ -97,36 +100,37 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (dropsRes.ok) {
         const dropsData = await dropsRes.json();
         if (dropsData.success && Array.isArray(dropsData.drops)) {
-          // Authoritative live response: map live drops directly WITHOUT merging seed mock data
+          // Authoritative live response: map live drops directly WITHOUT inventing fake defaults
           const liveDrops: AppListing[] = dropsData.drops.map((d: any) => {
             const parsedPrice = typeof d.price === 'string'
-              ? parseInt(d.price.replace(/[^0-9.]/g, ''), 10) || 15
-              : (d.price || 15);
+              ? (parseInt(d.price.replace(/[^0-9.]/g, ''), 10) || undefined)
+              : (typeof d.price === 'number' ? d.price : undefined);
+
+            const authorName = d.creator || d.creatorHandle || d.author || 'not supplied';
+            const avatar = d.creatorAvatar || d.authorAvatar || '⚡';
 
             return {
               id: d.id,
               name: d.name || d.id,
-              tagline: d.tagline || 'Built to share and multiply.',
+              tagline: d.tagline || '',
               description: d.description || '',
-              author: d.creator || d.creatorHandle || 'nate',
-              authorAvatar: d.creatorAvatar || '⚡',
-              creator: d.creator || d.creatorHandle || 'nate',
-              creatorAvatar: d.creatorAvatar || '⚡',
+              author: authorName,
+              authorAvatar: avatar,
+              creator: authorName,
+              creatorAvatar: avatar,
               version: d.version || 'v1.0.0',
               upvotes: Number.isFinite(d.upvotes) ? d.upvotes : 0,
               forkCount: Number.isFinite(d.forks) ? d.forks : 0,
               forks: Number.isFinite(d.forks) ? d.forks : 0,
-              tags: Array.isArray(d.tags) && d.tags.length > 0 ? d.tags : ['Shareware'],
+              tags: Array.isArray(d.tags) ? d.tags : [],
               liveUrl: d.liveUrl || d.binaries?.web,
-              screenshots: Array.isArray(d.screenshots) && d.screenshots.length > 0
-                ? d.screenshots
-                : ['https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'],
+              screenshots: Array.isArray(d.screenshots) ? d.screenshots : [],
               binaries: d.binaries || {},
               sqliteDatabase: d.storage || '',
               sqliteSize: d.storage ? 'Declared by app' : 'Not specified',
               price: parsedPrice,
-              moddabilityScore: d.moddabilityScore || 95,
-              mergeCleanliness: d.mergeCleanliness || '99.8% clean',
+              moddabilityScore: typeof d.moddabilityScore === 'number' ? d.moddabilityScore : undefined,
+              mergeCleanliness: d.mergeCleanliness || 'not measured',
               comments: d.comments || [],
               deploymentState: d.deploymentState || 'draft',
               deploymentError: d.deploymentError,
@@ -145,35 +149,59 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               repoVisibility: d.repoVisibility || null,
               repoStatus: d.repoStatus || null,
               repoDefaultRef: d.repoDefaultRef || null,
+              hasVoted: Boolean(d.hasVoted),
               isDemo: false
             };
           });
 
           setApps(liveDrops);
+          if (Array.isArray(dropsData.votedAppIds)) {
+            setVotedAppIds(new Set(dropsData.votedAppIds));
+          } else {
+            const votedFromDrops = liveDrops.filter(a => a.hasVoted).map(a => a.id);
+            if (votedFromDrops.length > 0) {
+              setVotedAppIds(new Set(votedFromDrops));
+            }
+          }
           if (Array.isArray(dropsData.makerLeaderboard)) {
             setMakerLeaderboard(dropsData.makerLeaderboard);
           }
           setIsAuthoritativeLive(true);
           setError(null);
         } else {
-          // Response not successful: fall back to distinct demo data
-          setApps(SEED_DEMO_APPS);
+          // Response not successful: set empty live drops and truthful error
+          setApps([]);
           setIsAuthoritativeLive(false);
-          if (dropsData?.error) {
-            setError(dropsData.error);
-          }
+          setError(dropsData?.error || 'Failed to load live drops from server');
         }
       } else {
-        // HTTP error: fall back to distinct demo data
-        setApps(SEED_DEMO_APPS);
+        // HTTP error: set empty live drops and truthful error
+        setApps([]);
         setIsAuthoritativeLive(false);
         setError(`Failed to fetch live catalog (HTTP ${dropsRes.status})`);
       }
 
       // 2. Fetch authoritative shelf ownership (Never grant seed ownership to guests)
       await fetchShelf();
+
+      // 3. Hydrate viewer-scoped upvotes if separate read endpoint is available
+      try {
+        const upvoteRes = await fetch('/api/upvote?action=my-votes');
+        if (upvoteRes.ok) {
+          const upvoteData = await upvoteRes.json();
+          if (upvoteData.success && Array.isArray(upvoteData.votedAppIds)) {
+            setVotedAppIds(prev => {
+              const next = new Set(prev);
+              upvoteData.votedAppIds.forEach((id: string) => next.add(id));
+              return next;
+            });
+          }
+        }
+      } catch {
+        // Vote state fetch failures handled gracefully
+      }
     } catch (err: any) {
-      setApps(SEED_DEMO_APPS);
+      setApps([]);
       setIsAuthoritativeLive(false);
       setError(err.message || 'Failed to fetch authoritative catalog');
     } finally {
@@ -186,18 +214,23 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [fetchAuthoritativeCatalog]);
 
   const getApp = useCallback((id: string): AppListing | undefined => {
-    return apps.find(a => a.id === id) || SEED_DEMO_APPS.find(a => a.id === id);
+    return apps.find(a => a.id === id);
   }, [apps]);
 
   const isOwned = useCallback((appId: string): boolean => {
     return shelfAppIds.has(appId);
   }, [shelfAppIds]);
 
+  const hasVoted = useCallback((appId: string): boolean => {
+    return votedAppIds.has(appId);
+  }, [votedAppIds]);
+
   const upvoteApp = useCallback(async (appId: string): Promise<boolean> => {
     const originalUpvotes = apps.find(a => a.id === appId)?.upvotes ?? 0;
 
     // 1. Optimistic UI update
-    setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: (a.upvotes || 0) + 1 } : a));
+    setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: (a.upvotes || 0) + 1, hasVoted: true } : a));
+    setVotedAppIds(prev => new Set(prev).add(appId));
 
     try {
       const res = await fetch('/api/upvote', {
@@ -210,12 +243,18 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (res.ok && data?.success) {
         if (Number.isFinite(data.upvotes)) {
-          setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: data.upvotes } : a));
+          setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: data.upvotes, hasVoted: true } : a));
         }
+        setVotedAppIds(prev => new Set(prev).add(appId));
         return true;
       } else {
         // 2. Rollback on non-OK response or failed success flag
-        setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: originalUpvotes } : a));
+        setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: originalUpvotes, hasVoted: false } : a));
+        setVotedAppIds(prev => {
+          const next = new Set(prev);
+          next.delete(appId);
+          return next;
+        });
         const errorMsg = data?.error || `Upvote rejected (status ${res.status})`;
         const error = new Error(errorMsg);
         (error as any).status = res.status;
@@ -224,7 +263,12 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     } catch (err: any) {
       // 3. Rollback on network failure or thrown error
-      setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: originalUpvotes } : a));
+      setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: originalUpvotes, hasVoted: false } : a));
+      setVotedAppIds(prev => {
+        const next = new Set(prev);
+        next.delete(appId);
+        return next;
+      });
       throw err;
     }
   }, [apps]);
@@ -271,9 +315,10 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [fetchAuthoritativeCatalog]);
 
-  const incrementForkCount = useCallback((appId: string) => {
-    setApps(prev => prev.map(a => a.id === appId ? { ...a, forkCount: (a.forkCount || 0) + 1, forks: (a.forks || 0) + 1 } : a));
-  }, []);
+  const incrementForkCount = useCallback((_appId: string) => {
+    // Refresh authoritative catalog instead of lying with a local counter
+    fetchAuthoritativeCatalog();
+  }, [fetchAuthoritativeCatalog]);
 
   const recordPurchase = useCallback(async (_appId?: string, _licenseKey?: string) => {
     await fetchShelf();
@@ -285,6 +330,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         apps,
         demoApps: SEED_DEMO_APPS,
         shelfAppIds,
+        votedAppIds,
         makerLeaderboard,
         isLoading,
         isAuthoritativeLive,
@@ -294,6 +340,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         currentBatch,
         getApp,
         isOwned,
+        hasVoted,
         refreshCatalog: fetchAuthoritativeCatalog,
         refreshShelf: fetchShelf,
         upvoteApp,

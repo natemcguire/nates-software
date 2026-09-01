@@ -66,7 +66,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   onForkSuccess
 }) => {
   const { user, openAuthModal } = useAuth();
-  const { incrementForkCount } = useCatalog();
+  const { refreshCatalog } = useCatalog();
   const { showAlert } = useAlert();
 
   const [isForking, setIsForking] = useState(false);
@@ -144,7 +144,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
       if (res.ok && data?.success) {
         setForkResult(data);
-        incrementForkCount(app.id);
+        await refreshCatalog();
         playSuccessChime();
         if (onForkSuccess) {
           onForkSuccess(data);
