@@ -529,7 +529,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
       const refPolicies = policies.results;
 
-      // TODO: Plug in richer branch protection / ref policy evaluation rules here.
+      // This is the pre-push identity/authorization check only: it verifies the SSH key
+      // is registered and the resulting role can read/write this repository, then hands
+      // back the raw repository_ref_policies rows so the caller (the GITSMITH SSH
+      // transport / gateway daemon) has them on hand before the push begins. It does not
+      // itself evaluate per-ref policy (protected-ref deletion, force-push, signed
+      // commits, min approvals, etc.) — that evaluation happens once the actual ref
+      // updates are known, in the gateway-check-ref-policy action below, which is the
+      // synchronous pre-receive-time decision point. Splitting it this way lets an
+      // unauthorized actor be rejected immediately without a round trip per ref.
 
       return Response.json({
         success: true,
@@ -598,8 +606,25 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
       const refPolicies = policies.results;
 
-      // TODO: Plug in richer repository_ref_policies table rules (e.g. required signers, minimum approvals, CI build checks) here.
-
+      // Enforced in this control plane right now (below, per ref update): write
+      // authorization already checked above; default-branch and any repository_ref_policies
+      // ref_pattern match is treated as protected; deletion of a protected ref is rejected
+      // unless its policy row sets allow_delete; a non-fast-forward update to a protected
+      // ref is rejected unless its policy row sets allow_force_push; most-specific matching
+      // policy wins via selectRefPolicy (ties resolved deny-first).
+      //
+      // require_signed_commits, require_passing_build, and minimum_approvals are stored and
+      // read from repository_ref_policies here, but this control-plane HTTP endpoint has no
+      // way to cryptographically verify a commit signature, observe CI/build results, or
+      // count PR approvals for the specific push in flight — so rather than approximate
+      // that, any protected ref whose matching policy sets one of those three flags is
+      // rejected outright (fail-closed) below. Real enforcement of those three requires the
+      // GITSMITH gateway daemon's synchronous pre-receive hook, which runs in the same
+      // process as the push and is the authoritative boundary: it re-fetches this same
+      // ref-policy decision, additionally verifies commit signatures against registered
+      // keys, checks CI/build status, and counts recorded approvals before it will let
+      // refs move. This endpoint is the control-plane's fail-closed opinion the daemon
+      // consults; it is deliberately conservative where it cannot verify something itself.
       const updates: Array<{ refName: string; oldOid?: string | null; newOid?: string | null; isFastForward?: boolean; isDelete?: boolean }> =
         Array.isArray(body.updates)
           ? body.updates
