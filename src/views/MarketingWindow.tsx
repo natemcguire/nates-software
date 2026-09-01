@@ -1,10 +1,11 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, GitMerge, Mail, User, Sparkles, BookOpen } from 'lucide-react';
+import { Flame, Wrench, Cpu, GitMerge, Mail, User, Sparkles, BookOpen, HelpCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound } from '../lib/soundEngine';
 
 interface MarketingWindowProps {
   onOpenSetup?: () => void;
+  onOpenExplainer?: () => void;
   onOpenHotwire: () => void;
   onOpenSlopshop: () => void;
   onOpenRig: () => void;
@@ -17,6 +18,7 @@ interface MarketingWindowProps {
 
 export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onOpenSetup,
+  onOpenExplainer,
   onOpenHotwire,
   onOpenSlopshop,
   onOpenRig,
@@ -41,6 +43,19 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           and a real license key with your name on it. No subscription, ever.
         </p>
         <div className="mt-2.5 flex items-center justify-center gap-2">
+          {onOpenExplainer && (
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                onOpenExplainer();
+              }}
+              className="btn-w95 px-4 py-2 font-bold text-xs flex items-center gap-1.5 shadow"
+            >
+              <HelpCircle size={14} className="text-blue-700" />
+              <span>What is this? (Explainer)</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -190,6 +205,18 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </button>
 
         <div className="flex items-center gap-2.5">
+          {onOpenExplainer && (
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                onOpenExplainer();
+              }}
+              className="btn-w95 text-xs flex items-center gap-1 font-bold"
+            >
+              <HelpCircle size={14} className="text-blue-700" /> What is this?
+            </button>
+          )}
           <button onClick={onOpenWhitepapers} className="btn-w95">
             <BookOpen size={14} /> Architectural White Papers
           </button>
