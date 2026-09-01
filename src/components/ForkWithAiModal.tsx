@@ -33,6 +33,8 @@ export interface ForkWithAiModalProps {
   };
   onLaunchTerminal?: (cmd: string) => void;
   onForkSuccess?: (forkData: any) => void;
+  onOpenApp?: (appId: string) => void;
+  onOpenSandbox?: (appId: string) => void;
 }
 
 const PROMPT_PRESETS: Record<string, string[]> = {
@@ -63,7 +65,9 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   onClose,
   app,
   onLaunchTerminal,
-  onForkSuccess
+  onForkSuccess,
+  onOpenApp,
+  onOpenSandbox
 }) => {
   const { user, openAuthModal } = useAuth();
   const { refreshCatalog } = useCatalog();
@@ -83,7 +87,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
   if (!isOpen) return null;
 
-  const makerHandle = user?.username || 'guest';
   const hasCanonicalRepo = Boolean(app.hasCanonicalRepo || app.repositoryId || (app.repoSlug && app.isRepoActive));
   const isRepoActive = app.isRepoActive ?? (app.repoStatus === 'active' || hasCanonicalRepo);
   const canPerformRealFork = hasCanonicalRepo && isRepoActive;
@@ -115,7 +118,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
     if (!canPerformRealFork) {
       playClickSound();
       showAlert(
-        "This project isn't on the forge yet (no canonical repository). It can't be forked until its source is pushed.",
+        "This app hasn't published its source yet, so it can't be forked.",
         "Cannot Fork",
         "warning"
       );
@@ -193,11 +196,11 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-4 space-y-3">
               <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
                 <Check size={18} className="text-emerald-600 shrink-0" />
-                <span>⚡ Fork Provisioned on GITSMITH Forge!</span>
+                <span>Nice — you forked {app.name}.</span>
               </div>
 
               <p className="text-gray-700 text-xs">
-                A real server-side fork repository has been registered in D1 with immutable lineage tracking and outbox event dispatch.
+                Your fork is ready.
               </p>
 
               <div className="bg-slate-950 text-slate-100 p-3 rounded font-mono text-xs space-y-2 border border-slate-800">
@@ -240,10 +243,23 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => {
+                    handleClose();
+                    if (onOpenApp) {
+                      onOpenApp(app.id);
+                    } else if (onOpenSandbox) {
+                      onOpenSandbox(app.id);
+                    }
+                  }}
+                  className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1"
+                >
+                  <span>Open {app.name} in the browser &rarr;</span>
+                </button>
                 <button
                   onClick={handleClose}
-                  className="btn-w95 btn-w95-primary px-5 py-1.5 font-bold text-xs"
+                  className="btn-w95 px-5 py-1.5 font-bold text-xs"
                 >
                   Done
                 </button>
@@ -251,6 +267,11 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
             </div>
           ) : (
             <>
+              {/* Fork Explainer Banner */}
+              <div className="bg-blue-50 border border-blue-200 text-blue-950 p-2.5 rounded text-xs leading-relaxed">
+                Forking gives you your own private copy of this app's code to change with AI — and if you sell it later, you keep 70%.
+              </div>
+
               {/* Header Metadata */}
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -259,8 +280,13 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                   </span>
                   <div>
                     <div className="font-bold text-sm text-gray-900">{app.name}</div>
-                    <div className="text-gray-500 text-[11px] font-mono">
-                      Base: @{app.author || app.creator || 'nate'} &rarr; Fork: @{makerHandle}
+                    <div className="text-gray-500 text-[11px] font-mono flex items-center gap-1 flex-wrap">
+                      <span>Base: @{app.author || app.creator || 'nate'} &rarr; {user ? `Fork: @${user.username}` : 'Fork: (your account)'}</span>
+                      {!user && (
+                        <span className="text-amber-800 font-sans text-[10px]">
+                          (Sign in to keep your fork)
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -280,17 +306,14 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
               {/* Honest Forge Linkage Banner */}
               {!canPerformRealFork ? (
-                <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded text-xs space-y-1.5 text-amber-900">
+                <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded text-xs space-y-1 text-amber-900">
                   <div className="font-bold flex items-center gap-1.5 text-amber-950">
                     <AlertTriangle size={14} className="text-amber-600 shrink-0" />
-                    <span>No Canonical Repository on Forge Yet</span>
+                    <span>Source Not Published Yet</span>
                   </div>
                   <p className="text-amber-950 text-[11px] leading-relaxed">
-                    This project isn't on the forge yet (no canonical repository). It can't be forked until its source is pushed.
+                    This app hasn't published its source yet, so it can't be forked.
                   </p>
-                  <div className="text-[10px] text-amber-800 font-mono flex items-center gap-2">
-                    <span>Forge State: <strong className="text-amber-900">unlinked (repository_id is null)</strong></span>
-                  </div>
                 </div>
               ) : (
                 <div className="bg-blue-50 border border-blue-200 p-2.5 rounded text-xs flex items-center justify-between text-blue-900">
@@ -425,11 +448,11 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                   ) : (
                     <button
                       disabled
-                      title="This project isn't on the forge yet (no canonical repository). It can't be forked until its source is pushed."
+                      title="This app hasn't published its source yet, so it can't be forked."
                       className="btn-w95 opacity-60 cursor-not-allowed px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 text-gray-500"
                     >
                       <AlertTriangle size={13} />
-                      <span>Fork Unavailable (Not on Forge Yet)</span>
+                      <span>Fork Unavailable (Source Not Published)</span>
                     </button>
                   )}
                 </div>
