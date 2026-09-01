@@ -6,7 +6,7 @@ import {
   executeRigDeployBuild,
   getMediaType
 } from '../src/lib/rig/deployExecutor';
-import { MockDockerCommandRunner } from '../src/lib/rigDockerProvider';
+import { MockDockerCommandRunner } from './fixtures/mockDockerRunner';
 import type { DeploymentPlan } from '../src/lib/deploymentLifecycle';
 
 describe('RIG Deploy Executor Suite', () => {

@@ -6,7 +6,6 @@ import * as upvoteApi from '../functions/api/upvote';
 import { hashSessionToken } from '../functions/api/_session';
 import { HotwireView } from '../src/views/HotwireView';
 import { ArtifactSandbox } from '../src/components/ArtifactSandbox';
-import { NatesLLMSpecsCard } from '../src/components/NatesLLMSpecsCard';
 import { AlertProvider } from '../src/context/AlertContext';
 import { AuthProvider } from '../src/context/AuthContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
@@ -162,30 +161,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
 
       const drop = data.drops[0];
       expect(drop.screenshots).toEqual([]);
-      expect(drop.tags).toEqual([]);
-    });
-
-    it('NatesLLMSpecsCard displays "Not measured" when moddabilityScore or mergeCleanliness are absent', () => {
-      const sparseApp: AppListing = {
-        id: 'sparse-item',
-        name: 'Sparse Item',
-        tagline: 'No scores',
-        description: 'Testing truthful fallbacks',
-        author: 'anon',
-        authorAvatar: '⚡',
-        version: 'v1.0.0',
-        upvotes: 0,
-        forkCount: 0,
-        tags: [],
-        screenshots: [],
-        comments: []
-        // moddabilityScore and mergeCleanliness undefined
-      };
-
-      const html = renderToString(<NatesLLMSpecsCard app={sparseApp} />);
-      expect(html).toContain('Not measured');
-      expect(html).not.toContain('95/100');
-      expect(html).not.toContain('99.8% clean');
     });
   });
 

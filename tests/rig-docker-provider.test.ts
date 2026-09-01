@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   BoundedDockerProvider,
   RigDockerControlApi,
-  MockDockerCommandRunner,
   NodeChildProcessRunner,
   buildDockerCreateArgv,
   type DockerInspectData
 } from '../src/lib/rigDockerProvider';
+import { MockDockerCommandRunner } from './fixtures/mockDockerRunner';
 import {
   type RigSpec,
   type RigInstance,

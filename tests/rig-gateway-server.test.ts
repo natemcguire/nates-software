@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import { BoundedDockerProvider, MockDockerCommandRunner, RigDockerControlApi } from '../src/lib/rigDockerProvider';
+import { BoundedDockerProvider, RigDockerControlApi } from '../src/lib/rigDockerProvider';
+import { MockDockerCommandRunner } from './fixtures/mockDockerRunner';
 import { createRigGatewayServer, validateRigGatewayConfig } from '../src/lib/rig/server';
 
 const servers: ReturnType<typeof createRigGatewayServer>[] = [];
