@@ -719,7 +719,7 @@ export const InboxView: React.FC = () => {
                           <div className="flex items-center justify-between">
                             <div className="font-bold text-gray-900 flex items-center gap-1.5">
                               <ShieldCheck size={15} className="text-w95-blue" />
-                              <span>Merge Control &amp; Verification</span>
+                              <span>Ref Landing &amp; Verification</span>
                             </div>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${status.badgeStyle}`}>
                               {status.badgeLabel}
@@ -741,7 +741,7 @@ export const InboxView: React.FC = () => {
                           ) : diffData?.isFastForward ? (
                             <div className="p-2 bg-emerald-50 border border-emerald-300 rounded text-emerald-950 text-[11px] flex items-center gap-1.5">
                               <Check size={13} className="text-emerald-700 shrink-0" />
-                              <span>This branch has no conflicts with the base branch (fast-forward mergeable).</span>
+                              <span>This branch has no conflicts with the base branch (fast-forward landable).</span>
                             </div>
                           ) : null}
 
@@ -806,7 +806,7 @@ export const InboxView: React.FC = () => {
 
                                 <div className="flex justify-between items-center">
                                   <div className="text-[10px] text-gray-500 max-w-[280px]">
-                                    Approving records an immutable review and enqueues exact CAS landing.
+                                    Approving records an immutable review and enqueues exact fast-forward CAS landing.
                                   </div>
                                   <div className="flex gap-2">
                                     {status.canReject && (
@@ -824,7 +824,7 @@ export const InboxView: React.FC = () => {
                                         disabled={Boolean(actionPending)}
                                         className="btn-w95 btn-w95-primary px-3 py-1.5 flex items-center gap-1 font-bold shadow-md disabled:opacity-50"
                                       >
-                                        <GitPullRequest size={12} /> Approve Exact OID
+                                        <GitPullRequest size={12} /> Approve &amp; Land
                                       </button>
                                     )}
                                   </div>
