@@ -128,11 +128,17 @@ describe('Seam regression: cross-subdomain mutation is same-site, cross-site is 
   const post = (url: string, origin: string) =>
     new Request(url, { method: 'POST', headers: { 'Cookie': 'nsw_session=tok', 'Origin': origin } });
 
-  it('allows a cookie mutation from an app subdomain to the apex (same registrable site)', () => {
+  it('allows a cookie mutation from a TRUSTED app-shell subdomain to the apex', () => {
     expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://hotwire.nates-software.com'))).toBe(true);
   });
-  it('allows a cookie mutation between two app subdomains', () => {
+  it('allows a cookie mutation between two TRUSTED app-shell subdomains', () => {
     expect(isSameOriginMutation(post('https://gitsmith.nates-software.com/api/git', 'https://inbox.nates-software.com'))).toBe(true);
+  });
+  it('BLOCKS a cookie mutation from an UNTRUSTED tenant subdomain (the CSRF hole)', () => {
+    // A hostile maker app served at evil.nates-software.com must NOT be trusted
+    // to forge authenticated mutations against the apex API with the shared cookie.
+    expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://evil.nates-software.com'))).toBe(false);
+    expect(isSameOriginMutation(post('https://nates-software.com/api/payments/create-intent', 'https://dronehunter.nates-software.com'))).toBe(false);
   });
   it('blocks a cookie mutation from a genuinely cross-site origin', () => {
     expect(isSameOriginMutation(post('https://nates-software.com/api/upvote', 'https://evil.example.com'))).toBe(false);

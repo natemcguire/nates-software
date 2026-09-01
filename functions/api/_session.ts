@@ -35,13 +35,37 @@ export function sessionCookie(request: Request, token: string, maxAge = 2_592_00
   return `nsw_session=${token}; HttpOnly${secure}; SameSite=Lax; Path=/${domain}; Max-Age=${maxAge}`;
 }
 
-// Registrable-domain (eTLD+1) of a hostname, good enough for our single apex:
-// treat any host that IS or ends with nates-software.com as that site.
-function sameSiteRegistrableHost(hostname: string): string | null {
-  if (hostname === SESSION_COOKIE_APEX || hostname.endsWith(`.${SESSION_COOKIE_APEX}`)) {
-    return SESSION_COOKIE_APEX;
-  }
-  return hostname; // fall back to exact host for non-ecosystem origins (localhost, previews)
+// TRUSTED first-party app-shell hosts for cookie-authenticated mutations.
+// CRITICAL: the session cookie is Domain-scoped to .nates-software.com so login
+// carries across the app shell — but the platform ALSO hosts UNTRUSTED tenant
+// apps at <app>.nates-software.com (attacker-controlled bytes). So CSRF trust
+// must NOT be "any nates-software.com subdomain" (that would let evil.nates-
+// software.com forge authenticated mutations with the shared cookie). It is an
+// explicit allowlist of the first-party origins that serve the desktop SPA and
+// legitimately issue cross-subdomain authenticated writes. Everything else —
+// tenant apps, standalone project sites, foreign sites — is treated as cross-site.
+const TRUSTED_MUTATION_HOSTS = new Set([
+  'nates-software.com',
+  'www.nates-software.com',
+  'chat.nates-software.com',
+  'gitsmith.nates-software.com',
+  'git.nates-software.com',
+  'hotwire.nates-software.com',
+  'inbox.nates-software.com',
+  'slopshop.nates-software.com',
+  'rig.nates-software.com',
+  'dyno.nates-software.com',
+  'profile.nates-software.com',
+]);
+
+function isTrustedMutationHost(hostname: string): boolean {
+  if (TRUSTED_MUTATION_HOSTS.has(hostname)) return true;
+  // Preview/local hosts serve the trusted app shell too (never tenant apps):
+  // the *.pages.dev deployment and localhost. Tenant apps only live under the
+  // real nates-software.com apex, so these are safe to trust.
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+  if (hostname.endsWith('.nates-software.pages.dev') || hostname === 'nates-software.pages.dev') return true;
+  return false;
 }
 
 export function isSameOriginMutation(request: Request): boolean {
@@ -50,14 +74,14 @@ export function isSameOriginMutation(request: Request): boolean {
   if (source !== 'cookie') return true;
   const origin = request.headers.get('Origin');
   if (!origin) return false;
-  // The session cookie is shared across apex + subdomains within nates-software.com,
-  // so a cookie-authenticated mutation from one app subdomain to another (or the
-  // apex) is legitimate same-SITE traffic, not CSRF. Compare registrable domains,
-  // not exact origins — while still blocking a genuinely cross-site origin.
   try {
     const originHost = new URL(origin).hostname;
     const targetHost = new URL(request.url).hostname;
-    return sameSiteRegistrableHost(originHost) === sameSiteRegistrableHost(targetHost);
+    // Exact-origin is always fine. Otherwise the Origin must be a TRUSTED
+    // first-party app-shell host AND the request target must also be one —
+    // a cookie mutation from an untrusted tenant subdomain is blocked as CSRF.
+    if (origin === new URL(request.url).origin) return true;
+    return isTrustedMutationHost(originHost) && isTrustedMutationHost(targetHost);
   } catch {
     return false;
   }

@@ -3,7 +3,7 @@
 // webhook deliveries by re-fetching the authoritative Stripe Dispute object (never
 // trusting the webhook body) and durably recording it against the matching order.
 // A dispute that closes as 'lost' opens a commerce_recovery_obligations row per
-// maker/ancestor allocation so the recovery-execution worker can claw the funds
+// maker/ancestor/contributor allocation so the recovery-execution worker can claw the funds
 // back — mirroring how refundProcessor.ts opens obligations for refund deltas.
 
 import { hashPayload, markInboxTerminalFailure, releaseInboxClaim } from './stripeInbox';
@@ -60,7 +60,7 @@ async function fetchAuthoritativeCharge(env: any, chargeId: string, fetchImpl: t
  *    'fulfilled', advances the order to 'disputed' — informational, no money
  *    movement yet.
  * 5. When the dispute status is authoritatively 'lost', opens one
- *    commerce_recovery_obligations row per maker/ancestor allocation (capped at
+ *    commerce_recovery_obligations row per maker/ancestor/contributor allocation (capped at
  *    each allocation's frozen amount) so the recovery-execution worker can claw
  *    the funds back from already-completed transfers. Idempotent via the
  *    (source_kind, source_id, allocation_id) unique constraint.
@@ -207,10 +207,16 @@ export async function processDisputeInboxEvent(
     // and the trigger commerce_recovery_matches_order_allocation caps each row at the
     // allocation's frozen amount, so re-processing a 'lost' delivery is a safe no-op via
     // INSERT OR IGNORE (never double-opens obligations for the same dispute).
+    // Recover from every PAYABLE role — maker, ancestor, AND contributor. The
+    // payout path queues transfer_outbox rows for all three (protocol_pool is
+    // never paid out, so there is nothing to claw back from it). Omitting
+    // 'contributor' here let a granted contributor keep funds after a lost
+    // dispute — money not conserved. This mirrors refundProcessor, which
+    // recovers every role except protocol_pool.
     const allocationResult = await db.prepare(`
       SELECT id, sequence, role, amount_cents AS amountCents
       FROM commerce_order_allocations
-      WHERE order_id = ? AND role IN ('maker', 'ancestor')
+      WHERE order_id = ? AND role IN ('maker', 'ancestor', 'contributor')
       ORDER BY sequence
     `).bind(order.id).all();
     const allocations = (allocationResult.results || []) as any[];

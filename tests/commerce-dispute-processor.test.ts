@@ -99,6 +99,44 @@ describe('Commerce: charge.dispute.* authoritative processor', () => {
     expect(dispute.status).toBe('lost');
   });
 
+  it('claws back the CONTRIBUTOR allocation too when a dispute is lost (money conservation)', async () => {
+    // Regression for the seam bug: a lost dispute must recover from every payable
+    // role — maker, ancestor, AND contributor — not just maker/ancestor. Add a
+    // contributor allocation (+ its completed transfer) to the disputed order.
+    await ctx.d1.prepare(`INSERT INTO commerce_order_allocations
+      (id,order_id,sequence,role,recipient_user_id,basis_points,amount_cents)
+      VALUES ('alloc_contrib_d','ord_dispute',2,'contributor','usr_sam',2000,300)`).run();
+    await ctx.d1.prepare(`INSERT INTO commerce_transfer_outbox
+      (id,order_id,allocation_id,destination_user_id,amount_cents,currency,status,stripe_idempotency_key)
+      VALUES ('cto_dispute_contrib','ord_dispute','alloc_contrib_d','usr_sam',300,'usd','succeeded','transfer:cto_dispute_contrib')`).run();
+
+    await event('evt_dispute_lost_c', 'charge.dispute.closed', 'dp_lost_c');
+    const result = await processStripeInboxEvent(ctx.d1, env, 'evt_dispute_lost_c', {
+      stripeFetchOverride: disputeFetch(stripeDispute('dp_lost_c', 'lost'))
+    });
+    expect(result).toMatchObject({ success: true, orderId: 'ord_dispute' });
+
+    // A recovery obligation must exist for the contributor allocation (300c).
+    const contribObligation: any = await ctx.d1.prepare(`
+      SELECT amount_cents, status, source_kind, original_outbox_id
+      FROM commerce_recovery_obligations
+      WHERE order_id='ord_dispute' AND allocation_id='alloc_contrib_d'
+    `).first();
+    expect(contribObligation).toMatchObject({
+      amount_cents: 300,
+      status: 'pending',
+      source_kind: 'dispute',
+      original_outbox_id: 'cto_dispute_contrib'
+    });
+
+    // The protocol pool is never paid, so it never gets a recovery obligation.
+    const poolObligation: any = await ctx.d1.prepare(`
+      SELECT COUNT(*) AS n FROM commerce_recovery_obligations
+      WHERE order_id='ord_dispute' AND allocation_id='alloc_pool_d'
+    `).first();
+    expect(poolObligation.n).toBe(0);
+  });
+
   it('is idempotent: reprocessing a lost dispute does not open a second obligation', async () => {
     await event('evt_dispute_lost_a', 'charge.dispute.closed', 'dp_lost_2');
     await processStripeInboxEvent(ctx.d1, env, 'evt_dispute_lost_a', {
