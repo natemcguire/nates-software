@@ -96,10 +96,11 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
       type: 'system'
     },
     { text: '', type: 'output' },
-    { text: `› slop fork ${coordinate.slug}`, type: 'input' },
-    { text: 'cloning from gitsmith.nates-software.com …', type: 'dim' },
-    { text: `✓ worktree ready at ~/slop/${coordinate.appId}`, type: 'success' },
-    { text: 'next: describe a change to the agent, or run it as-is.', type: 'dim' }
+    {
+      text: `example — nothing has run yet: › slop fork ${coordinate.slug}`,
+      type: 'dim'
+    },
+    { text: 'click "Fork" below (or type it) to actually run this against GITSMITH.', type: 'dim' }
   ]);
   const [cmdInputVal, setCmdInputVal] = useState<string>('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
@@ -271,31 +272,28 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
     setTerminalLines((prev) => [...prev, ...lines]);
   };
 
-  // Execute stage action
-  const handleStagePrimaryAction = async () => {
+  // Execute stage action. Accepts an optional stage override so callers that just
+  // switched stages (e.g. the terminal's `slop <verb>` commands) don't race React's
+  // async state update and act on a stale `curStage` from closure.
+  const handleStagePrimaryAction = async (stageOverride?: number) => {
     playClickSound();
+    const activeStage = stageOverride ?? curStage;
 
-    if (curStage === 0) {
+    if (activeStage === 0) {
       // FORK STAGE
       if (!isAuthenticated) {
         appendLines([
           { text: `› slop fork ${coordinate.slug}`, type: 'input' },
           {
-            text: '[NOTICE] A real fork on the GITSMITH forge requires an authenticated session.',
+            text: '[NOTICE] A real fork on the GITSMITH forge requires an authenticated session. Nothing was forked or configured.',
             type: 'system'
           },
           {
-            text: `To fork locally on your workstation, run:
+            text: `Sign in to fork for real here, or fork locally on your workstation:
   $ slop fork ${coordinate.slug}`,
             type: 'dim'
-          },
-          { text: `✓ configured local draft worktree at ~/slop/${coordinate.appId}`, type: 'success' }
+          }
         ]);
-        setStageDone((prev) => {
-          const next = [...prev];
-          next[0] = true;
-          return next;
-        });
         setCurStage(1);
         return;
       }
@@ -331,112 +329,143 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
             { text: `✓ worktree ready at ~/slop/${coordinate.appId}`, type: 'success' },
             { text: 'next: describe a change to the agent, or run it as-is.', type: 'dim' }
           ]);
+          setStageDone((prev) => {
+            const next = [...prev];
+            next[0] = true;
+            return next;
+          });
+          setCurStage(1);
         } else {
           appendLines([
             {
-              text: `✓ forked local workspace → ${makerHandle}/${coordinate.appId}`,
-              type: 'success'
+              text: `[FAILED] GITSMITH rejected the fork: ${data?.error || `HTTP ${res.status}`}`,
+              type: 'error'
             },
-            { text: `✓ worktree ready at ~/slop/${coordinate.appId}`, type: 'success' },
-            { text: 'next: describe a change to the agent, or run it as-is.', type: 'dim' }
+            {
+              text: `To fork locally on your workstation instead, run:
+  $ slop fork ${coordinate.slug}`,
+              type: 'dim'
+            }
           ]);
         }
-      } catch {
+      } catch (error: any) {
         appendLines([
           {
-            text: `✓ forked local workspace → ${makerHandle}/${coordinate.appId}`,
-            type: 'success'
+            text: `[FAILED] Could not reach GITSMITH (/api/git): ${error?.message || 'network error'}`,
+            type: 'error'
           },
-          { text: `✓ worktree ready at ~/slop/${coordinate.appId}`, type: 'success' }
+          {
+            text: `To fork locally on your workstation instead, run:
+  $ slop fork ${coordinate.slug}`,
+            type: 'dim'
+          }
         ]);
       }
-
-      setStageDone((prev) => {
-        const next = [...prev];
-        next[0] = true;
-        return next;
-      });
-      setCurStage(1);
-    } else if (curStage === 1) {
-      // SLOP STAGE (Mod with AI)
+      return;
+    } else if (activeStage === 1) {
+      // SLOP STAGE (Mod with AI) — no in-browser AI agent or gateway is wired here.
+      // This panel cannot actually read/edit files or run an AST splice, so it must not
+      // claim that it did. Show the real command and an honest pending state instead.
       appendLines([
         { text: `› ${activePreset.prompt}`, type: 'input' },
         {
-          text: `● agent: reading ${activePreset.targetFiles.slice(0, 2).join(', ')} …`,
-          type: 'ai'
+          text: '[NOTICE] This panel does not run an AI agent in-browser. No files were read or changed.',
+          type: 'system'
         },
         {
-          text: `● agent: implementing ${activePreset.name}`,
-          type: 'ai'
-        },
-        {
-          text: '● agent: verifying AST transforms and schema integrity',
-          type: 'ai'
-        },
-        {
-          text: `✓ ${activePreset.targetFiles.length} files changed · git diff ready`,
-          type: 'success'
-        },
-        {
-          text: 'review the diff, then Run to see it, or Push to send it.',
+          text: `To actually splice this feature, run the agent in your terminal or the Real PTY Gateway:
+  $ slop mod ${activePreset.id || activePreset.name}`,
           type: 'dim'
+        },
+        {
+          text: `target files (from the preset, not yet touched): ${activePreset.targetFiles.slice(0, 4).join(', ')}${activePreset.targetFiles.length > 4 ? ', …' : ''}`,
+          type: 'dim'
+        },
+        {
+          text: 'pending — mark this stage done once you have made the change for real.',
+          type: 'system'
         }
       ]);
-      playSuccessChime();
-      setStageDone((prev) => {
-        const next = [...prev];
-        next[1] = true;
-        return next;
-      });
       setCurStage(2);
-    } else if (curStage === 2) {
+    } else if (activeStage === 2) {
       // RUN STAGE (RIG folded in)
+      // RIG has a real backend (/api/rig -> provider gateway). Only claim "live" if it
+      // actually confirms a running container; otherwise fail closed with the real command.
+      if (!isAuthenticated) {
+        appendLines([
+          { text: '› slop run', type: 'input' },
+          {
+            text: '[NOTICE] Running a fork in RIG requires an authenticated session.',
+            type: 'system'
+          },
+          {
+            text: `Run it on your workstation instead:
+  $ slop run`,
+            type: 'dim'
+          }
+        ]);
+        setRunState('stopped');
+        setRunMessage('not running — sign in, or run `slop run` locally');
+        return;
+      }
+
+      if (rigProviderState !== 'ready') {
+        appendLines([
+          { text: '› slop run', type: 'input' },
+          {
+            text: '[NOTICE] RIG provider gateway is unavailable. No container was started.',
+            type: 'system'
+          },
+          {
+            text: `Run it on your workstation instead:
+  $ slop run`,
+            type: 'dim'
+          }
+        ]);
+        setRunState('stopped');
+        setRunMessage('offline — RIG gateway unavailable, run `slop run` locally');
+        return;
+      }
+
       appendLines([
         { text: '› slop run', type: 'input' },
-        { text: 'building fork in RIG runtime …', type: 'dim' }
+        { text: 'requesting a live container from RIG gateway …', type: 'dim' }
       ]);
       setRunState('building');
-      setRunMessage('building fork in RIG runtime …');
+      setRunMessage('requesting container from RIG gateway …');
 
-      setTimeout(() => {
+      try {
+        const spec: RigSpec = {
+          id: `rig-${coordinate.appId}-${Date.now().toString(36).slice(-4)}`,
+          appId: coordinate.appId,
+          name: coordinate.name,
+          runtime: {
+            adapter: 'docker',
+            buildCommand: 'npm run build',
+            startCommand: 'node dist/server.js',
+            healthEndpoint: '/healthz',
+            networkPolicy: 'none'
+          },
+          resources: { memoryCapMb: 256, cpuCores: 1 },
+          ttlSeconds: 900,
+          source: 'provider',
+          createdAt: new Date().toISOString()
+        };
         setRunState('starting');
-        setRunMessage('starting on port :3004 …');
-        appendLines([{ text: 'npm install (cached) · starting on :3004', type: 'dim' }]);
+        setRunMessage('starting container …');
+        const instance = await createRigInstance(spec);
+        const port = instance?.observed?.allocatedPort;
+        const lifecycle = instance?.observed?.lifecycle;
+        const memMb = instance?.observed?.memoryMb;
 
-        setTimeout(async () => {
-          if (rigProviderState === 'ready' && isAuthenticated) {
-            try {
-              const spec: RigSpec = {
-                id: `rig-${coordinate.appId}-${Date.now().toString(36).slice(-4)}`,
-                appId: coordinate.appId,
-                name: coordinate.name,
-                runtime: {
-                  adapter: 'docker',
-                  buildCommand: 'npm run build',
-                  startCommand: 'node dist/server.js',
-                  healthEndpoint: '/healthz',
-                  networkPolicy: 'none'
-                },
-                resources: { memoryCapMb: 256, cpuCores: 1 },
-                ttlSeconds: 900,
-                source: 'provider',
-                createdAt: new Date().toISOString()
-              };
-              await createRigInstance(spec);
-            } catch {}
-          }
-
+        if (lifecycle === 'healthy') {
           setRunState('healthy');
-          setRunPort('3004');
-          setRunMem('48 MB');
+          setRunPort(port ? String(port) : '—');
+          setRunMem(memMb != null ? `${memMb} MB` : '—');
           setRunMessage('healthy');
           appendLines([
             {
-              text: `✓ live at ${coordinate.appId}-${makerHandle.replace('@', '')}.slop.local:3004`,
-              type: 'success'
-            },
-            {
-              text: `✓ ${activePreset.name} active in runtime container`,
+              text: `✓ RIG gateway confirmed a live container${port ? ` on port ${port}` : ''} for ${makerHandle}/${coordinate.appId}`,
               type: 'success'
             }
           ]);
@@ -447,77 +476,80 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
             return next;
           });
           setCurStage(3);
-        }, 800);
-      }, 700);
-    } else if (curStage === 3) {
-      // PUSH STAGE (to GITSMITH)
-      appendLines([
-        { text: '› slop push', type: 'input' },
-        { text: 'running verification (tests + build) …', type: 'dim' },
-        { text: '✓ proof digest sha256:8c0c592b1a8d… attached', type: 'success' },
-        { text: 'compare-and-swap against gitsmith HEAD …', type: 'dim' }
-      ]);
-
-      if (gitsmithState === 'ready') {
+        } else {
+          setRunState('error');
+          setRunMessage(instance?.observed?.errorMessage || `RIG reported lifecycle "${lifecycle || 'unknown'}", not running`);
+          appendLines([
+            {
+              text: `[FAILED] RIG did not report a running container (lifecycle: ${lifecycle || 'unknown'}).`,
+              type: 'error'
+            }
+          ]);
+        }
+      } catch (error: any) {
+        setRunState('error');
+        setRunMessage(error?.message || 'RIG gateway request failed');
         appendLines([
+          { text: `[FAILED] RIG gateway request failed: ${error?.message || 'unknown error'}`, type: 'error' },
           {
-            text: `✓ pushed ${makerHandle}/${coordinate.appId} · fast-forward, no conflicts`,
-            type: 'success'
-          },
-          { text: 'ready to list your fork on the marketplace.', type: 'dim' }
-        ]);
-      } else {
-        appendLines([
-          {
-            text: `✓ verified local ref ${makerHandle}/${coordinate.appId} with evidence digest`,
-            type: 'success'
-          },
-          {
-            text: '[NOTICE] GITSMITH forge offline or in sandbox mode. Verified ref is staged for push.',
-            type: 'system'
+            text: `Run it on your workstation instead:
+  $ slop run`,
+            type: 'dim'
           }
         ]);
       }
-      playSuccessChime();
-      setStageDone((prev) => {
-        const next = [...prev];
-        next[3] = true;
-        return next;
-      });
+    } else if (activeStage === 3) {
+      // PUSH STAGE (to GITSMITH) — landing a merge requires a CAS-verified, SSH-signed
+      // commit pushed by the real gateway agent (see functions/api/git.ts
+      // gateway-complete-merge). This browser panel cannot sign or push commits, so it
+      // cannot claim a push happened. Show the real command and an honest status only.
+      appendLines([
+        { text: '› slop push', type: 'input' },
+        {
+          text: '[NOTICE] This panel cannot push commits. Landing a merge requires an SSH-signed push from your machine or the gateway agent, verified by GITSMITH via compare-and-swap.',
+          type: 'system'
+        },
+        {
+          text: `To push for real, run:
+  $ slop push`,
+          type: 'dim'
+        },
+        {
+          text: `GITSMITH forge: ${gitsmithState === 'ready' ? 'reachable — a real signed push can land here' : 'unreachable — push would fail closed'}`,
+          type: gitsmithState === 'ready' ? 'dim' : 'error'
+        },
+        {
+          text: 'pending — mark this stage done once you have pushed for real.',
+          type: 'system'
+        }
+      ]);
       setCurStage(4);
-    } else if (curStage === 4) {
-      // PUBLISH STAGE
+    } else if (activeStage === 4) {
+      // PUBLISH STAGE — there is no marketplace-listing endpoint wired to this panel
+      // (listings are created via the HOTWIRE drop flow in functions/api/drops.ts).
+      // Do not claim anything went live.
       appendLines([
         { text: `› slop publish --price ${publishPrice}`, type: 'input' },
         {
-          text: `listing ${makerHandle}/${coordinate.appId} on the marketplace …`,
+          text: '[NOTICE] This panel cannot create a marketplace listing. No listing was created and nothing is live.',
+          type: 'system'
+        },
+        {
+          text: `To publish for real, run:
+  $ slop publish --price ${publishPrice}`,
           type: 'dim'
         },
         {
-          text: `✓ live: ${coordinate.appId}-${makerHandle.replace('@', '')}.nates-software.com`,
-          type: 'success'
-        },
-        {
-          text: '✓ buyers get a license + your source · you keep 70%',
-          type: 'success'
-        },
-        {
-          text: 'that is the whole loop. fork something else to go again.',
-          type: 'dim'
+          text: 'pending — once published for real, buyers get a license + your source, you keep 70%.',
+          type: 'system'
         }
       ]);
-      playSuccessChime();
-      setStageDone((prev) => {
-        const next = [...prev];
-        next[4] = true;
-        return next;
-      });
       showAlert(
-        `Fork published for sale at $${publishPrice}.00!
+        `"${makerHandle}/${coordinate.appId}" is not published yet.
 
-When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 10% to the protocol pool.`,
-        'Published on Marketplace',
-        'success'
+This panel shows the real "slop publish" command and the revenue split it would create — it does not create a listing itself. Run the command above (or use the gateway) to actually publish. When a published fork sells, revenue settles 70% to you, 20% up the fork lineage, and 10% to the protocol pool.`,
+        'Not Published — Honest Status',
+        'info'
       );
     }
   };
@@ -543,55 +575,22 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
       const slopArgs = parts.slice(1);
       const sub = slopArgs[0]?.toLowerCase();
 
-      if (sub === 'fork') {
-        const target = slopArgs[1] || coordinate.slug;
-        newLines.push(
-          { text: `cloning ${target} from gitsmith …`, type: 'dim' },
-          { text: `✓ forked → ${makerHandle}/${coordinate.appId}`, type: 'success' },
-          { text: `✓ worktree ready at ~/slop/${coordinate.appId}`, type: 'success' }
-        );
-        setStageDone((prev) => {
-          const n = [...prev];
-          n[0] = true;
-          return n;
+      if (sub === 'fork' || sub === 'run' || sub === 'push' || sub === 'publish') {
+        // The local emulator has no filesystem or process execution (see the banner
+        // printed at startup). Route to the real primary-action handler for fork/run,
+        // which is wired to actual backends and fails closed honestly; for push/publish
+        // there is no backend this browser panel can drive, so it just shows the real
+        // command. Pass an explicit stage override so this doesn't race React's async
+        // curStage update.
+        newLines.push({
+          text: '[NOTICE] Local mode is a browser command emulator with no filesystem or process execution. Routing to the honest stage handler …',
+          type: 'system'
         });
-      } else if (sub === 'run') {
-        newLines.push(
-          { text: 'building fork in RIG runtime …', type: 'dim' },
-          { text: 'npm install (cached) · starting on :3004', type: 'dim' },
-          { text: `✓ live at ${coordinate.appId}-${makerHandle.replace('@', '')}.slop.local:3004`, type: 'success' }
-        );
-        setRunState('healthy');
-        setRunPort('3004');
-        setRunMem('48 MB');
-        setRunMessage('healthy');
-        setStageDone((prev) => {
-          const n = [...prev];
-          n[2] = true;
-          return n;
-        });
-      } else if (sub === 'push') {
-        newLines.push(
-          { text: 'running verification (tests + build) …', type: 'dim' },
-          { text: '✓ proof digest sha256:8c0c592b1a8d… attached', type: 'success' },
-          { text: `✓ pushed ${makerHandle}/${coordinate.appId} to GITSMITH`, type: 'success' }
-        );
-        setStageDone((prev) => {
-          const n = [...prev];
-          n[3] = true;
-          return n;
-        });
-      } else if (sub === 'publish') {
-        newLines.push(
-          { text: `listing ${makerHandle}/${coordinate.appId} on the marketplace …`, type: 'dim' },
-          { text: `✓ live: ${coordinate.appId}-${makerHandle.replace('@', '')}.nates-software.com`, type: 'success' },
-          { text: '✓ buyers get a license + your source · you keep 70%', type: 'success' }
-        );
-        setStageDone((prev) => {
-          const n = [...prev];
-          n[4] = true;
-          return n;
-        });
+        appendLines(newLines);
+        const targetStage = sub === 'fork' ? 0 : sub === 'run' ? 2 : sub === 'push' ? 3 : 4;
+        setCurStage(targetStage);
+        await handleStagePrimaryAction(targetStage);
+        return;
       } else {
         const res = await runSlopCli(slopArgs);
         if (res.success && res.message) {
@@ -675,22 +674,20 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
         break;
 
       default:
-        // Treat as a natural language agent instruction
+        // Not a recognized command. There is no in-browser AI agent wired to this
+        // terminal, so it must not fabricate a plan, a diff, or a file count.
         newLines.push(
-          { text: `● agent: reading source tree for ${coordinate.name} …`, type: 'ai' },
-          { text: `● agent: planning changes for "${cmd}"`, type: 'ai' },
-          { text: `● agent: generated diff preview for worktree ~/slop/${coordinate.appId}`, type: 'ai' },
-          { text: '✓ 3 files changed, 1 added · git diff ready', type: 'success' },
           {
-            text: '[NOTICE] Local mode is a planning guide. For host filesystem changes, run slop in your native terminal or Real PTY Gateway.',
+            text: `[NOTICE] Local mode has no AI agent to run "${cmd}". No files were read or changed.`,
+            type: 'system'
+          },
+          {
+            text: `To run a real agent against ${coordinate.name}, use the Real PTY Gateway ('gateway' command) or run slop in your native terminal:
+  $ slop mod "${cmd}"`,
             type: 'dim'
-          }
+          },
+          { text: "type 'help' for the list of recognized commands.", type: 'dim' }
         );
-        setStageDone((prev) => {
-          const n = [...prev];
-          n[1] = true;
-          return n;
-        });
         break;
     }
 
@@ -710,7 +707,10 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
     playClickSound();
     handleStopRun();
     setTimeout(() => {
-      handleStagePrimaryAction();
+      // Explicit stage override: this reload control lives outside the Run stage's
+      // own action button (e.g. the address bar), so it must not depend on curStage
+      // already being 2 when it fires.
+      handleStagePrimaryAction(2);
     }, 400);
   };
 
@@ -769,7 +769,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
           onClick={() => {
             playClickSound();
             if (runState === 'healthy') handleStopRun();
-            else handleStagePrimaryAction();
+            else handleStagePrimaryAction(2);
           }}
         >
           <u>R</u>un
@@ -788,7 +788,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
           onClick={() => {
             playClickSound();
             showAlert(
-              "SLOPSHOP is the one-loop dev environment for Nate's Software Suite.\n\n1. Fork an app via GITSMITH forge\n2. Slop it with an AI agent in the terminal\n3. Run your fork live in the RIG runtime\n4. Push verified commits back to GITSMITH\n5. Publish for sale (you keep 70%)\n\nZero fabricated commits, test proofs, or fake runs.",
+              "SLOPSHOP is the one-loop dev environment for Nate's Software Suite.\n\n1. Fork an app via GITSMITH forge (real — /api/git)\n2. Slop it with an AI agent in the terminal\n3. Run your fork live in the RIG runtime (real — /api/rig, when the gateway is configured)\n4. Push verified commits back to GITSMITH\n5. Publish for sale (you keep 70%)\n\nFork and Run call real backends and fail closed honestly if they can't confirm success. Slop, Push, and Publish happen on your machine or the gateway — this panel shows you the exact command and an honest pending/offline status, it never fakes '✓ pushed' or '✓ live'.",
               'SLOPSHOP Help',
               'info'
             );
@@ -1141,7 +1141,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
         {curStage === 0 && (
           <>
             <button
-              onClick={handleStagePrimaryAction}
+              onClick={() => handleStagePrimaryAction()}
               className="btn-w95 px-4 py-1 font-bold text-xs flex items-center gap-1 text-black"
             >
               <span className="text-[#000080]">▸</span> {`Fork ${coordinate.slug}`}
@@ -1161,7 +1161,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
         {curStage === 1 && (
           <>
             <button
-              onClick={handleStagePrimaryAction}
+              onClick={() => handleStagePrimaryAction()}
               className="btn-w95 px-4 py-1 font-bold text-xs flex items-center gap-1 text-black"
             >
               <span className="text-[#000080]">▸</span> Ask the agent to make a change
@@ -1181,7 +1181,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
         {curStage === 2 && (
           <>
             <button
-              onClick={handleStagePrimaryAction}
+              onClick={() => handleStagePrimaryAction()}
               className="btn-w95 px-4 py-1 font-bold text-xs flex items-center gap-1 text-black"
             >
               <span className="text-[#000080]">▸</span> Run my fork
@@ -1198,7 +1198,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
         {curStage === 3 && (
           <>
             <button
-              onClick={handleStagePrimaryAction}
+              onClick={() => handleStagePrimaryAction()}
               className="btn-w95 px-4 py-1 font-bold text-xs flex items-center gap-1 text-black"
             >
               <span className="text-[#000080]">▸</span> Push to GITSMITH
@@ -1218,7 +1218,7 @@ When your fork sells, revenue settles 70% to you, 20% up the fork lineage, and 1
         {curStage === 4 && (
           <>
             <button
-              onClick={handleStagePrimaryAction}
+              onClick={() => handleStagePrimaryAction()}
               className="btn-w95 px-4 py-1 font-bold text-xs flex items-center gap-1 text-black"
             >
               <span className="text-[#000080]">▸</span> Publish for sale
