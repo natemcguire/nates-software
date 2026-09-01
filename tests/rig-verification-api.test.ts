@@ -40,10 +40,22 @@ describe('RIG verification worker control plane', () => {
     return { repoId, jobId, attemptId, buildId, eventId, resultOid };
   }
 
+  // Minimal in-memory R2 mock so passing-verification evidence bundle writes
+  // (Fix 1, RIG spec) succeed in these pre-existing worker-flow tests.
+  const storage = {
+    store: new Map<string, Uint8Array>(),
+    async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
+    async get(key: string) {
+      const bytes = this.store.get(key);
+      if (!bytes) return null;
+      return { arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+    }
+  };
+
   const post = (body: unknown, authorized = true) => onRequestPost({
     request: new Request('https://example.test/api/rig-verification', {
       method: 'POST', headers: authorized ? headers : { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    }), env: { DB: ctx.d1, RIG_GATEWAY_SERVICE_SECRET: secret }
+    }), env: { DB: ctx.d1, RIG_GATEWAY_SERVICE_SECRET: secret, STORAGE: storage as any }
   });
 
   it('requires the private worker credential', async () => {

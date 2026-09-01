@@ -71,28 +71,72 @@ describe('INBOX.EXE live-mode integrity', () => {
     ).run();
   }
 
+  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
+  // (Fix 1, RIG spec) can be satisfied by pre-existing tests in this file
+  // that predate it — see seedEvidenceBundleForApproval below.
+  const storage = {
+    store: new Map<string, Uint8Array>(),
+    async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
+    async get(key: string) {
+      const bytes = this.store.get(key);
+      if (!bytes) return null;
+      return { arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+    }
+  };
+
+  // Seeds a passing build_runs row + matching R2 evidence bundle for a merge
+  // attempt, so a subsequent 'approve' satisfies the evidence-bundle gate.
+  // Idempotent: no-ops if the attempt already has a recorded bundle.
+  async function seedEvidenceBundleForApproval(mergeAttemptId: string) {
+    const attempt: any = await ctx.d1.prepare(`
+      SELECT ma.id, ma.result_commit_oid AS resultCommitOid, mj.target_repository_id AS repositoryId
+      FROM merge_attempts ma JOIN merge_jobs mj ON mj.id = ma.merge_job_id
+      WHERE ma.id = ?
+    `).bind(mergeAttemptId).first();
+    if (!attempt) return;
+    const existing = await ctx.d1.prepare(`
+      SELECT id FROM build_runs WHERE merge_attempt_id = ? AND status = 'passed' AND evidence_bundle_r2_key IS NOT NULL
+    `).bind(mergeAttemptId).first();
+    if (existing) return;
+    const buildId = `build-auto-${mergeAttemptId}`;
+    const bytes = new TextEncoder().encode(JSON.stringify({ logs: 'ok', mergeAttemptId }));
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    const r2Key = `verification-evidence/${buildId}/auto.json`;
+    const sha256 = `sha256:${hex}`;
+    await storage.put(r2Key, bytes);
+    await ctx.d1.prepare(`INSERT INTO build_runs
+      (id,repository_id,commit_oid,merge_attempt_id,purpose,status,runner_image_digest,build_command,test_command,source_manifest_digest,
+       evidence_bundle_r2_key,evidence_bundle_sha256,evidence_bundle_recorded_at)
+      VALUES (?,?,?,?,'verification','passed',?,'npm run build','npm test',?,?,?,CURRENT_TIMESTAMP)`)
+      .bind(buildId, attempt.repositoryId, attempt.resultCommitOid, mergeAttemptId,
+        `node@sha256:${'c'.repeat(64)}`, `sha256:${'d'.repeat(64)}`, r2Key, sha256).run();
+  }
+
   const get = (url = 'http://localhost/api/inbox', authenticated = true) => inboxApi.onRequestGet({
-    request: new Request(url, authenticated ? { headers: authHeaders } : undefined), env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
+    request: new Request(url, authenticated ? { headers: authHeaders } : undefined), env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any }
   });
   // Auto-fills the reviewer-saw-OID confirmation fields for 'approve' actions from the
   // merge attempt's current OIDs, unless the test already specified them (so tests that
-  // intentionally probe the evidence gate itself can still override/omit).
+  // intentionally probe the evidence gate itself can still override/omit), and seeds a
+  // matching signed evidence bundle so pre-existing tests satisfy the Fix 1 approval gate.
   const post = async (body: any) => {
     let payload = body;
     if (body && typeof body === 'object' && body.action === 'approve' && body.messageId &&
         body.reviewedTargetOid === undefined && body.reviewedSourceOid === undefined) {
       const row: any = await ctx.d1.prepare(`
-        SELECT ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid
+        SELECT ma.id AS mergeAttemptId, ma.input_target_oid AS inputTargetOid, ma.result_commit_oid AS resultCommitOid
         FROM inbox_messages m JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
         WHERE m.id = ?
       `).bind(body.messageId).first();
       if (row) {
         payload = { ...body, reviewedTargetOid: row.inputTargetOid, reviewedSourceOid: row.resultCommitOid };
+        if (body.__skipEvidenceSeed !== true) await seedEvidenceBundleForApproval(row.mergeAttemptId);
       }
     }
     return inboxApi.onRequestPost({
       request: new Request('http://localhost/api/inbox', { method: 'POST', headers: authHeaders, body: JSON.stringify(payload) }),
-      env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot }
+      env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any }
     });
   };
 

@@ -48,7 +48,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0028_user_ssh_keys.sql',
         '0029_contributor_revenue_sharing.sql',
         '0030_contributor_cap_triggers.sql',
-        '0033_chat_presence_and_topic.sql'
+        '0033_chat_presence_and_topic.sql',
+        '0034_rig_verification_evidence_bundle.sql'
       ]);
     });
 

@@ -1,7 +1,9 @@
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
+type R2Bucket = { put(key: string, value: any, options?: any): Promise<any>; get(key: string): Promise<any> };
 
 interface VerificationEnv {
   DB?: D1Database;
+  STORAGE?: R2Bucket;
   RIG_GATEWAY_SERVICE_SECRET?: string;
   GITSMITH_GATEWAY_URL?: string;
   GITSMITH_GATEWAY_TOKEN?: string;
@@ -10,6 +12,59 @@ interface VerificationEnv {
 
 const SHA256_DIGEST = /^sha256:[a-f0-9]{64}$/;
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Verification evidence bundle: one immutable, signed-digest JSON object
+ * capturing everything a reviewer needs to trust a passing RIG verification
+ * run without re-running it themselves — full logs, the derived test report,
+ * every known artifact digest for this build_run, the network/isolation
+ * attestation the sandbox actually enforced, and the pinned runtime identity.
+ *
+ * The digest is computed server-side over the exact canonical JSON bytes
+ * written to R2 — it is never accepted from the worker or any other caller.
+ * INBOX approval later re-fetches this exact object and recomputes the
+ * digest before trusting it (see functions/api/inbox.ts), so the bundle
+ * must be byte-stable: canonicalize with a fixed key order.
+ */
+export function buildEvidenceBundle(input: {
+  buildRunId: string;
+  mergeAttemptId: string;
+  mergeJobId: string;
+  repositoryId: string;
+  status: 'passed' | 'failed' | 'timed_out';
+  exitCode: number;
+  durationMs: number;
+  resultDigest: string | null;
+  logs: string;
+  testReport: unknown;
+  isolationAttestation: unknown;
+  runtimeIdentity: unknown;
+  artifactDigests: Array<{ id: string; kind: string; r2Key: string; sha256: string }>;
+  completedAt: string;
+}): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    buildRunId: input.buildRunId,
+    mergeAttemptId: input.mergeAttemptId,
+    mergeJobId: input.mergeJobId,
+    repositoryId: input.repositoryId,
+    status: input.status,
+    exitCode: input.exitCode,
+    durationMs: input.durationMs,
+    resultDigest: input.resultDigest,
+    logs: input.logs,
+    testReport: input.testReport,
+    artifactDigests: input.artifactDigests,
+    networkPolicy: input.isolationAttestation,
+    runtimeIdentity: input.runtimeIdentity,
+    completedAt: input.completedAt
+  };
+}
 
 async function tokenMatches(actual: string, expected: string): Promise<boolean> {
   if (!actual || !expected || expected.length < 32) return false;
@@ -189,12 +244,66 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: V
     }
 
     const passed = status === 'passed';
+
+    // Fix 1: assemble one signed, immutable R2 evidence bundle for this
+    // verification run. A passing verification is NEVER marked reproducible
+    // (i.e. NEVER advanced to an approvable INBOX proposal) without one —
+    // fail closed honestly if STORAGE is unavailable or the upload fails,
+    // rather than silently proceeding without evidence.
+    let evidenceBundleR2Key: string | null = null;
+    let evidenceBundleSha256: string | null = null;
+    let evidenceBundleSizeBytes = 0;
+    if (passed) {
+      if (!env.STORAGE || typeof env.STORAGE.put !== 'function') {
+        return json({ success: false, error: 'Evidence storage (R2 STORAGE) is unavailable; passing verification cannot be marked reproducible.' }, 503);
+      }
+      const evidence = body.evidence && typeof body.evidence === 'object' ? body.evidence : {};
+      const logs = typeof (evidence as any).logs === 'string' ? (evidence as any).logs : '';
+      const existingArtifacts = await env.DB.prepare(`
+        SELECT id, kind, r2_key AS r2Key, sha256 FROM build_artifacts WHERE build_run_id = ? ORDER BY created_at ASC, id ASC
+      `).bind(workflow.buildRunId).all();
+      const artifactDigests = (existingArtifacts.results || []).map((row: any) => ({
+        id: row.id, kind: row.kind, r2Key: row.r2Key, sha256: row.sha256
+      }));
+      const completedAt = new Date().toISOString();
+      const bundle = buildEvidenceBundle({
+        buildRunId: workflow.buildRunId,
+        mergeAttemptId: workflow.mergeAttemptId,
+        mergeJobId: workflow.mergeJobId,
+        repositoryId: workflow.repositoryId,
+        status: status as 'passed' | 'failed' | 'timed_out',
+        exitCode,
+        durationMs,
+        resultDigest: resultDigest || null,
+        logs,
+        testReport: (evidence as any).testReport ?? null,
+        isolationAttestation: (evidence as any).isolationAttestation ?? null,
+        runtimeIdentity: (evidence as any).runtimeIdentity ?? null,
+        artifactDigests,
+        completedAt
+      });
+      const bundleBytes = new TextEncoder().encode(JSON.stringify(bundle));
+      evidenceBundleSizeBytes = bundleBytes.length;
+      evidenceBundleSha256 = `sha256:${await sha256Hex(bundleBytes)}`;
+      evidenceBundleR2Key = `verification-evidence/${workflow.buildRunId}/${eventId}.json`;
+      try {
+        await env.STORAGE.put(evidenceBundleR2Key, bundleBytes, {
+          httpMetadata: { contentType: 'application/json' },
+          customMetadata: { sha256: evidenceBundleSha256, buildRunId: workflow.buildRunId, mergeAttemptId: workflow.mergeAttemptId }
+        });
+      } catch {
+        return json({ success: false, error: 'Failed to persist the verification evidence bundle to R2; passing verification cannot be marked reproducible.' }, 503);
+      }
+    }
+
     const proposalId = `proposal:${workflow.mergeAttemptId}`;
     const statements = [
       env.DB.prepare(`UPDATE build_runs SET status = ?, result_digest = ?, exit_code = ?, duration_ms = ?,
-        started_at = COALESCE(started_at, queued_at), finished_at = CURRENT_TIMESTAMP
+        started_at = COALESCE(started_at, queued_at), finished_at = CURRENT_TIMESTAMP,
+        evidence_bundle_r2_key = ?, evidence_bundle_sha256 = ?,
+        evidence_bundle_recorded_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END
         WHERE id = ? AND status = 'running'`)
-        .bind(status, resultDigest || null, exitCode, durationMs, workflow.buildRunId),
+        .bind(status, resultDigest || null, exitCode, durationMs, evidenceBundleR2Key, evidenceBundleSha256, passed ? 1 : 0, workflow.buildRunId),
       env.DB.prepare(`UPDATE merge_attempts SET status = ?, failure_detail = ?, finished_at = CURRENT_TIMESTAMP
         WHERE id = ? AND status = 'preparing'`)
         .bind(passed ? 'preview_ready' : 'failed', passed ? null : `RIG verification ${status} (exit ${exitCode})`, workflow.mergeAttemptId),
@@ -208,16 +317,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: V
         .bind(eventId, claimToken)
     ];
     if (passed) {
-      const content = `RIG verified merge attempt ${workflow.mergeAttemptId}\nTarget: ${workflow.repositorySlug} ${workflow.targetRef}\nCAS: ${workflow.expectedTargetOid} → ${workflow.resultCommitOid}\nEvidence: ${resultDigest}`;
+      const content = `RIG verified merge attempt ${workflow.mergeAttemptId}\nTarget: ${workflow.repositorySlug} ${workflow.targetRef}\nCAS: ${workflow.expectedTargetOid} → ${workflow.resultCommitOid}\nEvidence: ${resultDigest}\nEvidence bundle: ${evidenceBundleSha256}`;
       statements.push(env.DB.prepare(`INSERT OR IGNORE INTO inbox_messages
         (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
         VALUES (?,?,?,'Verified merge proposal',?,?,?, ?,0,1,'proposal',?)`)
         .bind(proposalId, workflow.repositoryOwnerId, workflow.requestedByUserId,
           content.slice(0, 160), content, workflow.targetRef, workflow.resultCommitOid, workflow.mergeAttemptId));
+      statements.push(env.DB.prepare(`INSERT INTO build_artifacts
+        (id, build_run_id, kind, r2_key, sha256, media_type, size_bytes)
+        VALUES (?, ?, 'attestation', ?, ?, 'application/json', ?)`)
+        .bind(`art_${crypto.randomUUID().replace(/-/g, '')}`, workflow.buildRunId,
+          evidenceBundleR2Key, evidenceBundleSha256, evidenceBundleSizeBytes));
     }
     await env.DB.batch(statements);
     return json({ success: true, status, buildRunId: workflow.buildRunId,
-      mergeAttemptStatus: passed ? 'preview_ready' : 'failed', proposalId: passed ? proposalId : null, idempotent: false });
+      mergeAttemptStatus: passed ? 'preview_ready' : 'failed', proposalId: passed ? proposalId : null,
+      evidenceBundleR2Key, evidenceBundleSha256, idempotent: false });
   }
 
   return json({ success: false, error: 'Unsupported RIG verification action.' }, 400);

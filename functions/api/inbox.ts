@@ -6,9 +6,15 @@ import { requireAuth } from './_auth';
 import { getProposalDiff, resolveRepoPath } from '../../src/lib/gitsmith/gitStorage';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
+type R2Bucket = { get(key: string): Promise<any> };
 const jsonError = (error: string, status: number) => Response.json({ success: false, error }, { status });
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
+
+async function sha256HexOfBytes(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
 
 type InboxCursor = { userId: string; createdAt: string; id: string };
 
@@ -35,7 +41,7 @@ function normalizeKind(value: unknown): 'proposals' | 'agent_logs' | 'royalties'
   return 'feedback';
 }
 
-export const onRequestGet = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string } }) => {
+export const onRequestGet = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string; STORAGE?: R2Bucket } }) => {
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   if (!env.DB) return jsonError('Inbox storage is unavailable', 503);
@@ -70,7 +76,15 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
           r.id AS repositoryId, r.storage_key AS storageKey, r.slug AS repositorySlug,
           r.owner_user_id AS repositoryOwnerId,
           r.grantable_bps AS grantableBps,
-          fpv.git_ref AS versionFeatureRef
+          fpv.git_ref AS versionFeatureRef,
+          (SELECT build.evidence_bundle_r2_key FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS evidenceBundleR2Key,
+          (SELECT build.evidence_bundle_sha256 FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS evidenceBundleSha256
         FROM inbox_messages m
         LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
         LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
@@ -122,7 +136,52 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
         granted_bps: grantedBps,
         remainingGrantableBps,
         remaining_grantable_bps: remainingGrantableBps,
+        evidenceBundleR2Key: proposal.evidenceBundleR2Key || null,
+        evidenceBundleSha256: proposal.evidenceBundleSha256 || null,
+        evidenceBundleAvailable: Boolean(proposal.evidenceBundleR2Key && proposal.evidenceBundleSha256),
         ...diffResult
+      });
+    }
+
+    // 1b. Verification Evidence Bundle Action — streams the exact signed R2
+    // object a reviewer must load before approving (see the fail-closed gate
+    // in onRequestPost's approve/reject handler below).
+    if (action === 'evidence') {
+      const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId') || url.searchParams.get('mergeAttemptId');
+      if (!proposalId) return jsonError('proposalId is required', 400);
+      const proposal = await env.DB.prepare(`
+        SELECT m.merge_attempt_id AS mergeAttemptId,
+          (SELECT build.evidence_bundle_r2_key FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS evidenceBundleR2Key,
+          (SELECT build.evidence_bundle_sha256 FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS evidenceBundleSha256
+        FROM inbox_messages m
+        LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
+        WHERE (m.id = ? OR m.merge_attempt_id = ?) AND (m.user_id = ? OR m.sender_id = ?)
+      `).bind(proposalId, proposalId, auth.user!.id, auth.user!.id).first();
+      if (!proposal) return jsonError('Proposal not found or access denied', 404);
+      if (!proposal.evidenceBundleR2Key || !proposal.evidenceBundleSha256) {
+        return jsonError('No signed verification evidence bundle is recorded for this merge attempt', 404);
+      }
+      if (!env.STORAGE || typeof env.STORAGE.get !== 'function') {
+        return jsonError('Evidence storage (R2 STORAGE) is unavailable', 503);
+      }
+      const bundleObject = await env.STORAGE.get(proposal.evidenceBundleR2Key).catch(() => null);
+      if (!bundleObject) return jsonError('The recorded verification evidence bundle is missing from R2', 409);
+      const bundleBytes: ArrayBuffer = typeof bundleObject.arrayBuffer === 'function'
+        ? await bundleObject.arrayBuffer()
+        : bundleObject;
+      const recomputedSha256 = `sha256:${await sha256HexOfBytes(bundleBytes)}`;
+      if (recomputedSha256 !== proposal.evidenceBundleSha256) {
+        return jsonError('The verification evidence bundle in R2 does not match its recorded digest', 409);
+      }
+      return new Response(bundleBytes, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store', 'X-Evidence-Bundle-Sha256': recomputedSha256 }
       });
     }
 
@@ -237,7 +296,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
   }
 };
 
-export const onRequestPost = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string } }) => {
+export const onRequestPost = async ({ request, env }: { request: Request; env: { DB?: D1Database; GITSMITH_REPOS_ROOT?: string; STORAGE?: R2Bucket } }) => {
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   if (!env.DB) return jsonError('Inbox storage is unavailable', 503);
@@ -389,7 +448,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
           mj.requested_by_user_id AS requestedByUserId,
           r.id AS repositoryId, r.owner_user_id AS repositoryOwnerId,
           r.storage_key AS storageKey,
-          r.grantable_bps AS grantableBps
+          r.grantable_bps AS grantableBps,
+          (SELECT build.id FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS buildRunId,
+          (SELECT build.evidence_bundle_r2_key FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS evidenceBundleR2Key,
+          (SELECT build.evidence_bundle_sha256 FROM build_runs build
+            WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
+              AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
+            ORDER BY build.finished_at DESC LIMIT 1) AS evidenceBundleSha256
         FROM inbox_messages m
         LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
         LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
@@ -423,6 +494,33 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
         }
         if (reviewedTargetOid !== proposal.inputTargetOid || reviewedSourceOid !== proposal.resultCommitOid) {
           return jsonError('Cannot approve: the target or source OID has drifted since you loaded the evidence. Reload the proposal and re-review before approving.', 409);
+        }
+      }
+
+      // Signed R2 verification-evidence bundle gate (fail closed on missing/mismatched
+      // bundle). ADDITIONAL to the reviewer-saw-OID gate above and the CAS/fast-forward
+      // checks below: a merge attempt may only be approved if its passing RIG
+      // verification run recorded exactly one immutable evidence bundle in R2, and the
+      // bytes at that R2 key still hash to the digest recorded on build_runs at
+      // verification-complete time. Missing STORAGE, a missing object, or any digest
+      // mismatch fails closed — approval never proceeds on unverifiable evidence.
+      if (decision === 'approved') {
+        if (!proposal.evidenceBundleR2Key || !proposal.evidenceBundleSha256) {
+          return jsonError('Cannot approve: no signed verification evidence bundle is recorded for this merge attempt. A passing RIG verification run must produce an evidence bundle before it can be approved.', 409);
+        }
+        if (!env.STORAGE || typeof env.STORAGE.get !== 'function') {
+          return jsonError('Cannot approve: evidence storage (R2 STORAGE) is unavailable, so the recorded evidence bundle cannot be verified.', 503);
+        }
+        const bundleObject = await env.STORAGE.get(proposal.evidenceBundleR2Key).catch(() => null);
+        if (!bundleObject) {
+          return jsonError('Cannot approve: the recorded verification evidence bundle is missing from R2.', 409);
+        }
+        const bundleBytes: ArrayBuffer = typeof bundleObject.arrayBuffer === 'function'
+          ? await bundleObject.arrayBuffer()
+          : bundleObject;
+        const recomputedSha256 = `sha256:${await sha256HexOfBytes(bundleBytes)}`;
+        if (recomputedSha256 !== proposal.evidenceBundleSha256) {
+          return jsonError('Cannot approve: the verification evidence bundle in R2 does not match its recorded digest. The evidence may have been tampered with or corrupted.', 409);
         }
       }
 

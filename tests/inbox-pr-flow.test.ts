@@ -32,6 +32,18 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
   let commit3Oid: string;
   let commit4DivergedOid: string;
 
+  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
+  // (Fix 1, RIG spec) can be satisfied by this pre-existing PR-flow suite.
+  const storage = {
+    store: new Map<string, Uint8Array>(),
+    async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
+    async get(key: string) {
+      const bytes = this.store.get(key);
+      if (!bytes) return null;
+      return { arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+    }
+  };
+
   beforeEach(async () => {
     ctx = await createTestD1Database({ foreignKeys: true });
 
@@ -283,6 +295,24 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
   // 2. HTTP DIFF & COMMENTS ENDPOINTS INTEGRATION
   // =========================================================================
   describe('2. HTTP Diff & Comment Endpoints', () => {
+    // Seeds a passing build_runs row + matching signed R2 evidence bundle for
+    // a merge attempt, so a subsequent 'approve' satisfies the Fix 1 gate.
+    async function seedEvidenceBundle(attemptId: string, repositoryId: string, resultCommitOid: string) {
+      const buildId = `build-${attemptId}`;
+      const bytes = new TextEncoder().encode(JSON.stringify({ logs: 'ok', mergeAttemptId: attemptId }));
+      const digest = await crypto.subtle.digest('SHA-256', bytes);
+      const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+      const r2Key = `verification-evidence/${buildId}/auto.json`;
+      const sha256 = `sha256:${hex}`;
+      await storage.put(r2Key, bytes);
+      await ctx.d1.prepare(`INSERT INTO build_runs
+        (id,repository_id,commit_oid,merge_attempt_id,purpose,status,runner_image_digest,build_command,test_command,source_manifest_digest,
+         evidence_bundle_r2_key,evidence_bundle_sha256,evidence_bundle_recorded_at)
+        VALUES (?,?,?,?,'verification','passed',?,'npm run build','npm test',?,?,?,CURRENT_TIMESTAMP)`)
+        .bind(buildId, repositoryId, resultCommitOid, attemptId,
+          `node@sha256:${'c'.repeat(64)}`, `sha256:${'d'.repeat(64)}`, r2Key, sha256).run();
+    }
+
     async function seedProposalInD1() {
       await ctx.d1.prepare(`INSERT INTO repositories
         (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
@@ -300,6 +330,8 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
         VALUES ('proposal:attempt-pr','usr_nate','usr_sam','feat: add dronehunter exporter','Export PR','Please review this real diff','refs/heads/feature',?,0,1,'proposal','attempt-pr')`)
         .bind(commit3Oid).run();
+
+      await seedEvidenceBundle('attempt-pr', 'repo-pr', commit3Oid);
     }
 
     it('serves real diff, commit list, and files via /api/inbox?action=diff', async () => {
@@ -393,6 +425,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
         VALUES ('proposal:attempt-pr-div','usr_nate','usr_sam','feat: divergent PR','Divergent PR','Please review','refs/heads/feature',?,0,1,'proposal','attempt-pr-div')`)
         .bind(commit3Oid).run();
+      await seedEvidenceBundle('attempt-pr-div', 'repo-pr', commit3Oid);
 
       // Attempt to approve divergent proposal
       const approveReq = new Request('http://localhost/api/inbox', {
@@ -406,7 +439,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
           reviewedSourceOid: commit3Oid
         })
       });
-      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any } });
       expect(approveRes.status).toBe(409);
       const approveData: any = await approveRes.json();
       expect(approveData.success).toBe(false);
@@ -437,6 +470,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         (id,user_id,sender_id,title,preview,content,feature_ref,cas_new_sha,is_merged,unread,message_kind,merge_attempt_id)
         VALUES ('proposal:attempt-pr-missing','usr_nate','usr_sam','feat: missing repo PR','Missing Repo PR','Please review','refs/heads/feature',?,0,1,'proposal','attempt-pr-missing')`)
         .bind(commit3Oid).run();
+      await seedEvidenceBundle('attempt-pr-missing', 'repo-pr-missing', commit3Oid);
 
       const approveReq = new Request('http://localhost/api/inbox', {
         method: 'POST',
@@ -449,7 +483,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
           reviewedSourceOid: commit3Oid
         })
       });
-      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any } });
       expect(approveRes.status).toBe(409);
       const approveData: any = await approveRes.json();
       expect(approveData.success).toBe(false);
@@ -477,7 +511,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
           reviewedSourceOid: commit3Oid
         })
       });
-      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+      const approveRes = await inboxApi.onRequestPost({ request: approveReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any } });
       expect(approveRes.status).toBe(200);
       const approveData: any = await approveRes.json();
       expect(approveData.success).toBe(true);
