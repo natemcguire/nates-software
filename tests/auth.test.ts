@@ -505,5 +505,151 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(claimData.user.username).toBe('nate');
     });
   });
+
+  describe('5. Personal Access CLI Token Minting (/api/auth?action=create-cli-token)', () => {
+    let ctx: TestD1Context;
+
+    beforeEach(async () => {
+      ctx = await createTestD1Database({ foreignKeys: true });
+    });
+
+    it('should reject unauthenticated create-cli-token requests with 401', async () => {
+      const req = new Request('http://localhost/api/auth?action=create-cli-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const res = await authApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(401);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('Unauthorized');
+    });
+
+    it('should reject cookie-authenticated create-cli-token requests if cross-origin (CSRF protection)', async () => {
+      // First create a session
+      const rawToken = authApi.generateSessionToken();
+      const tokenHash = await hashSessionToken(rawToken);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(tokenHash, Date.now() + 3600 * 1000).run();
+
+      const req = new Request('http://localhost/api/auth?action=create-cli-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': `nsw_session=${rawToken}`,
+          'Origin': 'https://evil-attacker.com'
+        }
+      });
+
+      const res = await authApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(403);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain('Forbidden');
+    });
+
+    it('should mint a 90-day CLI token for authenticated user and validate round-trip with GET /api/auth', async () => {
+      // 1. Seed an active session for @nate
+      const rawWebToken = authApi.generateSessionToken();
+      const webTokenHash = await hashSessionToken(rawWebToken);
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(webTokenHash, Date.now() + 3600 * 1000).run();
+
+      // 2. Request CLI token with valid same-origin web session
+      const mintReq = new Request('http://localhost/api/auth?action=create-cli-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': `nsw_session=${rawWebToken}`,
+          'Origin': 'http://localhost'
+        }
+      });
+
+      const mintRes = await authApi.onRequestPost({ request: mintReq, env: { DB: ctx.d1 } });
+      expect(mintRes.status).toBe(200);
+      const mintData = await mintRes.json();
+
+      expect(mintData.success).toBe(true);
+      expect(mintData.token).toBeDefined();
+      expect(typeof mintData.token).toBe('string');
+      expect(mintData.token.length).toBe(64);
+      expect(mintData.user.username).toBe('nate');
+      expect(mintData.user.id).toBe('usr_nate');
+
+      // Verify long expiry (~90 days)
+      const expectedMinExpiry = Date.now() + 89 * 24 * 3600 * 1000;
+      expect(mintData.expiresAt).toBeGreaterThan(expectedMinExpiry);
+
+      // 3. Verify the CLI token is stored in D1 as a hash, never plaintext
+      const cliTokenHash = await hashSessionToken(mintData.token);
+      const storedSession: any = await ctx.d1.prepare(`
+        SELECT * FROM user_sessions WHERE token_hash = ?
+      `).bind(cliTokenHash).first();
+      expect(storedSession).not.toBeNull();
+      expect(storedSession.user_id).toBe('usr_nate');
+
+      // 4. Validate CLI token with GET /api/auth using Bearer header
+      const validateReq = new Request('http://localhost/api/auth', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${mintData.token}`
+        }
+      });
+
+      const validateRes = await authApi.onRequestGet({ request: validateReq, env: { DB: ctx.d1 } });
+      expect(validateRes.status).toBe(200);
+      const validateData = await validateRes.json();
+
+      expect(validateData.success).toBe(true);
+      expect(validateData.authenticated).toBe(true);
+      expect(validateData.expiresAt).toBe(storedSession.expires_at);
+      expect(typeof validateData.expiresAt).toBe('number');
+      expect(validateData.user.username).toBe('nate');
+      expect(validateData.user.id).toBe('usr_nate');
+    });
+
+    it('should revoke minted CLI token when logout is called with that token', async () => {
+      // 1. Seed user and session
+      const rawWebToken = authApi.generateSessionToken();
+      await ctx.d1.prepare(`
+        INSERT INTO user_sessions (token_hash, user_id, expires_at)
+        VALUES (?, 'usr_nate', ?)
+      `).bind(await hashSessionToken(rawWebToken), Date.now() + 3600 * 1000).run();
+
+      // 2. Mint CLI token
+      const mintReq = new Request('http://localhost/api/auth?action=create-cli-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${rawWebToken}`
+        }
+      });
+      const mintRes = await authApi.onRequestPost({ request: mintReq, env: { DB: ctx.d1 } });
+      const mintData = await mintRes.json();
+      const cliToken = mintData.token;
+
+      // 3. Logout with CLI token
+      const logoutReq = new Request('http://localhost/api/auth?action=logout', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cliToken}` }
+      });
+      const logoutRes = await authApi.onRequestPost({ request: logoutReq, env: { DB: ctx.d1 } });
+      expect((await logoutRes.json()).success).toBe(true);
+
+      // 4. Validate GET /api/auth returns authenticated: false
+      const validateReq = new Request('http://localhost/api/auth', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${cliToken}` }
+      });
+      const validateData = await (await authApi.onRequestGet({ request: validateReq, env: { DB: ctx.d1 } })).json();
+      expect(validateData.authenticated).toBe(false);
+      expect(validateData.user).toBeNull();
+    });
+  });
 });
 

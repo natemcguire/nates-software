@@ -48,6 +48,33 @@ function getChildProcess(): any {
   return getNodeModule('node:child_process') || getNodeModule('child_process');
 }
 
+function getStream(): any {
+  return getNodeModule('node:stream') || getNodeModule('stream');
+}
+
+export function resolveControlPlaneUrl(customUrl?: string): string {
+  const raw = customUrl || (typeof process !== 'undefined' ? (process.env.SLOP_CONTROL_PLANE_URL || process.env.GITSMITH_CONTROL_PLANE_URL) : '') || 'https://nates-software.com';
+  const urlStr = raw.trim();
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(urlStr);
+  } catch {
+    throw new Error(`Invalid control-plane URL: "${urlStr}"`);
+  }
+
+  if (parsedUrl.protocol !== 'https:') {
+    const allowInsecure = typeof process !== 'undefined' && process.env.SLOP_INSECURE === '1';
+    if (allowInsecure) {
+      console.warn(`[SECURITY WARNING] Insecure control-plane URL allowed via SLOP_INSECURE=1: ${urlStr}`);
+    } else {
+      throw new Error(`Insecure control-plane URL rejected: "${urlStr}". HTTPS is required to protect bearer tokens unless SLOP_INSECURE=1 is explicitly set.`);
+    }
+  }
+
+  return urlStr.replace(/\/+$/, '');
+}
+
 
 export interface SlopCommandResult {
   readonly success: boolean;
@@ -78,6 +105,151 @@ export function getEngineStartInstructions(worktreePath: string): string[] {
   return ENGINE_CHOICES.map(engine =>
     `  ${engine.key}. ${engine.label.padEnd(20)} cd "${worktreePath}" && ${engine.binary}${engine.args.length ? ` ${engine.args.join(" ")}` : ""}`
   );
+}
+
+export interface StoredCredentials {
+  sessionToken: string;
+  username: string;
+  expiresAt?: number;
+  [key: string]: any;
+}
+
+export function getCredentialsFilePath(): string {
+  const pathMod = getPath();
+  const xdgConfig = typeof process !== 'undefined' ? process.env.XDG_CONFIG_HOME : undefined;
+  if (xdgConfig && xdgConfig.trim()) {
+    return pathMod ? pathMod.join(xdgConfig.trim(), 'slop', 'credentials') : `${xdgConfig.trim()}/slop/credentials`;
+  }
+  const osMod = getOs();
+  const home = (typeof process !== 'undefined' && process.env.HOME) || (osMod && typeof osMod.homedir === 'function' ? osMod.homedir() : '/tmp');
+  return pathMod ? pathMod.join(home, '.config', 'slop', 'credentials') : `${home}/.config/slop/credentials`;
+}
+
+export function readStoredCredentials(): StoredCredentials | null {
+  const fsMod = getFs();
+  if (!fsMod) return null;
+  const credPath = getCredentialsFilePath();
+  try {
+    if (!fsMod.existsSync(credPath)) return null;
+    const stat = fsMod.lstatSync(credPath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      return null;
+    }
+    const raw = fsMod.readFileSync(credPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || !parsed.sessionToken) {
+      return null;
+    }
+    if (parsed.expiresAt && typeof parsed.expiresAt === 'number' && parsed.expiresAt <= Date.now()) {
+      return null;
+    }
+    return parsed as StoredCredentials;
+  } catch {
+    return null;
+  }
+}
+
+export function writeStoredCredentials(creds: StoredCredentials): void {
+  const fsMod = getFs();
+  const pathMod = getPath();
+  if (!fsMod) return;
+
+  const credPath = getCredentialsFilePath();
+  const credDir = pathMod ? pathMod.dirname(credPath) : credPath.substring(0, credPath.lastIndexOf('/'));
+
+  // 1. Resolve directory and verify permissions/ownership
+  let dirStat: any = null;
+  try {
+    dirStat = fsMod.lstatSync(credDir);
+  } catch (err: any) {
+    if (err.code !== 'ENOENT') {
+      throw err;
+    }
+  }
+
+  if (dirStat) {
+    if (dirStat.isSymbolicLink()) {
+      throw new Error(`Refusing to write credentials: directory "${credDir}" is a symbolic link.`);
+    }
+    if (!dirStat.isDirectory()) {
+      throw new Error(`Refusing to write credentials: directory "${credDir}" is not a directory.`);
+    }
+    if (typeof process !== 'undefined' && typeof process.getuid === 'function') {
+      const currentUid = process.getuid();
+      if (dirStat.uid !== currentUid) {
+        throw new Error(`Refusing to write credentials: directory "${credDir}" is owned by uid ${dirStat.uid}, expected uid ${currentUid}.`);
+      }
+    }
+    try {
+      fsMod.chmodSync(credDir, 0o700);
+    } catch {}
+  } else {
+    fsMod.mkdirSync(credDir, { recursive: true, mode: 0o700 });
+    try {
+      fsMod.chmodSync(credDir, 0o700);
+    } catch {}
+  }
+
+  // 2. Reject existing symlinks or non-regular files at the credentials path
+  try {
+    const fileStat = fsMod.lstatSync(credPath);
+    if (fileStat.isSymbolicLink()) {
+      throw new Error(`Refusing to write credentials: "${credPath}" is a symbolic link.`);
+    }
+    if (!fileStat.isFile()) {
+      throw new Error(`Refusing to write credentials: "${credPath}" is not a regular file.`);
+    }
+  } catch (err: any) {
+    if (err.code !== 'ENOENT') {
+      throw err;
+    }
+  }
+
+  // 3. Write atomically to a temporary file in the same verified directory
+  const pid = typeof process !== 'undefined' ? process.pid : Math.floor(Math.random() * 100000);
+  const nonce = `${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+  const tmpPath = pathMod ? pathMod.join(credDir, `credentials.${pid}.${nonce}.tmp`) : `${credDir}/credentials.${pid}.${nonce}.tmp`;
+
+  let fd: number | null = null;
+  try {
+    fd = fsMod.openSync(tmpPath, 'wx', 0o600);
+    fsMod.writeFileSync(fd, JSON.stringify(creds, null, 2), 'utf8');
+    fsMod.closeSync(fd);
+    fd = null;
+
+    try {
+      fsMod.chmodSync(tmpPath, 0o600);
+    } catch {}
+
+    fsMod.renameSync(tmpPath, credPath);
+
+    try {
+      fsMod.chmodSync(credPath, 0o600);
+    } catch {}
+  } catch (err: any) {
+    if (fd !== null) {
+      try { fsMod.closeSync(fd); } catch {}
+    }
+    try {
+      if (fsMod.existsSync(tmpPath)) {
+        fsMod.unlinkSync(tmpPath);
+      }
+    } catch {}
+    throw err;
+  }
+}
+
+export function deleteStoredCredentials(): boolean {
+  const fsMod = getFs();
+  if (!fsMod) return false;
+  const credPath = getCredentialsFilePath();
+  try {
+    if (fsMod.existsSync(credPath) || fsMod.lstatSync?.(credPath)) {
+      fsMod.unlinkSync(credPath);
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 export async function promptToStartEngines(result: SlopCommandResult): Promise<SlopCommandResult> {
@@ -458,8 +630,8 @@ export async function handleFork(
         // Canonical Forge Fork API Call
         // Call the canonical fork API on the control plane (/api/git with action: 'fork')
         // to register the fork with immutable parent->child ancestry.
-        const token = options.sessionToken || options.token || (typeof process !== 'undefined' ? (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN) : '') || ((typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 'valid_test_token' : '');
-        const controlPlaneUrl = options.controlPlaneUrl || (typeof process !== 'undefined' ? (process.env.SLOP_CONTROL_PLANE_URL || process.env.GITSMITH_CONTROL_PLANE_URL) : '') || 'https://nates-software.com';
+        const token = options.sessionToken || options.token || (typeof process !== 'undefined' ? (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN) : '') || readStoredCredentials()?.sessionToken || ((typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 'valid_test_token' : '');
+        const controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
 
         let parentIdentifier = slug;
         if (isDirectLocal && directLocalPath) {
@@ -1399,14 +1571,318 @@ export function handleShelf(): SlopCommandResult {
   };
 }
 
-export function handleLogin(): SlopCommandResult {
-  const error = 'CLI device authentication is not commissioned. No identity or SSH key was authenticated.';
-  console.error(`[AUTH] ${error}`);
+export async function readTokenFromStdin(options: any = {}): Promise<string> {
+  const stdinStream = options.stdin || (isNode ? process.stdin : null);
+  if (!stdinStream) return '';
+
+  const isTTY = typeof options.isTTY === 'boolean'
+    ? options.isTTY
+    : Boolean(stdinStream.isTTY);
+
+  if (isTTY) {
+    const readline = getNodeModule("node:readline") || getNodeModule("readline");
+    const streamMod = getStream();
+    const stdoutStream = options.stdout || (isNode ? process.stdout : null);
+
+    if (readline && streamMod?.Writable && stdoutStream) {
+      let muted = false;
+      const mutableStdout = new streamMod.Writable({
+        write(chunk: any, encoding: any, callback: any) {
+          if (!muted) {
+            stdoutStream.write(chunk, encoding);
+          }
+          callback();
+        }
+      });
+
+      const rl = readline.createInterface({
+        input: stdinStream,
+        output: mutableStdout,
+        terminal: true
+      });
+
+      return new Promise<string>((resolve) => {
+        let resolved = false;
+        const prompt = "Paste your CLI token (from PROFILE.CFG → Generate CLI token): ";
+        stdoutStream.write(prompt);
+        muted = true;
+
+        const finish = (val: string) => {
+          if (!resolved) {
+            resolved = true;
+            muted = false;
+            stdoutStream.write('\n');
+            rl.close();
+            resolve(val.trim());
+          }
+        };
+
+        rl.question('', (answer: string) => {
+          finish(answer);
+        });
+
+        rl.on('SIGINT', () => {
+          finish('');
+        });
+
+        rl.on('close', () => {
+          if (!resolved) {
+            resolved = true;
+            muted = false;
+            resolve('');
+          }
+        });
+      });
+    }
+  } else {
+    // Non-TTY / piped stdin fallback (e.g. echo $TOKEN | slop login)
+    // Avoid reading hanging process.stdin in Vitest when no explicit options.stdin was provided
+    const isVitest = typeof process !== 'undefined' && (process.env.VITEST || process.env.NODE_ENV === 'test');
+    if (isVitest && !options.stdin) {
+      return '';
+    }
+
+    const readline = getNodeModule("node:readline") || getNodeModule("readline");
+    if (readline?.createInterface) {
+      return new Promise<string>((resolve) => {
+        const rl = readline.createInterface({
+          input: stdinStream,
+          crlfDelay: Infinity
+        });
+        let resolved = false;
+        rl.on('line', (line: string) => {
+          if (!resolved) {
+            resolved = true;
+            rl.close();
+            resolve(line.trim());
+          }
+        });
+        rl.on('close', () => {
+          if (!resolved) {
+            resolved = true;
+            resolve('');
+          }
+        });
+        rl.on('error', () => {
+          if (!resolved) {
+            resolved = true;
+            resolve('');
+          }
+        });
+      });
+    }
+  }
+
+  return '';
+}
+
+export async function handleLogin(args: string[] = [], options: any = {}): Promise<SlopCommandResult> {
+  // Extract token from flags, positional arguments, options, or environment
+  let token = (options.token || options.sessionToken || '').trim();
+
+  if (!token && Array.isArray(args)) {
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg.startsWith('--token=')) {
+        token = arg.slice(8).trim();
+        break;
+      } else if (arg.startsWith('-t=')) {
+        token = arg.slice(3).trim();
+        break;
+      } else if (arg === '--token' || arg === '-t') {
+        if (args[i + 1] && !args[i + 1].startsWith('-')) {
+          token = args[i + 1].trim();
+          break;
+        }
+      } else if (!arg.startsWith('-') && !token) {
+        token = arg.trim();
+      }
+    }
+  }
+
+  if (!token && typeof process !== 'undefined') {
+    token = (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN || '').trim();
+  }
+
+  // Interactive masked prompt or non-TTY stdin if no token provided
+  if (!token && !options.nonInteractive) {
+    try {
+      token = await readTokenFromStdin(options);
+    } catch {}
+  }
+
+  if (!token) {
+    const errorMsg = 'No CLI token provided. Generate a token from PROFILE.CFG → Generate CLI token, then run "slop login" to paste interactively (or "slop login --token <token>" for CI environments; note: --token may leak via shell history).';
+    console.error(`[AUTH] ${errorMsg}`);
+    return {
+      success: false,
+      command: "login",
+      message: errorMsg,
+      data: { authenticated: false, profile: null }
+    };
+  }
+
+  // Validate the token against the control plane
+  let controlPlaneUrl: string;
+  try {
+    controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
+  } catch (err: any) {
+    console.error(`[AUTH] ${err.message}`);
+    return {
+      success: false,
+      command: "login",
+      message: err.message,
+      data: { authenticated: false, profile: null }
+    };
+  }
+
+  let authRes: Response | null = null;
+  try {
+    if (options.env) {
+      const req = new Request(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const authModulePath = "../functions/api/auth.ts";
+      const authControlPlane = await import(/* @vite-ignore */ authModulePath);
+      authRes = await authControlPlane.onRequestGet({ request: req, env: options.env });
+    } else if (options.fetchImpl) {
+      authRes = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } else if (typeof fetch !== 'undefined') {
+      authRes = await fetch(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        signal: AbortSignal.timeout(5000)
+      });
+    } else {
+      throw new Error('Control plane fetch is unavailable in this environment.');
+    }
+  } catch (err: any) {
+    const msg = `Control plane unreachable at ${controlPlaneUrl}: ${err.message}`;
+    console.error(`[AUTH] ${msg}`);
+    return {
+      success: false,
+      command: "login",
+      message: msg,
+      data: { authenticated: false, profile: null }
+    };
+  }
+
+  if (!authRes || !authRes.ok) {
+    const msg = `Invalid or expired CLI token (HTTP ${authRes?.status || 'network error'}). Please generate a new token from PROFILE.CFG.`;
+    console.error(`[AUTH] ${msg}`);
+    return {
+      success: false,
+      command: "login",
+      message: msg,
+      data: { authenticated: false, profile: null }
+    };
+  }
+
+  const authData: any = await authRes.json().catch(() => ({}));
+  if (!authData.success || !authData.authenticated || !authData.user?.username) {
+    const msg = authData.error || 'Invalid or expired CLI token. Please generate a new token from PROFILE.CFG.';
+    console.error(`[AUTH] ${msg}`);
+    return {
+      success: false,
+      command: "login",
+      message: msg,
+      data: { authenticated: false, profile: null }
+    };
+  }
+
+  const username = authData.user.username;
+  const expiresAt = typeof authData.expiresAt === 'number' && Number.isFinite(authData.expiresAt)
+    ? authData.expiresAt
+    : undefined;
+
+  try {
+    writeStoredCredentials({
+      sessionToken: token,
+      username,
+      ...(expiresAt ? { expiresAt } : {})
+    });
+  } catch (err: any) {
+    const msg = `Failed to save credentials: ${err.message}`;
+    console.error(`[AUTH] ${msg}`);
+    return {
+      success: false,
+      command: "login",
+      message: msg,
+      data: { authenticated: false, profile: null }
+    };
+  }
+
+  const successMsg = `Logged in as @${username}. slop fork and friends will use this token.`;
+  console.log(successMsg);
+
   return {
-    success: false,
+    success: true,
     command: "login",
-    message: error,
-    data: { authenticated: false, profile: null }
+    message: successMsg,
+    data: {
+      authenticated: true,
+      username,
+      expiresAt
+    }
+  };
+}
+
+export async function handleLogout(_args: string[] = [], options: any = {}): Promise<SlopCommandResult> {
+  const existing = readStoredCredentials();
+  const token = existing?.sessionToken || (typeof process !== 'undefined' ? (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN) : '');
+
+  if (token) {
+    let controlPlaneUrl: string | null = null;
+    try {
+      controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
+    } catch {}
+    if (controlPlaneUrl) {
+      try {
+        if (options.env) {
+          const req = new Request(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth?action=logout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const authModulePath = "../functions/api/auth.ts";
+          const authControlPlane = await import(/* @vite-ignore */ authModulePath);
+          await authControlPlane.onRequestPost({ request: req, env: options.env });
+        } else if (options.fetchImpl) {
+          await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth?action=logout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+        } else if (typeof fetch !== 'undefined') {
+          await fetch(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth?action=logout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            signal: AbortSignal.timeout(3000)
+          }).catch(() => {});
+        }
+      } catch {}
+    }
+  }
+
+  deleteStoredCredentials();
+  const message = existing?.username
+    ? `Logged out @${existing.username}. CLI credentials removed.`
+    : `Logged out. CLI credentials removed.`;
+  console.log(message);
+
+  return {
+    success: true,
+    command: "logout",
+    message,
+    data: { authenticated: false, username: null }
   };
 }
 
@@ -1486,7 +1962,8 @@ Commands:
   slop status          Inspect micro-containers & active ports (3001..3010)
   slop list            Query 12:01 AM daily drops on Cloudflare D1
   slop shelf           Display owned software titles & license keys
-  slop login           Authenticate maker handle & SSH public keys
+  slop login [options] Authenticate CLI with personal access token (interactive masked prompt preferred; --token <token> for CI/non-interactive, note: CLI flags may be recorded in shell history)
+  slop logout          Remove stored CLI credentials
   slop help            Display this help manual
 `;
   console.log(helpText);
@@ -1537,7 +2014,10 @@ export function runSlopCli(rawArgs: string[] = process.argv.slice(2)): SlopComma
       return handleShelf();
 
     case "login":
-      return handleLogin();
+      return handleLogin(rawArgs.slice(1));
+
+    case "logout":
+      return handleLogout(rawArgs.slice(1));
 
     case "help":
     case "--help":
