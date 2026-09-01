@@ -134,16 +134,22 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     fetch(`/api/comments?app_id=${app.id}`)
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.comments && data.comments.length > 0) {
+        if (data.success && Array.isArray(data.comments)) {
           setComments(data.comments);
-        } else {
+        } else if (app.isDemo) {
           setComments(app.comments || []);
+        } else {
+          setComments([]);
         }
       })
       .catch(() => {
-        setComments(app.comments || []);
+        if (app.isDemo) {
+          setComments(app.comments || []);
+        } else {
+          setComments([]);
+        }
       });
-  }, [app.id]);
+  }, [app.id, app.isDemo]);
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,7 +285,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             onClick={() => { setActiveTab('screenshots'); playClickSound(); }}
             className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'screenshots' ? 'btn-w95-primary' : ''}`}
           >
-            <ImageIcon size={13} /> Shots ({app.screenshots.length})
+            <ImageIcon size={13} /> Shots ({app.screenshots?.length || 0})
           </button>
           <button
             onClick={() => { setActiveTab('comments'); playClickSound(); }}
@@ -298,16 +304,25 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             <div className="bg-gray-100 p-2 border border-gray-300 mb-2 flex items-center justify-between text-xs font-mono flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-gray-700">Subdomain: <strong className="text-blue-800">{app.id}.nates-software.com</strong></span>
-                <a
-                  href={`https://${app.id}.nates-software.com`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => playClickSound()}
-                  className="btn-w95 text-xs py-1 px-3 bg-blue-50 text-blue-900 font-bold flex items-center gap-1.5 hover:bg-blue-100 shadow-sm border border-blue-400"
-                  title={`Open https://${app.id}.nates-software.com in a new browser window`}
-                >
-                  <ExternalLink size={13} /> Open in New Window
-                </a>
+                {app.deploymentState === 'active' || app.activeDeploymentId || app.liveUrl ? (
+                  <a
+                    href={app.liveUrl || `https://${app.id}.nates-software.com`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => playClickSound()}
+                    className="btn-w95 text-xs py-1 px-3 bg-blue-50 text-blue-900 font-bold flex items-center gap-1.5 hover:bg-blue-100 shadow-sm border border-blue-400"
+                    title={`Open https://${app.id}.nates-software.com in a new browser window`}
+                  >
+                    <ExternalLink size={13} /> Open in New Window
+                  </a>
+                ) : (
+                  <span
+                    className="btn-w95 text-xs py-1 px-3 text-gray-400 cursor-not-allowed opacity-70 font-medium border border-gray-300 flex items-center gap-1.5"
+                    title="Subdomain not active for draft listing"
+                  >
+                    <ExternalLink size={13} /> Draft (Unpublished)
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded border border-green-300 font-bold">
@@ -374,28 +389,38 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
         {/* TAB 2: Screenshots */}
         {activeTab === 'screenshots' && (
-          <div className="h-full flex flex-col items-center justify-center p-2">
-            <img
-              src={resolveScreenshotUrl(app.screenshots[activeShotIdx])}
-              alt={app.name}
-              className="max-h-[340px] rounded border border-gray-400 shadow-md object-contain"
-            />
-            {app.screenshots.length > 1 && (
-              <div className="flex gap-2 mt-3">
-                {app.screenshots.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setActiveShotIdx(i)}
-                    className={`px-3 py-1 text-xs font-mono font-bold rounded ${
-                      activeShotIdx === i ? 'bg-blue-800 text-white' : 'bg-gray-200 text-gray-700'
-                    }`}
-                  >
-                    Slide {i + 1}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          app.screenshots && app.screenshots.length > 0 ? (
+            <div className="h-full flex flex-col items-center justify-center p-2">
+              <img
+                src={resolveScreenshotUrl(app.screenshots[activeShotIdx])}
+                alt={app.name}
+                className="max-h-[340px] rounded border border-gray-400 shadow-md object-contain"
+              />
+              {app.screenshots.length > 1 && (
+                <div className="flex gap-2 mt-3">
+                  {app.screenshots.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveShotIdx(i)}
+                      className={`px-3 py-1 text-xs font-mono font-bold rounded ${
+                        activeShotIdx === i ? 'bg-blue-800 text-white' : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      Slide {i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-gray-50 border border-dashed border-gray-300 rounded">
+              <ImageIcon size={36} className="text-gray-400 mb-2" />
+              <h4 className="font-bold text-gray-700 text-sm">No Screenshots Uploaded</h4>
+              <p className="text-xs text-gray-500 max-w-sm mt-1">
+                The maker has not attached any screenshot previews to this drop yet.
+              </p>
+            </div>
+          )
         )}
 
         {/* TAB 4: Comments & Pinned Maker Story */}
@@ -420,25 +445,33 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             )}
 
             {/* Comment List */}
-            <div className="flex-1 overflow-y-auto space-y-2 border border-gray-300 p-2 bg-gray-50 rounded">
-              {comments.map(c => (
-                <div key={c.id} className="bg-white p-2.5 rounded border border-gray-200 space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-blue-900 flex items-center gap-1">
-                      <span>{c.avatar}</span>
-                      <span>{c.author}</span>
-                      {c.isMaker && (
-                        <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1 rounded">
-                          MAKER
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-gray-400 font-mono">{c.timestamp || c.time}</span>
+            {comments.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500 bg-gray-50 border border-dashed border-gray-300 rounded">
+                <MessageSquare size={28} className="text-gray-400 mb-2" />
+                <div className="font-bold text-xs text-gray-700">No comments yet</div>
+                <p className="text-[11px] text-gray-500 mt-0.5">Be the first to leave feedback for the maker!</p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-2 border border-gray-300 p-2 bg-gray-50 rounded">
+                {comments.map(c => (
+                  <div key={c.id} className="bg-white p-2.5 rounded border border-gray-200 space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-blue-900 flex items-center gap-1">
+                        <span>{c.avatar}</span>
+                        <span>{c.author}</span>
+                        {c.isMaker && (
+                          <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1 rounded">
+                            MAKER
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono">{c.timestamp || c.time}</span>
+                    </div>
+                    <p className="text-xs text-gray-800 leading-relaxed">{c.text}</p>
                   </div>
-                  <p className="text-xs text-gray-800 leading-relaxed">{c.text}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* Comment Form */}
             <form onSubmit={handleAddComment} className="flex gap-2">
@@ -507,22 +540,40 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               <span>Register License (${typeof app.price === 'number' ? app.price : (parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15)})</span>
             </button>
           )}
-          <a
-            href={app.liveUrl || (app.binaries as any)?.web || `https://${app.id}.nates-software.com`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
-          >
-            <ExternalLink size={12} /> Launch Live App &rarr;
-          </a>
-          <a
-            href={`https://gitsmith.nates-software.com?repo=${app.repoSlug || app.repoName || app.repositoryId || app.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
-          >
-            <GitBranch size={12} /> View on GITSMITH
-          </a>
+          {app.deploymentState === 'active' || app.activeDeploymentId || app.liveUrl ? (
+            <a
+              href={app.liveUrl || (app.binaries as any)?.web || `/serve/${app.id}/index.html`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
+            >
+              <ExternalLink size={12} /> Launch Live App &rarr;
+            </a>
+          ) : (
+            <span
+              className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 text-gray-400 cursor-not-allowed opacity-70 font-medium"
+              title="Drop is draft metadata; app has not been deployed"
+            >
+              <ExternalLink size={12} /> Not yet published
+            </span>
+          )}
+          {app.hasCanonicalRepo && (app.repoSlug || app.repoName || app.repositoryId) ? (
+            <a
+              href={`https://gitsmith.nates-software.com?repo=${app.repoSlug || app.repoName || app.repositoryId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
+            >
+              <GitBranch size={12} /> View on GITSMITH
+            </a>
+          ) : (
+            <span
+              className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 text-gray-400 cursor-not-allowed opacity-70 font-medium"
+              title="Repository not yet initialized on forge"
+            >
+              <GitBranch size={12} /> No repo on forge
+            </span>
+          )}
         </div>
       </div>
 

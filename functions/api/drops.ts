@@ -1,4 +1,4 @@
-import { requireAuth } from './_auth';
+import { requireAuth, getSessionUser } from './_auth';
 // GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking, batch window filtering, and live maker streaks
 // POST /api/drops - Authenticated/validated shareware drop publishing with commerce_products synchronization
 
@@ -10,6 +10,7 @@ import {
   calculateMakerStreakFromHistory,
   resolveBatchFilter,
   buildMakerLeaderboard,
+  hashVoterKey,
   DropRankingInput
 } from '../../src/lib/hotwireBackend';
 import { validateDropSubmission, parseAndValidatePrice } from '../../src/lib/hotwireDomain';
@@ -137,6 +138,28 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     } catch {}
 
+    // Check viewer-scoped upvotes if authenticated
+    const authUser = await getSessionUser(request, env);
+    const viewerVotedAppIds = new Set<string>();
+
+    if (authUser && env && env.DB && results && results.length > 0) {
+      try {
+        const secretSalt = env.UPVOTE_HASH_SECRET;
+        const { results: voteRows } = await env.DB.prepare(
+          'SELECT app_id, voter_hash FROM drop_upvotes'
+        ).all();
+
+        if (Array.isArray(voteRows)) {
+          for (const row of voteRows) {
+            const expectedHash = await hashVoterKey(authUser.id, row.app_id, secretSalt);
+            if (row.voter_hash === expectedHash) {
+              viewerVotedAppIds.add(row.app_id);
+            }
+          }
+        }
+      } catch {}
+    }
+
     // Robust structural parsing to prevent malformed data from crashing UI
     const parsedDrops: DropRankingInput[] = (results || []).map((r: any) => {
       let screenshots: string[] = [];
@@ -151,9 +174,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
       const hasCanonicalRepo = Boolean(r.canonicalRepositoryId || r.repositoryId);
       const isRepoActive = r.repoStatus === 'active';
-      const resolvedOwner = r.repoOwnerUsername || r.creator || 'nate';
+      const resolvedOwner = r.repoOwnerUsername || r.creator || null;
       const resolvedSlugName = r.repoSlugName;
-      const repoSlug = resolvedSlugName ? `${resolvedOwner}/${resolvedSlugName}` : null;
+      const repoSlug = resolvedSlugName ? (resolvedOwner ? `${resolvedOwner}/${resolvedSlugName}` : resolvedSlugName) : null;
       const repoName = resolvedSlugName || null;
       const repoOwner = r.repoOwnerUsername || (resolvedSlugName ? resolvedOwner : null);
       const repoHeadCommitOid = r.repoHeadCommitOid || null;
@@ -165,6 +188,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         ? r.grantable_bps
         : (typeof r.grantableBps === 'number' ? r.grantableBps : 0);
       const grantableBps = grantable_bps;
+      const hasVoted = viewerVotedAppIds.has(r.id);
 
       return {
         ...r,
@@ -180,13 +204,14 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         repoDefaultRef,
         grantable_bps,
         grantableBps,
-        screenshots: screenshots.length > 0 ? screenshots : ["https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80"],
+        screenshots,
         binaries,
         liveUrl: binaries?.web || r.liveUrl,
-        tags: tags.length > 0 ? tags : ["Shareware"],
+        tags,
         createdAt: r.createdAt || new Date().toISOString(),
         creatorStreak: streakData.currentStreak || 1,
         creatorBadge: getMakerBadgeInfo(streakData.currentStreak || 1),
+        hasVoted,
         comments: []
       };
     });
@@ -204,7 +229,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       sort,
       batch: batchParam || 'all',
       drops: finalDrops,
-      makerLeaderboard
+      makerLeaderboard,
+      votedAppIds: Array.from(viewerVotedAppIds)
     });
   } catch (err: any) {
     return Response.json({ success: false, error: err.message || 'Failed to retrieve drops' }, { status: 500 });

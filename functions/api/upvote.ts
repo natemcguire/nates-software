@@ -1,6 +1,67 @@
+// GET /api/upvote - Viewer-scoped vote state inspection (have-I-voted read endpoint)
 // POST /api/upvote - Atomic idempotent upvote counter in D1 with cryptographic voter hashing
-import { validateAndHashVote } from '../../src/lib/hotwireBackend';
-import { requireAuth } from './_auth';
+import { validateAndHashVote, hashVoterKey } from '../../src/lib/hotwireBackend';
+import { requireAuth, getSessionUser } from './_auth';
+
+export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
+  try {
+    const url = new URL(request.url);
+    const appId = url.searchParams.get('appId');
+
+    if (!env || !env.DB) {
+      return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
+    }
+
+    const authUser = await getSessionUser(request, env);
+    if (!authUser) {
+      return Response.json({
+        success: true,
+        hasVoted: false,
+        votedAppIds: []
+      });
+    }
+
+    const secretSalt = env?.UPVOTE_HASH_SECRET;
+
+    if (appId && appId.trim()) {
+      const cleanAppId = appId.trim();
+      const voterHash = await hashVoterKey(authUser.id, cleanAppId, secretSalt);
+      const row = await env.DB.prepare(
+        'SELECT 1 FROM drop_upvotes WHERE app_id = ? AND voter_hash = ?'
+      ).bind(cleanAppId, voterHash).first();
+      const hasVoted = Boolean(row);
+
+      return Response.json({
+        success: true,
+        hasVoted,
+        votedAppIds: hasVoted ? [cleanAppId] : []
+      });
+    }
+
+    // Return all apps this viewer has voted on
+    const { results } = await env.DB.prepare(
+      'SELECT app_id, voter_hash FROM drop_upvotes'
+    ).all();
+
+    const votedAppIds: string[] = [];
+    if (Array.isArray(results)) {
+      for (const row of results) {
+        const expectedHash = await hashVoterKey(authUser.id, row.app_id, secretSalt);
+        if (row.voter_hash === expectedHash) {
+          votedAppIds.push(row.app_id);
+        }
+      }
+    }
+
+    return Response.json({
+      success: true,
+      hasVoted: votedAppIds.length > 0,
+      votedAppIds
+    });
+  } catch (err: any) {
+    return Response.json({ success: false, error: err.message || 'Failed to inspect vote state' }, { status: 500 });
+  }
+};
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
