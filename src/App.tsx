@@ -98,6 +98,7 @@ import { DesktopIcon } from './components/DesktopIcon';
 import { RetroWindow } from './components/RetroWindow';
 import { DesktopTaskbar } from './components/DesktopTaskbar';
 import { StartMenu } from './components/StartMenu';
+import { AccountWidget } from './components/AccountWidget';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
@@ -115,10 +116,10 @@ import { ChatView } from './views/ChatView';
 import { playClickSound, playSuccessChime } from './lib/soundEngine';
 import { useAlert } from './context/AlertContext';
 
-function AppInner() {
+export function AppInner() {
   const { getApp, submitDrop } = useCatalog();
   const { showAlert } = useAlert();
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
@@ -195,6 +196,7 @@ function AppInner() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <AccountWidget />
             <a
               href="https://nates-software.com"
               className="btn-w95 text-xs py-1 px-3 font-bold text-black bg-gray-200 hover:bg-white"
@@ -222,12 +224,15 @@ function AppInner() {
             STANDALONE ROUTE
           </span>
         </div>
-        <a
-          href="https://nates-software.com"
-          className="btn-w95 text-xs py-1 px-3 font-bold text-black bg-gray-200 hover:bg-white"
-        >
-          ⚡ Return to Nate's Software Web OS
-        </a>
+        <div className="flex items-center gap-2">
+          <AccountWidget />
+          <a
+            href="https://nates-software.com"
+            className="btn-w95 text-xs py-1 px-3 font-bold text-black bg-gray-200 hover:bg-white"
+          >
+            ⚡ Return to Nate's Software Web OS
+          </a>
+        </div>
       </div>
       <div className="flex-1 overflow-hidden">
         <ErrorBoundary fallbackTitle={title}>
@@ -294,7 +299,7 @@ function AppInner() {
     focusWindow,
     updateWindowPosition,
     updateWindowSize
-  } = useWindowManager();
+  } = useWindowManager(user);
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
@@ -399,25 +404,38 @@ function AppInner() {
         />
       )}
 
-      {/* Top Right Theme Selector */}
-      <div className="absolute top-3 right-4 z-10 flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma">
-        <span className="text-gray-300 font-bold mr-1">Theme:</span>
-        {[
-          { id: 'teal', label: 'Teal 95' },
-          { id: 'matrix', label: 'Matrix' },
-          { id: 'sunset', label: 'Sunset' },
-          { id: 'navy', label: 'DOS Navy' }
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => { playClickSound(); setTheme(t.id as any); }}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-              theme === t.id ? 'bg-w95-blue text-white shadow-sm border border-blue-400' : 'text-gray-300 hover:text-white'
-            }`}
+      {/* Top Right Controls & Greeting */}
+      <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+        {isAuthenticated && user && (
+          <div
+            data-testid="desktop-greeting"
+            className="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma"
           >
-            {t.label}
-          </button>
-        ))}
+            <span>{user.avatar || '👤'}</span>
+            <span className="text-gray-300">
+              Welcome back, <strong className="text-white">{`@${user.displayName || user.username}`}</strong>
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma">
+          <span className="text-gray-300 font-bold mr-1">Theme:</span>
+          {[
+            { id: 'teal', label: 'Teal 95' },
+            { id: 'matrix', label: 'Matrix' },
+            { id: 'sunset', label: 'Sunset' },
+            { id: 'navy', label: 'DOS Navy' }
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => { playClickSound(); setTheme(t.id as any); }}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                theme === t.id ? 'bg-w95-blue text-white shadow-sm border border-blue-400' : 'text-gray-300 hover:text-white'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Desktop App Icons Grid */}

@@ -18,7 +18,8 @@ export interface AuthContextType {
   isSuperAdmin: boolean;
   isAuthModalOpen: boolean;
   authModalTab: 'login' | 'register';
-  openAuthModal: (tab?: 'login' | 'register') => void;
+  actionDescription?: string | null;
+  openAuthModal: (tab?: 'login' | 'register', actionDescription?: string | null) => void;
   closeAuthModal: () => void;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (data: { username: string; password: string; displayName: string; avatar?: string; bio?: string }) => Promise<{ success: boolean; error?: string }>;
@@ -32,6 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login');
+  const [actionDescription, setActionDescription] = useState<string | null>(null);
 
   // Check existing session on load
   useEffect(() => {
@@ -45,15 +47,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .catch(() => {});
   }, []);
 
-  const openAuthModal = (tab: 'login' | 'register' = 'login') => {
+  const openAuthModal = (tab: 'login' | 'register' = 'login', description: string | null = null) => {
     playClickSound();
     setAuthModalTab(tab);
+    setActionDescription(description ?? null);
     setIsAuthModalOpen(true);
   };
 
   const closeAuthModal = () => {
     playClickSound();
     setIsAuthModalOpen(false);
+    setActionDescription(null);
   };
 
   const login = async (username: string, password: string) => {
@@ -66,6 +70,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await res.json();
       if (data.success && data.user) {
         setUser(data.user);
+        setActionDescription(null);
         playSuccessChime();
         setIsAuthModalOpen(false);
         return { success: true };
@@ -86,6 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await res.json();
       if (data.success && data.user) {
         setUser(data.user);
+        setActionDescription(null);
         playSuccessChime();
         setIsAuthModalOpen(false);
         return { success: true };
@@ -101,14 +107,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetch('/api/auth?action=logout', { method: 'POST' });
     } catch {}
     setUser(null);
+    setActionDescription(null);
     playClickSound();
   };
 
-  const requireAuth = (_actionDescription: string, onAuthenticated: () => void) => {
+  const requireAuth = (actionDescription: string, onAuthenticated: () => void) => {
     if (user) {
       onAuthenticated();
     } else {
-      openAuthModal('login');
+      openAuthModal('login', actionDescription);
     }
   };
 
@@ -120,6 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isSuperAdmin: user?.role === 'super_admin',
         isAuthModalOpen,
         authModalTab,
+        actionDescription,
         openAuthModal,
         closeAuthModal,
         login,
@@ -139,6 +147,7 @@ const DEFAULT_AUTH_CONTEXT: AuthContextType = {
   isSuperAdmin: false,
   isAuthModalOpen: false,
   authModalTab: 'login',
+  actionDescription: null,
   openAuthModal: () => {},
   closeAuthModal: () => {},
   login: async () => ({ success: false, error: 'AuthProvider not found' }),

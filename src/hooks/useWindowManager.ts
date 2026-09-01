@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import type { AuthUser } from '../context/AuthContext';
 
 export interface WindowState {
   id: string;
@@ -39,7 +40,7 @@ const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: n
   return { x: posX, y: posY, width: w, height: h };
 };
 
-export function useWindowManager() {
+export function useWindowManager(user?: AuthUser | null) {
   const setupConfig = getResponsiveWindowConfig(0, 880, 580);
   const mktgConfig = getResponsiveWindowConfig(10, 1080, 680);
   const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
@@ -52,6 +53,11 @@ export function useWindowManager() {
   const gitsmithConfig = getResponsiveWindowConfig(35, 1180, 740);
   const chatConfig = getResponsiveWindowConfig(20, 960, 620);
   const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
+
+  const getInboxTitle = (u?: AuthUser | null) =>
+    u?.username
+      ? `INBOX — [@${u.username}'s inbox · 3-Pane Agent Mailbox]`
+      : "INBOX — [Agent Mailbox · 3-Pane Async Inbox]";
 
   const [windows, setWindows] = useState<Record<string, WindowState>>({
     setup: {
@@ -121,7 +127,7 @@ export function useWindowManager() {
     },
     inbox: {
       id: 'inbox',
-      title: "INBOX — [nate@natesoftware · 3-Pane Agent Mailbox]",
+      title: getInboxTitle(user),
       icon: '📬',
       isOpen: false,
       isMinimized: false,
@@ -227,6 +233,20 @@ export function useWindowManager() {
 
   const [activeWindowId, setActiveWindowId] = useState<string>('mktg');
   const [topZ, setTopZ] = useState<number>(20);
+
+  useEffect(() => {
+    const inboxTitle = getInboxTitle(user);
+    setWindows(curr => {
+      if (!curr.inbox || curr.inbox.title === inboxTitle) return curr;
+      return {
+        ...curr,
+        inbox: {
+          ...curr.inbox,
+          title: inboxTitle
+        }
+      };
+    });
+  }, [user?.username]);
 
   const focusWindow = useCallback((id: string) => {
     setActiveWindowId(id);
