@@ -24,9 +24,10 @@ import { useAuth } from '../context/AuthContext';
 interface HotwireViewProps {
   onOpenApp?: (appId: string) => void;
   onOpenPostEditor?: (app?: AppListing) => void;
+  onOpenLeaders?: () => void;
 }
 
-export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor }) => {
+export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor, onOpenLeaders }) => {
   const { showAlert } = useAlert();
   const { user, requireAuth, isAuthenticated } = useAuth();
   const {
@@ -48,6 +49,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(votedAppIds || new Set());
   const [selectedBatch, setSelectedBatch] = useState<string>('today');
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
+  const [voteReward, setVoteReward] = useState<string | null>(null);
 
   // Sync internal apps and selected app with catalog updates
   useEffect(() => {
@@ -137,6 +139,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         // Single optimistic upvote layer handled authoritatively by CatalogContext
         await catalogUpvote(appId);
         playSuccessChime();
+        setVoteReward(appId);
       } catch (err: any) {
         // Rollback upvoted visual state if this vote was rejected
         setUpvotedApps(prev => {
@@ -155,7 +158,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           );
         } else if (errMsg.includes('auth') || errMsg.includes('401') || errMsg.includes('403')) {
           showAlert(
-            `Authentication is required to record a verified upvote. Please sign in to vote for this drop.`,
+            `Authentication is required to vote. Please sign in to vote for this drop.`,
             "Sign In Required",
             "warning"
           );
@@ -237,6 +240,32 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         <span className="text-blue-300 text-[10px]">12:01 AM UTC = {getNextDropLocalTime()} local</span>
       </div>
 
+      {/* Vote Reward Action Banner */}
+      {voteReward && (
+        <div className="bg-emerald-100 border-b border-emerald-400 px-3 py-1.5 flex items-center justify-between text-emerald-950 text-xs">
+          <span className="font-bold">Vote counted.</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                playClickSound();
+                handleFilterSelect('today');
+                setVoteReward(null);
+                if (onOpenLeaders) onOpenLeaders();
+              }}
+              className="text-emerald-900 hover:text-black font-bold underline text-xs cursor-pointer"
+            >
+              See today's leaders &rarr;
+            </button>
+            <button
+              onClick={() => setVoteReward(null)}
+              className="text-emerald-700 hover:text-emerald-950 text-xs ml-2 cursor-pointer font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 12:01 AM UTC Live Drops Header Banner */}
       <div className="bg-[#000080] text-white px-3 py-2 flex items-center justify-between flex-wrap gap-2 border-b-2 border-white shadow-inner">
         <div className="flex items-center gap-3">
@@ -271,8 +300,8 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               ⏳ CONNECTING...
             </span>
           ) : isAuthoritativeLive ? (
-            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Authoritative Cloudflare D1 drop registry">
-              ● D1 LIVE ({apps.length} drops)
+            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Live drop registry">
+              ● LIVE ({apps.length} drops)
             </span>
           ) : (
             <span className="bg-red-950 text-red-200 border border-red-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Disconnected / offline">
@@ -383,7 +412,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                   </div>
                   {isAuthoritativeLive ? (
                     <span className="text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 font-mono">
-                      ● D1 Live Verified Makers ({makerLeaderboard?.length || 0})
+                      ● Verified Makers ({makerLeaderboard?.length || 0})
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 font-mono">
@@ -473,7 +502,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               <div className="p-8 text-center space-y-2">
                 <div className="text-2xl animate-spin">⏳</div>
                 <div className="font-bold text-xs text-slate-700">Connecting to 12:01 AM UTC Drop Registry...</div>
-                <p className="text-[11px] text-slate-500">Retrieving daily shareware queue from Cloudflare D1.</p>
+                <p className="text-[11px] text-slate-500">Retrieving daily shareware queue.</p>
               </div>
             ) : filteredApps.length === 0 ? (
               <div className="p-8 text-center space-y-2">
@@ -564,7 +593,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                             DEMO
                           </span>
                         ) : (
-                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Authoritative Live D1 Drop">
+                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Live Drop">
                             LIVE
                           </span>
                         )}

@@ -16,9 +16,15 @@ import {
 
 interface ProfileViewProps {
   initialUsername?: string;
+  onOpenHotwire?: () => void;
+  onOpenGitsmith?: () => void;
 }
 
-export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => {
+export const ProfileView: React.FC<ProfileViewProps> = ({
+  initialUsername,
+  onOpenHotwire,
+  onOpenGitsmith
+}) => {
   const { isAuthenticated, openAuthModal } = useAuth();
 
   // Navigation & Target User State
@@ -418,7 +424,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                 syncStatus === 'syncing' ? 'bg-blue-500' :
                 syncStatus === 'guest' ? 'bg-amber-600' : 'bg-red-600'
               }`}>
-                {syncStatus === 'synced' ? '● D1 SYNCED' :
+                {syncStatus === 'synced' ? '● Saved' :
                  syncStatus === 'syncing' ? '● SYNCING...' :
                  syncStatus === 'guest' ? '● PUBLIC VIEW' : '● SYNC FAILED'}
               </span>
@@ -498,7 +504,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
         {isLoading && (
           <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
             <RefreshCw size={14} className="animate-spin text-w95-blue" />
-            <span>Loading authoritative profile &amp; shelf records from D1...</span>
+            <span>Loading authoritative profile &amp; shelf records...</span>
           </div>
         )}
 
@@ -516,12 +522,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
             </div>
 
             {shelfApps.length === 0 ? (
-              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-2">
+              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-3">
                 <HardDrive size={32} className="mx-auto text-gray-400" />
                 <p className="font-bold text-gray-700 text-sm">Your Software Shelf is Empty</p>
                 <p className="text-gray-500 text-xs max-w-sm mx-auto">
-                  Acquire apps from the 12:01 AM Daily Drops or HOTWIRE feed to register authoritative licenses on your shelf.
+                  Buy or claim an app and it shows up here.
                 </p>
+                <button
+                  onClick={() => { playClickSound(); onOpenHotwire?.(); }}
+                  className="btn-w95 btn-w95-primary px-4 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 mx-auto"
+                >
+                  <span>Browse today's drops &rarr;</span>
+                </button>
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -587,7 +599,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
             </div>
 
             {publishedApps.length === 0 ? (
-              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-2">
+              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-3">
                 <Sparkles size={32} className="mx-auto text-gray-400" />
                 <p className="font-bold text-gray-700 text-sm">No Published Applications Yet</p>
                 <p className="text-gray-500 text-xs max-w-sm mx-auto">
@@ -595,6 +607,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
                     ? 'Use GITSMITH to push your code and publish your first release to the 12:01 AM Daily Drops board.'
                     : `@${profileData.username} has not published any public applications yet.`}
                 </p>
+                {isOwner && (
+                  <button
+                    onClick={() => { playClickSound(); onOpenGitsmith?.(); }}
+                    className="btn-w95 btn-w95-primary px-4 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 mx-auto"
+                  >
+                    <span>Publish your first app &rarr;</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -702,7 +722,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
               ) : sellerOrders.length === 0 ? (
                 <div className="p-6 text-center text-gray-500 text-xs space-y-1">
                   <p className="font-bold">No sales or royalty distributions recorded yet</p>
-                  <p>When buyers purchase your apps or downstream forks, your allocations and Stripe transfer outbox records will appear here.</p>
+                  <p>When buyers purchase your apps or downstream forks, your allocations and transfer records will appear here.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -792,7 +812,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
             {grantsLoading && !grantsError && grants.length === 0 && earningsByRole.length === 0 && (
               <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
                 <RefreshCw size={14} className="animate-spin text-w95-blue" />
-                <span>Loading grants and earnings from D1...</span>
+                <span>Loading grants and earnings...</span>
               </div>
             )}
 
@@ -1038,7 +1058,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ initialUsername }) => 
             <div className="pt-3 border-t border-gray-300 flex justify-between items-center">
               {saveSuccess ? (
                 <span className="text-green-700 font-bold text-xs flex items-center gap-1">
-                  <Check size={14} /> Profile settings saved to Cloudflare D1!
+                  <Check size={14} /> Profile settings saved!
                 </span>
               ) : <div />}
 
