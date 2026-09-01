@@ -222,7 +222,12 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       expect(data.error).toContain('exceeds maximum allowable cap of 6000 bps (60%) for fork repository');
     });
 
-    it('rejects drop with null repository_id and nonzero grantableBps with 422', async () => {
+    it('honestly provisions a repository for a drop with null repository_id, so nonzero grantableBps is accepted against the new (root) repo', async () => {
+      // Fix 1 (HOTWIRE #6): drops.ts now honestly provisions a real
+      // repositories row for any drop that doesn't already have one, so a
+      // maker no longer has to separately "link a repository" first — one
+      // genuinely exists (status 'provisioning') by the time grantableBps is
+      // validated. This supersedes the old fail-closed 422 behavior.
       const submitReq = new Request('http://localhost/api/drops', {
         method: 'POST',
         headers: {
@@ -240,10 +245,39 @@ describe('Marketplace Phase A: grantable_bps Set, Validation & Display', () => {
       });
 
       const submitRes = await dropsApi.onRequestPost({ request: submitReq, env: testEnv() });
+      expect(submitRes.status).toBe(200);
+      const data = await submitRes.json();
+      expect(data.success).toBe(true);
+      expect(data.repositoryProvisioned).toBe(true);
+
+      const repo = await ctx.d1.prepare('SELECT grantable_bps AS grantableBps, status FROM repositories WHERE id = ?')
+        .bind(data.repositoryId).first();
+      expect((repo as any).grantableBps).toBe(5000);
+      expect((repo as any).status).toBe('provisioning');
+    });
+
+    it('still rejects grantableBps above the 9000 root cap even against a freshly-provisioned repository', async () => {
+      const submitReq = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer session_nate'
+        },
+        body: JSON.stringify({
+          id: 'app_no_repo_over_cap',
+          name: 'No Repo Idea Over Cap',
+          version: '1.0.0',
+          price: '$20',
+          repositoryId: null,
+          grantableBps: 9500
+        })
+      });
+
+      const submitRes = await dropsApi.onRequestPost({ request: submitReq, env: testEnv() });
       expect(submitRes.status).toBe(422);
       const data = await submitRes.json();
       expect(data.success).toBe(false);
-      expect(data.error).toContain('Link a repository to set a grantable pool');
+      expect(data.error).toContain('exceeds maximum allowable cap');
     });
 
     it('allows drop with null repository_id when grantableBps is 0 or omitted', async () => {

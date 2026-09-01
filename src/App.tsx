@@ -258,8 +258,23 @@ export function AppInner() {
                     throw new Error(res.error || 'Server failed to persist drop');
                   }
                   playSuccessChime();
-                  showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
-                  setEditingApp(null);
+                  const honestStatus = res.productStatus || 'draft';
+                  showAlert(
+                    honestStatus === 'active'
+                      ? `Drop "${updatedApp.name}" (${updatedApp.version}) published and is live for purchase!`
+                      : `Drop "${updatedApp.name}" (${updatedApp.version}) saved as a DRAFT — ${res.message || 'link a deployable repository before it can be sold.'}`,
+                    "Drop Published",
+                    honestStatus === 'active' ? "success" : "info"
+                  );
+                  // Only auto-close when the product is genuinely active; otherwise
+                  // keep the editor open so the maker sees the honest state banner.
+                  if (honestStatus === 'active') setEditingApp(null);
+                  return {
+                    productStatus: res.productStatus,
+                    deploymentState: res.deploymentState,
+                    repositoryProvisioned: res.repositoryProvisioned,
+                    message: res.message
+                  };
                 }}
                 onCancel={() => {
                   playClickSound();
@@ -921,8 +936,23 @@ export function AppInner() {
                     throw new Error(res.error || 'Server failed to persist drop');
                   }
                   playSuccessChime();
-                  showAlert(`Drop "${updatedApp.name}" (${updatedApp.version}) published and persisted to Cloudflare D1!`, "Drop Published", "success");
-                  setEditingApp(null);
+                  const honestStatus = res.productStatus || 'draft';
+                  showAlert(
+                    honestStatus === 'active'
+                      ? `Drop "${updatedApp.name}" (${updatedApp.version}) published and is live for purchase!`
+                      : `Drop "${updatedApp.name}" (${updatedApp.version}) saved as a DRAFT — ${res.message || 'link a deployable repository before it can be sold.'}`,
+                    "Drop Published",
+                    honestStatus === 'active' ? "success" : "info"
+                  );
+                  // Only auto-close when the product is genuinely active; otherwise
+                  // keep the editor open so the maker sees the honest state banner.
+                  if (honestStatus === 'active') setEditingApp(null);
+                  return {
+                    productStatus: res.productStatus,
+                    deploymentState: res.deploymentState,
+                    repositoryProvisioned: res.repositoryProvisioned,
+                    message: res.message
+                  };
                 }}
                 onCancel={() => {
                   playClickSound();

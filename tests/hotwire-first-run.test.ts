@@ -3,6 +3,7 @@ import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as dropsApi from '../functions/api/drops';
 import * as upvoteApi from '../functions/api/upvote';
 import * as shelfApi from '../functions/api/shelf';
+import * as readinessApi from '../functions/api/product-readiness';
 import { hashSessionToken } from '../functions/api/_session';
 import { INITIAL_APPS } from '../src/data/mockData';
 import {
@@ -529,7 +530,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
   // 8. DROP PUBLISHING COMMERCE SYNCHRONIZATION & AUTH HARDENING
   // ==========================================================================
   describe('8. Drop Publishing Commerce Synchronization, Auth & Security Hardening', () => {
-    it('should synchronize newly published drop into commerce_products for purchasing', async () => {
+    it('should synchronize newly published drop into commerce_products AND honestly provision a real repository (Fix 1: never fake "active")', async () => {
       const newDropId = 'retro-synth-95';
       const req = new Request('http://localhost/api/drops', {
         method: 'POST',
@@ -550,20 +551,70 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const data = await res.json();
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
+      // Honest response contract: caller can see the real resulting state
+      // without a second round-trip.
+      expect(data.productStatus).toBe('draft');
+      expect(data.repositoryProvisioned).toBe(true);
+      expect(typeof data.repositoryId).toBe('string');
 
       // Verify listing row has liveUrl preserved in binaries.web
-      const listing = await ctx.d1.prepare('SELECT binaries, price FROM app_listings WHERE id = ?').bind(newDropId).first();
+      const listing = await ctx.d1.prepare('SELECT binaries, price, repository_id FROM app_listings WHERE id = ?').bind(newDropId).first();
       expect(listing).not.toBeNull();
       const binaries = JSON.parse((listing as any).binaries);
       expect(binaries.web).toBe('https://synth.nates-software.com');
       expect((listing as any).price).toBe('$20.00');
+      expect((listing as any).repository_id).toBe(data.repositoryId);
 
-      // Verify commerce_products row was synchronized with active status and 2000 cents
-      const product = await ctx.d1.prepare('SELECT price_cents, status, seller_user_id FROM commerce_products WHERE app_id = ?').bind(newDropId).first();
+      // Fix 1 (HOTWIRE #6): commerce_products must be synchronized, but its
+      // status must HONESTLY reflect readiness — this drop has no deployable
+      // commit yet, so it is 'draft', never a fake 'active'.
+      const product = await ctx.d1.prepare('SELECT price_cents, status, seller_user_id, repository_id FROM commerce_products WHERE app_id = ?').bind(newDropId).first();
       expect(product).not.toBeNull();
       expect((product as any).price_cents).toBe(2000);
-      expect((product as any).status).toBe('active');
+      expect((product as any).status).toBe('draft');
       expect((product as any).seller_user_id).toBe('usr_nate');
+      expect((product as any).repository_id).toBe(data.repositoryId);
+
+      // Fix 1: a real repositories row was provisioned transactionally,
+      // server-owned by the authenticated session — never a fake/absent link.
+      const repo = await ctx.d1.prepare('SELECT id, app_id, owner_user_id, status FROM repositories WHERE id = ?').bind(data.repositoryId).first();
+      expect(repo).not.toBeNull();
+      expect((repo as any).app_id).toBe(newDropId);
+      expect((repo as any).owner_user_id).toBe('usr_nate');
+      // No git objects/commits exist yet for a freshly-provisioned repo, so
+      // 'provisioning' (not 'active') is the honest status.
+      expect((repo as any).status).toBe('provisioning');
+    });
+
+    it('coordinates with GET /api/product-readiness: a freshly-published drop reads back as honestly "draft", never "buyable"', async () => {
+      const dropId = 'readiness-coordination-drop';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          id: dropId,
+          name: 'Readiness Coordination Drop',
+          version: 'v1.0.0',
+          price: '$12.00'
+        })
+      });
+      const postRes = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(postRes.status).toBe(200);
+      const postData = await postRes.json();
+      expect(postData.productStatus).toBe('draft');
+
+      const readinessReq = new Request(`http://localhost/api/product-readiness?appId=${dropId}`, { method: 'GET' });
+      const readinessRes = await readinessApi.onRequestGet({ request: readinessReq, env: { DB: ctx.d1 } });
+      expect(readinessRes.status).toBe(200);
+      const readinessData = await readinessRes.json();
+
+      expect(readinessData.success).toBe(true);
+      expect(readinessData.readiness.product.exists).toBe(true);
+      expect(readinessData.readiness.product.active).toBe(false);
+      expect(readinessData.readiness.repository.exists).toBe(true);
+      // A freshly-provisioned repo has no commit -> not 'active' -> not forkable either.
+      expect(readinessData.readiness.repository.active).toBe(false);
+      expect(readinessData.readiness.overall).toBe('draft');
     });
 
     it('should reject unauthenticated drop publishing with 401 Unauthorized', async () => {
@@ -732,6 +783,17 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect((listing as any).name).toBe('DroneHunter 95');
       expect((product as any).seller_user_id).toBe('usr_nate');
       expect((product as any).price_cents).toBe(1500);
+
+      // Fix 1 regression guard: the race loser (usr_sam) must NOT end up with
+      // an orphaned repository row. The repository INSERT is guarded by
+      // "WHERE EXISTS (listing owned by creatorId)" specifically so that a
+      // lost ownership race can't silently commit a repo owned by the loser
+      // inside the same D1 batch/transaction (D1 only rolls back on a thrown
+      // statement error, not on a 0-row conditional write).
+      const orphanedRepos = await ctx.d1.prepare(
+        `SELECT id FROM repositories WHERE app_id = 'dronehunter' AND owner_user_id = 'usr_sam'`
+      ).all();
+      expect(orphanedRepos.results || []).toHaveLength(0);
     });
 
     it('should allow the original creator to update their own drop listing ID', async () => {
