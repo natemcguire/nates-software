@@ -112,6 +112,107 @@ describe('GITSMITH Repository Provisioning & Two-Phase Fork Lifecycle', () => {
     });
   });
 
+  describe('0b. Gateway ref policy enforcement (gateway-check-ref-policy)', () => {
+    const checkRefPolicy = (body: Record<string, unknown>, token = GATEWAY_SECRET) => gitApi.onRequestPost({
+      request: new Request('http://localhost/api/git', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'gateway-check-ref-policy', ...body })
+      }),
+      env: testEnv({ GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET })
+    });
+
+    beforeEach(async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
+        VALUES ('repo_policy', 'usr_nate', 'policy-app', 'private', 'sha1', 'refs/heads/main', 'repositories/repo_policy', 'active')
+      `).run();
+    });
+
+    it('rejects a write from an actor with no repository membership (unauthorized write)', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role) VALUES ('usr_outsider', 'outsider', 'Outsider', 'maker')
+      `).run();
+
+      const response = await checkRefPolicy({
+        repositoryId: 'repo_policy',
+        actorUserId: 'usr_outsider',
+        updates: [{ refName: 'refs/heads/main', oldOid: '1'.repeat(40), newOid: '2'.repeat(40), isFastForward: true, isDelete: false }]
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(expect.objectContaining({ success: true, allowed: false }));
+      expect(body.reason).toMatch(/not authorized to write/i);
+    });
+
+    it('rejects deletion of the protected default ref even for an owner', async () => {
+      const response = await checkRefPolicy({
+        repositoryId: 'repo_policy',
+        actorUserId: 'usr_nate',
+        updates: [{ refName: 'refs/heads/main', oldOid: '1'.repeat(40), newOid: null, isDelete: true }]
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(expect.objectContaining({ success: true, allowed: false }));
+      expect(body.reason).toMatch(/deletion of protected ref/i);
+    });
+
+    it('rejects non-fast-forward (force) updates to the protected default ref by default', async () => {
+      const response = await checkRefPolicy({
+        repositoryId: 'repo_policy',
+        actorUserId: 'usr_nate',
+        updates: [{ refName: 'refs/heads/main', oldOid: '1'.repeat(40), newOid: '2'.repeat(40), isFastForward: false, isDelete: false }]
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(expect.objectContaining({ success: true, allowed: false }));
+      expect(body.reason).toMatch(/non-fast-forward update to protected ref/i);
+    });
+
+    it('fails closed (rejects) when a matching ref policy requires signed commits, a passing build, or approvals', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO repository_ref_policies
+          (repository_id, ref_pattern, require_signed_commits, require_passing_build, minimum_approvals, allow_force_push, allow_delete)
+        VALUES ('repo_policy', 'refs/heads/release/*', 1, 0, 0, 0, 0)
+      `).run();
+
+      const response = await checkRefPolicy({
+        repositoryId: 'repo_policy',
+        actorUserId: 'usr_nate',
+        updates: [{ refName: 'refs/heads/release/1.0', oldOid: null, newOid: '2'.repeat(40), isFastForward: true, isDelete: false }]
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(expect.objectContaining({ success: true, allowed: false }));
+      expect(body.reason).toMatch(/signed commits/i);
+    });
+
+    it('allows a fast-forward write to an unprotected, unmatched ref for an authorized writer', async () => {
+      const response = await checkRefPolicy({
+        repositoryId: 'repo_policy',
+        actorUserId: 'usr_nate',
+        updates: [{ refName: 'refs/heads/feature/x', oldOid: null, newOid: '2'.repeat(40), isFastForward: true, isDelete: false }]
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toEqual(expect.objectContaining({ success: true, allowed: true, defaultRef: 'refs/heads/main', memberRole: 'owner' }));
+    });
+
+    it('rejects unauthenticated / bad gateway credentials the same as other gateway actions', async () => {
+      const response = await checkRefPolicy({
+        repositoryId: 'repo_policy',
+        actorUserId: 'usr_nate',
+        updates: [{ refName: 'refs/heads/feature/x', oldOid: null, newOid: '2'.repeat(40), isFastForward: true, isDelete: false }]
+      }, 'wrong-token');
+      expect(response.status).toBe(401);
+    });
+  });
+
   // =========================================================================
   // 1. FIRST-RUN REPOSITORY PROVISIONING
   // =========================================================================
