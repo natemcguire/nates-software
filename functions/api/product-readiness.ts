@@ -29,7 +29,7 @@
 
 import { getAwsCredentials, createEcrRepository, DEFAULT_AWS_ACCOUNT_ID } from './_aws';
 
-export interface ProductReadiness {
+interface ProductReadiness {
   appId: string;
   product: {
     exists: boolean;

@@ -10,21 +10,6 @@ const unavailable = () => Response.json(
   { status: 503 }
 );
 
-export interface ShelfVerifyResponse {
-  success: boolean;
-  verified: boolean;
-  isOwned: boolean;
-  appId?: string;
-  license?: {
-    id: string;
-    appId: string;
-    licenseKeyLast4: string;
-    status: string;
-    purchasedDate: string;
-  };
-  error?: string;
-}
-
 export const handleVerify = async ({ request, env }: { request: Request; env: any }): Promise<Response> => {
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
