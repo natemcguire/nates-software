@@ -41,9 +41,10 @@ async function smoke(baseUrl, label, { paymentsEnabled }) {
           json: body => body.success === false
         },
         {
-          // webhook is enabled; an unsigned POST fails signature verification (400).
+          // webhook is enabled; an unsigned POST is rejected for the missing
+          // stripe-signature header (401) before any body parsing.
           path: '/api/payments/webhook',
-          status: 400,
+          status: 401,
           init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"type":"payment_intent.succeeded"}' },
           json: body => body.success === false
         }
