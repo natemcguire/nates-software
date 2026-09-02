@@ -80,13 +80,15 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
 
   it('wires MarketingWindow hero to "Try an app now →", outcome CTAs, and user badge (O5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/views/MarketingWindow.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Try an app now &rarr;');
-    expect(source).toContain("Browse today's drops &rarr;");
-    expect(source).toContain('Mod an app with AI &rarr;');
-    expect(source).toContain("See what's running &rarr;");
-    expect(source).toContain('Browse the code &rarr;');
-    expect(source).toContain('Open your mailbox &rarr;');
-    expect(source).toContain('See your profile &amp; shelf &rarr;');
+    // Hero CTA (the arrow is appended as a separate {…} &rarr; span, so assert on the label).
+    expect(source).toContain('Try an app now');
+    // Per-shop outcome CTAs now live as `cta:` values on the app-grid data array; the
+    // window renders `{s.cta} &rarr;`. Assert the CTA labels, not the old concatenated literals.
+    expect(source).toContain("Browse today's drops");
+    expect(source).toContain('Mod an app with AI');
+    expect(source).toContain("See what's running");
+    expect(source).toContain('Browse the code');
+    expect(source).toContain('Open your mailbox');
     expect(source).toContain('Free to browse and fork. Create a maker account when you\'re ready to publish.');
     expect(source).toContain("const userBadge = user?.username ? `@${user.username}` : '@guest';");
   });
@@ -95,7 +97,11 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
     expect(source).toContain('SETUP.EXE (START HERE)');
     expect(source).toContain('nsw_setup_wizard_seen');
-    expect(source).toContain('closeWindow(\'setup\')');
+    // Flash fix: the setup window is closed on first paint and OPENED (once) after the
+    // session check resolves, for first-run/logged-out visitors — instead of opening by
+    // default and closing for returning users (which flashed the window on every refresh).
+    expect(source).toContain('openWindow(\'setup\')');
+    expect(source).toContain('authLoading');
     expect(source).toContain('liveSandboxApp');
   });
 });

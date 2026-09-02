@@ -2,8 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* User-selectable text-size multiplier (taskbar "T" sizer). 1 = default. */
+  --font-scale: 1;
+}
+
 html, body {
-  font-size: 15px;
+  /* Base bumped +30% (15px -> 19.5px), then multiplied by the user's text-size choice. */
+  font-size: calc(19.5px * var(--font-scale, 1));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -37,7 +43,7 @@ html, body {
   border-color: #ffffff #404040 #404040 #ffffff;
   padding: 5px 14px;
   font-family: Tahoma, -apple-system, sans-serif;
-  font-size: 13.5px;
+  font-size: calc(17.5px * var(--font-scale, 1));
   font-weight: bold;
   cursor: pointer;
   user-select: none;
@@ -68,7 +74,21 @@ html, body {
   justify-content: space-between;
   align-items: center;
   font-family: Tahoma, -apple-system, sans-serif;
-  font-size: 14px;
+  font-size: calc(18px * var(--font-scale, 1));
   font-weight: bold;
   user-select: none;
+}
+
+/* The ONE deliberate modern animation in the whole app: a gentle attention
+   pulse on the "GET YOUR USERNAME" call-to-action, shown only until sign-up. */
+@keyframes nsw-cta-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 191, 0, 0.55); }
+  50%      { transform: scale(1.045); box-shadow: 0 0 0 6px rgba(255, 191, 0, 0); }
+}
+.nsw-cta-pulse {
+  animation: nsw-cta-pulse 1.8s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nsw-cta-pulse { animation: none; }
 }

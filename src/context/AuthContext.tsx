@@ -15,6 +15,11 @@ export interface AuthUser {
 export interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  // True until the initial session check (`me`) resolves. Callers should not make
+  // first-paint decisions (e.g. which windows to open) until this is false, or the
+  // UI flashes the logged-out state before the session hydrates. Optional so test
+  // mocks representing an already-resolved state can omit it (treated as false).
+  authLoading?: boolean;
   isSuperAdmin: boolean;
   isAuthModalOpen: boolean;
   authModalTab: 'login' | 'register';
@@ -31,11 +36,14 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login');
   const [actionDescription, setActionDescription] = useState<string | null>(null);
 
-  // Check existing session on load
+  // Check existing session on load. authLoading stays true until this resolves so
+  // the desktop doesn't paint the logged-out first-run state and then snap to the
+  // logged-in state (the "windows flash then disappear on refresh" bug).
   useEffect(() => {
     fetch('/api/auth?action=me')
       .then(res => res.json())
@@ -44,7 +52,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(data.user);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAuthLoading(false));
   }, []);
 
   const openAuthModal = (tab: 'login' | 'register' = 'login', description: string | null = null) => {
@@ -124,6 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         isAuthenticated: !!user,
+        authLoading,
         isSuperAdmin: user?.role === 'super_admin',
         isAuthModalOpen,
         authModalTab,
@@ -144,6 +154,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 const DEFAULT_AUTH_CONTEXT: AuthContextType = {
   user: null,
   isAuthenticated: false,
+  authLoading: true,
   isSuperAdmin: false,
   isAuthModalOpen: false,
   authModalTab: 'login',

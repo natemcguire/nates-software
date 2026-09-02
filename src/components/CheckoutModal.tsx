@@ -579,9 +579,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 <RefreshCw size={24} className="animate-spin" />
               </div>
               <div>
-                <div className="font-bold text-gray-900 text-sm">Payment Confirmed!</div>
+                <div className="font-bold text-gray-900 text-sm">Processing your payment…</div>
                 <div className="text-gray-600 text-xs mt-1">
-                  Settling order on Lineage Ledger and minting your cryptographic license...
+                  Confirming the charge, settling on the Lineage Ledger, and minting your license. This is usually quick.
                 </div>
               </div>
               <div className="bg-gray-100 border border-gray-300 p-2 rounded text-[11px] font-mono text-gray-500">
@@ -674,27 +674,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </div>
           )}
 
-          {/* STATE 8: Polling Timeout */}
+          {/* STATE 8: Polling Timeout — we stopped waiting for fulfillment; the
+              outcome is NOT known yet. Do NOT claim the payment succeeded: polling
+              exhausted without the order reaching 'fulfilled', so it may still be
+              settling, or it may have failed. Tell the honest truth and point the
+              user at the authoritative source (their Shelf). */}
           {status === 'timeout' && (
             <div className="space-y-4">
-              <div className="bg-blue-50 border-2 border-blue-600 p-3.5 rounded flex items-center gap-3">
-                <ShieldCheck size={28} className="text-blue-700 shrink-0" />
+              <div className="bg-amber-50 border-2 border-amber-500 p-3.5 rounded flex items-center gap-3">
+                <RefreshCw size={28} className="text-amber-700 shrink-0" />
                 <div>
-                  <div className="font-bold text-blue-950 text-sm">Payment Confirmed</div>
-                  <div className="text-blue-800 text-[11px] mt-0.5 leading-relaxed">
-                    Your payment was received. Settlement and license delivery are processing asynchronously in the background.
-                    Your license will appear on your Shelf shortly.
+                  <div className="font-bold text-amber-950 text-sm">Still confirming your order</div>
+                  <div className="text-amber-900 text-[11px] mt-0.5 leading-relaxed">
+                    We didn&apos;t get a confirmation back in time — this can happen when settlement is slow.
+                    <strong> If your card was charged, the license will appear on your Shelf within a few minutes.</strong>
+                    {' '}If it doesn&apos;t, you were not charged. Check your Shelf, or refresh it below.
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end pt-2 border-t border-gray-300">
+              <div className="flex items-center justify-between pt-2 border-t border-gray-300 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { playClickSound(); refreshShelf(); }}
+                  className="btn-w95 px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 bg-white hover:bg-gray-100"
+                >
+                  <RefreshCw size={12} /> Refresh my Shelf
+                </button>
                 <button
                   type="button"
                   onClick={() => { playClickSound(); onClose(); }}
                   className="btn-w95 btn-w95-primary px-6 py-1.5 text-xs font-bold"
                 >
-                  Got It
+                  Close
                 </button>
               </div>
             </div>

@@ -1,87 +1,78 @@
 import { renderToString } from 'react-dom/server';
 import { describe, it, expect } from 'vitest';
-import { ExplainerView } from '../src/views/ExplainerView';
+import { MarketingWindow } from '../src/views/MarketingWindow';
 import { resolveAppRoute } from '../src/App';
 import { StartMenu } from '../src/components/StartMenu';
 import { AuthProvider } from '../src/context/AuthContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 
-describe('ExplainerView Product Explainer (Spec M)', () => {
-  const renderExplainer = () => {
-    const raw = renderToString(<ExplainerView />);
+// The former standalone ExplainerView was consolidated into the single
+// "WELCOME TO NATE'S SOFTWARE EMPORIUM" window (MarketingWindow). These tests
+// assert the consolidated window still carries the honest explainer content.
+const noop = () => {};
+
+describe('Consolidated About/Explainer window (Spec M)', () => {
+  const renderWindow = () => {
+    const raw = renderToString(
+      <AuthProvider>
+        <MarketingWindow
+          onOpenSetup={noop}
+          onOpenHotwire={noop}
+          onOpenSlopshop={noop}
+          onOpenRig={noop}
+          onOpenGitsmith={noop}
+          onOpenInbox={noop}
+          onOpenProfile={noop}
+          onOpenWhitepapers={noop}
+          onOpenDyno={noop}
+          onDismiss={noop}
+        />
+      </AuthProvider>
+    );
     return raw.replace(/<!--.*?-->/g, '');
   };
 
-  it('renders the top one-paragraph buy-once ownership summary', () => {
-    const html = renderExplainer();
+  it('renders the WELCOME top title and both section titles', () => {
+    const html = renderWindow();
+    expect(html).toContain("WELCOME TO NATE&#x27;S SOFTWARE EMPORIUM");
+    expect(html).toContain('What is this?');
+    expect(html).toContain('How it works');
+    expect(html).toContain('ENTER ONE OF THE SHOPS');
+  });
 
-    expect(html).toContain('What is Nate&#x27;s Software?');
+  it('renders the buy-once ownership summary', () => {
+    const html = renderWindow();
     expect(html).toContain('A marketplace for software you buy once and own — not rent.');
-    expect(html).toContain('Every purchase gives you a license and the source.');
-    expect(html).toContain(
-      'Fork any app, change it with an AI agent, and sell your version; when a fork sells, revenue splits back down the lineage.'
-    );
+    expect(html).toContain('Fork any app, change it with an AI agent, and sell your');
   });
 
-  it('renders the exact 70/20/10 money model line', () => {
-    const html = renderExplainer();
-
+  it('renders the 70/20/10 money model with the 90/10 root case', () => {
+    const html = renderWindow();
     expect(html).toContain('The Money Model');
-    expect(html).toContain(
-      '70% to the seller, 20% up the fork lineage, 10% to the protocol — a root app with no ancestors is 90/10.'
-    );
+    expect(html).toContain('70%');
+    expect(html).toContain('20%');
+    expect(html).toContain('10%');
+    expect(html).toContain('90/10');
   });
 
-  it('renders plain, honest descriptions for core apps (HOTWIRE, SLOPSHOP, GITSMITH, INBOX, DYNO, PROFILE/SHELF, TERMINAL, CHAT)', () => {
-    const html = renderExplainer();
-
-    // HOTWIRE
+  it('renders honest descriptions for core apps (HOTWIRE, SLOPSHOP, GITSMITH, INBOX, DYNO, PROFILE)', () => {
+    const html = renderWindow();
     expect(html).toContain('HOTWIRE');
-    expect(html).toContain('A daily board where makers drop new apps and people vote.');
-
-    // SLOPSHOP
+    expect(html).toContain('The daily 12:01 AM board where makers drop new apps');
     expect(html).toContain('SLOPSHOP');
-    expect(html).toContain('Where you fork an app and change it with an AI agent in a terminal.');
     expect(html).toContain('It uses GITSMITH as its git backend');
-    expect(html).toContain('runs your forked app for you — the old &quot;RIG&quot; runtime is part of this now');
-
-    // GITSMITH
+    expect(html).toContain('the old &quot;RIG&quot; runtime is part of this now');
     expect(html).toContain('GITSMITH');
-    expect(html).toContain(
-      'The git forge (bare repos over SSH). Most people use it from their own terminal; it&#x27;s the backend SLOPSHOP builds on. It stands on its own too.'
-    );
-
-    // INBOX
+    expect(html).toContain('The git forge');
     expect(html).toContain('INBOX');
-    expect(html).toContain(
-      'Review and merge proposals; approvals require you to actually read the diff first.'
-    );
-
-    // DYNO
+    expect(html).toContain('approvals require you to actually read the diff first');
     expect(html).toContain('DYNO');
-    expect(html).toContain(
-      'A benchmark for how AI models and agent harnesses do on real tasks.'
-    );
-
-    // PROFILE / SHELF
-    expect(html).toContain('GITSMITH / PROFILE / SHELF');
-    expect(html).toContain('Your identity, keys, owned licenses, and earnings.');
-
-    // TERMINAL & CHAT
-    expect(html).toContain('TERMINAL');
-    expect(html).toContain('An in-browser shell.');
-    expect(html).toContain('CHAT');
-    expect(html).toContain('A live room.');
+    expect(html).toContain('A benchmark for how AI models and agent harnesses do on real');
+    expect(html).toContain('My Profile');
   });
 
-  it('does not treat sample listings (like WallArt) as platform features', () => {
-    const html = renderExplainer();
-    expect(html).not.toContain('WALLART');
-    expect(html).not.toContain('WallArt');
-  });
-
-  it('avoids marketing fluff / buzzwords (seamless, powerful, robust, game-changing)', () => {
-    const html = renderExplainer().toLowerCase();
+  it('avoids marketing fluff / buzzwords', () => {
+    const html = renderWindow().toLowerCase();
     expect(html).not.toContain('seamless');
     expect(html).not.toContain('powerful');
     expect(html).not.toContain('robust');

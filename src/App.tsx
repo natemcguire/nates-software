@@ -104,10 +104,10 @@ import { RetroWindow } from './components/RetroWindow';
 import { DesktopTaskbar } from './components/DesktopTaskbar';
 import { StartMenu } from './components/StartMenu';
 import { AccountWidget } from './components/AccountWidget';
+import { FontSizer } from './components/FontSizer';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
-import { ExplainerView } from './views/ExplainerView';
 import { EditorialView } from './views/EditorialView';
 import { PostEditorView } from './views/PostEditorView';
 import { HotwireView } from './views/HotwireView';
@@ -125,7 +125,7 @@ import { useAlert } from './context/AlertContext';
 export function AppInner() {
   const { getApp, submitDrop } = useCatalog();
   const { showAlert } = useAlert();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, authLoading, openAuthModal } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
@@ -290,7 +290,27 @@ export function AppInner() {
 
   if (route.type === 'standalone_view') {
     switch (route.id) {
-      case 'explainer': return renderStandaloneWrapper(route.title || "WHAT IS NATE'S SOFTWARE", <ExplainerView />);
+      case 'explainer': {
+        // Standalone "what is this" route: reuse the consolidated About/README window.
+        // App links navigate to the main Web OS (that's where the windows live).
+        const goHome = () => { window.location.href = 'https://nates-software.com'; };
+        return renderStandaloneWrapper(route.title || "WELCOME TO NATE'S SOFTWARE EMPORIUM", (
+          <div className="h-full overflow-auto bg-[#ece9d8] p-3">
+            <MarketingWindow
+              onOpenSetup={goHome}
+              onOpenHotwire={goHome}
+              onOpenSlopshop={goHome}
+              onOpenRig={goHome}
+              onOpenGitsmith={goHome}
+              onOpenInbox={goHome}
+              onOpenProfile={goHome}
+              onOpenWhitepapers={goHome}
+              onOpenDyno={goHome}
+              onDismiss={goHome}
+            />
+          </div>
+        ));
+      }
       case 'editorial': return renderStandaloneWrapper(route.title || "EDITORIAL LAB", <EditorialView />);
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
       case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
@@ -326,18 +346,22 @@ export function AppInner() {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
-  // Auto-open SETUP on first-run only (persisting a 'seen' flag) and/or when logged out.
-  // Don't re-nag returning logged-in users.
+  // Auto-open SETUP for genuine first-run / logged-out visitors — but only AFTER the
+  // session check resolves. The setup window is closed on first paint (see
+  // useWindowManager); we open it here once we actually know the auth state, so a
+  // returning logged-in user never sees it flash open then closed on refresh.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (authLoading) return; // wait until we know whether there's a session
     const SETUP_SEEN_KEY = 'nsw_setup_wizard_seen';
     const hasSeenSetup = localStorage.getItem(SETUP_SEEN_KEY);
-    if (isAuthenticated && hasSeenSetup) {
-      closeWindow('setup');
-    } else {
+    // Show the welcome wizard to first-time visitors and to anyone not logged in
+    // (they still need to create an account). Returning logged-in users skip it.
+    if (!isAuthenticated || !hasSeenSetup) {
+      openWindow('setup');
       localStorage.setItem(SETUP_SEEN_KEY, 'true');
     }
-  }, [isAuthenticated, closeWindow]);
+  }, [authLoading, isAuthenticated, openWindow]);
 
   const getInitialScale = () => {
     if (typeof window === 'undefined') return 1.0;
@@ -430,14 +454,14 @@ export function AppInner() {
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
         <button
           data-testid="desktop-explainer-button"
-          onClick={() => { playClickSound(); openWindow('explainer'); }}
+          onClick={() => { playClickSound(); openWindow('mktg'); }}
           className="flex items-center gap-1.5 bg-black/40 hover:bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma font-bold cursor-pointer transition-colors shadow-sm"
           title="What is Nate's Software and what does each app do?"
         >
           <span className="text-amber-300 font-bold">?</span>
           <span>What is this?</span>
         </button>
-        {isAuthenticated && user && (
+        {isAuthenticated && user ? (
           <div
             data-testid="desktop-greeting"
             className="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma"
@@ -447,7 +471,18 @@ export function AppInner() {
               Welcome back, <strong className="text-white">{`@${user.displayName || user.username}`}</strong>
             </span>
           </div>
+        ) : (
+          <button
+            data-testid="get-username-cta"
+            onClick={() => { playClickSound(); openAuthModal('register', 'claim your username'); }}
+            className="nsw-cta-pulse btn-w95 btn-w95-primary flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold cursor-pointer"
+            title="Create your free account and claim your @username"
+          >
+            <span className="text-yellow-300">⚡</span>
+            <span>GET YOUR USERNAME</span>
+          </button>
         )}
+        <FontSizer />
         <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma">
           <span className="text-gray-300 font-bold mr-1">Theme:</span>
           {[
@@ -474,7 +509,7 @@ export function AppInner() {
         <DesktopIcon
           label="WHAT_IS_THIS.TXT"
           icon="❓"
-          onClick={() => { playClickSound(); openWindow('explainer'); }}
+          onClick={() => { playClickSound(); openWindow('mktg'); }}
         />
         <DesktopIcon
           label="SETUP.EXE (START HERE)"
@@ -625,7 +660,6 @@ export function AppInner() {
         >
           <MarketingWindow
             onOpenSetup={() => openWindow('setup')}
-            onOpenExplainer={() => openWindow('explainer')}
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
             onOpenRig={() => openWindow('rig')}
@@ -633,42 +667,13 @@ export function AppInner() {
             onOpenInbox={() => openWindow('inbox')}
             onOpenProfile={() => openWindow('profile')}
             onOpenWhitepapers={() => openWindow('papers')}
+            onOpenDyno={() => openWindow('dyno')}
             onDismiss={() => closeWindow('mktg')}
           />
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 0.1 Product Explainer — What is this? */}
-      <ErrorBoundary
-        key={`explainer-${windows.explainer?.isOpen}`}
-        fallbackTitle="WHAT_IS_THIS.TXT"
-        onDismiss={() => closeWindow('explainer')}
-        resetKeys={[windows.explainer?.isOpen]}
-      >
-        <RetroWindow
-          windowState={windows.explainer}
-          isActive={activeWindowId === 'explainer'}
-          onFocus={() => focusWindow('explainer')}
-          onClose={() => closeWindow('explainer')}
-          onMinimize={() => minimizeWindow('explainer')}
-          onToggleMaximize={() => toggleMaximizeWindow('explainer')}
-          onMove={(x, y) => updateWindowPosition('explainer', x, y)}
-          onResize={(w, h, x, y) => updateWindowSize('explainer', w, h, x, y)}
-        >
-          <ExplainerView
-            onOpenHotwire={() => openWindow('hotwire')}
-            onOpenSlopshop={() => openWindow('slopshop')}
-            onOpenGitsmith={() => openWindow('gitsmith')}
-            onOpenInbox={() => openWindow('inbox')}
-            onOpenDyno={() => openWindow('dyno')}
-            onOpenProfile={() => openWindow('profile')}
-            onOpenTerminal={() => openWindow('terminal')}
-            onOpenChat={() => openWindow('chat')}
-            onOpenWhitepapers={() => openWindow('papers')}
-            onDismiss={() => closeWindow('explainer')}
-          />
-        </RetroWindow>
-      </ErrorBoundary>
+      {/* 0.1 Product Explainer — now consolidated into the README/About window above. */}
 
       {/* 0.5 CHAT IRC Chatroom Window */}
       <ErrorBoundary

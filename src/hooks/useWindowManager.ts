@@ -53,7 +53,6 @@ export function useWindowManager(user?: AuthUser | null) {
   const gitsmithConfig = getResponsiveWindowConfig(35, 1180, 740);
   const chatConfig = getResponsiveWindowConfig(20, 960, 620);
   const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
-  const explainerConfig = getResponsiveWindowConfig(15, 820, 580);
 
   const getInboxTitle = (u?: AuthUser | null) =>
     u?.username
@@ -65,7 +64,10 @@ export function useWindowManager(user?: AuthUser | null) {
       id: 'setup',
       title: "SETUP.EXE — [Welcome & 1-Click Fork Quickstart Wizard]",
       icon: '🚀',
-      isOpen: true,
+      // Closed on first paint; App opens it (once) after the session check resolves,
+      // only for genuine first-run / logged-out visitors. Opening-by-default and then
+      // closing for returning users caused the window to flash on every refresh.
+      isOpen: false,
       isMinimized: false,
       isMaximized: false,
       x: setupConfig.x,
@@ -229,19 +231,6 @@ export function useWindowManager(user?: AuthUser | null) {
       width: terminalConfig.width,
       height: terminalConfig.height,
       zIndex: 18
-    },
-    explainer: {
-      id: 'explainer',
-      title: "WHAT_IS_THIS.TXT — [Product Explainer & App Guide]",
-      icon: '❓',
-      isOpen: false,
-      isMinimized: false,
-      isMaximized: false,
-      x: explainerConfig.x,
-      y: explainerConfig.y,
-      width: explainerConfig.width,
-      height: explainerConfig.height,
-      zIndex: 10
     }
   });
 
