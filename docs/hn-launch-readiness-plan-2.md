@@ -57,3 +57,22 @@ The 21 findings collapse to **7 real defects**. Twelve of them are the same two 
 Do steps 1–3 and re-verify, and you can launch confidently. Steps 4–5 are same-day and low-risk. Defer everything in section 4.
 
 **One caveat I can't close from here:** blockers #1/#3/#4 depend on live prod D1 state (NULL `app_id`, `american-gardener`='active', frozen `created_at`) that was confirmed against prod on 2026-09-02 but is mutable — re-run the section-5 prod checks immediately before you post to HN, since a redeploy or data change could shift them.
+
+---
+## Follow-up filed: static-site-generator deploy misclassification (2026-09-02)
+
+**Gap:** `detectRigRuntime` (src/lib/deploymentLifecycle.ts:520-524) classifies a node app with a
+`build` script + `app.js` (no repo-time static entry) as a SERVER (`startCommand: 'node app.js'` →
+`deploy.ts:1485 isServerApp=true` → container path). But a static-site-generator (e.g. american-gardener,
+whose `npm run build` emits index.html at build time) should serve from R2. The container path can't
+serve it on the free tier, so it fail-closes even though the build succeeds.
+
+**Works today (safe path):** the app declares itself static via a `slop.json` manifest with
+`{"startCommand": "static-pages-runtime"}` — this forces the static R2 path. Proven by
+tests/deploy-runtime-detection.test.ts (the "WORKAROUND" case).
+
+**Proper fix (deferred — deploy-path change, needs a real redeploy to validate):** route node-with-
+build-script through the RIG executor and let it classify from the BUILT artifact (deployExecutor.ts
+already sets artifactKind by inspecting the filesystem post-build: static index.html ⇒ r2_static),
+instead of pre-committing at deploy.ts:1485. tests/deploy-runtime-detection.test.ts documents the current
+behavior as the baseline for that change.
