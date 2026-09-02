@@ -66,14 +66,19 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     const html = await (await render('t-dronehunter')).text();
     expect(html).toContain('property="og:title"');
     expect(html).toContain('twitter:card" content="summary_large_image"');
-    // og:image points at the SVG card variant of the same URL.
-    expect(html).toContain('?card=svg');
+    // og:image points at the .svg card variant (path extension → Pages serves image/svg).
+    expect(html).toContain('.svg"');
     // Real stats in the share copy (1 fork, 2 makers).
     expect(html).toMatch(/has 1 fork/);
   });
 
-  it('serves a 1200x630 SVG share card on ?card=svg with real stats', async () => {
-    const res = await render('t-dronehunter', '?card=svg');
+  it('serves a 1200x630 SVG share card via a .svg path extension', async () => {
+    // The .svg suffix is the trigger (CF Pages infers image/svg+xml from the route path).
+    const res = await treePage.onRequestGet({
+      params: { app: 't-dronehunter.svg' },
+      request: new Request('https://nates-software.com/tree/t-dronehunter.svg'),
+      env: { DB: ctx.d1 },
+    });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toMatch(/image\/svg/);
     const svg = await res.text();
@@ -82,6 +87,11 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     expect(svg).toContain('t-dronehunter');
     expect(svg).toMatch(/has 1 fork/);
     expect(svg).toContain('See the tree');
+  });
+
+  it('still accepts ?card=svg as a fallback', async () => {
+    const res = await render('t-dronehunter', '?card=svg');
+    expect(res.headers.get('Content-Type')).toMatch(/image\/svg/);
   });
 
   it('escapes untrusted handle/app text (no HTML injection)', async () => {

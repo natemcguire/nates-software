@@ -70,7 +70,7 @@ function renderTreePage(tree: LineageTree): string {
   const ogTitle = `${rootApp} has ${tree.totalForks} fork${tree.totalForks === 1 ? '' : 's'} — see the lineage tree`;
   const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own forever; when a fork sells, 70% to the seller / 20% up the tree.`;
   const ogUrl = `https://nates-software.com/tree/${rootApp}`;
-  const ogImage = `https://nates-software.com/tree/${rootApp}?card=svg`;
+  const ogImage = `https://nates-software.com/tree/${rootApp}.svg`;
 
   return `<!doctype html>
 <html lang="en"><head>
@@ -190,8 +190,15 @@ function renderCardSvg(tree: LineageTree): string {
 }
 
 export const onRequestGet = async ({ params, request, env }: { params: { app: string }; request: Request; env: any }) => {
-  const raw = (params.app || '').replace(/\.(html|svg)$/i, '').replace(/^@/, '');
-  const wantsCard = new URL(request.url).searchParams.get('card') === 'svg';
+  const rawParam = params.app || '';
+  const raw = rawParam.replace(/\.(html|svg)$/i, '').replace(/^@/, '');
+  // Trigger the SVG share card by a `.svg` PATH extension (e.g. /tree/dronehunter.svg),
+  // not a query param: Cloudflare Pages infers the content-type from the route path, and
+  // an extensionless function route (like /tree/x?card=svg) gets forced to text/html
+  // regardless of the Response header we set. The .svg suffix makes Pages serve it as an
+  // image. (?card=svg is still accepted as a fallback for callers that use it.)
+  const wantsCard =
+    /\.svg$/i.test(rawParam) || new URL(request.url).searchParams.get('card') === 'svg';
   const headers = {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'public, max-age=60, s-maxage=120',
