@@ -169,7 +169,7 @@ export function useWindowManager(user?: AuthUser | null) {
     },
     profile: {
       id: 'profile',
-      title: "PROFILE.CFG — [Maker Account, Saved Shelf & SSH Keys]",
+      title: "ACCOUNT.CFG — [Account, Owned Apps & SSH Keys]",
       icon: '👤',
       isOpen: false,
       isMinimized: false,

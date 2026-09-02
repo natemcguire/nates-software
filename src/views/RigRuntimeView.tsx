@@ -477,7 +477,7 @@ export const RigRuntimeView: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <Info size={13} className="text-amber-700 shrink-0" />
           <span>
-            <strong>Deterministic State Machine Preview:</strong> This manifest builder remains a local simulation and never represents simulated lifecycle events as provider observations. {providerMessage}
+            <strong>Local Simulation Preview:</strong> {providerMessage}
           </span>
         </div>
         <div className="text-[10px] text-amber-800 font-mono">

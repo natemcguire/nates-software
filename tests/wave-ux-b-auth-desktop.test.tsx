@@ -260,7 +260,7 @@ describe('WAVE-UX-B Specification Tests', () => {
         </AuthContext.Provider>
       );
 
-      expect(html).toContain('STANDALONE ROUTE');
+      expect(html).not.toContain('STANDALONE ROUTE');
       expect(html).toContain('Log In');
       expect(html).toContain('Create account');
       expect(html).toContain("Return to Nate&#x27;s Software Web OS");
@@ -285,7 +285,7 @@ describe('WAVE-UX-B Specification Tests', () => {
         </AuthContext.Provider>
       );
 
-      expect(html).toContain('STANDALONE ROUTE');
+      expect(html).not.toContain('STANDALONE ROUTE');
       expect(html).toContain('@Alice Maker');
       expect(html).toContain('👩‍💻');
       expect(html).not.toContain('Sign Up');

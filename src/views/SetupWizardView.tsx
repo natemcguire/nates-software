@@ -153,7 +153,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
     navigator.clipboard.writeText(cliToken);
     setCliTokenCopied(true);
     setTimeout(() => setCliTokenCopied(false), 2000);
-    showAlert("CLI token copied to clipboard.", "Token Copied", "success");
+    showAlert("SLOP CLI token copied — paste it into `slop login`.", "Token Copied", "success");
   };
 
   const getCommandForTool = () => {
@@ -174,7 +174,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden select-none">
       {/* Wizard Header Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 text-white p-3 border-b-2 border-gray-600 flex items-center justify-between shadow-md">
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 text-white p-3 border-b-2 border-gray-600 flex items-center justify-between shadow-md shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 bg-white/10 rounded flex items-center justify-center border border-white/20 text-base">
             🚀
@@ -202,7 +202,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
       </div>
 
       {/* Main Content Body */}
-      <div className="flex-1 p-4 overflow-y-auto bg-w95-gray flex flex-col justify-between">
+      <div className="flex-1 p-4 overflow-y-auto bg-w95-gray">
         {step === 1 && (
           <div className="space-y-4 max-w-2xl mx-auto w-full">
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
@@ -340,22 +340,28 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                       <span>Generate CLI Token</span>
                     </button>
                   ) : (
-                    <div className="flex items-center gap-1 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded">
-                      <input
-                        type="text"
-                        readOnly
-                        value={cliToken}
-                        onFocus={(e) => e.target.select()}
-                        className="w-24 p-1 border border-gray-400 font-mono text-[10px] bg-white select-all"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleCopyCliToken}
-                        className="btn-w95 btn-w95-primary px-2 py-0.5 text-[10px] font-bold flex items-center gap-1"
-                      >
-                        {cliTokenCopied ? <Check size={10} /> : <Copy size={10} />}
-                        <span>{cliTokenCopied ? 'Copied' : 'Copy'}</span>
-                      </button>
+                    <div className="flex flex-col gap-1 bg-amber-50 border border-amber-300 p-1.5 rounded text-left">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-amber-950 font-mono">SLOP CLI auth token:</span>
+                        <input
+                          type="text"
+                          readOnly
+                          value={cliToken}
+                          onFocus={(e) => e.target.select()}
+                          className="w-28 p-0.5 border border-gray-400 font-mono text-[10px] bg-white select-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCopyCliToken}
+                          className="btn-w95 btn-w95-primary px-2 py-0.5 text-[10px] font-bold flex items-center gap-1"
+                        >
+                          {cliTokenCopied ? <Check size={10} /> : <Copy size={10} />}
+                          <span>{cliTokenCopied ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+                      <div className="text-[10px] text-gray-600 font-sans">
+                        Paste into <code className="bg-amber-100 px-1 py-0.2 rounded font-mono text-black">slop login</code> to publish from your terminal.
+                      </div>
                     </div>
                   )}
                 </div>
@@ -469,7 +475,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 </div>
 
                 <div className="space-y-1.5 select-text py-1">
-                  <div className="text-gray-400 text-[10px]"># 1. Authenticate CLI with your token from PROFILE.CFG:</div>
+                  <div className="text-gray-400 text-[10px]"># 1. Authenticate CLI with your token from ACCOUNT.CFG (Profile):</div>
                   <div className="text-amber-300 bg-black/50 p-1.5 rounded border border-slate-800 break-all">
                     slop login
                   </div>
@@ -626,45 +632,45 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             </div>
           </div>
         )}
+      </div>
 
-        {/* Bottom Wizard Navigation Footer */}
-        <div className="flex items-center justify-between border-t border-gray-400 pt-3 mt-4">
-          {step > 1 ? (
-            <button
-              onClick={() => { playClickSound(); setStep((prev) => (prev - 1) as any); }}
-              className="btn-w95 px-4 py-1 font-bold text-xs"
-            >
-              &larr; Back
-            </button>
-          ) : (
-            <div />
-          )}
+      {/* Sticky/Pinned Wizard Navigation Footer */}
+      <div className="bg-w95-gray px-4 py-2.5 border-t border-gray-400 flex items-center justify-between shrink-0 shadow-sm">
+        {step > 1 ? (
+          <button
+            onClick={() => { playClickSound(); setStep((prev) => (prev - 1) as any); }}
+            className="btn-w95 px-4 py-1 font-bold text-xs"
+          >
+            &larr; Back
+          </button>
+        ) : (
+          <div />
+        )}
 
-          {step < 3 ? (
-            <button
-              onClick={() => {
-                playClickSound();
-                setStep((prev) => (prev + 1) as any);
-              }}
-              disabled={!selectedStarter}
-              className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <span>Continue</span>
-              <ArrowRight size={13} />
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                playSuccessChime();
-                if (onOpenSandbox && selectedStarter) onOpenSandbox(selectedStarter.id);
-              }}
-              disabled={!selectedStarter}
-              className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs disabled:opacity-50"
-            >
-              Run {selectedStarter?.name || 'App'} in browser &rarr;
-            </button>
-          )}
-        </div>
+        {step < 3 ? (
+          <button
+            onClick={() => {
+              playClickSound();
+              setStep((prev) => (prev + 1) as any);
+            }}
+            disabled={!selectedStarter}
+            className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <span>Continue</span>
+            <ArrowRight size={13} />
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              playSuccessChime();
+              if (onOpenSandbox && selectedStarter) onOpenSandbox(selectedStarter.id);
+            }}
+            disabled={!selectedStarter}
+            className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs disabled:opacity-50"
+          >
+            Run {selectedStarter?.name || 'App'} in browser &rarr;
+          </button>
+        )}
       </div>
 
       {/* 1-Click In-Browser Fork Modal */}

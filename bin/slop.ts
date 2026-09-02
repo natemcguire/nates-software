@@ -1603,7 +1603,7 @@ export async function readTokenFromStdin(options: any = {}): Promise<string> {
 
       return new Promise<string>((resolve) => {
         let resolved = false;
-        const prompt = "Paste your CLI token (from PROFILE.CFG → Generate CLI token): ";
+        const prompt = "Paste your CLI token (from ACCOUNT.CFG (Profile) → Generate CLI token): ";
         stdoutStream.write(prompt);
         muted = true;
 
@@ -1712,7 +1712,7 @@ export async function handleLogin(args: string[] = [], options: any = {}): Promi
   }
 
   if (!token) {
-    const errorMsg = 'No CLI token provided. Generate a token from PROFILE.CFG → Generate CLI token, then run "slop login" to paste interactively (or "slop login --token <token>" for CI environments; note: --token may leak via shell history).';
+    const errorMsg = 'No CLI token provided. Generate a token from ACCOUNT.CFG (Profile) → Generate CLI token, then run "slop login" to paste interactively (or "slop login --token <token>" for CI environments; note: --token may leak via shell history).';
     console.error(`[AUTH] ${errorMsg}`);
     return {
       success: false,
@@ -1778,7 +1778,7 @@ export async function handleLogin(args: string[] = [], options: any = {}): Promi
   }
 
   if (!authRes || !authRes.ok) {
-    const msg = `Invalid or expired CLI token (HTTP ${authRes?.status || 'network error'}). Please generate a new token from PROFILE.CFG.`;
+    const msg = `Invalid or expired CLI token (HTTP ${authRes?.status || 'network error'}). Please generate a new token from ACCOUNT.CFG (Profile).`;
     console.error(`[AUTH] ${msg}`);
     return {
       success: false,
@@ -1790,7 +1790,7 @@ export async function handleLogin(args: string[] = [], options: any = {}): Promi
 
   const authData: any = await authRes.json().catch(() => ({}));
   if (!authData.success || !authData.authenticated || !authData.user?.username) {
-    const msg = authData.error || 'Invalid or expired CLI token. Please generate a new token from PROFILE.CFG.';
+    const msg = authData.error || 'Invalid or expired CLI token. Please generate a new token from ACCOUNT.CFG (Profile).';
     console.error(`[AUTH] ${msg}`);
     return {
       success: false,

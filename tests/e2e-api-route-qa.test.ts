@@ -233,7 +233,7 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'AGENT INBOX' });
       expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });
       expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO AI DEVELOPER BENCHMARK (Model + Harness + Tools)' });
-      expect(resolveAppRoute('nates-software.com', '/profile')).toEqual({ type: 'standalone_view', id: 'profile', title: 'MAKER PROFILE & DISK SHELF' });
+      expect(resolveAppRoute('nates-software.com', '/profile')).toEqual({ type: 'standalone_view', id: 'profile', title: 'ACCOUNT.CFG (Profile)' });
       expect(resolveAppRoute('nates-software.com', '/terminal')).toEqual({ type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' });
       expect(resolveAppRoute('nates-software.com', '/')).toEqual({ type: 'desktop' });
     });

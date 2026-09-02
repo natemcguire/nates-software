@@ -69,7 +69,7 @@ export function resolveAppRoute(
   }
 
   if (pathname.startsWith('/profile') || pathname.startsWith('/shelf') || viewQuery === 'profile') {
-    return { type: 'standalone_view', id: 'profile', title: 'MAKER PROFILE & DISK SHELF' };
+    return { type: 'standalone_view', id: 'profile', title: 'ACCOUNT.CFG (Profile)' };
   }
 
   if (pathname.startsWith('/terminal') || pathname.startsWith('/shell') || pathname.startsWith('/dos') || viewQuery === 'terminal') {
@@ -118,6 +118,38 @@ import { TerminalView } from './views/TerminalView';
 import { ChatView } from './views/ChatView';
 import { playClickSound, playSuccessChime } from './lib/soundEngine';
 import { useAlert } from './context/AlertContext';
+
+const ICON_POSITIONS_KEY = 'nsw_icon_positions';
+
+function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(ICON_POSITIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Ignore invalid JSON / storage errors
+  }
+  return {};
+}
+
+function getDefaultIconPosition(index: number): { x: number; y: number } {
+  const col = Math.floor(index / 8);
+  const row = index % 8;
+  const startX = 16;
+  const startY = 16;
+  const iconWidth = 112;
+  const iconHeight = 88;
+  const gapX = 12;
+  const gapY = 8;
+  return {
+    x: startX + col * (iconWidth + gapX),
+    y: startY + row * (iconHeight + gapY)
+  };
+}
 
 export function AppInner() {
   const { getApp, submitDrop } = useCatalog();
@@ -223,9 +255,6 @@ export function AppInner() {
       <div className="bg-[#000080] text-white px-3 py-1.5 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm font-mono">{title}</span>
-          <span className="bg-blue-900 text-blue-200 px-2 py-0.5 rounded text-[10px] font-mono border border-blue-400">
-            STANDALONE ROUTE
-          </span>
         </div>
         <div className="flex items-center gap-2">
           <AccountWidget />
@@ -321,7 +350,7 @@ export function AppInner() {
       case 'inbox': return renderStandaloneWrapper(route.title || "INBOX", <InboxView />);
       case 'white-papers': return renderStandaloneWrapper(route.title || "WHITE PAPERS", <WhitePapersView />);
       case 'dyno': return renderStandaloneWrapper(route.title || "DYNO", <DynoView />);
-      case 'profile': return renderStandaloneWrapper(route.title || "PROFILE", <ProfileView />);
+      case 'profile': return renderStandaloneWrapper(route.title || "ACCOUNT.CFG (Profile)", <ProfileView />);
       case 'terminal': return renderStandaloneWrapper(route.title || "TERMINAL", <TerminalView />);
     }
   }
@@ -378,10 +407,30 @@ export function AppInner() {
     });
   };
 
+  const [iconPositions, setIconPositions] = useState<Record<string, { x: number; y: number }>>(loadSavedIconPositions);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
+  const handleIconPositionChange = (id: string, pos: { x: number; y: number }) => {
+    setIconPositions(prev => {
+      const next = { ...prev, [id]: pos };
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(ICON_POSITIONS_KEY, JSON.stringify(next));
+        } catch {
+          // Ignore storage failures
+        }
+      }
+      return next;
+    });
+  };
+
   const handleDesktopPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('.RetroWindow') || (e.target as HTMLElement).closest('.btn-w95') || (e.target as HTMLElement).closest('.start-menu')) return;
+    if (
+      (e.target as HTMLElement).closest('.RetroWindow') ||
+      (e.target as HTMLElement).closest('.btn-w95') ||
+      (e.target as HTMLElement).closest('.start-menu') ||
+      (e.target as HTMLElement).closest('.desktop-icon')
+    ) return;
     setStartMenuOpen(false);
     setSelectionBox({
       startX: e.clientX,
@@ -530,80 +579,108 @@ export function AppInner() {
         </div>
       </div>
 
-      {/* Desktop App Icons Grid */}
-      <div className="absolute top-4 left-4 grid grid-flow-col grid-rows-8 gap-2 z-10">
-        <DesktopIcon
-          label="WHAT_IS_THIS.TXT"
-          icon="❓"
-          onClick={() => { playClickSound(); openWindow('mktg'); }}
-        />
-        <DesktopIcon
-          label="SETUP.EXE (START HERE)"
-          icon="🚀"
-          onClick={() => { playClickSound(); openWindow('setup'); }}
-        />
-        <DesktopIcon
-          label="README_FIRST.TXT"
-          icon="📄"
-          onClick={() => { playClickSound(); openWindow('mktg'); }}
-        />
-        <DesktopIcon
-          label="TERMINAL.EXE"
-          icon="💻"
-          onClick={() => { playClickSound(); openWindow('terminal'); }}
-        />
-        <DesktopIcon
-          label="CHAT (IRC)"
-          icon="💬"
-          onClick={() => { playClickSound(); openWindow('chat'); }}
-        />
-        <DesktopIcon
-          label="HOTWIRE (Drops)"
-          icon="🔥"
-          onClick={() => { playClickSound(); openWindow('hotwire'); }}
-        />
-        <DesktopIcon
-          label="SLOPSHOP (AI Mod)"
-          icon="🔧"
-          onClick={() => { playClickSound(); openWindow('slopshop'); }}
-        />
-        <DesktopIcon
-          label="GITSMITH (Forge)"
-          icon="📁"
-          onClick={() => { playClickSound(); openWindow('gitsmith'); }}
-        />
-        <DesktopIcon
-          label="RIG.EXE (Runtime)"
-          icon="⚙️"
-          onClick={() => { playClickSound(); openWindow('rig'); }}
-        />
-        <DesktopIcon
-          label="Agent Inbox"
-          icon="📫"
-          onClick={() => { playClickSound(); openWindow('inbox'); }}
-          badge={inboxUnreadCount > 0 ? (inboxUnreadCount > 99 ? '99+' : String(inboxUnreadCount)) : undefined}
-        />
-        <DesktopIcon
-          label="DYNO (Speedometer)"
-          icon="🏎️"
-          onClick={() => { playClickSound(); openWindow('dyno'); }}
-        />
-        <DesktopIcon
-          label="PROFILE.CFG (Shelf)"
-          icon="👤"
-          onClick={() => { playClickSound(); openWindow('profile'); }}
-        />
-        <DesktopIcon
-          label="WHITE_PAPERS.DOC"
-          icon="📖"
-          onClick={() => { playClickSound(); openWindow('papers'); }}
-        />
-        <DesktopIcon
-          label="Source on GitHub"
-          icon="🌐"
-          onClick={() => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); }}
-        />
-      </div>
+      {/* Desktop App Icons */}
+      {[
+        {
+          id: 'whatis',
+          label: 'WHAT_IS_THIS.TXT',
+          icon: '❓',
+          onClick: () => { playClickSound(); openWindow('mktg'); }
+        },
+        {
+          id: 'setup',
+          label: 'SETUP.EXE (START HERE)',
+          icon: '🚀',
+          onClick: () => { playClickSound(); openWindow('setup'); }
+        },
+        {
+          id: 'readme',
+          label: 'README_FIRST.TXT',
+          icon: '📄',
+          onClick: () => { playClickSound(); openWindow('mktg'); }
+        },
+        {
+          id: 'terminal',
+          label: 'TERMINAL.EXE',
+          icon: '💻',
+          onClick: () => { playClickSound(); openWindow('terminal'); }
+        },
+        {
+          id: 'chat',
+          label: 'CHAT (IRC)',
+          icon: '💬',
+          onClick: () => { playClickSound(); openWindow('chat'); }
+        },
+        {
+          id: 'hotwire',
+          label: 'HOTWIRE (Drops)',
+          icon: '🔥',
+          onClick: () => { playClickSound(); openWindow('hotwire'); }
+        },
+        {
+          id: 'slopshop',
+          label: 'SLOPSHOP (AI Mod)',
+          icon: '🔧',
+          onClick: () => { playClickSound(); openWindow('slopshop'); }
+        },
+        {
+          id: 'gitsmith',
+          label: 'GITSMITH (Forge)',
+          icon: '📁',
+          onClick: () => { playClickSound(); openWindow('gitsmith'); }
+        },
+        {
+          id: 'rig',
+          label: 'RIG.EXE (Runtime)',
+          icon: '⚙️',
+          onClick: () => { playClickSound(); openWindow('rig'); }
+        },
+        {
+          id: 'inbox',
+          label: 'Agent Inbox',
+          icon: '📫',
+          onClick: () => { playClickSound(); openWindow('inbox'); },
+          badge: inboxUnreadCount > 0 ? (inboxUnreadCount > 99 ? '99+' : String(inboxUnreadCount)) : undefined
+        },
+        {
+          id: 'dyno',
+          label: 'DYNO (Speedometer)',
+          icon: '🏎️',
+          onClick: () => { playClickSound(); openWindow('dyno'); }
+        },
+        {
+          id: 'profile',
+          label: 'ACCOUNT.CFG (Profile)',
+          icon: '👤',
+          onClick: () => { playClickSound(); openWindow('profile'); }
+        },
+        {
+          id: 'papers',
+          label: 'WHITE_PAPERS.DOC',
+          icon: '📖',
+          onClick: () => { playClickSound(); openWindow('papers'); }
+        },
+        {
+          id: 'github',
+          label: 'Source on GitHub',
+          icon: '🌐',
+          onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); }
+        }
+      ].map((item, index) => {
+        const pos = iconPositions[item.id] || getDefaultIconPosition(index);
+        return (
+          <DesktopIcon
+            key={item.id}
+            id={item.id}
+            label={item.label}
+            icon={item.icon}
+            badge={item.badge}
+            position={pos}
+            onPositionChange={(newPos) => handleIconPositionChange(item.id, newPos)}
+            onClick={item.onClick}
+          />
+        );
+      })}
 
       {/* Floating Application Windows */}
 

@@ -16,8 +16,7 @@ describe('RigRuntimeView First-Run & Truthful Control-Plane HUD', () => {
     // Truthful provider boundary notice
     expect(html).toContain('PROVIDER STATUS:');
     expect(html).toContain('CHECKING');
-    expect(html).toContain('Deterministic State Machine Preview');
-    expect(html).toContain('never represents simulated lifecycle events as provider observations');
+    expect(html).toContain('Local Simulation Preview');
     expect(html).toContain('Checking the production provider gateway');
 
     // First-run empty state

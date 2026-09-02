@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  User, Key, HardDrive, MessageSquare, Check, Sparkles,
+  User, Key, HardDrive, Check, Sparkles,
   DollarSign, RefreshCw, AlertTriangle, ExternalLink, Download,
   LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
 } from 'lucide-react';
@@ -28,7 +28,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const { isAuthenticated, openAuthModal } = useAuth();
 
   // Navigation & Target User State
-  const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'earnings' | 'profile' | 'published' | 'activity'>('shelf');
+  const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'published'>('shelf');
   const [viewingUsername, setViewingUsername] = useState<string | null>(initialUsername || null);
   const [searchHandleInput, setSearchHandleInput] = useState('');
 
@@ -56,6 +56,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   // Shelf, Published Apps, & Royalties
   const [shelfApps, setShelfApps] = useState<ShelfItem[]>([]);
+
+  // Group and de-duplicate shelf apps by unique app id
+  const groupedShelfApps = React.useMemo(() => {
+    const map = new Map<string, { app: ShelfItem; count: number }>();
+    for (const item of shelfApps) {
+      const key = item.appId || item.id;
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, { app: item, count: 1 });
+      } else {
+        existing.count += 1;
+        if (item.purchasedDate && (!existing.app.purchasedDate || new Date(item.purchasedDate) > new Date(existing.app.purchasedDate))) {
+          existing.app = item;
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [shelfApps]);
+
   const [publishedApps, setPublishedApps] = useState<any[]>([]);
   const [royalties, setRoyalties] = useState({
     makerBalanceCents: 0,
@@ -352,7 +371,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div>
               <h2 className="text-base font-bold text-gray-900">Session Authentication Required</h2>
               <p className="text-gray-600 text-xs mt-1.5 leading-relaxed">
-                Your software shelf, verified license keys, and maker economics are securely bound to your authenticated session.
+                Sign in to view your owned apps, license keys, and maker earnings.
               </p>
             </div>
 
@@ -440,29 +459,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               onClick={() => { playClickSound(); setActiveTab('shelf'); }}
               className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'shelf' ? 'btn-w95-primary' : 'text-black'}`}
             >
-              <HardDrive size={13} /> My Shelf ({shelfApps.length})
+              <HardDrive size={13} /> OWNED APPS ({groupedShelfApps.length})
             </button>
           )}
           <button
             onClick={() => { playClickSound(); setActiveTab('published'); }}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'published' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            <Sparkles size={13} /> Published Apps ({publishedApps.length})
+            <Sparkles size={13} /> PUBLISHED APPS ({publishedApps.length})
           </button>
           {isOwner && (
             <button
               onClick={() => { playClickSound(); setActiveTab('royalties'); }}
               className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'royalties' ? 'btn-w95-primary' : 'text-black'}`}
             >
-              <DollarSign size={13} /> Royalties ({formatCentsToUsd(royalties.makerBalanceCents)})
-            </button>
-          )}
-          {isOwner && (
-            <button
-              onClick={() => { playClickSound(); setActiveTab('earnings'); }}
-              className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'earnings' ? 'btn-w95-primary' : 'text-black'}`}
-            >
-              <GitBranch size={13} /> Earnings ({grants.length})
+              <DollarSign size={13} /> SALES &amp; ROYALTIES ({formatCentsToUsd(royalties.makerBalanceCents)})
             </button>
           )}
           {isOwner && (
@@ -473,12 +484,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <User size={13} /> Settings &amp; SSH
             </button>
           )}
-          <button
-            onClick={() => { playClickSound(); setActiveTab('activity'); }}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'activity' ? 'btn-w95-primary' : 'text-black'}`}
-          >
-            <MessageSquare size={13} /> Published &amp; Shelf
-          </button>
         </div>
       </div>
 
@@ -504,24 +509,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         {isLoading && (
           <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
             <RefreshCw size={14} className="animate-spin text-w95-blue" />
-            <span>Loading authoritative profile &amp; shelf records...</span>
+            <span>Loading profile &amp; owned apps...</span>
           </div>
         )}
 
-        {/* TAB 1: My Shelf (Private to owner) */}
+        {/* TAB 1: OWNED APPS (Private to owner) */}
         {!isLoading && activeTab === 'shelf' && isOwner && (
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
               <div>
-                <span className="font-bold text-base text-w95-blue">My Software Shelf &amp; App Data</span>
-                <p className="text-gray-600 text-xs">Owned shareware titles with launch endpoints, Git forge repositories, and safe license metadata.</p>
+                <span className="font-bold text-base text-w95-blue">OWNED APPS</span>
+                <p className="text-gray-600 text-xs">Apps you own, along with their source repositories and license keys.</p>
               </div>
               <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
-                {shelfApps.length} Owned {shelfApps.length === 1 ? 'Application' : 'Applications'}
+                {groupedShelfApps.length} Owned {groupedShelfApps.length === 1 ? 'Application' : 'Applications'}
               </span>
             </div>
 
-            {shelfApps.length === 0 ? (
+            {groupedShelfApps.length === 0 ? (
               <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-3">
                 <HardDrive size={32} className="mx-auto text-gray-400" />
                 <p className="font-bold text-gray-700 text-sm">Your Software Shelf is Empty</p>
@@ -537,7 +542,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             ) : (
               <div className="space-y-2.5">
-                {shelfApps.map((app) => {
+                {groupedShelfApps.map(({ app, count }) => {
                   const artifactLinks = publishedArtifactLinks(app.binaries);
                   return (
                     <div key={app.id} className="border-2 border-gray-700 bg-gray-50 p-3 rounded flex items-center justify-between gap-3 shadow-sm hover:bg-blue-50/40 transition-colors">
@@ -550,7 +555,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               {app.version}
                             </span>
                             <span className="text-gray-600 text-xs font-mono bg-gray-200 px-1.5 py-0.5 rounded border border-gray-300">
-                              License: {app.maskedKey}
+                              License: {app.maskedKey}{count > 1 ? ` (${count} licenses)` : ''}
                             </span>
                           </div>
                           <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
@@ -590,8 +595,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
               <div>
-                <span className="font-bold text-base text-w95-blue">Published Shareware &amp; Drops</span>
-                <p className="text-gray-600 text-xs">Software titles created by @{profileData.username} and deployed to the daily registry.</p>
+                <span className="font-bold text-base text-w95-blue">PUBLISHED APPS</span>
+                <p className="text-gray-600 text-xs">Software titles created and published by @{profileData.username}.</p>
               </div>
               <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
                 {publishedApps.length} Published
@@ -642,9 +647,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 3: Lineage Royalties (Private to owner) */}
+        {/* TAB 3: Sales, Royalties & Contributor Grants (Private to owner) */}
         {!isLoading && activeTab === 'royalties' && isOwner && (
           <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
+            {/* 1. Total Earned Summary Banner */}
             <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg flex items-center justify-between flex-wrap gap-4">
               <div>
                 <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
@@ -666,6 +672,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
 
+            {/* 2. Earnings by App Breakdown */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
               <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
                 <span>Earnings by app</span>
@@ -697,7 +704,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
 
-            {/* Seller Sales & Payout Ledger */}
+            {/* 3. Seller Sales & Payout Ledger */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
               <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
                 <span className="flex items-center gap-1.5">
@@ -780,116 +787,115 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               )}
             </div>
-          </div>
-        )}
 
-        {/* TAB 3b: Contributor Revenue Grants & Earnings (Private to owner) */}
-        {!isLoading && activeTab === 'earnings' && isOwner && (
-          <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
-            <div className="border-b pb-2 mb-2 flex justify-between items-center">
-              <div>
-                <span className="font-bold text-base text-w95-blue flex items-center gap-1.5">
-                  <GitBranch size={15} /> Contributor Revenue Grants
-                </span>
-                <p className="text-gray-600 text-xs">Basis-point shares granted to you when a repository maintainer merges your feature, plus what's been paid out so far.</p>
-              </div>
-              <button
-                onClick={() => { playClickSound(); loadGrants(); }}
-                disabled={grantsLoading}
-                className="btn-w95 text-xs px-2.5 py-1 flex items-center gap-1 font-bold shrink-0"
-              >
-                <RefreshCw size={12} className={grantsLoading ? 'animate-spin' : ''} /> Refresh
-              </button>
-            </div>
-
-            {grantsError && (
-              <div className="bg-red-50 border-2 border-red-500 p-3 rounded text-red-800 text-xs flex items-center gap-2">
-                <AlertTriangle size={14} className="shrink-0" />
-                <span>{grantsError}</span>
-              </div>
-            )}
-
-            {grantsLoading && !grantsError && grants.length === 0 && earningsByRole.length === 0 && (
-              <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
-                <RefreshCw size={14} className="animate-spin text-w95-blue" />
-                <span>Loading grants and earnings...</span>
-              </div>
-            )}
-
-            {!grantsLoading && grants.length === 0 && !grantsError && (
-              <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-8 rounded text-center space-y-2">
-                <GitBranch size={32} className="mx-auto text-gray-400" />
-                <p className="font-bold text-gray-700 text-sm">You have no revenue grants yet.</p>
-                <p className="text-gray-500 text-xs max-w-sm mx-auto">Contribute a merged feature to earn a share.</p>
-              </div>
-            )}
-
-            {grants.length > 0 && (
-              <>
-                {/* Realized earnings summary from fulfilled orders */}
-                <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg">
-                  <div className="text-[11px] text-emerald-400 font-mono uppercase tracking-wider">Realized earnings from fulfilled orders</div>
-                  {earningsByRole.length === 0 ? (
-                    <div className="text-xs text-slate-300 mt-1.5">No fulfilled orders have paid out to you yet.</div>
-                  ) : (
-                    <div className="flex flex-wrap gap-4 mt-1.5">
-                      {earningsByRole.map((row) => (
-                        <div key={row.role}>
-                          <div className="text-2xl font-bold font-mono text-white">{formatCentsToUsd(row.totalCents)}</div>
-                          <div className="text-[11px] text-slate-300">{row.count} {row.role} {row.count === 1 ? 'allocation' : 'allocations'}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            {/* 4. Contributor Revenue Grants & Realized Earnings */}
+            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
+              <div className="border-b pb-2 flex justify-between items-center">
+                <div>
+                  <span className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
+                    <GitBranch size={14} className="text-purple-700" />
+                    <span>Contributor Revenue Grants &amp; Earnings</span>
+                  </span>
+                  <p className="text-gray-600 text-[11px] mt-0.5">Basis-point shares granted to you when a repository maintainer merges your feature, plus realized payouts.</p>
                 </div>
+                <button
+                  onClick={() => { playClickSound(); loadGrants(); }}
+                  disabled={grantsLoading}
+                  className="btn-w95 text-xs px-2.5 py-1 flex items-center gap-1 font-bold shrink-0"
+                >
+                  <RefreshCw size={12} className={grantsLoading ? 'animate-spin' : ''} /> Refresh
+                </button>
+              </div>
 
-                {/* Pending / settled payouts from the outbox */}
-                <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
-                  <div className="font-bold text-gray-900 text-xs border-b border-gray-200 pb-2">Payout status</div>
-                  {payoutsByStatus.length === 0 ? (
-                    <p className="text-gray-500 text-xs p-2">No payout records yet. Payouts appear here once an order carrying your share is fulfilled.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {payoutsByStatus.map((row) => (
-                        <div key={row.status} className="bg-gray-50 p-2.5 rounded border border-gray-200 text-xs">
-                          <div className="font-bold text-gray-800 font-mono uppercase">{row.status}</div>
-                          <div className="font-bold text-green-800">{formatCentsToUsd(row.totalCents)}</div>
-                          <div className="text-[10px] text-gray-500">{row.count} {row.count === 1 ? 'transfer' : 'transfers'}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {grantsError && (
+                <div className="bg-red-50 border-2 border-red-500 p-3 rounded text-red-800 text-xs flex items-center gap-2">
+                  <AlertTriangle size={14} className="shrink-0" />
+                  <span>{grantsError}</span>
                 </div>
+              )}
 
-                {/* Grant list */}
-                <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
-                  <div className="font-bold text-gray-900 text-xs border-b border-gray-200 pb-2">Your grants</div>
-                  <div className="space-y-2">
-                    {grants.map((grant) => (
-                      <div key={grant.id} className="bg-gray-50 p-2.5 rounded border border-gray-200 flex items-center justify-between text-xs">
-                        <div>
-                          <div className="font-bold text-blue-900">{grant.appId}</div>
-                          <div className="text-[10px] text-gray-500 font-mono">
-                            Granted {grant.createdAt ? new Date(grant.createdAt).toLocaleDateString() : ''}
-                            {grant.activatedAt ? ` · Active since ${new Date(grant.activatedAt).toLocaleDateString()}` : ''}
+              {grantsLoading && !grantsError && grants.length === 0 && earningsByRole.length === 0 && (
+                <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
+                  <RefreshCw size={14} className="animate-spin text-w95-blue" />
+                  <span>Loading grants and earnings...</span>
+                </div>
+              )}
+
+              {!grantsLoading && grants.length === 0 && !grantsError && (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-300 p-6 rounded text-center space-y-2">
+                  <GitBranch size={28} className="mx-auto text-gray-400" />
+                  <p className="font-bold text-gray-700 text-xs">You have no revenue grants yet.</p>
+                  <p className="text-gray-500 text-[11px] max-w-sm mx-auto">Contribute a merged feature to earn a share.</p>
+                </div>
+              )}
+
+              {grants.length > 0 && (
+                <div className="space-y-3">
+                  {/* Realized earnings summary from fulfilled orders */}
+                  <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-3 rounded border border-emerald-700 shadow">
+                    <div className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider">Realized earnings from fulfilled orders</div>
+                    {earningsByRole.length === 0 ? (
+                      <div className="text-xs text-slate-300 mt-1">No fulfilled orders have paid out to you yet.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-4 mt-1">
+                        {earningsByRole.map((row) => (
+                          <div key={row.role}>
+                            <div className="text-xl font-bold font-mono text-white">{formatCentsToUsd(row.totalCents)}</div>
+                            <div className="text-[10px] text-slate-300">{row.count} {row.role} {row.count === 1 ? 'allocation' : 'allocations'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pending / settled payouts from the outbox */}
+                  <div className="space-y-1.5">
+                    <div className="font-bold text-gray-800 text-[11px]">Payout status</div>
+                    {payoutsByStatus.length === 0 ? (
+                      <p className="text-gray-500 text-xs p-1">No payout records yet. Payouts appear here once an order carrying your share is fulfilled.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {payoutsByStatus.map((row) => (
+                          <div key={row.status} className="bg-gray-50 p-2 rounded border border-gray-200 text-xs">
+                            <div className="font-bold text-gray-800 font-mono uppercase">{row.status}</div>
+                            <div className="font-bold text-green-800">{formatCentsToUsd(row.totalCents)}</div>
+                            <div className="text-[10px] text-gray-500">{row.count} {row.count === 1 ? 'transfer' : 'transfers'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Grant list */}
+                  <div className="space-y-1.5">
+                    <div className="font-bold text-gray-800 text-[11px]">Your grants</div>
+                    <div className="space-y-1.5">
+                      {grants.map((grant) => (
+                        <div key={grant.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-bold text-blue-900">{grant.appId}</div>
+                            <div className="text-[10px] text-gray-500 font-mono">
+                              Granted {grant.createdAt ? new Date(grant.createdAt).toLocaleDateString() : ''}
+                              {grant.activatedAt ? ` · Active since ${new Date(grant.activatedAt).toLocaleDateString()}` : ''}
+                            </div>
+                          </div>
+                          <div className="text-right font-mono flex items-center gap-2">
+                            <span className="font-bold text-gray-800">{(grant.basisPoints / 100).toFixed(2)}%</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono uppercase ${
+                              grant.status === 'active' ? 'bg-green-100 text-green-800 border border-green-300' :
+                              grant.status === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                              'bg-gray-200 text-gray-600 border border-gray-300'
+                            }`}>
+                              {grant.status}
+                            </span>
                           </div>
                         </div>
-                        <div className="text-right font-mono flex items-center gap-2">
-                          <span className="font-bold text-gray-800">{(grant.basisPoints / 100).toFixed(2)}%</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono uppercase ${
-                            grant.status === 'active' ? 'bg-green-100 text-green-800 border border-green-300' :
-                            grant.status === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                            'bg-gray-200 text-gray-600 border border-gray-300'
-                          }`}>
-                            {grant.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -985,7 +991,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 className="w-full p-2 border border-gray-400 font-mono text-xs bg-gray-50"
                 placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... user@machine"
               />
-              <p className="text-gray-500 text-[11px] mt-1">Registers this public key for GITSMITH authorization. A clone/push address appears only after that repository's SSH transport is activated.</p>
+              <p className="text-gray-500 text-[11px] mt-1">Registers your SSH public key for GITSMITH git repository access.</p>
             </div>
 
             {/* CLI Access Section */}
@@ -1071,94 +1077,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </button>
             </div>
           </form>
-        )}
-
-        {/* TAB 5: Published & Shelf Overview */}
-        {!isLoading && activeTab === 'activity' && (
-          <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
-            <div className="border-b pb-2 mb-2 flex justify-between items-center">
-              <div>
-                <span className="font-bold text-base text-w95-blue">Published &amp; Shelf</span>
-                <p className="text-gray-600 text-xs">Summary overview derived directly from @{profileData.username}'s published shareware and owned shelf licenses.</p>
-              </div>
-              <div className="flex gap-2">
-                <span className="bg-blue-100 text-w95-blue text-xs font-bold px-2 py-1 rounded">
-                  {publishedApps.length} Published
-                </span>
-                {isOwner && (
-                  <span className="bg-emerald-100 text-emerald-900 text-xs font-bold px-2 py-1 rounded">
-                    {shelfApps.length} Owned
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Section 1: Published Shareware */}
-            <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
-              <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-1.5">
-                <span className="flex items-center gap-1.5">
-                  <Sparkles size={13} className="text-blue-700" />
-                  <span>Published Shareware ({publishedApps.length})</span>
-                </span>
-                <span className="text-[10px] text-gray-500 font-mono">Daily registry drops</span>
-              </div>
-
-              {publishedApps.length === 0 ? (
-                <p className="text-gray-500 text-xs py-2 italic">
-                  No published applications registered yet for @{profileData.username}.
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  {publishedApps.map((app) => (
-                    <div key={app.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-bold text-blue-900">{app.name}</span>
-                        <span className="ml-2 font-mono text-[10px] text-gray-500">v{app.version}</span>
-                        {app.tagline && <p className="text-[11px] text-gray-600 mt-0.5">{app.tagline}</p>}
-                      </div>
-                      <div className="text-right text-[11px] text-gray-500 font-mono">
-                        {app.upvotes || 0} votes · {app.forks || 0} forks
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Section 2: Owned Software Shelf */}
-            {isOwner && (
-              <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
-                <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-1.5">
-                  <span className="flex items-center gap-1.5">
-                    <HardDrive size={13} className="text-emerald-700" />
-                    <span>Owned Shelf Licenses ({shelfApps.length})</span>
-                  </span>
-                  <span className="text-[10px] text-gray-500 font-mono">Private title registry</span>
-                </div>
-
-                {shelfApps.length === 0 ? (
-                  <p className="text-gray-500 text-xs py-2 italic">
-                    No owned shelf items registered on your account.
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {shelfApps.map((app) => (
-                      <div key={app.id} className="bg-gray-50 p-2 rounded border border-gray-200 flex items-center justify-between text-xs">
-                        <div>
-                          <span className="font-bold text-emerald-900">{app.name}</span>
-                          <span className="ml-2 font-mono text-[10px] text-gray-500">License: {app.maskedKey}</span>
-                          {app.tagline && <p className="text-[11px] text-gray-600 mt-0.5">{app.tagline}</p>}
-                        </div>
-                        <div className="text-right text-[11px] text-gray-500 font-mono">
-                          {app.purchasedDate ? new Date(app.purchasedDate).toLocaleDateString() : 'Active'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         )}
       </div>
     </div>
