@@ -65,43 +65,55 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
     `;
 
-    const queryParams: any[] = [];
-    const whereClauses: string[] = [`a.listing_status = 'active'`];
-
+    // Build an optional time-window clause for date-scoped batches. This is kept
+    // SEPARATE from the base filter so the board can fall back to the full catalog when
+    // the window is empty (Reddit-style: if there's nothing new, show what we have —
+    // never a blank board).
+    const baseWhere = `a.listing_status = 'active'`;
+    let windowClause = '';
+    const windowParams: any[] = [];
     if (batchFilter.type === 'today' && batchFilter.windowStart && batchFilter.windowEnd) {
-      whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
-      queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
+      windowClause = `datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`;
+      windowParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
     } else if (batchFilter.type === 'yesterday' && batchFilter.windowStart && batchFilter.windowEnd) {
-      whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
-      queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
+      windowClause = `datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`;
+      windowParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
     } else if (batchFilter.type === 'archive' && batchFilter.windowEnd) {
-      whereClauses.push(`datetime(a.created_at) < datetime(?)`);
-      queryParams.push(batchFilter.windowEnd.toISOString());
+      windowClause = `datetime(a.created_at) < datetime(?)`;
+      windowParams.push(batchFilter.windowEnd.toISOString());
     } else if (batchFilter.type === 'custom' && batchFilter.windowStart && batchFilter.windowEnd) {
-      whereClauses.push(`datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`);
-      queryParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
+      windowClause = `datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)`;
+      windowParams.push(batchFilter.windowStart.toISOString(), batchFilter.windowEnd.toISOString());
     }
 
-    if (whereClauses.length > 0) {
-      query += ` WHERE ` + whereClauses.join(' AND ');
-    }
+    const orderClause =
+      sort === 'forks' ? ` ORDER BY a.forks DESC, a.upvotes DESC LIMIT 100`
+      : sort === 'newest' ? ` ORDER BY a.created_at DESC LIMIT 100`
+      : sort === 'alltime' ? ` ORDER BY a.upvotes DESC, a.forks DESC LIMIT 100`
+      : ` ORDER BY a.upvotes DESC LIMIT 100`;
 
-    if (sort === 'forks') {
-      query += ` ORDER BY a.forks DESC, a.upvotes DESC LIMIT 100`;
-    } else if (sort === 'newest') {
-      query += ` ORDER BY a.created_at DESC LIMIT 100`;
-    } else if (sort === 'alltime') {
-      query += ` ORDER BY a.upvotes DESC, a.forks DESC LIMIT 100`;
-    } else {
-      query += ` ORDER BY a.upvotes DESC LIMIT 100`;
-    }
+    const buildQuery = (where: string) => `${query} WHERE ${where}${orderClause}`;
 
     let results: any[] = [];
+    let windowFellBack = false;
     if (env && env.DB) {
-      const dbRes = queryParams.length > 0
-        ? await env.DB.prepare(query).bind(...queryParams).all()
-        : await env.DB.prepare(query).all();
+      const scopedWhere = windowClause ? `${baseWhere} AND ${windowClause}` : baseWhere;
+      const scopedQuery = buildQuery(scopedWhere);
+      const dbRes = windowParams.length > 0
+        ? await env.DB.prepare(scopedQuery).bind(...windowParams).all()
+        : await env.DB.prepare(scopedQuery).all();
       results = dbRes.results || [];
+
+      // Reddit-style fallback: the CURRENT board (today/yesterday) should never be blank
+      // — if that window is empty, fall through to the full active catalog so we always
+      // show the apps we have. Archive/custom are explicit historical queries where an
+      // empty result is a legitimate answer, so they do NOT fall back.
+      const isCurrentBoard = batchFilter.type === 'today' || batchFilter.type === 'yesterday';
+      if (results.length === 0 && windowClause && isCurrentBoard) {
+        const allRes = await env.DB.prepare(buildQuery(baseWhere)).all();
+        results = allRes.results || [];
+        windowFellBack = results.length > 0;
+      }
     }
 
     // Fetch user drop history for maker streak calculation and live leaderboard
@@ -242,6 +254,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       timeToNextDrop: timeToNext,
       sort,
       batch: batchParam || 'all',
+      // True when a date-scoped batch (e.g. today) was empty and we fell back to the
+      // full active catalog — lets the UI honestly label it "showing all apps".
+      showingAllApps: windowFellBack,
       drops: finalDrops,
       makerLeaderboard,
       votedAppIds: Array.from(viewerVotedAppIds)

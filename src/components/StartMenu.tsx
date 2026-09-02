@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, Gauge, User, Terminal, MessageSquare } from 'lucide-react';
+import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, Gauge, User, Terminal, MessageSquare, LogIn, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
 import { playClickSound } from '../lib/soundEngine';
@@ -11,7 +11,7 @@ interface StartMenuProps {
 }
 
 export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWindow }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout, openAuthModal } = useAuth();
   const { shelfAppIds } = useCatalog();
 
   if (!isOpen) return null;
@@ -135,6 +135,26 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
           <HelpCircle size={16} className="text-gray-600" />
           <span>GitHub Forge &rarr;</span>
         </div>
+
+        {isAuthenticated ? (
+          <div
+            data-testid="startmenu-logout"
+            onClick={async () => { playClickSound(); await logout(); onClose(); }}
+            className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
+          >
+            <LogOut size={16} className="text-gray-600" />
+            <span>Log Out{user?.username ? ` (@${user.username})` : ''}</span>
+          </div>
+        ) : (
+          <div
+            data-testid="startmenu-login"
+            onClick={() => { playClickSound(); openAuthModal('login', 'sign in to your account'); onClose(); }}
+            className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
+          >
+            <LogIn size={16} className="text-green-700" />
+            <span>Log In / Sign Up</span>
+          </div>
+        )}
 
         <div
           onClick={() => { window.location.reload(); }}

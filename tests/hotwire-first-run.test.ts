@@ -567,6 +567,45 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(dataYesterday.success).toBe(true);
       expect(dataYesterday.batch).toBe('yesterday');
     });
+
+    it('CURRENT board (today) falls back to the full catalog when today is empty (Reddit-style, never blank)', async () => {
+      // An app that exists but was NOT created today (frozen past date, like the seeded
+      // catalog). A today-batch query finds nothing in the window and must fall back.
+      // Age every existing app to a frozen past date so TODAY's window is genuinely
+      // empty (the harness seeds apps with a current timestamp), then add one real
+      // past-dated app. A today-batch query must fall back to show it.
+      await ctx.d1.prepare("UPDATE app_listings SET created_at = '2020-01-01 00:00:00'").run();
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings
+          (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, created_at, listing_status)
+        VALUES ('old-real-app', 'Old Real App', 'Exists but not new', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', '2020-01-01 00:00:00', 'active')
+      `).run();
+
+      const res = await dropsApi.onRequestGet({
+        request: new Request('http://localhost/api/drops?batch=today', { method: 'GET' }),
+        env: { DB: ctx.d1 }
+      });
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      // Today's window is empty → the board fell back to the full active catalog.
+      expect(data.drops.map((d: any) => d.id)).toContain('old-real-app');
+      expect(data.showingAllApps).toBe(true);
+    });
+
+    it('archive with an empty window does NOT fall back (empty is a valid historical answer)', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, created_at, listing_status)
+        VALUES ('recent-only', 'Recent Only', 'Made recently', 'Desc', 'usr_nate', 'v1.0.0', CURRENT_TIMESTAMP, 'active')
+      `).run();
+      const res = await dropsApi.onRequestGet({
+        request: new Request('http://localhost/api/drops?batch=archive', { method: 'GET' }),
+        env: { DB: ctx.d1 }
+      });
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      // Archive is an explicit historical view; it must not dump the full catalog.
+      expect(data.showingAllApps).toBeFalsy();
+    });
   });
 
   // ==========================================================================
