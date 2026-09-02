@@ -101,6 +101,7 @@ import { DesktopTaskbar } from './components/DesktopTaskbar';
 import { StartMenu } from './components/StartMenu';
 import { AccountWidget } from './components/AccountWidget';
 import { FontSizer } from './components/FontSizer';
+import { TldrButton } from './components/TldrButton';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
@@ -474,6 +475,7 @@ export function AppInner() {
 
       {/* Top Right Controls & Greeting */}
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+        <TldrButton />
         <button
           data-testid="desktop-explainer-button"
           onClick={() => { playClickSound(); openWindow('mktg'); }}
