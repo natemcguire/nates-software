@@ -614,6 +614,21 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         <span className="text-gray-500 font-mono flex items-center gap-0.5">
                           <GitFork size={10} /> {app.forkCount || 0} forks
                         </span>
+                        {(app.forkCount || 0) > 0 && (
+                          <>
+                            <span className="text-gray-400 font-mono">|</span>
+                            <a
+                              href={`/tree/${encodeURIComponent(app.id)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => { e.stopPropagation(); playClickSound(); }}
+                              className="text-green-700 hover:text-green-900 font-mono font-bold flex items-center gap-0.5"
+                              title="See the fork lineage tree for this app — shareable"
+                            >
+                              🌳 lineage tree →
+                            </a>
+                          </>
+                        )}
                       </div>
                     </div>
 

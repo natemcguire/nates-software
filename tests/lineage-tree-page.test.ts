@@ -7,8 +7,12 @@ import * as treePage from '../functions/tree/[app]';
 describe('GET /tree/:app (embeddable lineage HTML page)', () => {
   let ctx: TestD1Context;
 
-  const render = (app: string) =>
-    treePage.onRequestGet({ params: { app }, env: { DB: ctx.d1 } });
+  const render = (app: string, query = '') =>
+    treePage.onRequestGet({
+      params: { app },
+      request: new Request(`https://nates-software.com/tree/${app}${query}`),
+      env: { DB: ctx.d1 },
+    });
 
   beforeEach(async () => {
     ctx = await createTestD1Database({ foreignKeys: true });
@@ -58,6 +62,28 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     expect(html).not.toMatch(/src="https?:\/\//);
   });
 
+  it('carries OG/Twitter meta so an unfurled tree link renders a card', async () => {
+    const html = await (await render('t-dronehunter')).text();
+    expect(html).toContain('property="og:title"');
+    expect(html).toContain('twitter:card" content="summary_large_image"');
+    // og:image points at the SVG card variant of the same URL.
+    expect(html).toContain('?card=svg');
+    // Real stats in the share copy (1 fork, 2 makers).
+    expect(html).toMatch(/has 1 fork/);
+  });
+
+  it('serves a 1200x630 SVG share card on ?card=svg with real stats', async () => {
+    const res = await render('t-dronehunter', '?card=svg');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/image\/svg/);
+    const svg = await res.text();
+    expect(svg).toContain('<svg');
+    expect(svg).toContain('width="1200" height="630"');
+    expect(svg).toContain('t-dronehunter');
+    expect(svg).toMatch(/has 1 fork/);
+    expect(svg).toContain('See the tree');
+  });
+
   it('escapes untrusted handle/app text (no HTML injection)', async () => {
     // A handle can only be [A-Za-z0-9_-] at registration, but the renderer must still
     // escape defensively. Prove the escaper by feeding a crafted app id through resolve:
@@ -80,7 +106,11 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     const unknown = await render('does-not-exist');
     expect(unknown.status).toBe(404);
 
-    const noDb = await treePage.onRequestGet({ params: { app: 't-dronehunter' }, env: {} });
+    const noDb = await treePage.onRequestGet({
+      params: { app: 't-dronehunter' },
+      request: new Request('https://nates-software.com/tree/t-dronehunter'),
+      env: {},
+    });
     expect(noDb.status).toBe(503);
     const body = await noDb.text();
     // No leaked internals. Word-boundaried so the error page's own hex colours

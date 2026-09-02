@@ -66,11 +66,28 @@ function renderTreePage(tree: LineageTree): string {
   const rootApp = tree.rootAppId ? esc(tree.rootAppId) : esc(tree.rootRepositoryId);
   const gens = depths.length;
 
+  // Share copy from real stats — an unfurled tree link should say something true.
+  const ogTitle = `${rootApp} has ${tree.totalForks} fork${tree.totalForks === 1 ? '' : 's'} — see the lineage tree`;
+  const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own forever; when a fork sells, 70% to the seller / 20% up the tree.`;
+  const ogUrl = `https://nates-software.com/tree/${rootApp}`;
+  const ogImage = `https://nates-software.com/tree/${rootApp}?card=svg`;
+
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${rootApp} — fork lineage · Nate's Software</title>
+<meta name="description" content="${esc(ogDesc)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Nate's Software">
+<meta property="og:title" content="${esc(ogTitle)}">
+<meta property="og:description" content="${esc(ogDesc)}">
+<meta property="og:url" content="${esc(ogUrl)}">
+<meta property="og:image" content="${esc(ogImage)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(ogTitle)}">
+<meta name="twitter:description" content="${esc(ogDesc)}">
+<meta name="twitter:image" content="${esc(ogImage)}">
 <style>
   :root{--bg:oklch(16% .02 265);--bg2:oklch(19% .024 265);--panel:oklch(22% .026 265);
     --line:oklch(34% .03 265);--line2:oklch(44% .035 265);--ink:oklch(97% .01 255);
@@ -135,8 +152,46 @@ function renderTreePage(tree: LineageTree): string {
 </body></html>`;
 }
 
-export const onRequestGet = async ({ params, env }: { params: { app: string }; env: any }) => {
+// A 1200x630 "milestone" share card as SVG (the summary_large_image an unfurled tree
+// link renders). SVG is the CF-Functions-native way to generate an image — no headless
+// browser, no external service. Real stats only.
+function renderCardSvg(tree: LineageTree): string {
+  const rootApp = esc(tree.rootAppId || tree.rootRepositoryId);
+  const forks = tree.totalForks;
+  const makers = tree.totalNodes;
+  const earned = esc(dollars(tree.lineageEarnedCents));
+  // Up to 12 mint bars whose heights ride the fork distribution — a tiny "tree" motif.
+  const bars = Array.from({ length: 12 }, (_, i) => {
+    const h = 40 + ((i * 37 + forks * 13) % 120);
+    const x = 92 + i * 84;
+    return `<rect x="${x}" y="${470 - h}" width="52" height="${h}" rx="4" fill="url(#mint)" opacity="0.85"/>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="Inter,ui-sans-serif,system-ui,sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0e1220"/><stop offset="1" stop-color="#0a0d16"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5eead4"/><stop offset="1" stop-color="#2f7d68"/>
+    </linearGradient>
+    <linearGradient id="hl" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7cf0c9"/><stop offset="1" stop-color="#ffd27a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="#10b98108"/>
+  <text x="80" y="96" fill="#5eead4" font-family="ui-monospace,monospace" font-size="24" letter-spacing="6">NATE'S SOFTWARE  /  LINEAGE TREE</text>
+  <text x="78" y="220" fill="#e8ecf4" font-size="86" font-weight="700" letter-spacing="-2"><tspan fill="url(#hl)">${rootApp}</tspan> has ${forks} fork${forks === 1 ? '' : 's'}.</text>
+  <text x="80" y="308" fill="#e8ecf4" font-size="72" font-weight="700" letter-spacing="-2">See the tree.</text>
+  ${bars}
+  <text x="80" y="556" fill="#9aa4b2" font-family="ui-monospace,monospace" font-size="26">${makers} maker${makers === 1 ? '' : 's'}  ·  ${earned} earned across the lineage</text>
+  <text x="80" y="596" fill="#5eead4" font-family="ui-monospace,monospace" font-size="24" font-weight="700">Fork it → nates-software.com</text>
+</svg>`;
+}
+
+export const onRequestGet = async ({ params, request, env }: { params: { app: string }; request: Request; env: any }) => {
   const raw = (params.app || '').replace(/\.(html|svg)$/i, '').replace(/^@/, '');
+  const wantsCard = new URL(request.url).searchParams.get('card') === 'svg';
   const headers = {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'public, max-age=60, s-maxage=120',
@@ -161,6 +216,14 @@ export const onRequestGet = async ({ params, env }: { params: { app: string }; e
     const tree = await fetchLineageTree(env.DB, repoId);
     if (!tree) return errorPage('Lineage tree not found.', 404);
 
+    if (wantsCard) {
+      return new Response(renderCardSvg(tree), {
+        headers: {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'public, max-age=60, s-maxage=300',
+        },
+      });
+    }
     return new Response(renderTreePage(tree), { headers });
   } catch (err: any) {
     console.error('[TREE] render error:', err?.message || err);
