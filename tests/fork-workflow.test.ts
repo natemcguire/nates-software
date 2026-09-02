@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { rmSync } from 'node:fs';
+import { rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   validateForkOrigin,
   createMergeJob,
@@ -62,13 +64,25 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
 
   // Step 3: slop clone, fork, and push with truthful failure handling
   it('Step 3: should create a structured local fork without contacting the remote gateway', async () => {
-    const forkRes = await handleFork('nate/dronehunter', { local: true });
+    // Seed a portable local source repo named `dronehunter` (so the derived
+    // worktree name is slop-dronehunter-*) and fork it by direct path. This
+    // avoids depending on a machine-local nate/dronehunter checkout, which
+    // exists on a dev box but not on a fresh CI runner.
+    const srcRoot = join(tmpdir(), `slopfix-fw-${Date.now().toString(36)}`);
+    const src = join(srcRoot, 'dronehunter');
+    mkdirSync(src, { recursive: true });
+    execSync(`git -c init.defaultBranch=main init "${src}"`, { stdio: 'pipe' });
+    writeFileSync(join(src, 'index.html'), '<!doctype html><title>Drone Hunter</title>');
+    execSync(`git -C "${src}" add -A && git -C "${src}" -c user.name=Fixture -c user.email=fixture@test -c commit.gpgsign=false commit -m seed`, { stdio: 'pipe' });
+
+    const forkRes = await handleFork(src, { local: true });
     try {
       expect(forkRes.success).toBe(true);
       expect(forkRes.command).toBe('fork');
       expect(forkRes.data.worktreePath).toContain(`${tmpdir()}/slop-dronehunter-`);
     } finally {
       if (forkRes.success) rmSync(forkRes.data.worktreePath, { recursive: true, force: true });
+      rmSync(srcRoot, { recursive: true, force: true });
     }
   }, 15_000);
 

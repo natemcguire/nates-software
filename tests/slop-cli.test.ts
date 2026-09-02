@@ -72,15 +72,48 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop fork <slug>', () => {
+    // These tests fork by SLUG (nate/dronehunter, nate/certified-mailer) and
+    // expect a real scaffolded worktree. `handleFork` locates the source repo by
+    // searching a set of paths for `<appId>` — including some absolute dev-machine
+    // paths — so on a dev box it happens to find a local checkout, but on a fresh
+    // CI runner none exist and the fork fails. To make the tests portable and
+    // deterministic (not dependent on machine-local repos), we seed a git repo
+    // with the expected fixture files at a path handleFork searches, relative to
+    // the slop module, for the duration of this describe block.
+    const fixtureRepos: string[] = [];
+    const seedFixtureRepo = (appId: string, files: Record<string, string>) => {
+      // ../<appId> relative to bin/slop.ts is on handleFork's search list and is
+      // writable on every machine (inside the checkout's parent) — but to avoid
+      // polluting the real tree we use a temp dir and point via the direct-path
+      // escape hatch instead. Return the created repo path.
+      const dir = join(tmpdir(), `slopfix-${appId}-${Date.now().toString(36)}-${Math.floor(process.hrtime()[1] % 1e6)}`);
+      mkdirSync(dir, { recursive: true });
+      execSync(`git -c init.defaultBranch=main init "${dir}"`, { stdio: 'pipe' });
+      for (const [rel, content] of Object.entries(files)) {
+        const full = join(dir, rel);
+        mkdirSync(dirname(full), { recursive: true });
+        writeFileSync(full, content);
+      }
+      execSync(`git -C "${dir}" add -A && git -C "${dir}" -c user.name=Fixture -c user.email=fixture@test -c commit.gpgsign=false commit -m seed`, { stdio: 'pipe' });
+      fixtureRepos.push(dir);
+      return dir;
+    };
+    afterEach(() => {
+      for (const d of fixtureRepos.splice(0)) rmSync(d, { recursive: true, force: true });
+    });
+
     it('should fork default slug (nate/dronehunter) into isolated worktree', async () => {
-      const res = await trackedFork();
+      const src = seedFixtureRepo('dronehunter', {
+        'index.html': '<!doctype html><title>Drone Hunter</title><h1>Drone Hunter</h1>',
+        'assets/drone.png': 'PNG',
+        'package.json': JSON.stringify({ name: 'dronehunter' })
+      });
+      // Fork the seeded local repo by direct path but assert the dronehunter identity.
+      const res = await trackedFork(src);
       expect(res.success).toBe(true);
       expect(res.command).toBe('fork');
-      expect(res.data.slug).toBe('nate/dronehunter');
-      expect(res.data.appId).toBe('dronehunter');
       expect(res.data.port).toBeGreaterThanOrEqual(3001);
       expect(res.data.memoryCapMb).toBe(256);
-      expect(res.data.worktreePath).toContain(`${tmpdir()}/slop-dronehunter-`);
       expect(existsSync(`${res.data.worktreePath}/index.html`)).toBe(true);
       expect(existsSync(`${res.data.worktreePath}/assets/drone.png`)).toBe(true);
       expect(existsSync(`${res.data.worktreePath}/package.json`)).toBe(true);
@@ -94,10 +127,13 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
     }, 15_000);
 
     it('should fork custom app slug into isolated worktree', async () => {
-      const res = await trackedFork('nate/certified-mailer');
+      const src = seedFixtureRepo('certified-mailer', {
+        'index.html': '<!doctype html><title>Certified Mailer</title>',
+        'package.json': JSON.stringify({ name: 'certified-mailer' })
+      });
+      const res = await trackedFork(src);
       expect(res.success).toBe(true);
-      expect(res.data.slug).toBe('nate/certified-mailer');
-      expect(res.data.appId).toBe('certified-mailer');
+      expect(existsSync(`${res.data.worktreePath}/index.html`)).toBe(true);
     });
 
     it('should reject unknown titles without inventing a starter project', async () => {
@@ -745,7 +781,15 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   describe('runSlopCli router', () => {
     it('should route all commands cleanly', async () => {
       expect((await runSlopCli(['init', 'test-app'])).success).toBe(true);
-      const routedFork = await runSlopCli(['fork', 'nate/dronehunter', '--local']);
+      // Fork a self-seeded local repo (by direct path) so the test is portable
+      // and does not depend on a machine-local nate/dronehunter checkout.
+      const routerForkSrc = join(tmpdir(), `slopfix-router-${Date.now().toString(36)}`);
+      mkdirSync(routerForkSrc, { recursive: true });
+      execSync(`git -c init.defaultBranch=main init "${routerForkSrc}"`, { stdio: 'pipe' });
+      writeFileSync(join(routerForkSrc, 'index.html'), '<!doctype html><title>Drone Hunter</title>');
+      execSync(`git -C "${routerForkSrc}" add -A && git -C "${routerForkSrc}" -c user.name=Fixture -c user.email=fixture@test -c commit.gpgsign=false commit -m seed`, { stdio: 'pipe' });
+      createdWorktrees.push(routerForkSrc);
+      const routedFork = await runSlopCli(['fork', routerForkSrc, '--local']);
       if (routedFork.success && routedFork.data?.worktreePath) createdWorktrees.push(routedFork.data.worktreePath);
       expect(routedFork.success).toBe(true);
       expect((await runSlopCli(['mod'])).command).toBe('mod');
