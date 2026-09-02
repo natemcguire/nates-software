@@ -4,7 +4,6 @@ import { AuthContext, AuthUser } from '../src/context/AuthContext';
 import { AlertProvider } from '../src/context/AlertContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 import { SlopshopView } from '../src/views/SlopshopView';
-import { RigRuntimeView } from '../src/views/RigRuntimeView';
 import { HotwireView } from '../src/views/HotwireView';
 import { PostEditorView } from '../src/views/PostEditorView';
 import { AppListing } from '../src/data/mockData';
@@ -66,36 +65,9 @@ describe('WAVE-UX-C Personalization & Ownership Gating', () => {
     });
   });
 
-  describe('Item 4: RIG (#15) — RigRuntimeView fleet personalization', () => {
-    it('displays @{username}\'s fleet in HUD header when logged in', () => {
-      const authCtx = createMockAuthContext(mockUser);
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <AlertProvider>
-            <RigRuntimeView />
-          </AlertProvider>
-        </AuthContext.Provider>
-      );
-
-      expect(html).toContain('alice_maker');
-      expect(html).toContain('fleet');
-      expect(html).not.toContain('Guest fleet');
-    });
-
-    it('displays Guest fleet in HUD header when logged out', () => {
-      const authCtx = createMockAuthContext(null);
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <AlertProvider>
-            <RigRuntimeView />
-          </AlertProvider>
-        </AuthContext.Provider>
-      );
-
-      expect(html).toContain('Guest fleet');
-      expect(html).not.toContain('alice_maker');
-    });
-  });
+  // Item 4: RIG (#15) — the RigRuntimeView HUD was removed (task #41); RIG is now
+  // an invisible engine (deploy pipeline / SLOPSHOP live-run), so there is no
+  // fleet-personalization HUD to assert on. Tests deleted with the component.
 
   describe('Item 5: HOTWIRE (#9, C2, E1) — HotwireView clarity, timezone note, and mine filter', () => {
     it('displays definition banner, local time countdown, and Mine filter tab when logged in', () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, Gauge, User, Terminal, MessageSquare, LogIn, LogOut } from 'lucide-react';
+import { Flame, Wrench, Mail, BookOpen, HelpCircle, Power, Gauge, User, Terminal, MessageSquare, LogIn, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound } from '../lib/soundEngine';
 
@@ -99,14 +99,6 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         >
           <Wrench size={16} className="text-blue-700" />
           <span>SLOPSHOP (AI Mod)</span>
-        </div>
-
-        <div
-          onClick={() => handleItemClick('rig')}
-          className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
-        >
-          <Cpu size={16} className="text-green-700" />
-          <span>RIG.EXE (Containers)</span>
         </div>
 
         <div

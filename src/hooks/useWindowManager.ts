@@ -46,7 +46,6 @@ export function useWindowManager(user?: AuthUser | null) {
   const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
   const slopshopConfig = getResponsiveWindowConfig(45, 1120, 700);
   const inboxConfig = getResponsiveWindowConfig(35, 1120, 700);
-  const rigConfig = getResponsiveWindowConfig(40, 1060, 640);
   const papersConfig = getResponsiveWindowConfig(15, 1140, 720);
   const dynoConfig = getResponsiveWindowConfig(30, 1000, 600);
   const profileConfig = getResponsiveWindowConfig(20, 1100, 700);
@@ -127,19 +126,6 @@ export function useWindowManager(user?: AuthUser | null) {
       width: inboxConfig.width,
       height: inboxConfig.height,
       zIndex: 13
-    },
-    rig: {
-      id: 'rig',
-      title: "RIG.EXE — [Ephemeral Runtime & Build HUD]",
-      icon: '⚙️',
-      isOpen: false,
-      isMinimized: false,
-      isMaximized: false,
-      x: rigConfig.x,
-      y: rigConfig.y,
-      width: rigConfig.width,
-      height: rigConfig.height,
-      zIndex: 14
     },
     papers: {
       id: 'papers',

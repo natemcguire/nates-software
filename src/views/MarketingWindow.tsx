@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, GitMerge, Mail, User, Sparkles, BookOpen, Gauge } from 'lucide-react';
+import { Flame, Wrench, GitMerge, Mail, User, Sparkles, BookOpen, Gauge } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound } from '../lib/soundEngine';
 
@@ -7,7 +7,6 @@ interface MarketingWindowProps {
   onOpenSetup?: () => void;
   onOpenHotwire: () => void;
   onOpenSlopshop: () => void;
-  onOpenRig: () => void;
   onOpenGitsmith: () => void;
   onOpenInbox: () => void;
   onOpenProfile: () => void;
@@ -20,7 +19,6 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onOpenSetup,
   onOpenHotwire,
   onOpenSlopshop,
-  onOpenRig,
   onOpenGitsmith,
   onOpenInbox,
   onOpenProfile,
@@ -70,16 +68,6 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       tag: 'COMMS',
       body: '3-pane async mailbox for human and agent discussions and merge proposals — approvals require you to actually read the diff first.',
       cta: 'Open your mailbox',
-      cardClass: 'bg-white border-2 border-gray-800'
-    },
-    {
-      key: 'rig',
-      onOpen: onOpenRig,
-      icon: <Cpu size={18} className="text-green-700" />,
-      title: 'RIG.EXE',
-      tag: 'RUNTIME',
-      body: 'Runs your app in a sandboxed container. It sleeps when idle, so you don\'t pay for nothing.',
-      cta: "See what's running",
       cardClass: 'bg-white border-2 border-gray-800'
     },
     ...(onOpenDyno

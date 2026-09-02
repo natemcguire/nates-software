@@ -23,7 +23,6 @@ export interface SlopshopViewProps {
   onOpenApp?: (appId: string) => void;
   onOpenTerminal?: () => void;
   onOpenGitsmith?: () => void;
-  onOpenRig?: () => void;
   onOpenHotwire?: () => void;
 }
 
@@ -46,7 +45,6 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   onOpenApp,
   onOpenTerminal,
   onOpenGitsmith,
-  onOpenRig,
   onOpenHotwire: _onOpenHotwire
 }) => {
   const { showAlert } = useAlert();
@@ -989,10 +987,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
             className="bg-[#d4d0c8] px-2 py-1 font-bold text-xs flex items-center justify-between border-b border-[#808080]"
             style={{ boxShadow: 'inset 0 1px 0 #ffffff' }}
           >
-            <span
-              onClick={() => onOpenRig?.()}
-              className="flex items-center gap-1.5 truncate cursor-pointer"
-            >
+            <span className="flex items-center gap-1.5 truncate">
               <span>▶</span>
               <span>Run — your fork, live</span>
             </span>

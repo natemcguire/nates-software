@@ -19,7 +19,6 @@ describe('Consolidated About/Explainer window (Spec M)', () => {
           onOpenSetup={noop}
           onOpenHotwire={noop}
           onOpenSlopshop={noop}
-          onOpenRig={noop}
           onOpenGitsmith={noop}
           onOpenInbox={noop}
           onOpenProfile={noop}

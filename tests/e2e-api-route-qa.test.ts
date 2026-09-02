@@ -220,7 +220,9 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       // EDITORIAL was removed from launch nav/routing (sample-only content); the
       // `editorial` subdomain no longer resolves to a first-party view.
       expect(resolveAppRoute('slopshop.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' });
-      expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' });
+      // RIG.EXE was removed as an app (task #41); 'rig' stays a RESERVED standalone_view
+      // (never a tenant app) resolving to an "infrastructure" notice, so the host can't be claimed.
+      expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG — INFRASTRUCTURE' });
       expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
       expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
       expect(resolveAppRoute('american-gardener.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'american-gardener', title: 'American Gardener' });

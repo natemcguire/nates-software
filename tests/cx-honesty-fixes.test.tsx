@@ -86,7 +86,6 @@ describe('Codex #9: logged-out UI shows @guest, never impersonates @nate', () =>
         <MarketingWindow
           onOpenHotwire={noop}
           onOpenSlopshop={noop}
-          onOpenRig={noop}
           onOpenGitsmith={noop}
           onOpenInbox={noop}
           onOpenProfile={noop}
@@ -106,7 +105,6 @@ describe('Codex #9: logged-out UI shows @guest, never impersonates @nate', () =>
         <MarketingWindow
           onOpenHotwire={noop}
           onOpenSlopshop={noop}
-          onOpenRig={noop}
           onOpenGitsmith={noop}
           onOpenInbox={noop}
           onOpenProfile={noop}

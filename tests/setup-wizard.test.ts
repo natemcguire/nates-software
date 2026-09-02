@@ -86,7 +86,8 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     // window renders `{s.cta} &rarr;`. Assert the CTA labels, not the old concatenated literals.
     expect(source).toContain("Browse today's drops");
     expect(source).toContain('Mod an app with AI');
-    expect(source).toContain("See what's running");
+    // (The "RIG.EXE — See what's running" card was removed in task #41; RIG is now
+    // invisible infra, folded into SLOPSHOP's run step, so its CTA is gone.)
     expect(source).toContain('Browse the code');
     expect(source).toContain('Open your mailbox');
     expect(source).toContain('Free to browse and fork. Create a maker account when you\'re ready to publish.');

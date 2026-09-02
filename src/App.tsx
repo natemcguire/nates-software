@@ -53,7 +53,10 @@ export function resolveAppRoute(
   }
 
   if (hostname.startsWith('rig.') || pathname.startsWith('/rig') || pathname.startsWith('/runtime') || viewQuery === 'rig') {
-    return { type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' };
+    // RIG is no longer a user-facing app (task #41) — it's the invisible deploy
+    // engine. Keep 'rig' resolving to a reserved standalone_view (never a tenant
+    // app) so rig.nates-software.com can't be claimed; it renders an infra notice.
+    return { type: 'standalone_view', id: 'rig', title: 'RIG — INFRASTRUCTURE' };
   }
 
   if (hostname.startsWith('inbox.') || pathname.startsWith('/inbox') || viewQuery === 'inbox') {
@@ -110,7 +113,6 @@ import { PostEditorView } from './views/PostEditorView';
 import { HotwireView } from './views/HotwireView';
 import { SlopshopView } from './views/SlopshopView';
 import { InboxView } from './views/InboxView';
-import { RigRuntimeView } from './views/RigRuntimeView';
 import { WhitePapersView } from './views/WhitePapersView';
 import { DynoView } from './views/DynoView';
 import { ProfileView } from './views/ProfileView';
@@ -326,7 +328,6 @@ export function AppInner() {
               onOpenSetup={goHome}
               onOpenHotwire={goHome}
               onOpenSlopshop={goHome}
-              onOpenRig={goHome}
               onOpenGitsmith={goHome}
               onOpenInbox={goHome}
               onOpenProfile={goHome}
@@ -346,7 +347,24 @@ export function AppInner() {
           }}
         />);
       case 'slopshop': return renderStandaloneWrapper(route.title || "SLOPSHOP", <SlopshopView />);
-      case 'rig': return renderStandaloneWrapper(route.title || "RIG.EXE", <RigRuntimeView />);
+      case 'rig': return renderStandaloneWrapper(route.title || "RIG — INFRASTRUCTURE", (
+        <div className="h-full overflow-auto bg-[#ece9d8] p-6 flex items-center justify-center">
+          <div className="max-w-md bg-white border-2 border-t-white border-l-white border-b-gray-700 border-r-gray-700 p-5 text-black font-tahoma text-sm leading-relaxed shadow-lg">
+            <div className="font-bold text-base mb-2">⚙️ RIG is infrastructure now</div>
+            <p className="mb-3">
+              RIG is no longer an app you open. It runs invisibly as the build &amp;
+              run engine behind the scenes: it builds every forge commit into a live
+              app, verifies merges, and powers SLOPSHOP's live-run step.
+            </p>
+            <a
+              href="https://nates-software.com"
+              className="inline-block btn-w95 px-3 py-1.5 font-bold text-black bg-gray-200 hover:bg-white"
+            >
+              ⚡ Go to Nate's Software
+            </a>
+          </div>
+        </div>
+      ));
       case 'inbox': return renderStandaloneWrapper(route.title || "INBOX", <InboxView />);
       case 'white-papers': return renderStandaloneWrapper(route.title || "WHITE PAPERS", <WhitePapersView />);
       case 'dyno': return renderStandaloneWrapper(route.title || "DYNO", <DynoView />);
@@ -630,12 +648,6 @@ export function AppInner() {
           onClick: () => { playClickSound(); openWindow('gitsmith'); }
         },
         {
-          id: 'rig',
-          label: 'RIG.EXE (Runtime)',
-          icon: '⚙️',
-          onClick: () => { playClickSound(); openWindow('rig'); }
-        },
-        {
           id: 'inbox',
           label: 'Agent Inbox',
           icon: '📫',
@@ -760,7 +772,6 @@ export function AppInner() {
             onOpenSetup={() => openWindow('setup')}
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
-            onOpenRig={() => openWindow('rig')}
             onOpenGitsmith={() => openWindow('gitsmith')}
             onOpenInbox={() => openWindow('inbox')}
             onOpenProfile={() => openWindow('profile')}
@@ -867,26 +878,9 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 4. Rig.exe Runtime HUD */}
-      <ErrorBoundary
-        key={`rig-${windows.rig.isOpen}`}
-        fallbackTitle="RIG.EXE"
-        onDismiss={() => closeWindow('rig')}
-        resetKeys={[windows.rig.isOpen]}
-      >
-        <RetroWindow
-          windowState={windows.rig}
-          isActive={activeWindowId === 'rig'}
-          onFocus={() => focusWindow('rig')}
-          onClose={() => closeWindow('rig')}
-          onMinimize={() => minimizeWindow('rig')}
-          onToggleMaximize={() => toggleMaximizeWindow('rig')}
-          onMove={(x, y) => updateWindowPosition('rig', x, y)}
-          onResize={(w, h, x, y) => updateWindowSize('rig', w, h, x, y)}
-        >
-          <RigRuntimeView />
-        </RetroWindow>
-      </ErrorBoundary>
+      {/* RIG.EXE was removed as a user-facing app (task #41). RIG is now an
+          invisible engine — the deploy build pipeline (executeRigDeployBuild),
+          merge verification, and SLOPSHOP's live-run gateway. No window here. */}
 
       {/* 5. Inbox Merge Discussions */}
       <ErrorBoundary
