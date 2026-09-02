@@ -93,6 +93,15 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     expect(html).not.toContain('onerror=');
   });
 
+  it('also renders when the path segment is a repository id (repo not linked to an app)', async () => {
+    // Forge repos with app_id=NULL are reachable by their repo id directly.
+    const res = await render('repo_dh');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('@tnate');
+    expect(html).toContain('@tsam');
+  });
+
   it('sets a short public cache header (embeddable)', async () => {
     const res = await render('t-dronehunter');
     expect(res.headers.get('Cache-Control')).toMatch(/public/);

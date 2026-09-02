@@ -210,11 +210,14 @@ export const onRequestGet = async ({ params, request, env }: { params: { app: st
     if (!raw || !SAFE_ID.test(raw)) return errorPage('Invalid app id.', 400);
     if (!env?.DB) return errorPage('Lineage service is temporarily unavailable.', 503);
 
-    const repoId = await resolveRepositoryIdForApp(env.DB, raw);
-    if (!repoId) return errorPage(`No forge repo found for "${raw}" yet.`, 404);
+    // The path segment can be a friendly app id (dronehunter) OR a repository id
+    // (repo_...). Prefer the app mapping; if there's no app for it, fall back to
+    // treating the segment as a repository id directly, so /tree/repo_… also works
+    // (forge repos that aren't linked to an app_listing have app_id = NULL).
+    const repoId = (await resolveRepositoryIdForApp(env.DB, raw)) || raw;
 
     const tree = await fetchLineageTree(env.DB, repoId);
-    if (!tree) return errorPage('Lineage tree not found.', 404);
+    if (!tree) return errorPage(`No lineage found for "${raw}" yet.`, 404);
 
     if (wantsCard) {
       return new Response(renderCardSvg(tree), {
