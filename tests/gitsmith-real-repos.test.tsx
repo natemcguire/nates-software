@@ -1,8 +1,42 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import { GitsmithView, mapCanonicalRepository } from '../src/views/GitsmithView';
+import { GitsmithView, mapCanonicalRepository, showcaseFilesForRepo } from '../src/views/GitsmithView';
 import { AuthProvider } from '../src/context/AuthContext';
 import { AlertProvider } from '../src/context/AlertContext';
+
+describe('GITSMITH showcase-file resolution is owner-scoped (no slug-collision content spoof)', () => {
+  // Repo slugs are unique PER-OWNER, not globally. A malicious user could create a
+  // public repo named 'wallart' / 'dronehunter' / etc. Embedded showcase files must
+  // resolve ONLY for nate's canonical repo of that slug — never another owner's.
+  it('serves embedded showcase files for nate/<showcase-slug>', () => {
+    for (const slug of ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']) {
+      const files = showcaseFilesForRepo({ name: slug, owner: 'nate' });
+      expect(files, `nate/${slug} should resolve showcase files`).toBeTruthy();
+      expect((files || []).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('does NOT serve nate\'s showcase files for another owner\'s colliding slug', () => {
+    for (const slug of ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']) {
+      // bob creates a public repo named exactly like a showcase app.
+      expect(showcaseFilesForRepo({ name: slug, owner: 'bob' })).toBeUndefined();
+      expect(showcaseFilesForRepo({ name: slug, owner: 'attacker' })).toBeUndefined();
+      // Even an owner string that merely contains 'nate' must not match.
+      expect(showcaseFilesForRepo({ name: slug, owner: 'natefake' })).toBeUndefined();
+      expect(showcaseFilesForRepo({ name: slug, owner: 'nate-evil' })).toBeUndefined();
+    }
+  });
+
+  it('accepts nate\'s userId form (usr_nate) as owner — legit projection fallback', () => {
+    const files = showcaseFilesForRepo({ name: 'dronehunter', owner: 'usr_nate' });
+    expect(files).toBeTruthy();
+    expect((files || []).length).toBeGreaterThan(0);
+  });
+
+  it('returns undefined for a non-showcase slug even when owned by nate', () => {
+    expect(showcaseFilesForRepo({ name: 'some-real-repo', owner: 'nate' })).toBeUndefined();
+  });
+});
 
 describe('GITSMITH Real Repos, File Browser & Readiness Honesty', () => {
   const originalFetch = global.fetch;

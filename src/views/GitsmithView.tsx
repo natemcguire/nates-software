@@ -215,6 +215,21 @@ export const SHOWCASE_FILES_BY_SLUG: Record<string, GitsmithRepo['files']> =
     return acc;
   }, {} as Record<string, GitsmithRepo['files']>);
 
+// The four showcase apps are all owned by 'nate'. Repo slugs are unique PER-OWNER,
+// not globally (migrations/0006: UNIQUE(owner_user_id, slug)), so any user could
+// create a public repo named e.g. 'wallart'. Resolve embedded showcase files ONLY
+// for nate's canonical repo of that slug — otherwise a colliding repo would render
+// nate's files as if they were the other user's content (integrity/spoofing).
+// The showcase repos' canonical owner. mapCanonicalRepository sets `owner` to
+// ownerUsername ('nate') when present, else ownerUserId ('usr_nate') — accept both,
+// so the legit case never breaks if the username projection is ever absent, while
+// every other owner is rejected.
+const SHOWCASE_OWNERS = new Set(['nate', 'usr_nate']);
+export function showcaseFilesForRepo(repo: Pick<GitsmithRepo, 'name' | 'owner'>): GitsmithRepo['files'] | undefined {
+  if (!SHOWCASE_OWNERS.has(repo.owner)) return undefined;
+  return SHOWCASE_FILES_BY_SLUG[repo.name];
+}
+
 export const GitsmithView: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
@@ -328,7 +343,7 @@ export const GitsmithView: React.FC = () => {
   // For canonical repos that mirror a seeded showcase app, surface the real embedded
   // file list (with names + content) instead of the phantom candidateFiles guess.
   const showcaseFilesForSelected = selectedRepo && selectedRepo.source !== 'showcase'
-    ? SHOWCASE_FILES_BY_SLUG[selectedRepo.name]
+    ? showcaseFilesForRepo(selectedRepo)
     : undefined;
   const displayedFiles = selectedRepo
     ? (selectedRepo.source === 'showcase'
@@ -362,7 +377,7 @@ export const GitsmithView: React.FC = () => {
     // directly. The object gateway has no browsable blobs for these, so a fetch would
     // 404 on every file. If the clicked file has embedded content, use it; if it's a
     // directory or a phantom, fall through to the "select a file" empty state.
-    const showcaseFiles = SHOWCASE_FILES_BY_SLUG[selectedRepo.name];
+    const showcaseFiles = showcaseFilesForRepo(selectedRepo);
     if (showcaseFiles && showcaseFiles.length > 0) {
       const target = activeFile
         ? showcaseFiles.find(f => f.name === activeFile.name)
@@ -766,7 +781,7 @@ export const GitsmithView: React.FC = () => {
                     // files so the tree highlight + preview line up on first click.
                     const seedFiles = repo.files.length > 0
                       ? repo.files
-                      : (repo.source !== 'showcase' ? SHOWCASE_FILES_BY_SLUG[repo.name] : undefined) || repo.files;
+                      : (repo.source !== 'showcase' ? showcaseFilesForRepo(repo) : undefined) || repo.files;
                     setActiveFile(seedFiles.find(f => f.type === 'file') || seedFiles[0] || null);
                   }}
                   className={`p-3.5 cursor-pointer transition-all ${
