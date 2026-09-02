@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
+import { attemptFirstPartySSO } from '../lib/firstPartySSO';
 
 export interface AuthUser {
   id: string;
@@ -50,7 +51,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .then(data => {
         if (data.success && data.authenticated && data.user) {
           setUser(data.user);
+          return;
         }
+        // No local session. If this is a trusted first-party VIEW host (gitsmith,
+        // hotwire, …), bounce once to the apex broker to inherit an existing apex
+        // login (task #38). If a redirect is initiated we leave authLoading true —
+        // the page is navigating away, so painting the logged-out shell is wasted.
+        if (attemptFirstPartySSO()) return;
       })
       .catch(() => {})
       .finally(() => setAuthLoading(false));
