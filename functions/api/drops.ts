@@ -204,17 +204,24 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const grantableBps = grantable_bps;
       const hasVoted = viewerVotedAppIds.has(r.id);
 
-      // Resolve the app's real live URL. An explicit binaries.web wins. Otherwise, ANY
-      // ACTIVE app — static R2, Worker, or container — is reachable at its own host
-      // (<hostname>.nates-software.com) via the wildcard router, which dispatches by
-      // origin_kind (serves R2 bytes for static, proxies the worker/container otherwise).
-      // Surfacing that host avoids iframing the bare /serve/<id> path, which only carries
-      // bytes for static apps and 404s for a container/Worker app.
+      // Resolve the app's real live URL for the in-app runner. An explicit binaries.web
+      // wins. Otherwise, for an ACTIVE app the serve path depends on origin_kind:
+      //  - r2_static → `/serve/<id>/index.html`. Its bare host <id>.nates-software.com is
+      //    a Custom Domain on the MAIN Pages project and is EXCLUDED from the wildcard
+      //    router, so that host serves the marketplace SPA, NOT the R2 bytes. The
+      //    /serve/<id> Pages Function is the only thing that serves this app's R2 bytes.
+      //    (This was the "American Gardener iframes the marketplace into itself" bug.)
+      //  - worker/container → the wildcard router DOES proxy these at <host>.nates-
+      //    software.com, so use the real host.
       const originHost = (r.hostname || r.id) as string;
       const isActive = r.deploymentState === 'active' && Boolean(r.activeDeploymentId);
-      const resolvedLiveUrl = binaries?.web
-        || r.liveUrl
-        || (isActive ? `https://${originHost}.nates-software.com/` : undefined);
+      const isStatic = !r.originKind || r.originKind === 'r2_static';
+      const activeServeUrl = isActive
+        ? (isStatic
+            ? `/serve/${encodeURIComponent(r.id)}/index.html`
+            : `https://${originHost}.nates-software.com/`)
+        : undefined;
+      const resolvedLiveUrl = binaries?.web || r.liveUrl || activeServeUrl;
 
       return {
         ...r,
