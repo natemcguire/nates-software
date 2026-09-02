@@ -656,11 +656,15 @@ describe('Marketplace Phase 3a — Contributor Grant Recording at Approve-and-Me
     });
   });
 
-  it('renders InboxView with Reward Contributor UI components', () => {
+  it('no longer renders the Reward Contributor UI inside the INBOX window (task #42)', () => {
+    // The contributor-reward control lived in the cloud merge-proposal pane, which
+    // was removed when INBOX became a single-purpose local agent-mailbox observer.
+    // The grant-recording BACKEND (exercised throughout this file) is unchanged;
+    // only its presence in the INBOX window is gone. This asserts that removal.
     const html = renderToString(React.createElement(AuthProvider, null, React.createElement(InboxView)));
-    expect(html).toContain('INBOX.EXE');
-    expect(html).toContain('SYNCING');
-    expect(html).toContain('No Message Selected');
+    expect(html).toContain('Local Agent Mailbox');
+    expect(html).not.toContain('Reward Contributor');
+    expect(html).not.toContain('No Message Selected');
   });
 });
 

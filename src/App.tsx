@@ -159,35 +159,11 @@ export function AppInner() {
   const { user, isAuthenticated, authLoading, openAuthModal } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
-  const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
 
-  // Poll the lightweight global unread count for the INBOX desktop icon badge.
-  // Never loads message bodies; scoped server-side to the authenticated session.
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setInboxUnreadCount(0);
-      return;
-    }
-    let cancelled = false;
-    const loadUnreadCount = async () => {
-      try {
-        const res = await fetch('/api/inbox?action=unread-count', { credentials: 'same-origin' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled && data?.success) {
-          setInboxUnreadCount(Number(data.unreadCount) || 0);
-        }
-      } catch {
-        // Badge is best-effort; silently skip on network/parse failure.
-      }
-    };
-    loadUnreadCount();
-    const intervalId = setInterval(loadUnreadCount, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [isAuthenticated]);
+  // (The INBOX desktop badge that polled the cloud /api/inbox unread count was
+  // removed in task #42: the INBOX window now shows LOCAL agent mail from the
+  // loopback agent-inboxes service, so a cloud-inbox count would be misleading.
+  // The window's own status strip shows CONNECTED/OFFLINE.)
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
@@ -651,8 +627,7 @@ export function AppInner() {
           id: 'inbox',
           label: 'Agent Inbox',
           icon: '📫',
-          onClick: () => { playClickSound(); openWindow('inbox'); },
-          badge: inboxUnreadCount > 0 ? (inboxUnreadCount > 99 ? '99+' : String(inboxUnreadCount)) : undefined
+          onClick: () => { playClickSound(); openWindow('inbox'); }
         },
         {
           id: 'dyno',
@@ -686,7 +661,6 @@ export function AppInner() {
             id={item.id}
             label={item.label}
             icon={item.icon}
-            badge={item.badge}
             position={pos}
             onPositionChange={(newPos) => handleIconPositionChange(item.id, newPos)}
             onClick={item.onClick}

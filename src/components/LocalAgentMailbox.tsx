@@ -441,12 +441,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
 // Stateful container
 // ---------------------------------------------------------------------------
 
-interface LocalAgentMailboxProps {
-  /** Mode-toggle JSX rendered at the top of this component's own left rail. */
-  modeToggle?: React.ReactNode;
-}
-
-export const LocalAgentMailbox: React.FC<LocalAgentMailboxProps> = ({ modeToggle }) => {
+export const LocalAgentMailbox: React.FC = () => {
   const [health, setHealth] = useState<HealthResult>({ running: false });
   const [probing, setProbing] = useState<boolean>(true);
   const [probed, setProbed] = useState<boolean>(false);
@@ -584,7 +579,6 @@ export const LocalAgentMailbox: React.FC<LocalAgentMailboxProps> = ({ modeToggle
 
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden font-tahoma text-xs">
-      {modeToggle}
       {/* Connection status strip */}
       <div className="border-2 border-gray-800 bg-white px-2 py-1 flex items-center justify-between shrink-0">
         <span className="flex items-center gap-1.5 font-bold text-gray-800">

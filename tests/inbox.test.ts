@@ -457,11 +457,13 @@ describe('INBOX.EXE live-mode integrity', () => {
     expect(data.threads[0]).toMatchObject({ mergeStatus: 'landed', isMerged: true });
   });
 
-  it('renders a truthful first frame without demo mail or fake merge claims', () => {
+  it('renders a truthful first frame — the local agent-mailbox observer, no fabricated data', () => {
+    // Reworked in task #42: INBOX is now a single-purpose local agent-mailbox
+    // observer. First frame probes the loopback service and shows no data until
+    // it connects (honesty contract) — never fake mail or fabricated amounts.
     const html = renderToString(React.createElement(AuthProvider, null, React.createElement(InboxView)));
-    expect(html).toContain('INBOX.EXE');
-    expect(html).toContain('SYNCING');
-    expect(html).toContain('No Message Selected');
+    expect(html).toContain('Local Agent Mailbox');
+    expect(html).toContain('127.0.0.1:8791');
     expect(html).not.toContain('$340.00');
     expect(html).not.toContain('Executes atomic git update-ref');
   });

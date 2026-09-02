@@ -545,13 +545,16 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
   // =========================================================================
   // 3. UI RENDERING AND PR TAB INTEGRATION
   // =========================================================================
-  describe('3. UI Rendering & Win95 PR Layout', () => {
-    it('renders the PR review interface without mocks or fake merge claims', () => {
+  describe('3. UI Rendering — Agent Inbox (single-purpose after task #42)', () => {
+    it('renders the local agent-mailbox observer, not the old cloud PR UI', () => {
       const html = renderToString(React.createElement(AuthProvider, null, React.createElement(InboxView)));
-      expect(html).toContain('INBOX.EXE');
-      expect(html).toContain('Pull Requests');
-      expect(html).toContain('All Inbound');
-      expect(html).toContain('GITSMITH CAS');
+      // The INBOX window was reworked to a single-purpose local agent-mailbox
+      // observer. The cloud PR/merge-proposal UI (INBOX.EXE / Pull Requests /
+      // All Inbound / GITSMITH CAS) is no longer rendered in this view.
+      expect(html).toContain('Local Agent Mailbox');
+      expect(html).toContain('127.0.0.1:8791');
+      expect(html).not.toContain('Pull Requests');
+      expect(html).not.toContain('GITSMITH CAS');
     });
   });
 });
