@@ -101,3 +101,51 @@ export function calculateRefundAllocationDelta(
       };
     });
 }
+
+/**
+ * Distributes a single Stripe Dispute's OWN amount (which may be PARTIAL — strictly less
+ * than the order's gross_cents) pro-rata across ALL of the order's frozen allocations
+ * (maker/ancestor/contributor AND protocol_pool), reusing the exact same cumulative
+ * largest-remainder (D'Hondt) machinery as `calculateRefundAllocationDelta` so cents
+ * conserve deterministically and identically to how partial refunds are split.
+ *
+ * Disputes and refunds both draw down the SAME finite pool of "money that can still be
+ * clawed back" per allocation, so `priorClawbackCents` must be the combined total already
+ * recovered against the order via BOTH succeeded refunds and prior disputes (summed
+ * per-allocation, passed as `priorByAllocation`, and as a scalar total in
+ * `priorClawbackCents`) — this dispute's cumulative target is
+ * `priorClawbackCents + disputeAmountCents`, seated against `grossCents` exactly like a
+ * refund would be, and this dispute's delta is that target minus prior.
+ *
+ * The caller is responsible for NOT inserting a recovery obligation for the
+ * `protocol_pool` delta (it was never paid out, so it needs no recovery — exactly how
+ * refundProcessor.ts already treats the pool's share of a refund) while still including
+ * it in the conservation sum: `sum(ALL deltas, including pool) === disputeAmountCents`
+ * always holds exactly, and `sum(payable deltas)` is therefore the true amount that must
+ * be clawed back from real recipients — always <= disputeAmountCents, with the remainder
+ * implicitly absorbed by the platform never having paid the pool's share out.
+ */
+export function calculateDisputeRecoveryDelta(
+  allocations: FrozenAllocation[],
+  grossCents: number,
+  disputeAmountCents: number,
+  priorClawbackCents: number,
+  priorByAllocation: ReadonlyMap<string, number> = new Map()
+): RefundAllocationDelta[] {
+  requireSafeCents(disputeAmountCents, 'disputeAmountCents');
+  requireSafeCents(priorClawbackCents, 'priorClawbackCents');
+  if (disputeAmountCents <= 0) throw new Error('dispute amount must be a positive integer');
+
+  const cumulativeTargetCents = priorClawbackCents + disputeAmountCents;
+  if (!Number.isSafeInteger(cumulativeTargetCents)) {
+    throw new Error('dispute cumulative clawback exceeds safe integer range');
+  }
+
+  const deltas = calculateRefundAllocationDelta(allocations, grossCents, cumulativeTargetCents, priorByAllocation);
+
+  const sumDeltas = deltas.reduce((sum, row) => sum + row.deltaAmountCents, 0);
+  if (sumDeltas !== disputeAmountCents) {
+    throw new Error(`dispute recovery deltas (${sumDeltas}) failed to conserve dispute amount (${disputeAmountCents})`);
+  }
+  return deltas;
+}

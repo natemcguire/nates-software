@@ -185,11 +185,62 @@ export async function processRefundInboxEvent(
 
   const nextRefunded = order.refunded_cents + amountCents;
   const nextStatus = nextRefunded === order.gross_cents ? 'refunded' : order.status;
-  const statements = [...baseStatements,
-    db.prepare(`UPDATE commerce_orders SET refunded_cents=?, status=?, state_version=state_version+1,
+
+  // Durably record the canonical `commerce_refunds` observation of this Stripe Refund
+  // object FIRST, standalone and unconditionally (idempotent upsert keyed on
+  // stripe_refund_id — never a CAS, so it is always safe to run regardless of whether
+  // this event goes on to win or lose the order CAS below). This guarantees the refund
+  // itself is durably observed even if this event turns out to be the loser of a
+  // concurrent race, instead of vanishing with no trace if it never reaches the
+  // dependent-writes batch.
+  try {
+    await baseStatements[0].run();
+  } catch (error: any) {
+    const message = `Refund canonical upsert failed: ${error.message}`;
+    await releaseInboxClaim(db, eventId, claimToken, message, 30);
+    return { success: false, retryable: true, error: message };
+  }
+
+  // CRITICAL (money conservation): the order CAS UPDATE is executed STANDALONE, ahead of
+  // and separate from the dependent-writes batch, and its rows-affected is checked BEFORE
+  // any refund_allocations/recovery_obligations/observations/inbox-processed writes are
+  // even constructed. D1 does NOT throw when a conditional UPDATE's WHERE clause matches
+  // zero rows — db.batch() only rolls back on a THROWN error — so if this guarded UPDATE
+  // were merely one statement inside the dependent-writes batch, a lost CAS (another,
+  // DIFFERENT concurrent refund already advanced state_version/refunded_cents) would
+  // silently affect 0 rows while every other statement in the batch still committed,
+  // double-counting the recovery obligations against a single, un-doubled order total.
+  // Guarding the CAS standalone makes that impossible: nothing else commits unless this
+  // exact expected-state transition really happened.
+  let orderCasResult: any;
+  try {
+    orderCasResult = await db.prepare(`UPDATE commerce_orders SET refunded_cents=?, status=?, state_version=state_version+1,
       updated_at=datetime('now') WHERE id=? AND state_version=? AND refunded_cents=? AND status=?`)
       .bind(nextRefunded, nextStatus, order.id, order.state_version, order.refunded_cents, order.status)
-  ];
+      .run();
+  } catch (error: any) {
+    const message = `Order refund CAS update failed: ${error.message}`;
+    await releaseInboxClaim(db, eventId, claimToken, message, 30);
+    return { success: false, retryable: true, error: message };
+  }
+  const orderCasChanges = orderCasResult?.meta?.changes ?? 0;
+  if (orderCasChanges !== 1) {
+    // The CAS lost: order state (state_version/refunded_cents/status) advanced under us,
+    // almost certainly because a DIFFERENT concurrent refund event finalized first. Do
+    // NOT insert this refund's allocations/recovery obligations and do NOT mark the inbox
+    // event processed as if it succeeded — that would double-count against the single
+    // order total the winning event already committed. Release the claim as retryable so
+    // this event is reprocessed against fresh order state (recomputing deltas/prior from
+    // the now-current refunded_cents), which keeps the refund idempotent and serializes
+    // concurrent distinct refunds correctly instead of both finalizing.
+    const message = `Order refund CAS update affected ${orderCasChanges} rows (expected 1) — concurrent order state change detected`;
+    await releaseInboxClaim(db, eventId, claimToken, message, 5);
+    return { success: false, retryable: true, error: message };
+  }
+
+  // NOTE: baseStatements[0] (the commerce_refunds canonical upsert) already ran standalone
+  // above, ahead of the order CAS — it must not be repeated here.
+  const statements: any[] = [];
   for (const delta of deltas) {
     statements.push(db.prepare(`INSERT INTO commerce_refund_allocations
       (id, refund_id, allocation_id, sequence, amount_cents) VALUES (?, ?, ?, ?, ?)`)
@@ -222,9 +273,17 @@ export async function processRefundInboxEvent(
   try {
     await db.batch(statements);
   } catch (error: any) {
-    const message = `Atomic refund reconciliation failed: ${error.message}`;
-    await releaseInboxClaim(db, eventId, claimToken, message, 30);
-    return { success: false, retryable: true, error: message };
+    // The order CAS already committed standalone above (we hold the ONLY successful claim
+    // on that state transition), but the dependent writes (allocations/obligations/
+    // observations/finalize/inbox-processed) failed to commit as a batch. This is NOT the
+    // "lost the CAS to a concurrent refund" case (that already returned above) — it is a
+    // genuine partial-failure straddling the two phases. Fail terminal rather than release
+    // as blindly retryable: a naive retry would re-read the now-already-bumped
+    // refunded_cents and recompute deltas as if this refund's money movement never
+    // happened, double-counting it. This case needs operator/reconciliation attention,
+    // not automatic retry.
+    const message = `Refund order CAS committed but dependent reconciliation batch failed (needs manual reconciliation): ${error.message}`;
+    return failTerminal(db, eventId, claimToken, message);
   }
   return { success: true, orderId: order.id, status: nextStatus };
 }
