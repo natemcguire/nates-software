@@ -25,74 +25,76 @@ The confusion was never the fork chain — it was that **makers had to reason ab
 
 | Mode | Fork it? | Resell your version? | Owes upstream? |
 |------|----------|----------------------|----------------|
-| **Free** | Yes | Yes | No |
-| **Source-available** | Yes (for yourself) | No | No |
-| **Royalty** | Yes | Yes | Yes — decay (§3.3) |
+| **Personal** | Yes (for yourself) | No | No |
+| **Resale (r%)** | Yes | Yes | Yes — a frozen lien (§3.3) |
 
-An app is **exactly one** mode. It can never be both "free" and "royalty-bearing." This single rule eliminates the 90/10-vs-70/20/10 duality.
+Two modes only. **Resale with `r = 0%` is the "free to fork and resell" case** — no separate FREE mode needed, which also removes the "Royalty 0% == Free" collision. An app is exactly one mode.
 
-### 3.2 The one number
+> **Why the change from an earlier draft:** an earlier version of this spec used *nested* per-maker decay (each maker's cut computed off their child's cut) and let every listing pick its rate independently. A steelman review (Grok, 2026-09-02) found three blocking failures in that shape: (1) any intermediate maker could republish their fork at 0% and **zero out every ancestor above them**; (2) nested decay made "I get r%" false past the first hop — grandparents earned dust ($0.90 on a $100 sale, rounding to zero at shareware prices); (3) rates weren't frozen at fork, so an ancestor could hike their rate after a descendant built a business (hold-up). The model below fixes all three: **frozen liens that run with descendants, applied additively off the same base.**
 
-Every maker sets **one royalty rate** at publish — any value in **`0% … 100%`**, their free choice per listing. No platform-imposed default philosophy, no floor, no cap below 100%. Its entire meaning to the maker:
+### 3.2 The one number — and it's frozen onto the fork edge
 
-> "Fork me, sell it, I get my cut."
+When a maker publishes a **Resale** app they set **one rate `r`**, any value in `0% … 100%`. When someone **forks** that app, `r` is **frozen onto that fork edge forever** and the lien **runs with all descendants** of the fork. The forker can change the rate on *their own* new listing (waiving or setting *their own* future claim), but **they cannot drop or alter the liens they inherited.** This is the critical fix: a child can never zero out its ancestors.
 
-The maker never sees, reasons about, or configures the chain. The decay is an implementation detail. **This answers the original "how do I set a fair %?" question: the platform doesn't — the lister does, and the market self-regulates** (a greedy rate deters forks; a generous rate attracts them). A maker who wants a strong originator claim can set 90%; one who wants virality can set 2%.
+- To an **ancestor**, the meaning is simply: *"Anyone who forks me and sells owes me my frozen `r%` of their sale — and so does everyone who forks them."* No chain math.
+- To a **forker**, before they clone, the platform shows **`Σr` (the sum of all inherited liens) as their cost-of-goods.** They see exactly what forking this app will cost them on every future sale. This is the second critical fix: **the forker sees COGS; nobody has to pretend the number is something it isn't.**
 
-Rate is a free integer/decimal percent in `[0, 100]`. `100%` means a direct forker owes their entire post-platform sale (they'd fork only for derivative/portfolio reasons). `0%` means fork-and-sell freely.
+**This answers the original "how do I set a fair %?" question:** the platform doesn't — each maker sets their own `r`, the fork market prices it (a high `Σr` deters forks; a low one attracts them), and the rate is locked at fork time so it can't be weaponized later.
+
+Rate is an integer basis-points value in `[0, 10000]` (0–100%). At fork time, if the inherited `Σr` plus the current app's rate would exceed 100%, the **fork is blocked** (or the excess is clamped — decided in the plan).
 
 ### 3.3 Settlement on a paid sale of gross `G` cents
 
-1. **Platform fee:** `platform = round(0.10 × G)`, taken off the top. Remainder `R = G − platform`.
-2. **Royalty decay up the ancestor chain (each cut is a bill paid out of the child's slice):**
-   - Let the ancestor chain from the seller be `p1` (direct parent), `p2` (grandparent), … `pn` (root).
-   - The seller owes their direct parent: `pay_1 = round(rate(p1) × R)`. This comes out of `R`.
-   - Each ancestor then owes *their* parent, out of the cut they just received:
-     `pay_i = round(rate(pi) × pay_{i-1})` for `i ≥ 2`.
-   - Each ancestor `pi` **keeps** `pay_i − pay_{i+1}` (their received cut minus what they pass up). The root keeps its full `pay_n`.
-   - Stop when a `pay` rounds to 0 or the chain ends.
-3. **Seller keeps** `R − pay_1`.
+1. **Platform fee:** `platform = round(0.10 × G)`, off the top. Remainder `R = G − platform`.
+2. **Additive ancestor liens off the same base `R`:** for each frozen ancestor lien `r_i` on the seller's fork chain, **oldest (root) first**:
+   - `pay_i = round(r_i × R)`, taken **from `R`** (not from another ancestor's cut — additive, not nested).
+   - If the running total would exceed `R`, later liens are truncated to what remains (this cannot normally happen because forks with `Σr > 100%` are blocked at §3.2).
+3. **Seller keeps** `R − Σ pay_i`.
 
-Each cut is a bilateral bill: you owe your direct parent a slice of your revenue; they independently owe their parent a slice of *that*. Cuts shrink fast up the chain (each hop taxes only the hop below it), so upstream self-limits. **No cap needed**, and the seller only ever loses their direct parent's single cut off the top.
+No nesting, no dust: a grandparent's `10%` is `10% of R`, the same base as the parent's — so deep originators earn real money, not pennies. Because `Σr ≤ 100%` is enforced at fork time, the seller is never over-charged.
 
 ### 3.4 Dropped concepts
 
-- **Contributors** — removed. Co-authors settle their split off-platform out of the seller's own share.
-- **Protocol liquidity pool** — removed. The 10% platform fee replaces it entirely.
+- **Contributors** — removed. Co-authors settle off-platform out of the seller's own share.
+- **Protocol liquidity pool** — removed. The 10% platform fee replaces it.
 - **70/20/10 and 90/10 fixed splits** — removed.
+- **Nested bilateral decay** and **"the maker never sees the chain"** — removed (per the steelman). Liens are additive and the forker is shown `Σr` up front.
 
 ### 3.5 Worked example
 
-Chain Ann → Bob → Carol. All three set rate = 10%. Carol sells for $100 (10000¢):
+Chain Ann → Bob → Carol, each fork edge frozen at `r = 10%`. Carol sells for $100 (10000¢):
 
 | Party | Computation | Keeps |
 |-------|-------------|-------|
 | Platform | round(0.10 × 10000) | **1000¢** ($10.00) |
 | — | R = 10000 − 1000 = 9000 | |
-| Carol (seller) | R − pay to Bob = 9000 − 900 | **8100¢** ($81.00) |
-| Bob (parent) | received round(0.10 × 9000)=900, owes Ann round(0.10 × 900)=90, keeps 900−90 | **810¢** ($8.10) |
-| Ann (grandparent, root) | received 90, owes no one | **90¢** ($0.90) |
+| Ann (root lien, 10% of R) | round(0.10 × 9000) | **900¢** ($9.00) |
+| Bob (lien, 10% of R) | round(0.10 × 9000) | **900¢** ($9.00) |
+| Carol (seller) | R − 900 − 900 | **7200¢** ($72.00) |
 
-Each cut is a bill out of the child's slice: Carol pays Bob $9 out of her $90; Bob pays Ann $0.90 out of his $9. Cuts shrink fast up the chain.
+Ann **cannot** be zeroed by Bob choosing 0% — her lien is frozen and runs with descendants. Bob may set *his own* new listing to 0% to attract forkers, but that only waives *Bob's* future claim, never Ann's. Carol saw `Σr = 20%` COGS before she forked.
 
-**Conservation:** 1000 + 8100 + 810 + 90 = 10000. ✓
+**Conservation:** 1000 + 900 + 900 + 7200 = 10000. ✓
 
 ## 4. Invariants (preserved from current engine)
 
 - **Conservation of cents:** Σ all allocations == gross. Enforced by a fatal guard.
-- **Deterministic:** same inputs → same allocation, always. No floating drift; integer-cents rounding with the remainder absorbed by the seller (the last `flow`).
+- **Deterministic:** same inputs → same allocation, always. No floating drift; integer-cents rounding with the remainder absorbed by the seller.
 - **Immutable allocation rows** recorded at purchase time; webhooks never move money directly, only enqueue outbox work.
-- **Basis-points guard** from the old engine is replaced by the conservation-of-cents guard as the source of truth (BPS no longer sums to a fixed 10000 across fixed buckets, since the split is now dynamic).
+- **Frozen liens are immutable once a fork edge exists.** The set of `(ancestor, r_i)` liens on a fork chain is captured at fork time and never mutated by any later listing rate change. This is a new first-class invariant.
+- **`Σr ≤ 100%` enforced at fork time**, so settlement can never over-allocate.
+- **Basis-points guard** from the old engine is replaced by the conservation-of-cents guard as the source of truth (allocations no longer sum to a fixed 10000 across fixed buckets, since the split is dynamic).
 
 ## 5. Deliverables
 
-1. **`src/lib/commerceDomain.ts`** — rewrite `calculateAllocations` (and remove contributor/pool branches). New allocation types reflect `platform` + ordered `ancestor` + `seller` allocations. Keep the conservation guard; drop the fixed-BPS guard.
-2. **`src/lib/commerce/*` + `functions/api/*`** — update outbox/event/transfer processors to the new allocation shape (payout targets are now: platform, each ancestor, seller). Remove protocol-pool and contributor payout paths.
-3. **Explainer doc** — new markdown in `src/data/` (e.g. `moneyModelData.ts`), manifesto-voiced under the title **"Shareware, Restored"**, added as a tab in `WhitePapersView`.
-4. **SLOPSHOP** — add a visible "📜 How the money works →" link that opens the explainer; fix the 5 hardcoded 70/20/10 strings in `SlopshopView.tsx` (lines ~42, ~550, ~615, ~1123, ~1453) and the live-preview split math (~1453) to the new model.
-5. **Tests** — rewrite commerce/royalty/lineage/acceptance suites for decay math + conservation. Delete contributor/pool tests. Add decay + rounding + deep-chain + single-hop + root-sale cases.
-6. **Docs** — update `AGENTS.md` §1 (Lineage Ledger Economics) and `README.md` to describe the new model.
-7. **Grok steelman prompt** — a self-contained prompt (model + goals + this model) for the user to paste into Grok.
+1. **`src/lib/commerceDomain.ts`** — rewrite `calculateAllocations`: platform 10% off the top, then **additive frozen-lien** allocations (`round(r_i × R)` per ancestor, oldest first), seller absorbs remainder. Remove contributor/pool branches. Keep the conservation guard; drop the fixed-BPS guard. Input is now the seller's **frozen lien set**, not live ancestor rates.
+2. **Fork-time lien capture + `Σr ≤ 100%` gate** — wherever a fork is created (forge/`slop fork` provisioning + listing publish), snapshot the inherited liens onto the new edge and block/clamp forks whose `Σr` would exceed 100%. Likely a schema addition (a `fork_liens` table or a frozen-liens column on the listing/repo edge) — validated in the plan against the current listings/lineage schema.
+3. **`src/lib/commerce/*` + `functions/api/*`** — update outbox/event/transfer processors to the new allocation shape (payout targets: platform, each ancestor lien-holder, seller). Remove protocol-pool and contributor payout paths.
+4. **Explainer doc** — new markdown in `src/data/` (e.g. `moneyModelData.ts`), manifesto-voiced under the title **"Shareware, Restored"**, added as a tab in `WhitePapersView`. Explains the two modes, the frozen-lien-at-fork rule, the `Σr` COGS shown to forkers, and the additive worked example.
+5. **SLOPSHOP** — add a visible "📜 How the money works →" link that opens the explainer; fix the hardcoded 70/20/10 strings in `SlopshopView.tsx` (lines ~42, ~550, ~615, ~1123, ~1453) and the live-preview split math (~1453) to the additive frozen-lien model; surface `Σr` COGS at fork time.
+6. **Tests** — rewrite commerce/royalty/lineage/acceptance suites for additive-lien math + conservation + `Σr ≤ 100%` fork gate + frozen-lien immutability (a child cannot zero an ancestor). Delete contributor/pool tests. Add additive + rounding + deep-chain + single-hop + root-sale + 0%-child-cannot-drop-ancestor cases.
+7. **Docs** — update `AGENTS.md` §1 (Lineage Ledger Economics) and `README.md` to describe the new model.
+8. **Grok steelman** — DONE (2026-09-02). The additive frozen-lien model in this spec *is* the result of that review. A follow-up round can steelman the revised model before/after implementation.
 
 ## 6. Migration & data
 
