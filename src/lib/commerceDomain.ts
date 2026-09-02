@@ -596,6 +596,16 @@ export async function fetchRepositoryAncestry(
   const visitedRepoIds = new Set<string>([startRepoId]);
   let currentChildId = startRepoId;
 
+  // Bound the walk to the maximum payable lineage size. Each generation is one
+  // sequential D1 query, so without this ceiling a maliciously deep (but free
+  // and depth-unbounded) fork chain would make every checkout issue tens of
+  // thousands of D1 subrequests — exhausting the Cloudflare subrequest/CPU
+  // budget and burning D1 quota (a request→DB amplification DoS). Cap the number
+  // of queries at FORK_LINEAGE_TOTAL + 1 and fail closed the same way the
+  // downstream validateAncestors cap would, so an over-deep listing is honestly
+  // unpurchasable rather than an amplification vector.
+  const MAX_ANCESTORS = COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL;
+
   while (true) {
     const fork: any = await db.prepare(`
       SELECT f.parent_repository_id AS parentRepositoryId,
@@ -621,6 +631,12 @@ export async function fetchRepositoryAncestry(
       userId: String(fork.ownerUserId).trim(),
       depth: ancestors.length + 1
     });
+
+    if (ancestors.length > MAX_ANCESTORS) {
+      throw new CommerceValidationError(
+        `Repository lineage exceeds the maximum of ${MAX_ANCESTORS} ancestors and cannot be settled.`
+      );
+    }
 
     currentChildId = parentRepoId;
   }

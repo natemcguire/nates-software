@@ -20,18 +20,33 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
 
   if (!drop.name || typeof drop.name !== 'string' || drop.name.trim().length < 3) {
     errors.push('App name must be at least 3 characters.');
+  } else if (drop.name.length > 120) {
+    errors.push('App name must be at most 120 characters.');
   }
 
   if (!drop.version || typeof drop.version !== 'string' || !drop.version.match(/^v?\d+\.\d+\.\d+$/)) {
     errors.push('Version must follow valid semver (e.g. v1.0.0 or 2.4.0).');
   }
 
+  // Upper bounds on free-text / array fields so an authenticated submit can't
+  // store an unbounded payload (storage/DoS). Generous but finite.
+  if (typeof (drop as any).tagline === 'string' && (drop as any).tagline.length > 280) {
+    errors.push('Tagline must be at most 280 characters.');
+  }
+  if (typeof (drop as any).description === 'string' && (drop as any).description.length > 8000) {
+    errors.push('Description must be at most 8000 characters.');
+  }
+
   if (drop.tags !== undefined && !Array.isArray(drop.tags)) {
     errors.push('Tags must be an array of strings.');
+  } else if (Array.isArray(drop.tags) && (drop.tags.length > 20 || drop.tags.some(t => typeof t === 'string' && t.length > 40))) {
+    errors.push('Provide at most 20 tags, each at most 40 characters.');
   }
 
   if (drop.screenshots !== undefined && !Array.isArray(drop.screenshots)) {
     errors.push('Screenshots must be an array of image URLs.');
+  } else if (Array.isArray(drop.screenshots) && (drop.screenshots.length > 12 || drop.screenshots.some(s => typeof s === 'string' && s.length > 2048))) {
+    errors.push('Provide at most 12 screenshots, each URL at most 2048 characters.');
   }
 
   if (drop.id !== undefined && drop.id !== null && typeof drop.id === 'string' && drop.id.trim().length > 0) {

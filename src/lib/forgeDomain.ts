@@ -251,9 +251,23 @@ export function validateForkOrigin(input: ForkOriginInput): readonly string[] {
     errors.push('Child initial commit must be a full Git object ID.');
   }
   if (!input.lineageRootRepositoryId?.trim()) errors.push('Lineage root repository is required.');
-  if (!Number.isInteger(input.depth) || input.depth < 1) errors.push('Fork depth must be a positive integer.');
+  // Bound fork depth. Forks are free, so without a ceiling an attacker could
+  // build an arbitrarily deep chain; the checkout lineage walk then does one D1
+  // query per generation (a request→DB amplification vector). MAX_FORK_DEPTH
+  // keeps chains shallow at creation time; the ancestry walk also self-bounds
+  // as a second line of defense.
+  if (!Number.isInteger(input.depth) || input.depth < 1) {
+    errors.push('Fork depth must be a positive integer.');
+  } else if (input.depth > MAX_FORK_DEPTH) {
+    errors.push(`Fork depth exceeds the maximum lineage depth of ${MAX_FORK_DEPTH}.`);
+  }
   return errors;
 }
+
+// Maximum allowed fork lineage depth. Kept well below the payable lineage cap
+// (COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL = 2000) so the per-checkout ancestry
+// walk stays cheap even for the deepest legitimate chain.
+export const MAX_FORK_DEPTH = 500;
 
 export interface CasRefUpdateInput {
   readonly currentOid: string | null;

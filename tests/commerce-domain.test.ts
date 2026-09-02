@@ -504,6 +504,36 @@ describe('Durable Commerce Domain Logic & Allocation Engine', () => {
         /Cycle detected in repository lineage/
       );
     });
+
+    it('bounds the D1 fan-out: an over-deep lineage fails closed instead of walking unbounded (DoS guard)', async () => {
+      // Simulate an infinitely-deep, acyclic fork chain with a stub DB that
+      // always returns a fresh distinct parent. Without the walk's self-bound
+      // this would loop forever (one query per generation); it must instead
+      // throw after at most FORK_LINEAGE_TOTAL+1 queries.
+      let queryCount = 0;
+      const stubDb = {
+        prepare: (_sql: string) => ({
+          bind: (childId: string) => ({
+            first: async () => {
+              queryCount++;
+              // Always hand back a new unique parent, so the chain never ends
+              // and never cycles — the only thing that can stop it is the cap.
+              return {
+                parentRepositoryId: `parent_of_${childId}_${queryCount}`,
+                depth: queryCount,
+                ownerUserId: `owner_${queryCount}`
+              };
+            }
+          })
+        })
+      };
+
+      await expect(fetchRepositoryAncestry(stubDb as any, 'repo_deep')).rejects.toThrow(
+        /exceeds the maximum of \d+ ancestors/
+      );
+      // The walk stopped at the cap rather than issuing unbounded queries.
+      expect(queryCount).toBeLessThanOrEqual(COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL + 1);
+    });
   });
 
   describe('8. Phase 1 Dark Migration Safety Gate (Byte-Identical Conservation)', () => {
