@@ -5,6 +5,98 @@
 import { requireAuth } from '../_auth';
 import { calculateAllocations, fetchRepositoryAncestry, CommerceValidationError, ContributorInput } from '../../../src/lib/commerceDomain';
 
+type PaymentIntentRecoveryResult =
+  | { ok: true; paymentIntentId: string; clientSecret: string }
+  | { ok: false; status: number; error: string; retryAfter?: string };
+
+/**
+ * Recovers an orphaned PaymentIntent for an order stuck in 'creating' status
+ * with no stripe_payment_intent_id attached. This happens when Stripe
+ * successfully created a PaymentIntent but the D1 write that attaches it to
+ * the order failed afterward.
+ *
+ * Stripe's PaymentIntent creation endpoint is idempotent on the
+ * `Idempotency-Key` header: replaying the exact same request with the same
+ * key returns the original PaymentIntent rather than creating a new charge.
+ * This code always sends the deterministic key `pi_<orderId>`, so replaying
+ * the create call with that same key is a safe, honest way to retrieve
+ * (never fabricate) the PaymentIntent that genuinely exists at Stripe and
+ * re-attach it to the order.
+ */
+async function recoverOrCreatePaymentIntent(params: {
+  env: any;
+  orderId: string;
+  grossCents: number;
+  currency: string;
+  appId: string;
+  buyerUserId: string;
+  sellerUserId: string;
+  stripeSecretKey: string;
+}): Promise<PaymentIntentRecoveryResult> {
+  const { env: _env, orderId, grossCents, currency, appId, buyerUserId, sellerUserId, stripeSecretKey } = params;
+
+  const stripeParams = new URLSearchParams();
+  stripeParams.append('amount', grossCents.toString());
+  stripeParams.append('currency', currency);
+  stripeParams.append('automatic_payment_methods[enabled]', 'true');
+  stripeParams.append('automatic_payment_methods[allow_redirects]', 'never');
+  stripeParams.append('metadata[orderId]', orderId);
+  stripeParams.append('metadata[appId]', appId);
+  stripeParams.append('metadata[buyerUserId]', buyerUserId);
+  stripeParams.append('metadata[sellerUserId]', sellerUserId);
+  stripeParams.append('metadata[recovered]', 'true');
+
+  let stripeRes: Response;
+  try {
+    stripeRes = await fetch('https://api.stripe.com/v1/payment_intents', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${stripeSecretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        // SAME deterministic idempotency key as the original create call for
+        // this order. Stripe treats this as a replay of the original
+        // request and returns the original PaymentIntent unchanged.
+        'Idempotency-Key': `pi_${orderId}`
+      },
+      body: stripeParams.toString()
+    });
+  } catch (networkErr: any) {
+    console.error('[STRIPE RECOVERY NETWORK ERROR]', networkErr);
+    // Fail closed and honest: Stripe is unreachable, so we cannot verify
+    // whether the PaymentIntent exists. Do not fabricate a recovered PI.
+    return {
+      ok: false,
+      status: 502,
+      error: `Failed to connect to Stripe while recovering this order: ${networkErr?.message || 'network error'}. Retry shortly.`,
+      retryAfter: '2'
+    };
+  }
+
+  if (!stripeRes.ok) {
+    const stripeErrData: any = await stripeRes.json().catch(() => ({}));
+    const errorMessage = stripeErrData?.error?.message || `Stripe returned status ${stripeRes.status}`;
+    return {
+      ok: false,
+      status: 502,
+      error: `Stripe PaymentIntent recovery failed: ${errorMessage}`
+    };
+  }
+
+  const stripeData = await stripeRes.json() as any;
+  const paymentIntentId = stripeData.id;
+  const clientSecret = stripeData.client_secret;
+
+  if (!paymentIntentId || !clientSecret) {
+    return {
+      ok: false,
+      status: 502,
+      error: 'Stripe did not return a valid PaymentIntent ID or client secret during recovery'
+    };
+  }
+
+  return { ok: true, paymentIntentId, clientSecret };
+}
+
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   // Fail-closed guard: payments disabled in production until durable commerce is fully commissioned
   if (env?.PAYMENTS_ENABLED !== 'true') {
@@ -98,6 +190,97 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           { success: false, error: `Previous attempt with this idempotency key failed: ${existingOrder.failure_code || 'payment_failed'}` },
           { status: 409 }
         );
+      }
+
+      // Recovery path: the order is durably persisted in 'creating' status
+      // with no stripe_payment_intent_id attached. This is exactly the state
+      // left behind when Stripe successfully created a PaymentIntent but the
+      // subsequent D1 write that attaches it to the order failed (network
+      // blip, D1 outage, worker eviction, etc). The PI is NOT lost — Stripe's
+      // create endpoint is idempotent on the `Idempotency-Key` header, and
+      // this code always sends the deterministic key `pi_<orderId>`. Replaying
+      // the identical create call with that same key returns the original
+      // PaymentIntent (Stripe never creates a second charge for a reused
+      // idempotency key) so it can be re-attached instead of stranded.
+      if (existingOrder.status === 'creating') {
+        const stripeSecretKey = env?.STRIPE_SECRET_KEY;
+        const stripePublishableKey = env?.STRIPE_PUBLISHABLE_KEY;
+
+        if (!stripeSecretKey || typeof stripeSecretKey !== 'string' || !stripeSecretKey.trim()) {
+          // Fail closed and honest: never fabricate a recovered PaymentIntent.
+          return Response.json(
+            { success: false, error: 'Stripe secret key is not configured on the server; cannot verify or recover this order' },
+            { status: 500 }
+          );
+        }
+        if (!stripePublishableKey || typeof stripePublishableKey !== 'string' || !stripePublishableKey.trim()) {
+          return Response.json(
+            { success: false, error: 'Stripe publishable key is not configured on the server; cannot recover this order' },
+            { status: 500 }
+          );
+        }
+
+        const recovery = await recoverOrCreatePaymentIntent({
+          env,
+          orderId: existingOrder.id,
+          grossCents: existingOrder.gross_cents,
+          currency: existingOrder.currency,
+          appId: existingOrder.app_id,
+          buyerUserId: existingOrder.buyer_user_id,
+          sellerUserId: existingOrder.seller_user_id,
+          stripeSecretKey
+        });
+
+        if (!recovery.ok) {
+          // Fail closed honestly: Stripe is unreachable or returned an error.
+          // The order stays in 'creating' (still recoverable on the next
+          // retry) rather than being marked payment_failed or fabricated.
+          return Response.json(
+            { success: false, error: recovery.error },
+            { status: recovery.status, headers: recovery.retryAfter ? { 'Retry-After': recovery.retryAfter } : undefined }
+          );
+        }
+
+        try {
+          await env.DB.batch([
+            env.DB.prepare(`
+              UPDATE commerce_orders
+              SET stripe_payment_intent_id = ?, status = 'requires_payment', updated_at = datetime('now')
+              WHERE id = ? AND status = 'creating'
+            `).bind(recovery.paymentIntentId, existingOrder.id),
+            env.DB.prepare(`
+              INSERT INTO commerce_order_events (id, order_id, event_type, source, source_event_id, details_json, created_at)
+              VALUES (?, ?, 'intent_recovered', 'checkout', ?, ?, datetime('now'))
+            `).bind(
+              `coe_${crypto.randomUUID().replace(/-/g, '')}`,
+              existingOrder.id,
+              recovery.paymentIntentId,
+              JSON.stringify({ paymentIntentId: recovery.paymentIntentId, recovered: true })
+            )
+          ]);
+        } catch (dbErr: any) {
+          // The PI is confirmed to exist at Stripe (verified above), but D1
+          // is unavailable right now. Report honestly; the order remains in
+          // 'creating' and the next retry will re-run this same recovery.
+          console.error('[COMMERCE ORDER RECOVERY PERSISTENCE ERROR]', dbErr);
+          return Response.json(
+            { success: false, error: `Verified PaymentIntent at Stripe but failed to persist recovery: ${dbErr?.message || 'database error'}` },
+            { status: 500, headers: { 'Retry-After': '2' } }
+          );
+        }
+
+        return Response.json({
+          success: true,
+          orderId: existingOrder.id,
+          paymentIntentId: recovery.paymentIntentId,
+          clientSecret: recovery.clientSecret,
+          amountCents: existingOrder.gross_cents,
+          currency: existingOrder.currency,
+          publishableKey: stripePublishableKey,
+          lineageSnapshot: JSON.parse(existingOrder.lineage_snapshot_json),
+          status: 'requires_payment',
+          recovered: true
+        });
       }
 
       return Response.json(
@@ -429,23 +612,45 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Update commerce_orders to 'requires_payment' and record event
-    await env.DB.batch([
-      env.DB.prepare(`
-        UPDATE commerce_orders
-        SET stripe_payment_intent_id = ?, status = 'requires_payment', updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(paymentIntentId, orderId),
-      env.DB.prepare(`
-        INSERT INTO commerce_order_events (id, order_id, event_type, source, source_event_id, details_json, created_at)
-        VALUES (?, ?, 'intent_created', 'checkout', ?, ?, datetime('now'))
-      `).bind(
-        `coe_${crypto.randomUUID().replace(/-/g, '')}`,
-        orderId,
-        paymentIntentId,
-        JSON.stringify({ paymentIntentId, clientSecretPresent: Boolean(clientSecret) })
-      )
-    ]);
+    // Update commerce_orders to 'requires_payment' and record event.
+    // IMPORTANT: the PaymentIntent already exists at Stripe at this point. If
+    // this D1 write fails (network blip, D1 outage, worker eviction), the
+    // order MUST NOT be marked payment_failed and the PI must not be
+    // stranded — the order simply stays in 'creating', which is the durable
+    // signal a retry with the SAME Idempotency-Key uses to recover and
+    // re-attach this exact PaymentIntent (see the existingOrder.status ===
+    // 'creating' recovery branch above). Never fabricate success here either.
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE commerce_orders
+          SET stripe_payment_intent_id = ?, status = 'requires_payment', updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(paymentIntentId, orderId),
+        env.DB.prepare(`
+          INSERT INTO commerce_order_events (id, order_id, event_type, source, source_event_id, details_json, created_at)
+          VALUES (?, ?, 'intent_created', 'checkout', ?, ?, datetime('now'))
+        `).bind(
+          `coe_${crypto.randomUUID().replace(/-/g, '')}`,
+          orderId,
+          paymentIntentId,
+          JSON.stringify({ paymentIntentId, clientSecretPresent: Boolean(clientSecret) })
+        )
+      ]);
+    } catch (dbErr: any) {
+      console.error('[COMMERCE ORDER ATTACH PI PERSISTENCE ERROR]', dbErr);
+      // Fail closed and honest: report the failure, but leave the order in
+      // 'creating' (do NOT mark payment_failed) so the same Idempotency-Key
+      // retry can recover the PaymentIntent that genuinely exists at Stripe
+      // instead of stranding it or fabricating a duplicate charge.
+      return Response.json(
+        {
+          success: false,
+          error: `PaymentIntent was created at Stripe but failed to persist to the order: ${dbErr?.message || 'database error'}. Retry with the same Idempotency-Key to recover it.`
+        },
+        { status: 500, headers: { 'Retry-After': '2' } }
+      );
+    }
 
     return Response.json({
       success: true,

@@ -580,7 +580,7 @@ export function generateFeatureManifest(params: {
 }): SlopFeatureManifest {
   const prompt = params.customPrompt || params.feature.prompt;
   const toolMeta = getAgentTool(params.agent);
-  const handle = params.makerHandle || '@nate';
+  const handle = params.makerHandle || '@guest';
 
   let agentCmd = '';
   const escaped = escapeShellDoubleQuotes(prompt);

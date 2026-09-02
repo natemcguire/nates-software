@@ -59,9 +59,10 @@ describe('WAVE-UX-C Personalization & Ownership Gating', () => {
         </AuthContext.Provider>
       );
 
-      expect(html).toContain('value="@nate"');
+      expect(html).toContain('value="@guest"');
       expect(html).toContain('(editable draft handle)');
       expect(html).not.toContain('signed in as @nate');
+      expect(html).not.toContain('signed in as @guest');
     });
   });
 
