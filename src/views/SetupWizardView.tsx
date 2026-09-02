@@ -54,10 +54,27 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
     setIsLoadingStarters(true);
     setStartersError(null);
     try {
-      const res = await fetch('/api/drops?batch=all');
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.success || !Array.isArray(data?.drops)) {
-        throw new Error(data?.error || `Failed to fetch starters (HTTP ${res.status})`);
+      // The catalog fetch can hit a transient 5xx on a cold edge/D1 start
+      // (the "retry worked" symptom). Retry a few times with a short backoff so
+      // a warm-up blip never surfaces the scary "Failed to load starters" panel.
+      let res: Response | null = null;
+      let data: any = null;
+      let lastErr = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 350 * attempt));
+        try {
+          res = await fetch('/api/drops?batch=all');
+          data = await res.json().catch(() => null);
+          if (res.ok && data?.success && Array.isArray(data?.drops)) break;
+          lastErr = data?.error || `Failed to fetch starters (HTTP ${res.status})`;
+          // 4xx is not transient — don't waste retries on a real client error.
+          if (res.status >= 400 && res.status < 500) break;
+        } catch (e: any) {
+          lastErr = e?.message || 'Network error';
+        }
+      }
+      if (!res || !res.ok || !data?.success || !Array.isArray(data?.drops)) {
+        throw new Error(lastErr || `Failed to fetch starters (HTTP ${res?.status ?? 'network'})`);
       }
 
       const forkable = data.drops

@@ -203,6 +203,18 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
   }
 ];
 
+// Slug -> embedded showcase files. The four seeded showcase apps (dronehunter,
+// certified-mailer, wallart, american-gardener) also exist as canonical D1 repos,
+// but their committed blobs are NOT browsable through the object gateway
+// (/api/repo-file 404s for every path, including real files like README.md).
+// Rather than show a scary "File Read Unavailable / HTTP 404" for these known apps,
+// we serve their already-embedded showcase file content directly (no fetch).
+export const SHOWCASE_FILES_BY_SLUG: Record<string, GitsmithRepo['files']> =
+  GITSMITH_REPOS.reduce((acc, repo) => {
+    acc[repo.name] = repo.files;
+    return acc;
+  }, {} as Record<string, GitsmithRepo['files']>);
+
 export const GitsmithView: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
@@ -313,10 +325,19 @@ export const GitsmithView: React.FC = () => {
     { name: 'slop.config.json', type: 'file' },
     { name: 'package.json', type: 'file' }
   ];
+  // For canonical repos that mirror a seeded showcase app, surface the real embedded
+  // file list (with names + content) instead of the phantom candidateFiles guess.
+  const showcaseFilesForSelected = selectedRepo && selectedRepo.source !== 'showcase'
+    ? SHOWCASE_FILES_BY_SLUG[selectedRepo.name]
+    : undefined;
   const displayedFiles = selectedRepo
     ? (selectedRepo.source === 'showcase'
         ? selectedRepo.files
-        : (selectedRepo.files.length > 0 ? selectedRepo.files : candidateFiles))
+        : (selectedRepo.files.length > 0
+            ? selectedRepo.files
+            : (showcaseFilesForSelected && showcaseFilesForSelected.length > 0
+                ? showcaseFilesForSelected
+                : candidateFiles)))
     : [];
 
   useEffect(() => {
@@ -332,6 +353,21 @@ export const GitsmithView: React.FC = () => {
     if (selectedRepo.source === 'showcase') {
       const showcaseFile = activeFile || selectedRepo.files.find(f => f.type === 'file') || selectedRepo.files[0];
       setFileContent(showcaseFile?.content || null);
+      setFileError(null);
+      setFileLoading(false);
+      return;
+    }
+
+    // Canonical repo that mirrors a seeded showcase app: serve the embedded content
+    // directly. The object gateway has no browsable blobs for these, so a fetch would
+    // 404 on every file. If the clicked file has embedded content, use it; if it's a
+    // directory or a phantom, fall through to the "select a file" empty state.
+    const showcaseFiles = SHOWCASE_FILES_BY_SLUG[selectedRepo.name];
+    if (showcaseFiles && showcaseFiles.length > 0) {
+      const target = activeFile
+        ? showcaseFiles.find(f => f.name === activeFile.name)
+        : (showcaseFiles.find(f => f.type === 'file') || showcaseFiles[0]);
+      setFileContent(target?.content ?? null);
       setFileError(null);
       setFileLoading(false);
       return;
@@ -725,7 +761,13 @@ export const GitsmithView: React.FC = () => {
                   onClick={() => {
                     playClickSound();
                     setSelectedRepo(repo);
-                    setActiveFile(repo.files.find(f => f.type === 'file') || repo.files[0] || null);
+                    // Prefer the repo's own files; for a canonical repo mirroring a
+                    // seeded showcase app, seed activeFile from the embedded showcase
+                    // files so the tree highlight + preview line up on first click.
+                    const seedFiles = repo.files.length > 0
+                      ? repo.files
+                      : (repo.source !== 'showcase' ? SHOWCASE_FILES_BY_SLUG[repo.name] : undefined) || repo.files;
+                    setActiveFile(seedFiles.find(f => f.type === 'file') || seedFiles[0] || null);
                   }}
                   className={`p-3.5 cursor-pointer transition-all ${
                     isSelected

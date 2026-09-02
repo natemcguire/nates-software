@@ -114,8 +114,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     // Default guest
     return Response.json({ success: true, user: null, authenticated: false });
   } catch (err: any) {
-    console.error('[AUTH] error:', err?.message || err);
-    return Response.json({ success: false, error: 'Authentication service error' }, { status: 500 });
+    // A session *read* failing (e.g. a transient cold-D1 hiccup) is not a fault
+    // the visitor should see as a red 500 in the console during first-run — and
+    // it can never grant access. Degrade to an honest "not authenticated" 200;
+    // the client's AuthContext treats that as a plain guest. (Mutations below
+    // still fail-closed with 500 — this soft path is GET/session-check only.)
+    console.error('[AUTH] session lookup error (degrading to guest):', err?.message || err);
+    return Response.json({ success: true, user: null, authenticated: false });
   }
 };
 
