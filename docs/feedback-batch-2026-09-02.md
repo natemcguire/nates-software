@@ -30,3 +30,12 @@ Captured so context isn't lost. Ordered roughly quick-fix → deep-rework.
 - Do the quick fixes (1-13) as concrete edits, deploy in batches.
 - For 14 (RIG) + 15 (Inbox rework): dispatch a UX-design-review agent to spec them, THEN implement. These are "less is more / make it make sense" reworks, not new features.
 - Honor hard rails on #7 (cross-subdomain login) — first-party only, never tenant hosts.
+
+## Status (updated 2026-09-02) — all shipped to prod except the two reworks
+- ✅ #1 (500s / wizard "failed to load starters") — client retry-with-backoff + auth `me` soft-200 on transient D1. Deployed b377150.
+- ✅ #2 (taskbar/Start login "does nothing") — Start-menu pointerdown fix (earlier) + the wizard 500 was the real "login feels dead" cause; modal wiring verified correct. Deployed.
+- ✅ #3 Continue pinned · ✅ #4 CLI token labeled · ✅ #6 STANDALONE badge removed · ✅ #8-12 profile overhaul · ✅ #13 draggable icons — AGY batch, deployed c081982/5d18a96.
+- ✅ #5 GITSMITH file viewer — showcase repos now render embedded file content (no doomed fetch → no 404). Verified live on dronehunter. Deployed b377150.
+- ✅ #7 cross-subdomain login (first-party SSO) — apex-brokered single-use ticket, tenant hosts structurally excluded. Verified live (apex→hotwire inherit works; american-gardener tenant refused). migration 0037, deployed a66ebdd. Design: docs/superpowers/specs/2026-09-02-first-party-sso-design.md.
+- 🔨 #14 RIG → no-UI engine — spec in progress (docs/superpowers/specs/2026-09-02-rig-engine-no-ui-design.md).
+- 🔨 #15 Agent Inbox rework — spec in progress (docs/superpowers/specs/2026-09-02-agent-inbox-rework-design.md).
