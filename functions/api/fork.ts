@@ -17,6 +17,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     return gitPost({ request: gitRequest, env });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message || 'Fork request failed' }, { status: 500 });
+    console.error('[FORK] error:', err?.message || err);
+    return Response.json({ success: false, error: 'Fork request failed' }, { status: 500 });
   }
 };

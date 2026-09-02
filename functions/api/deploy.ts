@@ -1108,7 +1108,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       honestMessage: honest
     });
   } catch (err: any) {
-    return json({ success: false, error: err.message || 'Failed to query deployment lifecycle' }, 500);
+    console.error('[DEPLOY] lifecycle query error:', err?.message || err);
+    return json({ success: false, error: 'Failed to query deployment lifecycle' }, 500);
   }
 };
 
@@ -2788,13 +2789,18 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
+    // The full stack lives in the STORED evidence (server-side diagnostics) but must not
+    // be returned to the client. Strip the stack-bearing `error` field from the response
+    // evidence; keep the human-readable message.
+    const { error: _stack, ...clientEvidence } = failureEvidence as any;
+    console.error('[DEPLOY] execution error:', String(err?.stack || err?.message || err));
     return json({
       success: false,
       appId: targetAppId || undefined,
       deploymentState: isCurrentlyActive ? 'active' : 'failed',
       error: errorMsg,
       lastDeployError: errorMsg,
-      evidence: failureEvidence
+      evidence: clientEvidence
     }, 500);
   }
 };

@@ -211,7 +211,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       suite: canonicalSuiteSummary()
     });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    console.error('[DYNO] error:', err?.message || err);
+    return Response.json({ success: false, error: 'DYNO service error' }, { status: 500 });
   }
 };
 
@@ -937,6 +938,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       { status: 503 }
     );
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    console.error('[DYNO] error:', err?.message || err);
+    return Response.json({ success: false, error: 'DYNO service error' }, { status: 500 });
   }
 };

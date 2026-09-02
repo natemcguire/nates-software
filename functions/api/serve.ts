@@ -85,7 +85,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       error: `Asset '${assetPath}' not found for active deployment of '${appId}'.`
     }, 404);
   } catch (err: any) {
-    return json({ success: false, error: err?.message || 'Failed to serve deployed asset' }, 500);
+    console.error('[SERVE] error:', err?.message || err);
+    return json({ success: false, error: 'Failed to serve deployed asset' }, 500);
   }
 };
 

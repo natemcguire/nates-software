@@ -59,7 +59,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       votedAppIds
     });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message || 'Failed to inspect vote state' }, { status: 500 });
+    console.error('[UPVOTE] error:', err?.message || err);
+    return Response.json({ success: false, error: 'Failed to inspect vote state' }, { status: 500 });
   }
 };
 
@@ -128,6 +129,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       upvotes: Number(incrementResult?.results?.[0]?.upvotes ?? currentUpvotes)
     });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message || 'Upvote transaction failed' }, { status: 500 });
+    console.error('[UPVOTE] error:', err?.message || err);
+    return Response.json({ success: false, error: 'Upvote transaction failed' }, { status: 500 });
   }
 };

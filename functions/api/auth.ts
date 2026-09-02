@@ -114,7 +114,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     // Default guest
     return Response.json({ success: true, user: null, authenticated: false });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    console.error('[AUTH] error:', err?.message || err);
+    return Response.json({ success: false, error: 'Authentication service error' }, { status: 500 });
   }
 };
 
@@ -425,6 +426,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     return Response.json({ success: false, error: 'Invalid auth action' }, { status: 400 });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message }, { status: 500 });
+    console.error('[AUTH] error:', err?.message || err);
+    return Response.json({ success: false, error: 'Authentication service error' }, { status: 500 });
   }
 };

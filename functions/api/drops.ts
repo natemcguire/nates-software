@@ -247,7 +247,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       votedAppIds: Array.from(viewerVotedAppIds)
     });
   } catch (err: any) {
-    return Response.json({ success: false, error: err.message || 'Failed to retrieve drops' }, { status: 500 });
+    // Never leak internals to an unauthenticated public caller.
+    console.error('[DROPS] error:', err?.message || err);
+    return Response.json({ success: false, error: 'Failed to retrieve drops' }, { status: 500 });
   }
 };
 
