@@ -57,7 +57,7 @@ export function resolveAppRoute(
   }
 
   if (hostname.startsWith('inbox.') || pathname.startsWith('/inbox') || viewQuery === 'inbox') {
-    return { type: 'standalone_view', id: 'inbox', title: 'INBOX PROPOSALS' };
+    return { type: 'standalone_view', id: 'inbox', title: 'AGENT INBOX' };
   }
 
   if (pathname.startsWith('/white-papers') || pathname.startsWith('/whitepapers') || pathname.startsWith('/docs') || viewQuery === 'white-papers' || viewQuery === 'papers') {
@@ -102,6 +102,7 @@ import { StartMenu } from './components/StartMenu';
 import { AccountWidget } from './components/AccountWidget';
 import { FontSizer } from './components/FontSizer';
 import { TldrButton } from './components/TldrButton';
+import { RestartOverlay } from './components/RestartOverlay';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
@@ -339,6 +340,7 @@ export function AppInner() {
   } = useWindowManager(user);
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
   // Auto-open SETUP for genuine first-run / logged-out visitors — but only AFTER the
@@ -379,7 +381,7 @@ export function AppInner() {
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
   const handleDesktopPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('.RetroWindow') || (e.target as HTMLElement).closest('.btn-w95')) return;
+    if ((e.target as HTMLElement).closest('.RetroWindow') || (e.target as HTMLElement).closest('.btn-w95') || (e.target as HTMLElement).closest('.start-menu')) return;
     setStartMenuOpen(false);
     setSelectionBox({
       startX: e.clientX,
@@ -576,7 +578,7 @@ export function AppInner() {
           onClick={() => { playClickSound(); openWindow('rig'); }}
         />
         <DesktopIcon
-          label="INBOX (Proposals)"
+          label="Agent Inbox"
           icon="📫"
           onClick={() => { playClickSound(); openWindow('inbox'); }}
           badge={inboxUnreadCount > 0 ? (inboxUnreadCount > 99 ? '99+' : String(inboxUnreadCount)) : undefined}
@@ -915,10 +917,12 @@ export function AppInner() {
       </ErrorBoundary>
 
       {/* Pop-Up Start Menu */}
+      {restarting && <RestartOverlay />}
       <StartMenu
         isOpen={startMenuOpen}
         onClose={() => setStartMenuOpen(false)}
         onOpenWindow={openWindow}
+        onRestart={() => setRestarting(true)}
       />
 
       {/* PostEditor Modal Overlay */}

@@ -112,7 +112,7 @@ describe('Explainer Routing & Entry Points', () => {
     const html = renderToString(
       <AuthProvider>
         <CatalogProvider>
-          <StartMenu isOpen={true} onClose={() => {}} onOpenWindow={() => {}} />
+          <StartMenu isOpen={true} onClose={() => {}} onOpenWindow={() => {}} onRestart={() => {}} />
         </CatalogProvider>
       </AuthProvider>
     );

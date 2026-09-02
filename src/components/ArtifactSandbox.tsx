@@ -259,61 +259,59 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-1 bg-gray-200 p-1 border border-gray-400 rounded">
-          <div className="flex items-center">
-            <button
-              onClick={() => {
-                setActiveTab('preview');
-                playClickSound();
-              }}
-              className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'preview' ? 'btn-w95-primary font-bold' : ''}`}
-            >
-              <Play size={13} /> Live App
-            </button>
-            {hasActiveDeployment && authoritativeLiveUrl ? (
-              <a
-                href={authoritativeLiveUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-w95 text-xs py-1 px-2 ml-0.5 text-blue-900 font-bold flex items-center gap-1 hover:bg-blue-100"
-                title={`Open ${authoritativeLiveUrl} in new tab`}
-                onClick={() => {
-                  playClickSound();
-                }}
+        {/* Tab Switcher — real Win95 tab strip: the row sits ON the panel's top
+            border, the active tab is raised and connected to the content below (no
+            bottom border), inactive tabs sit recessed. flex-wrap keeps it from breaking
+            the layout when the card is narrow. */}
+        {(() => {
+          const tab = (id: string, node: React.ReactNode, key?: string) => {
+            const active = activeTab === id;
+            return (
+              <button
+                key={key || id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => { setActiveTab(id as any); playClickSound(); }}
+                className={`relative -mb-px text-xs py-1.5 px-3 flex items-center gap-1 whitespace-nowrap border border-gray-500 rounded-t
+                  ${active
+                    ? 'bg-white text-black font-bold border-b-white z-10 -mt-0.5 pb-2'
+                    : 'bg-[#cfcfcf] text-gray-700 border-b-gray-500 hover:bg-[#dcdcdc]'}`}
               >
-                <ExternalLink size={12} />
-                <span>{authoritativeLiveUrl.replace(/^https?:\/\//, '')}</span>
-              </a>
-            ) : (
-              <span
-                className="btn-w95 text-xs py-1 px-2 ml-0.5 text-gray-400 cursor-not-allowed opacity-70 font-medium flex items-center gap-1"
-                title={`Deployment status: ${app.deploymentState || 'draft'} (no active host)`}
-              >
-                <ExternalLink size={12} />
-                <span>{app.deploymentState || 'draft'}</span>
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => { setActiveTab('spec'); playClickSound(); }}
-            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'spec' ? 'btn-w95-primary font-bold' : ''}`}
-          >
-            <FileText size={13} /> Spec
-          </button>
-          <button
-            onClick={() => { setActiveTab('screenshots'); playClickSound(); }}
-            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'screenshots' ? 'btn-w95-primary' : ''}`}
-          >
-            <ImageIcon size={13} /> Shots ({app.screenshots?.length || 0})
-          </button>
-          <button
-            onClick={() => { setActiveTab('comments'); playClickSound(); }}
-            className={`btn-w95 text-xs py-1 px-2.5 ${activeTab === 'comments' ? 'btn-w95-primary' : ''}`}
-          >
-            <MessageSquare size={13} /> Comments ({comments.length})
-          </button>
-        </div>
+                {node}
+              </button>
+            );
+          };
+          return (
+            <div role="tablist" className="flex flex-wrap items-end gap-0.5 border-b border-gray-500 -mb-px pt-1">
+              {tab('preview', <><Play size={13} /> Live App</>)}
+              {tab('spec', <><FileText size={13} /> Spec</>)}
+              {tab('screenshots', <><ImageIcon size={13} /> Shots ({app.screenshots?.length || 0})</>)}
+              {tab('comments', <><MessageSquare size={13} /> Comments ({comments.length})</>)}
+              {/* Live host link (not a tab) — opens the deployed app; truncates on narrow widths. */}
+              {hasActiveDeployment && authoritativeLiveUrl ? (
+                <a
+                  href={authoritativeLiveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => playClickSound()}
+                  title={`Open ${authoritativeLiveUrl} in new tab`}
+                  className="ml-auto text-xs py-1 px-2 text-blue-900 font-bold flex items-center gap-1 hover:bg-blue-100 rounded max-w-[45%] min-w-0"
+                >
+                  <ExternalLink size={12} className="shrink-0" />
+                  <span className="truncate">{authoritativeLiveUrl.replace(/^https?:\/\//, '')}</span>
+                </a>
+              ) : (
+                <span
+                  className="ml-auto text-xs py-1 px-2 text-gray-400 cursor-not-allowed opacity-70 flex items-center gap-1"
+                  title={`Deployment status: ${app.deploymentState || 'draft'} (no active host)`}
+                >
+                  <ExternalLink size={12} className="shrink-0" />
+                  <span className="truncate">{app.deploymentState || 'draft'}</span>
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Main View Area */}

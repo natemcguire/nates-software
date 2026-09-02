@@ -230,7 +230,7 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {
       // EDITORIAL removed from launch: /editorial and /lab no longer resolve to a view.
       expect(resolveAppRoute('nates-software.com', '/editorial')).toEqual({ type: 'desktop' });
-      expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'INBOX PROPOSALS' });
+      expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'AGENT INBOX' });
       expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });
       expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO AI DEVELOPER BENCHMARK (Model + Harness + Tools)' });
       expect(resolveAppRoute('nates-software.com', '/profile')).toEqual({ type: 'standalone_view', id: 'profile', title: 'MAKER PROFILE & DISK SHELF' });

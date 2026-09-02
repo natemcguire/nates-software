@@ -8,9 +8,10 @@ interface StartMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenWindow: (id: string) => void;
+  onRestart: () => void;
 }
 
-export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWindow }) => {
+export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWindow, onRestart }) => {
   const { user, isAuthenticated, logout, openAuthModal } = useAuth();
   const { shelfAppIds } = useCatalog();
 
@@ -24,12 +25,20 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
 
   return (
     <div
+      // Stop BOTH click and pointerdown from reaching the desktop root — the desktop's
+      // onPointerDown fires before click and was closing the menu (unmounting it) before
+      // any item's onClick could register, so nothing worked. The `start-menu` class also
+      // lets the desktop handler skip it defensively.
       onClick={(e) => e.stopPropagation()}
-      className="fixed bottom-10 left-0 w-64 bg-w95-gray w95-border w95-shadow z-50 flex font-tahoma text-xs select-none shadow-2xl"
+      onPointerDown={(e) => e.stopPropagation()}
+      className="start-menu fixed bottom-10 left-0 w-64 bg-w95-gray w95-border w95-shadow z-50 flex font-tahoma text-xs select-none shadow-2xl"
     >
       {/* Left Blue Vertical Banner */}
-      <div className="w-8 bg-gradient-to-t from-w95-blue to-w95-blue-light flex items-end justify-center pb-3 text-white font-black tracking-widest text-sm writing-mode-vertical rotate-180">
-        NATE'S 95
+      <div
+        className="w-8 bg-gradient-to-t from-w95-blue to-w95-blue-light flex items-center justify-center text-white font-black tracking-widest text-sm"
+        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+      >
+        NATE'S&nbsp;95
       </div>
 
       {/* Menu Items List */}
@@ -107,7 +116,7 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
           className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
         >
           <Mail size={16} className="text-blue-700" />
-          <span>INBOX (Discussions)</span>
+          <span>Agent Inbox</span>
         </div>
 
         <div
@@ -157,7 +166,8 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         )}
 
         <div
-          onClick={() => { window.location.reload(); }}
+          data-testid="startmenu-restart"
+          onClick={() => { playClickSound(); onClose(); onRestart(); }}
           className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
         >
           <Power size={16} className="text-red-600" />
