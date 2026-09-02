@@ -37,5 +37,15 @@ Captured so context isn't lost. Ordered roughly quick-fix → deep-rework.
 - ✅ #3 Continue pinned · ✅ #4 CLI token labeled · ✅ #6 STANDALONE badge removed · ✅ #8-12 profile overhaul · ✅ #13 draggable icons — AGY batch, deployed c081982/5d18a96.
 - ✅ #5 GITSMITH file viewer — showcase repos now render embedded file content (no doomed fetch → no 404). Verified live on dronehunter. Deployed b377150.
 - ✅ #7 cross-subdomain login (first-party SSO) — apex-brokered single-use ticket, tenant hosts structurally excluded. Verified live (apex→hotwire inherit works; american-gardener tenant refused). migration 0037, deployed a66ebdd. Design: docs/superpowers/specs/2026-09-02-first-party-sso-design.md.
-- 🔨 #14 RIG → no-UI engine — spec in progress (docs/superpowers/specs/2026-09-02-rig-engine-no-ui-design.md).
-- 🔨 #15 Agent Inbox rework — spec in progress (docs/superpowers/specs/2026-09-02-agent-inbox-rework-design.md).
+- ✅ #14 RIG → no-UI engine — RIG.EXE app surface removed (HUD, desktop icon, window, Start-menu, marketing card); engine (deploy pipeline, verification, SLOPSHOP gateway) untouched. /rig shows an infra notice. Verified live (icon gone, /api/rig still 200). Deployed 6bdf73f. Spec: docs/superpowers/specs/2026-09-02-rig-engine-no-ui-design.md.
+- ✅ #15 Agent Inbox rework — INBOX stripped to the single-purpose local agent-mailbox observer (Cloud Proposals + Marketplace tabs cut, MarketplacePane deleted, cloud unread badge dropped). Honest OFFLINE pane, no mock data. Verified live. Deployed 307de23. Spec: docs/superpowers/specs/2026-09-02-agent-inbox-rework-design.md.
+
+## ALL 15 ITEMS DONE — deployed live + verified in browser (2026-09-02)
+Deploys this batch: c081982 → 5d18a96 → b377150 → a66ebdd → 4b03a7e → 6bdf73f → 307de23. Each pushed to GitHub + released to prod as it landed.
+
+### Follow-up filed (separate agent-inboxes repo, NOT this app's deploy)
+Per the inbox spec §7.2: add a `kind` (agent|human) column to `inboxes` and a
+`GET /v1/threads` cross-inbox observer feed to `github.com/natemcguire/agent-inboxes`
+(+ reply-tree indentation / "All Agent Threads" pane in LocalAgentMailbox). These
+are enhancements, not blockers — the in-app "make it make sense" rework Nate asked
+for is fully shipped.
