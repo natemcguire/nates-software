@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
-import { MAKER_PROFILES, AppListing } from '../data/mockData';
+import { AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
 import {
   Flame,
@@ -415,8 +415,8 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                       ● Verified Makers ({makerLeaderboard?.length || 0})
                     </span>
                   ) : (
-                    <span className="text-[10px] text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-300 font-mono">
-                      Demo / Seed Profiles
+                    <span className="text-[10px] text-red-200 bg-red-950 px-1.5 py-0.5 rounded border border-red-500 font-mono">
+                      ● OFFLINE / DISCONNECTED
                     </span>
                   )}
                 </div>
@@ -465,37 +465,13 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                     </div>
                   )
                 ) : (
-                  MAKER_PROFILES.map((maker: any, idx: number) => {
-                    const avatar = maker.avatar || '⚡';
-                    const name = maker.displayName || maker.name;
-                    const handle = maker.username ? `@${maker.username}` : maker.handle;
-                    const badgeText = maker.streakBadge;
-                    const tierTitle = maker.streakTier;
-                    const dropCount = maker.totalDrops || 0;
-
-                    return (
-                      <div key={maker.id || idx} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
-                          <span className="text-xl">{avatar}</span>
-                          <div>
-                            <div className="font-bold text-xs text-slate-800">
-                              {name} <span className="text-slate-500 font-normal">{handle}</span>
-                              <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
-                            </div>
-                            <div className="text-[10px] text-slate-600">
-                              {maker.bio || 'Ships software people can own.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
-                            {badgeText}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
+                  <div className="p-8 text-center space-y-2">
+                    <div className="text-2xl">📡</div>
+                    <div className="font-bold text-xs text-slate-700">Maker Leaderboard Unavailable</div>
+                    <p className="text-[11px] text-slate-500">
+                      Could not reach the live drop registry, so no maker data is shown. Retry sync to reconnect — this panel never shows invented profiles.
+                    </p>
+                  </div>
                 )}
               </div>
             ) : isLoading && apps.length === 0 ? (

@@ -649,6 +649,210 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
   });
 
   // ==========================================================================
+  // 6B. ORPHANED PAYMENTINTENT RECOVERY (Codex #6)
+  // ==========================================================================
+  describe('6B. Orphaned PaymentIntent recovery on "creating" retry (Codex #6)', () => {
+    const env = () => ({
+      DB: ctx.d1,
+      PAYMENTS_ENABLED: 'true',
+      STRIPE_SECRET_KEY: 'sk_test_123',
+      STRIPE_PUBLISHABLE_KEY: 'pk_test_123'
+    });
+
+    // Simulates the exact orphan scenario: Stripe already created a
+    // PaymentIntent for this order (the D1 write that would have attached it
+    // failed afterward), leaving a durable 'creating' row with no
+    // stripe_payment_intent_id. This is constructed directly rather than by
+    // forcing a mid-request D1 failure, since the durable persisted state is
+    // what a real retry would observe.
+    async function seedOrphanedCreatingOrder(orderId: string, idempotencyKey: string) {
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, repository_id,
+          seller_user_id, app_version, price_version, gross_cents,
+          currency, lineage_policy, lineage_snapshot_json, status,
+          created_at, updated_at
+        ) VALUES (?, ?, 'usr_nate', 'dronehunter', NULL, 'usr_nate', 'v1.0.0', 1, 1500, 'usd', 'maker_70_lineage_20_pool_10', ?, 'creating', datetime('now'), datetime('now'))
+      `).bind(orderId, idempotencyKey, JSON.stringify({ isRoot: true })).run();
+    }
+
+    it('retries a "creating" order by retrieving the SAME PaymentIntent from Stripe (idempotency replay) and re-attaches it instead of stranding it', async () => {
+      await createSession('usr_nate', 'test_token_buyer');
+      await seedOrphanedCreatingOrder('ord_orphaned_1', 'key_orphan_recovery_1');
+
+      // Mock Stripe: replaying the create call with the same Idempotency-Key
+      // returns the ORIGINAL PaymentIntent Stripe already created.
+      const stripeMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: 'pi_orphaned_original_999',
+          client_secret: 'pi_orphaned_original_999_secret'
+        })
+      } as any);
+      globalThis.fetch = stripeMock;
+
+      const req = new Request('http://localhost/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test_token_buyer',
+          'Idempotency-Key': 'key_orphan_recovery_1'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
+      });
+
+      const res = await createIntentApi.onRequestPost({ request: req, env: env() });
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.orderId).toBe('ord_orphaned_1');
+      expect(data.paymentIntentId).toBe('pi_orphaned_original_999');
+      expect(data.clientSecret).toBe('pi_orphaned_original_999_secret');
+      expect(data.status).toBe('requires_payment');
+
+      // Stripe was called with the SAME deterministic idempotency key so the
+      // original PI is retrieved, never a new/duplicate one created.
+      expect(stripeMock).toHaveBeenCalledTimes(1);
+      const callHeaders = (stripeMock.mock.calls[0][1] as any).headers;
+      expect(callHeaders['Idempotency-Key']).toBe('pi_ord_orphaned_1');
+
+      // Order is no longer stranded: it is re-attached and moved past 'creating'.
+      const order: any = await ctx.d1.prepare(`
+        SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE id = ?
+      `).bind('ord_orphaned_1').first();
+      expect(order.status).toBe('requires_payment');
+      expect(order.piId).toBe('pi_orphaned_original_999');
+
+      // A recovery event is recorded for auditability.
+      const events: any = await ctx.d1.prepare(`
+        SELECT event_type AS eventType FROM commerce_order_events WHERE order_id = ?
+      `).bind('ord_orphaned_1').all();
+      expect(events.results!.map((e: any) => e.eventType)).toContain('intent_recovered');
+    });
+
+    it('fails closed and honestly (does not fabricate a PI) when Stripe is unreachable during recovery, and leaves the order recoverable', async () => {
+      await createSession('usr_nate', 'test_token_buyer');
+      await seedOrphanedCreatingOrder('ord_orphaned_2', 'key_orphan_recovery_2');
+
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection timed out'));
+
+      const req = new Request('http://localhost/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test_token_buyer',
+          'Idempotency-Key': 'key_orphan_recovery_2'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
+      });
+
+      const res = await createIntentApi.onRequestPost({ request: req, env: env() });
+      const data = await res.json();
+
+      expect(res.status).toBe(502);
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/Failed to connect to Stripe/i);
+
+      // Order is NOT marked payment_failed and NOT fabricated as paid — it
+      // stays in 'creating' so the next retry can attempt recovery again.
+      const order: any = await ctx.d1.prepare(`
+        SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE id = ?
+      `).bind('ord_orphaned_2').first();
+      expect(order.status).toBe('creating');
+      expect(order.piId).toBeNull();
+    });
+
+    it('does not orphan the order when the D1 attach write fails after Stripe successfully creates a fresh PaymentIntent (new order path)', async () => {
+      await createSession('usr_nate', 'test_token_buyer');
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: 'pi_fresh_attach_fail_1',
+          client_secret: 'pi_fresh_attach_fail_1_secret'
+        })
+      } as any);
+
+      // Simulate the D1 write that attaches the PI failing (e.g. transient
+      // D1 outage) by making the final batch() call throw once.
+      const originalBatch = ctx.d1.batch.bind(ctx.d1);
+      let batchCallCount = 0;
+      vi.spyOn(ctx.d1, 'batch').mockImplementation(async (stmts: any) => {
+        batchCallCount += 1;
+        // First batch() call persists the 'creating' order + allocations +
+        // event — let that succeed normally. Second batch() call is the
+        // attach-PI step — make it fail once.
+        if (batchCallCount === 2) {
+          throw new Error('simulated D1 outage during PI attach');
+        }
+        return originalBatch(stmts);
+      });
+
+      const req = new Request('http://localhost/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test_token_buyer',
+          'Idempotency-Key': 'key_attach_fail_1'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
+      });
+
+      const res = await createIntentApi.onRequestPost({ request: req, env: env() });
+      const data = await res.json();
+
+      // Honest failure: never claims success when the attach write failed.
+      expect(res.status).toBe(500);
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/Retry with the same Idempotency-Key/i);
+
+      vi.restoreAllMocks();
+
+      // The order must remain in 'creating' (recoverable), NOT payment_failed.
+      const order: any = await ctx.d1.prepare(`
+        SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE idempotency_key = 'key_attach_fail_1'
+      `).first();
+      expect(order.status).toBe('creating');
+      expect(order.piId).toBeNull();
+
+      // Now retry with the SAME Idempotency-Key: recovery should retrieve
+      // the exact same PaymentIntent Stripe already created and re-attach it.
+      const retryStripeMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: 'pi_fresh_attach_fail_1',
+          client_secret: 'pi_fresh_attach_fail_1_secret'
+        })
+      } as any);
+      globalThis.fetch = retryStripeMock;
+
+      const retryReq = new Request('http://localhost/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test_token_buyer',
+          'Idempotency-Key': 'key_attach_fail_1'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
+      });
+
+      const retryRes = await createIntentApi.onRequestPost({ request: retryReq, env: env() });
+      const retryData = await retryRes.json();
+
+      expect(retryRes.status).toBe(200);
+      expect(retryData.success).toBe(true);
+      expect(retryData.paymentIntentId).toBe('pi_fresh_attach_fail_1');
+
+      const recoveredOrder: any = await ctx.d1.prepare(`
+        SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE idempotency_key = 'key_attach_fail_1'
+      `).first();
+      expect(recoveredOrder.status).toBe('requires_payment');
+      expect(recoveredOrder.piId).toBe('pi_fresh_attach_fail_1');
+    });
+  });
+
+  // ==========================================================================
   // 7. IDEMPOTENCY KEY REPLAY & CONFLICT BEHAVIOR
   // ==========================================================================
   describe('7. Idempotency Key Replay & Conflicts', () => {

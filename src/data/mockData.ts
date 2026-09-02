@@ -289,41 +289,11 @@ export const INITIAL_APPS: AppListing[] = [
   }
 ];
 
-export const MAKER_PROFILES = [
-  {
-    id: 'nate',
-    name: 'Nate McGuire',
-    handle: '@nate',
-    avatar: '🎯',
-    streakDays: 14,
-    streakTier: 'Streak Champion',
-    streakBadge: '🔥 14 Days',
-    bio: 'Founder at East Bay Projects. Building shareware for Users.',
-    totalDrops: 8,
-    totalForks: 260
-  },
-  {
-    id: 'josh',
-    name: 'Josh McGuire',
-    handle: '@josh',
-    avatar: '⛵',
-    streakDays: 9,
-    streakTier: 'Master Builder',
-    streakBadge: '⚡ 9 Days',
-    bio: 'Marine telemetry engineer. Rust, WASM, and high-frequency GPS vectors.',
-    totalDrops: 4,
-    totalForks: 94
-  },
-  {
-    id: 'sam',
-    name: 'Sam Altman',
-    handle: '@sam',
-    avatar: '🤖',
-    streakDays: 5,
-    streakTier: 'Active Contributor',
-    streakBadge: '✨ 5 Days',
-    bio: 'Open source enthusiast and WASM accounting hacker.',
-    totalDrops: 3,
-    totalForks: 48
-  }
-];
+// NOTE: A fabricated MAKER_PROFILES fixture (invented "Verified Maker"
+// accounts with made-up streaks/fork counts, including an unrelated real
+// person's name) used to live here and render on the live HOTWIRE surface
+// as a fallback whenever the authoritative /api/drops leaderboard fetch
+// failed. That was a fabricated-identity honesty violation (Codex #8) and
+// has been removed. HotwireView now shows an honest "offline / unavailable"
+// empty state instead of synthetic maker profiles. Real maker profiles are
+// sourced exclusively from D1 via /api/drops' makerLeaderboard.

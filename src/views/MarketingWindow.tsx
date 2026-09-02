@@ -29,7 +29,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onDismiss
 }) => {
   const { user } = useAuth();
-  const userBadge = user?.username ? `@${user.username}` : '@nate';
+  const userBadge = user?.username ? `@${user.username}` : '@guest';
 
   return (
     <div className="flex flex-col h-full font-tahoma text-sm">

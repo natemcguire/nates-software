@@ -88,7 +88,7 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     expect(source).toContain('Open your mailbox &rarr;');
     expect(source).toContain('See your profile &amp; shelf &rarr;');
     expect(source).toContain('Free to browse and fork. Create a maker account when you\'re ready to publish.');
-    expect(source).toContain("const userBadge = user?.username ? `@${user.username}` : '@nate';");
+    expect(source).toContain("const userBadge = user?.username ? `@${user.username}` : '@guest';");
   });
 
   it('wires SETUP desktop icon with START HERE and gates first-run auto-open in App.tsx (#6, F5)', () => {

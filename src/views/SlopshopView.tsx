@@ -61,7 +61,7 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   const [selectedAppId, setSelectedAppId] = useState<string>('dronehunter');
   const [selectedAgent, setSelectedAgent] = useState<AgentToolId>('agy');
   const [makerHandle, setMakerHandle] = useState<string>(
-    user?.username ? `@${user.username}` : '@nate'
+    user?.username ? `@${user.username}` : '@guest'
   );
   const [forgeCoordinates, setForgeCoordinates] = useState<RepoCoordinate[] | null>(null);
   const [, setForkResult] = useState<any | null>(null);
@@ -633,7 +633,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
           );
         } else {
           newLines.push({
-            text: 'Guest User (Unauthenticated). Draft handle: @nate. Type "slop login" to sign in.',
+            text: 'Guest User (Unauthenticated). Draft handle: @guest. Type "slop login" to sign in.',
             type: 'system'
           });
         }
