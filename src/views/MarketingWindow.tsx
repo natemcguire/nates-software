@@ -183,7 +183,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             </div>
           </div>
           <div className="text-[11px] text-gray-500 mt-2.5 border-t border-gray-200 pt-2">
-            Coming soon: put a slice of your app's future sales up for grabs. Contribute code that gets merged, and you earn a cut of every sale from then on.
+            Makers can also put a slice of an app's future sales up for grabs. Contribute code that gets merged, and you earn a cut of every sale from then on.
           </div>
         </div>
 

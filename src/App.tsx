@@ -10,7 +10,7 @@ export interface ResolvedRoute {
 
 const RESERVED_VIEW_HOSTS = new Set([
   'gitsmith', 'git', 'hotwire', 'slopshop', 'rig', 'inbox', 'dyno', 'profile',
-  'whitepapers', 'white-papers', 'terminal', 'editorial', 'lab', 'chat', 'irc',
+  'whitepapers', 'white-papers', 'terminal', 'chat', 'irc',
   'lounge', 'www', 'nates-software', 'api', 'router-canary', 'rig-provider',
   'explainer', 'whatis', 'what'
 ]);
@@ -46,10 +46,6 @@ export function resolveAppRoute(
 
   if (hostname.startsWith('hotwire.') || pathname.startsWith('/hotwire') || pathname.startsWith('/drops') || viewQuery === 'hotwire') {
     return { type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' };
-  }
-
-  if (hostname.startsWith('editorial.') || hostname.startsWith('lab.') || pathname.startsWith('/editorial') || pathname.startsWith('/lab') || pathname.startsWith('/reviews') || viewQuery === 'editorial' || viewQuery === 'lab') {
-    return { type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" };
   }
 
   if (hostname.startsWith('slopshop.') || pathname.startsWith('/slopshop') || pathname.startsWith('/speedshop') || viewQuery === 'slopshop') {
@@ -108,7 +104,6 @@ import { FontSizer } from './components/FontSizer';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
-import { EditorialView } from './views/EditorialView';
 import { PostEditorView } from './views/PostEditorView';
 import { HotwireView } from './views/HotwireView';
 import { SlopshopView } from './views/SlopshopView';
@@ -311,7 +306,6 @@ export function AppInner() {
           </div>
         ));
       }
-      case 'editorial': return renderStandaloneWrapper(route.title || "EDITORIAL LAB", <EditorialView />);
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
       case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
       case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView
@@ -437,6 +431,34 @@ export function AppInner() {
         backgroundSize: '24px 24px'
       }}
     >
+      {/* Mobile gate — the fixed Win95 desktop isn't usable below ~768px. Rather than
+          fake a responsive rework, show an honest full-screen notice on small screens
+          (Tailwind md: = 768px, so this is visible only below that) with a way into the
+          explainer. No modern animation; stays in the retro aesthetic. */}
+      <div className="md:hidden fixed inset-0 z-[60] bg-w95-teal flex items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-[#c0c0c0] border-2 shadow-[4px_4px_0_rgba(0,0,0,0.45)]"
+             style={{ borderColor: '#ffffff #404040 #404040 #ffffff' }}>
+          <div className="bg-gradient-to-r from-w95-blue to-[#1084d0] text-white px-1.5 py-1 text-sm font-bold flex items-center gap-1.5">
+            <span>⚡</span><span>Nate's Software 95</span>
+          </div>
+          <div className="p-4 text-black text-sm leading-relaxed font-tahoma">
+            <p className="font-bold text-w95-blue mb-2">Best on a bigger screen.</p>
+            <p className="mb-3">
+              Nate's Software is a Windows-95-style desktop — it needs a laptop or desktop
+              to open windows, fork apps, and run the shops. Come back from a computer for
+              the full thing.
+            </p>
+            <button
+              type="button"
+              onClick={() => { playClickSound(); openWindow('mktg'); }}
+              className="btn-w95 btn-w95-primary px-4 py-1.5 text-xs font-bold w-full"
+            >
+              What is this? →
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Rubberband Drag Selection Box */}
       {selectionBox && (
         <div
@@ -535,11 +557,6 @@ export function AppInner() {
           label="HOTWIRE (Drops)"
           icon="🔥"
           onClick={() => { playClickSound(); openWindow('hotwire'); }}
-        />
-        <DesktopIcon
-          label="EDITORIAL (Nate's Lab)"
-          icon="🏆"
-          onClick={() => { playClickSound(); openWindow('editorial'); }}
         />
         <DesktopIcon
           label="SLOPSHOP (AI Mod)"
@@ -714,32 +731,6 @@ export function AppInner() {
           onResize={(w, h, x, y) => updateWindowSize('terminal', w, h, x, y)}
         >
           <TerminalView />
-        </RetroWindow>
-      </ErrorBoundary>
-
-      {/* 2.5 Editorial Lab — Nate's Software & Benchmark Reviews */}
-      <ErrorBoundary
-        key={`editorial-${windows.editorial.isOpen}`}
-        fallbackTitle="EDITORIAL LAB"
-        onDismiss={() => closeWindow('editorial')}
-        resetKeys={[windows.editorial.isOpen]}
-      >
-        <RetroWindow
-          windowState={windows.editorial}
-          isActive={activeWindowId === 'editorial'}
-          onFocus={() => focusWindow('editorial')}
-          onClose={() => closeWindow('editorial')}
-          onMinimize={() => minimizeWindow('editorial')}
-          onToggleMaximize={() => toggleMaximizeWindow('editorial')}
-          onMove={(x, y) => updateWindowPosition('editorial', x, y)}
-          onResize={(w, h, x, y) => updateWindowSize('editorial', w, h, x, y)}
-        >
-          <EditorialView
-            onOpenApp={(appId) => {
-              const targetApp = getApp(appId);
-              if (targetApp) openWindow(targetApp.id as any);
-            }}
-          />
         </RetroWindow>
       </ErrorBoundary>
 

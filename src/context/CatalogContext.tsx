@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { AppListing, INITIAL_APPS } from '../data/mockData';
+import { AppListing } from '../data/mockData';
 import { MakerLeaderboardEntry } from '../lib/hotwireBackend';
 import { AuthContext } from './AuthContext';
 
 export interface CatalogContextType {
   apps: AppListing[];
-  demoApps: AppListing[];
   shelfAppIds: Set<string>;
   votedAppIds: Set<string>;
   makerLeaderboard: MakerLeaderboardEntry[];
@@ -35,11 +34,6 @@ export interface CatalogContextType {
 }
 
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
-
-const SEED_DEMO_APPS: AppListing[] = INITIAL_APPS.map(app => ({
-  ...app,
-  isDemo: true
-}));
 
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Authoritative catalog starts empty; live D1 drops populate on mount
@@ -349,7 +343,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
     <CatalogContext.Provider
       value={{
         apps,
-        demoApps: SEED_DEMO_APPS,
         shelfAppIds,
         votedAppIds,
         makerLeaderboard,

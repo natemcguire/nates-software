@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { TerminalView } from '../src/views/TerminalView';
-import { EditorialView } from '../src/views/EditorialView';
 import { ArtifactSandbox } from '../src/components/ArtifactSandbox';
 import { AuthProvider, AuthContext, AuthContextType } from '../src/context/AuthContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
@@ -61,53 +60,8 @@ describe('Spec I: TERMINAL Honesty', () => {
   });
 });
 
-describe('Spec J: EDITORIAL Honesty', () => {
-  it('renders per-article sample labeling and removes unverified quantitative benchmark claims', () => {
-    const html = renderToString(
-      <AuthContext.Provider value={createMockAuthValue(mockUser)}>
-        <CatalogProvider>
-          <EditorialView />
-        </CatalogProvider>
-      </AuthContext.Provider>
-    );
-
-    // Honest header and sample badging
-    expect(html).toContain('DEMO SAMPLES (UNVERIFIED)');
-    expect(html).toContain('Sample Reviews');
-    expect(html).toContain('Sample');
-
-    // Scorecard disclaimer
-    expect(html).toContain('Illustrative Spec Overview');
-    expect(html).toContain('Sample / Not a verified benchmark');
-    expect(html).toContain('Illustrative editorial sample — not a verified measurement');
-
-    // Unverified claims are removed
-    expect(html).not.toContain('12ms');
-    expect(html).not.toContain('168.2 tok/s');
-    expect(html).not.toContain('99.2% at 128k context');
-    expect(html).not.toContain('Gold Award');
-
-    // Fake claps are removed
-    expect(html).not.toContain('Editorial Clap (142)');
-    expect(html).not.toContain('Editorial Clap (98)');
-    expect(html).not.toContain('Editorial Clap (76)');
-  });
-
-  it('renders "View draft listing" for draft demo apps without active deployment', () => {
-    const onOpenApp = vi.fn();
-    const html = renderToString(
-      <AuthContext.Provider value={createMockAuthValue(mockUser)}>
-        <CatalogProvider>
-          <EditorialView onOpenApp={onOpenApp} />
-        </CatalogProvider>
-      </AuthContext.Provider>
-    );
-
-    // Initial article is DroneHunter 95 which is draft
-    expect(html).toContain('View draft listing');
-    expect(html).not.toContain('Launch dronehunter in Sandbox');
-  });
-});
+// Spec J (EDITORIAL Honesty) removed: the EDITORIAL / Nate's Lab surface was deleted
+// pre-launch (only sample articles; read as half-built). See launch-readiness cleanup.
 
 describe('Spec L: Synthesized-link Fix in ArtifactSandbox', () => {
   const draftApp: AppListing = {

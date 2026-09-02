@@ -11,7 +11,6 @@ import * as upvoteApi from '../functions/api/upvote';
 import * as dynoApi from '../functions/api/dyno';
 import * as feedApi from '../functions/api/feed';
 
-import { INITIAL_APPS } from '../src/data/mockData';
 import { GITSMITH_REPOS } from '../src/views/GitsmithView';
 import { INITIAL_ONLINE_USERS } from '../src/lib/ircProtocol';
 import { resolveAppRoute } from '../src/App';
@@ -20,12 +19,8 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
   // 1. Data Integrity & Invariants (No Mock Leakage)
   describe('1. Data Integrity & App Catalog Invariants', () => {
-    it('should strictly contain real shareware titles', () => {
-      expect(INITIAL_APPS.length).toBe(4);
-      const appIds = INITIAL_APPS.map(a => a.id);
-      expect(appIds).toEqual(['dronehunter', 'certified-mailer', 'american-gardener', 'wallart']);
-    });
-
+    // (The former "INITIAL_APPS contains exactly 4 shareware titles" test was removed with
+    // the fabricated INITIAL_APPS fixture — the catalog is now sourced exclusively from D1.)
     it('should have matching GITSMITH repositories with valid owners and files', () => {
       expect(GITSMITH_REPOS.length).toBe(4);
       GITSMITH_REPOS.forEach(repo => {
@@ -222,7 +217,8 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
       expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' });
       expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'gitsmith', title: 'GITSMITH FORGE' });
       expect(resolveAppRoute('hotwire.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' });
-      expect(resolveAppRoute('editorial.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" });
+      // EDITORIAL was removed from launch nav/routing (sample-only content); the
+      // `editorial` subdomain no longer resolves to a first-party view.
       expect(resolveAppRoute('slopshop.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' });
       expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG.EXE MICRO-CONTAINER & STORAGE HUD' });
       expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
@@ -232,8 +228,8 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
 
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {
-      expect(resolveAppRoute('nates-software.com', '/editorial')).toEqual({ type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" });
-      expect(resolveAppRoute('nates-software.com', '/lab')).toEqual({ type: 'standalone_view', id: 'editorial', title: "EDITORIAL LAB — NATE'S SOFTWARE & BENCHMARK REVIEWS" });
+      // EDITORIAL removed from launch: /editorial and /lab no longer resolve to a view.
+      expect(resolveAppRoute('nates-software.com', '/editorial')).toEqual({ type: 'desktop' });
       expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'INBOX PROPOSALS' });
       expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });
       expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO AI DEVELOPER BENCHMARK (Model + Harness + Tools)' });

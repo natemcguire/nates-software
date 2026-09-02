@@ -5,7 +5,6 @@ import * as upvoteApi from '../functions/api/upvote';
 import * as shelfApi from '../functions/api/shelf';
 import * as readinessApi from '../functions/api/product-readiness';
 import { hashSessionToken } from '../functions/api/_session';
-import { INITIAL_APPS } from '../src/data/mockData';
 import {
   getCurrentBatchWindow,
   getTimeToNextDrop,
@@ -30,13 +29,9 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
   // 1. LIVE CATALOG VS DEMO DATA DISTINCTION & NO SEED MERGING
   // ==========================================================================
   describe('1. Live Catalog Rows Distinct from Demo Data & Authoritative Purity', () => {
-    it('should distinguish seed demo apps with isDemo = true', () => {
-      expect(INITIAL_APPS.length).toBeGreaterThan(0);
-      INITIAL_APPS.forEach(app => {
-        expect(app.isDemo).toBe(true);
-      });
-    });
-
+    // (The former "seed demo apps have isDemo=true" test was removed with the fabricated
+    // INITIAL_APPS fixture — the catalog is now sourced exclusively from D1. The live
+    // authoritative-purity tests below are the real coverage.)
     it('should return authoritative live D1 drops without injecting fake seed apps', async () => {
       const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
       const res = await dropsApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });

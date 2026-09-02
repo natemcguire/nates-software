@@ -11,15 +11,16 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const isVerifiedActive = (app.deploymentState === 'active') && Boolean(app.activeDeploymentId);
   const deploymentState: AppDeploymentState = app.deploymentState || 'draft';
 
-  const defaultServeUrl = `/serve/${app.id}/index.html`;
+  // The live URL comes from the catalog: binaries.web for static R2 apps, or the app's
+  // real host (<hostname>.nates-software.com) for active Worker/container apps — the
+  // /api/drops read model now resolves both into liveUrl. We only iframe a well-formed
+  // URL. We deliberately do NOT fall back to a bare `/serve/<id>/index.html` path: that
+  // path only has bytes for static R2 apps, so for a container/Worker app it 404s and
+  // would render a blank iframe. When there's no resolved live URL, fall through to the
+  // honest deployment surface instead of a broken frame.
   const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
-  const isValidUrl = /^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/');
-  // A verified-active deployment always has a valid serve path; only override it
-  // with a configured listing URL when that URL is well-formed. A malformed
-  // liveUrl must NOT hide a real Phase 3 deployment.
-  const liveUrl = isValidUrl
-    ? configuredLiveUrl
-    : (isVerifiedActive ? defaultServeUrl : undefined);
+  const isValidUrl = /^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/serve/');
+  const liveUrl = isValidUrl ? configuredLiveUrl : undefined;
 
   const honestInfo = getHonestDeploymentMessage({
     id: app.id,

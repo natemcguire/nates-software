@@ -1,13 +1,37 @@
 import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { EphemeralLiveApp } from '../src/components/EphemeralLiveApp';
-import { INITIAL_APPS, AppListing } from '../src/data/mockData';
+import { AppListing } from '../src/data/mockData';
 import { resolveAppRoute } from '../src/App';
+
+// The fabricated INITIAL_APPS fixture was removed pre-launch (the catalog is now
+// D1-sourced). These tests exercise EphemeralLiveApp's honest draft-state rendering,
+// so we build minimal honest AppListing objects inline — no invented engagement.
+const draftApp = (id: string, name: string): AppListing => ({
+  id,
+  name,
+  deploymentState: 'draft',
+  deploymentError: `No deployable revision exists for ${name}. Source has not been imported into GITSMITH and built by RIG.`,
+  tagline: `${name} tagline`,
+  description: `${name} description`,
+  author: 'nate',
+  authorAvatar: '📦',
+  creator: 'nate',
+  creatorAvatar: '📦',
+  version: 'v1.0.0',
+  upvotes: 0,
+  forkCount: 0,
+  forks: 0,
+  tags: [],
+  price: 0,
+  screenshots: [],
+  comments: [],
+});
 
 describe('Unbundled Demos & EphemeralLiveApp Deployment Lifecycle', () => {
   describe('Honest Deployment Lifecycle Rendering (Pre-Active)', () => {
     it('renders honest draft state for unbundled wallart demo', () => {
-      const wallartApp = INITIAL_APPS.find(a => a.id === 'wallart')!;
+      const wallartApp = draftApp('wallart', 'WallArt Canvas Pro');
       expect(wallartApp).toBeDefined();
 
       const html = renderToString(<EphemeralLiveApp app={wallartApp} />);
@@ -27,7 +51,7 @@ describe('Unbundled Demos & EphemeralLiveApp Deployment Lifecycle', () => {
     });
 
     it('renders honest draft state for unbundled certified-mailer demo', () => {
-      const mailerApp = INITIAL_APPS.find(a => a.id === 'certified-mailer')!;
+      const mailerApp = draftApp('certified-mailer', 'Certified Mailer');
       expect(mailerApp).toBeDefined();
 
       const html = renderToString(<EphemeralLiveApp app={mailerApp} />);
@@ -44,7 +68,7 @@ describe('Unbundled Demos & EphemeralLiveApp Deployment Lifecycle', () => {
     });
 
     it('renders honest draft state for unbundled dronehunter demo', () => {
-      const dronehunterApp = INITIAL_APPS.find(a => a.id === 'dronehunter')!;
+      const dronehunterApp = draftApp('dronehunter', 'DroneHunter 95');
       expect(dronehunterApp).toBeDefined();
 
       const html = renderToString(<EphemeralLiveApp app={dronehunterApp} />);
@@ -89,7 +113,11 @@ describe('Unbundled Demos & EphemeralLiveApp Deployment Lifecycle', () => {
   });
 
   describe('Active Verified Deployment Rendering', () => {
-    it('renders served iframe when app reaches active deployment state with revision ID', () => {
+    it('renders the app at its resolved live host when active (not a bare /serve path)', () => {
+      // An active app carries its resolved live URL from /api/drops — its real host
+      // (<hostname>.nates-software.com), which the router serves for static OR container
+      // apps. EphemeralLiveApp iframes that URL. It must NOT synthesize a bare
+      // /serve/<id> path, which 404s for a container/Worker app and blanks the frame.
       const activeApp: AppListing = {
         id: 'wallart',
         name: 'WallArt Canvas Pro',
@@ -105,16 +133,44 @@ describe('Unbundled Demos & EphemeralLiveApp Deployment Lifecycle', () => {
         comments: [],
         deploymentState: 'active',
         activeDeploymentId: 'drev_wallart_prod_001',
-        activeCommitOid: 'abcdef1234567890'
+        activeCommitOid: 'abcdef1234567890',
+        liveUrl: 'https://wallart.nates-software.com/'
       };
 
       const html = renderToString(<EphemeralLiveApp app={activeApp} />);
 
       expect(html).toContain('ACTIVE (VERIFIED DEPLOYMENT)');
       expect(html).toContain('Open published app');
-      expect(html).toContain('src="/serve/wallart/index.html"');
+      expect(html).toContain('src="https://wallart.nates-software.com/"');
+      expect(html).not.toContain('src="/serve/wallart/index.html"');
       expect(html).toContain('title="WallArt Canvas Pro"');
       expect(html).not.toContain('No deployable revision exists');
+    });
+
+    it('falls through to the honest surface for an active app with no resolved live URL', () => {
+      // Defensive: if an active app somehow has no live URL, we render the honest
+      // deployment surface rather than iframing a bare /serve/<id> path that may 404.
+      const activeNoUrl: AppListing = {
+        id: 'wallart',
+        name: 'WallArt Canvas Pro',
+        tagline: 'Interactive Canvas Split',
+        description: 'Deployed wall art app',
+        author: 'nate',
+        authorAvatar: '🖼️',
+        version: 'v1.0.0',
+        upvotes: 0,
+        forkCount: 0,
+        tags: ['Wall Art'],
+        screenshots: [],
+        comments: [],
+        deploymentState: 'active',
+        activeDeploymentId: 'drev_wallart_prod_001',
+        activeCommitOid: 'abcdef1234567890'
+      };
+
+      const html = renderToString(<EphemeralLiveApp app={activeNoUrl} />);
+      expect(html).not.toContain('src="/serve/wallart/index.html"');
+      expect(html).not.toContain('<iframe');
     });
 
     it('honors custom liveUrl for active verified deployments', () => {
@@ -144,24 +200,9 @@ describe('Unbundled Demos & EphemeralLiveApp Deployment Lifecycle', () => {
   });
 
   describe('Catalog Integrity & Standalone Route Resolution', () => {
-    it('contains unbundled demo apps in INITIAL_APPS with honest draft state', () => {
-      const wallart = INITIAL_APPS.find(a => a.id === 'wallart');
-      expect(wallart).toBeDefined();
-      expect(wallart?.name).toBe('WallArt Canvas Pro');
-      expect(wallart?.deploymentState).toBe('draft');
-      expect(wallart?.deploymentError).toContain('No deployable revision exists');
-
-      const mailer = INITIAL_APPS.find(a => a.id === 'certified-mailer');
-      expect(mailer).toBeDefined();
-      expect(mailer?.name).toBe('Certified Mailer');
-      expect(mailer?.deploymentState).toBe('draft');
-
-      const dronehunter = INITIAL_APPS.find(a => a.id === 'dronehunter');
-      expect(dronehunter).toBeDefined();
-      expect(dronehunter?.name).toBe('DroneHunter 95');
-      expect(dronehunter?.deploymentState).toBe('draft');
-    });
-
+    // (The former "INITIAL_APPS fixture has honest draft state" test was removed with
+    // the fabricated INITIAL_APPS fixture itself — the catalog is now D1-sourced, and
+    // the honest draft-state RENDERING is already covered above via EphemeralLiveApp.)
     it('resolves standalone app route for demo apps', () => {
       const routeWa = resolveAppRoute('', '', '', 'wallart');
       expect(routeWa.type).toBe('standalone_app');

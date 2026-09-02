@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, Gauge, User, Terminal, MessageSquare, Award } from 'lucide-react';
+import { Flame, Wrench, Cpu, Mail, BookOpen, HelpCircle, Power, Gauge, User, Terminal, MessageSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
 import { playClickSound } from '../lib/soundEngine';
@@ -84,14 +84,6 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         >
           <Flame size={16} className="text-orange-600" />
           <span>HOTWIRE (Drops)</span>
-        </div>
-
-        <div
-          onClick={() => handleItemClick('editorial')}
-          className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
-        >
-          <Award size={16} className="text-amber-600" />
-          <span>EDITORIAL (Nate's Lab)</span>
         </div>
 
         <div

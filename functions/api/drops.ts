@@ -37,6 +37,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         a.deployment_error AS deploymentError, a.deployment_evidence_json AS deploymentEvidenceJson,
         a.detected_project_type AS detectedProjectType, a.deployment_plan_json AS deploymentPlanJson,
         a.active_deployment_id AS activeDeploymentId, a.active_commit_oid AS activeCommitOid,
+        a.origin_kind AS originKind, a.origin_ref AS originRef, a.hostname AS hostname,
         a.repository_id AS repositoryId,
         r.id AS canonicalRepositoryId,
         r.slug AS repoSlugName,
@@ -191,6 +192,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const grantableBps = grantable_bps;
       const hasVoted = viewerVotedAppIds.has(r.id);
 
+      // Resolve the app's real live URL. An explicit binaries.web wins. Otherwise, ANY
+      // ACTIVE app — static R2, Worker, or container — is reachable at its own host
+      // (<hostname>.nates-software.com) via the wildcard router, which dispatches by
+      // origin_kind (serves R2 bytes for static, proxies the worker/container otherwise).
+      // Surfacing that host avoids iframing the bare /serve/<id> path, which only carries
+      // bytes for static apps and 404s for a container/Worker app.
+      const originHost = (r.hostname || r.id) as string;
+      const isActive = r.deploymentState === 'active' && Boolean(r.activeDeploymentId);
+      const resolvedLiveUrl = binaries?.web
+        || r.liveUrl
+        || (isActive ? `https://${originHost}.nates-software.com/` : undefined);
+
       return {
         ...r,
         repositoryId,
@@ -207,7 +220,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         grantableBps,
         screenshots,
         binaries,
-        liveUrl: binaries?.web || r.liveUrl,
+        liveUrl: resolvedLiveUrl,
         tags,
         createdAt: r.createdAt || new Date().toISOString(),
         creatorStreak: streakData.currentStreak || 1,
