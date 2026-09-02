@@ -45,6 +45,29 @@ export interface LineageTree {
 export const MAX_LINEAGE_TREE_NODES = 5000;
 
 /**
+ * Resolve an app id to its canonical repository id. Public share URLs are keyed by the
+ * friendly app id (e.g. "dronehunter"); the lineage tree is keyed by repository id.
+ * Prefers an active repo; falls back to any repo for the app. Returns null if none.
+ */
+export async function resolveRepositoryIdForApp(
+  db: any,
+  appId: string | null | undefined
+): Promise<string | null> {
+  if (!db || !appId || typeof appId !== 'string' || !appId.trim()) return null;
+  const id = appId.trim();
+  const row: any = await db
+    .prepare(
+      `SELECT id FROM repositories
+       WHERE app_id = ?
+       ORDER BY (status = 'active') DESC, created_at ASC
+       LIMIT 1`
+    )
+    .bind(id)
+    .first();
+  return row && row.id ? String(row.id) : null;
+}
+
+/**
  * Resolve the lineage ROOT repository id for any repository in a family.
  * A root repo (never forked) has no `repository_forks` row as a child, so it is its own
  * root. A forked repo carries `lineage_root_repository_id` on its edge.
