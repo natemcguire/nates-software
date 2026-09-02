@@ -45,7 +45,11 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAuthoritativeLive, setIsAuthoritativeLive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentSort, setCurrentSort] = useState<string>('today');
-  const [currentBatch, setCurrentBatch] = useState<string>('today');
+  // Default the landing board to the CUMULATIVE catalog ('all'), not today's batch.
+  // Catalog rows carry a frozen migration-time created_at, so batch='today' returns 0
+  // rows every day after seed → the flagship board opened to an empty "no drops today"
+  // state. 'all' shows the real apps; the Today filter is still one click away.
+  const [currentBatch, setCurrentBatch] = useState<string>('all');
 
   const auth = useContext(AuthContext);
   const user = auth?.user ?? null;
@@ -82,7 +86,7 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setError(null);
 
       const activeSort = opts?.sort ?? sortRef.current ?? 'today';
-      const activeBatch = opts?.batch !== undefined ? opts.batch : (batchRef.current ?? 'today');
+      const activeBatch = opts?.batch !== undefined ? opts.batch : (batchRef.current ?? 'all');
 
       if (activeSort !== sortRef.current) {
         sortRef.current = activeSort;

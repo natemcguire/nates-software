@@ -14,6 +14,10 @@
 export interface LineageTreeNode {
   repositoryId: string;
   appId: string | null;
+  /** Best human name for the node: appId ?? repo slug ?? repositoryId. Never a bare UUID
+   *  unless there is genuinely nothing better — used for display so the tree/card never
+   *  shows a raw `repo_…` id as the product name. */
+  displayName: string;
   /** Owner handle without the leading '@' (e.g. "nate"). Null if the owner is unknown. */
   handle: string | null;
   ownerUserId: string;
@@ -23,13 +27,15 @@ export interface LineageTreeNode {
   parentRepositoryId: string | null;
   /** Number of direct forks of THIS node. */
   forkCount: number;
-  /** Total cents this node's owner has earned across the platform (maker + ancestor). */
+  /** Cents this node's owner earned FROM THIS LINEAGE, from fulfilled orders only. */
   earnedCents: number;
 }
 
 export interface LineageTree {
   rootRepositoryId: string;
   rootAppId: string | null;
+  /** Human name for the root app: rootAppId ?? root repo slug ?? repo id. Never a bare UUID if avoidable. */
+  rootDisplayName: string;
   /** The repository the caller asked about (the "you are here" node), if resolvable. */
   focusRepositoryId: string | null;
   totalNodes: number;
@@ -55,6 +61,15 @@ export async function resolveRepositoryIdForApp(
 ): Promise<string | null> {
   if (!db || !appId || typeof appId !== 'string' || !appId.trim()) return null;
   const id = appId.trim();
+  // The FORWARD link `app_listings.repository_id` is the populated one in prod; the
+  // reverse link `repositories.app_id` is often NULL (forge repos created without an
+  // app back-reference). Prefer the forward link, then fall back to the reverse one.
+  const fwd: any = await db
+    .prepare(`SELECT repository_id AS id FROM app_listings WHERE id = ? AND repository_id IS NOT NULL`)
+    .bind(id)
+    .first();
+  if (fwd && fwd.id) return String(fwd.id);
+
   const row: any = await db
     .prepare(
       `SELECT id FROM repositories
@@ -105,7 +120,7 @@ export async function fetchLineageTree(
   // so its metadata comes from `repositories`, not `repository_forks`).
   const rootRepo: any = await db
     .prepare(
-      `SELECT r.id AS repositoryId, r.app_id AS appId, r.owner_user_id AS ownerUserId,
+      `SELECT r.id AS repositoryId, r.app_id AS appId, r.slug AS slug, r.owner_user_id AS ownerUserId,
               u.username AS handle
        FROM repositories r
        LEFT JOIN users u ON u.id = r.owner_user_id
@@ -122,6 +137,7 @@ export async function fetchLineageTree(
               f.parent_repository_id AS parentRepositoryId,
               f.depth AS depth,
               r.app_id AS appId,
+              r.slug AS slug,
               r.owner_user_id AS ownerUserId,
               u.username AS handle
        FROM repository_forks f
@@ -137,10 +153,14 @@ export async function fetchLineageTree(
   const forks: any[] = (forkRows && forkRows.results) || [];
 
   // Assemble node list: root (depth 0) + every fork.
+  const nameFor = (appId: any, slug: any, repoId: string): string =>
+    (appId && String(appId)) || (slug && String(slug)) || repoId;
+
   const nodes: LineageTreeNode[] = [
     {
       repositoryId: String(rootRepo.repositoryId),
       appId: rootRepo.appId ? String(rootRepo.appId) : null,
+      displayName: nameFor(rootRepo.appId, rootRepo.slug, String(rootRepo.repositoryId)),
       handle: rootRepo.handle ? String(rootRepo.handle) : null,
       ownerUserId: String(rootRepo.ownerUserId),
       depth: 0,
@@ -151,6 +171,7 @@ export async function fetchLineageTree(
     ...forks.map((f) => ({
       repositoryId: String(f.repositoryId),
       appId: f.appId ? String(f.appId) : null,
+      displayName: nameFor(f.appId, f.slug, String(f.repositoryId)),
       handle: f.handle ? String(f.handle) : null,
       ownerUserId: String(f.ownerUserId),
       depth: Number(f.depth),
@@ -170,19 +191,31 @@ export async function fetchLineageTree(
     n.forkCount = forkCountByParent.get(n.repositoryId) || 0;
   }
 
-  // Real earnings per owner: sum settled allocations for each distinct owner in the
-  // tree. One query with an IN-list keyed by the (small, bounded) set of owner ids.
+  // Real earnings per owner, earned FROM THIS LINEAGE. Two guards make this number
+  // honest and match every other earnings surface (profile.ts, ledger.ts, grants.ts):
+  //   1. JOIN commerce_orders + WHERE o.status='fulfilled' — only money actually
+  //      collected. Allocation rows are written at order CREATION (status='creating'),
+  //      before payment; without this filter a started-then-abandoned or refunded
+  //      checkout would inflate the PUBLIC share card with money that was never paid.
+  //   2. AND a.source_repository_id IN (this tree's repos) — so "earned across the
+  //      lineage" is literally this family's money, not the owner's whole-platform
+  //      total (an owner active in two apps would otherwise show app-B money on app-A).
   const ownerIds = Array.from(new Set(nodes.map((n) => n.ownerUserId)));
-  if (ownerIds.length > 0) {
-    const placeholders = ownerIds.map(() => '?').join(',');
+  const repoIds = nodes.map((n) => n.repositoryId);
+  if (ownerIds.length > 0 && repoIds.length > 0) {
+    const ownerPh = ownerIds.map(() => '?').join(',');
+    const repoPh = repoIds.map(() => '?').join(',');
     const earnRows: any = await db
       .prepare(
-        `SELECT recipient_user_id AS userId, SUM(amount_cents) AS cents
-         FROM commerce_order_allocations
-         WHERE recipient_user_id IN (${placeholders})
-         GROUP BY recipient_user_id`
+        `SELECT a.recipient_user_id AS userId, SUM(a.amount_cents) AS cents
+         FROM commerce_order_allocations a
+         JOIN commerce_orders o ON o.id = a.order_id
+         WHERE a.recipient_user_id IN (${ownerPh})
+           AND a.source_repository_id IN (${repoPh})
+           AND o.status = 'fulfilled'
+         GROUP BY a.recipient_user_id`
       )
-      .bind(...ownerIds)
+      .bind(...ownerIds, ...repoIds)
       .all();
     const earnedByUser = new Map<string, number>();
     for (const row of (earnRows && earnRows.results) || []) {
@@ -201,6 +234,7 @@ export async function fetchLineageTree(
   return {
     rootRepositoryId: rootId,
     rootAppId: rootRepo.appId ? String(rootRepo.appId) : null,
+    rootDisplayName: nameFor(rootRepo.appId, rootRepo.slug, rootId),
     focusRepositoryId: nodes.some((n) => n.repositoryId === focusId) ? focusId : null,
     totalNodes: nodes.length,
     totalForks: forks.length,

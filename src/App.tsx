@@ -176,7 +176,7 @@ export function AppInner() {
       tags: ['Shareware', 'App'],
       sqliteDatabase: '',
       sqliteSize: 'Not specified',
-      screenshots: ['https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80'],
+      screenshots: [],
       comments: [],
       deploymentState: 'draft' as const,
       deploymentError: `No deployable revision exists for ${route.id}. Source has not been imported into GITSMITH and built by RIG.`

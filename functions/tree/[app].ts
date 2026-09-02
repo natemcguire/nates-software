@@ -38,7 +38,7 @@ function renderNode(n: LineageTreeNode, focusRepoId: string | null): string {
   const isRoot = n.depth === 0;
   const isFocus = focusRepoId != null && n.repositoryId === focusRepoId;
   const cls = ['node', isRoot ? 'root' : '', isFocus ? 'current' : ''].filter(Boolean).join(' ');
-  const app = n.appId ? esc(n.appId) : esc(n.repositoryId);
+  const app = esc(n.displayName || n.appId || n.repositoryId);
   const handle = n.handle ? '@' + esc(n.handle) : '@unknown';
   return `
     <div class="${cls}">
@@ -63,7 +63,7 @@ function renderTreePage(tree: LineageTree): string {
     .map((d) => `<div class="gen">${byDepth.get(d)!.map((n) => renderNode(n, tree.focusRepositoryId)).join('')}</div>`)
     .join('<div class="rule"></div>');
 
-  const rootApp = tree.rootAppId ? esc(tree.rootAppId) : esc(tree.rootRepositoryId);
+  const rootApp = esc(tree.rootDisplayName || tree.rootAppId || tree.rootRepositoryId);
   const gens = depths.length;
 
   // Share copy from real stats — an unfurled tree link should say something true.
@@ -156,7 +156,7 @@ function renderTreePage(tree: LineageTree): string {
 // link renders). SVG is the CF-Functions-native way to generate an image — no headless
 // browser, no external service. Real stats only.
 function renderCardSvg(tree: LineageTree): string {
-  const rootApp = esc(tree.rootAppId || tree.rootRepositoryId);
+  const rootApp = esc(tree.rootDisplayName || tree.rootAppId || tree.rootRepositoryId);
   const forks = tree.totalForks;
   const makers = tree.totalNodes;
   const earned = esc(dollars(tree.lineageEarnedCents));

@@ -44,10 +44,13 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const [apps, setApps] = useState<AppListing[]>(catalogApps);
   const [selectedApp, setSelectedApp] = useState<AppListing | null>(catalogApps[0] || null);
-  const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks' | 'mine'>('today');
+  // Land on the cumulative catalog, not today's batch: seed rows have a frozen
+  // created_at so a 'today' window is empty every day, which made the board open to
+  // "no drops today". 'alltime' shows the real apps; the Today tab is one click away.
+  const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks' | 'mine'>('alltime');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(votedAppIds || new Set());
-  const [selectedBatch, setSelectedBatch] = useState<string>('today');
+  const [selectedBatch, setSelectedBatch] = useState<string>('all');
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
   const [voteReward, setVoteReward] = useState<string | null>(null);
 
@@ -614,21 +617,20 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         <span className="text-gray-500 font-mono flex items-center gap-0.5">
                           <GitFork size={10} /> {app.forkCount || 0} forks
                         </span>
-                        {(app.forkCount || 0) > 0 && (
-                          <>
-                            <span className="text-gray-400 font-mono">|</span>
-                            <a
-                              href={`/tree/${encodeURIComponent(app.id)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => { e.stopPropagation(); playClickSound(); }}
-                              className="text-green-700 hover:text-green-900 font-mono font-bold flex items-center gap-0.5"
-                              title="See the fork lineage tree for this app — shareable"
-                            >
-                              🌳 lineage tree →
-                            </a>
-                          </>
-                        )}
+                        {/* Always offer the lineage tree — even a never-forked app has a
+                            single-node (root) tree worth sharing, and gating on forkCount>0
+                            made the whole feature undiscoverable (every app has 0 forks). */}
+                        <span className="text-gray-400 font-mono">|</span>
+                        <a
+                          href={`/tree/${encodeURIComponent(app.id)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => { e.stopPropagation(); playClickSound(); }}
+                          className="text-green-700 hover:text-green-900 font-mono font-bold flex items-center gap-0.5"
+                          title="See the fork lineage tree for this app — shareable"
+                        >
+                          🌳 lineage tree →
+                        </a>
                       </div>
                     </div>
 

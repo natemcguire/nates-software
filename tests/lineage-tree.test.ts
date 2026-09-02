@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
-import { fetchLineageTree, resolveLineageRoot } from '../src/lib/lineageDomain';
+import { fetchLineageTree, resolveLineageRoot, resolveRepositoryIdForApp } from '../src/lib/lineageDomain';
 
 // Seeds a fork family:
 //   @nate/dronehunter (root)
@@ -56,18 +56,21 @@ describe('Lineage tree read model (fetchLineageTree)', () => {
       .run();
   }
 
-  async function earn(orderSeed: string, appId: string, userId: string, repoId: string, cents: number) {
-    // A settled order (all NOT-NULL columns satisfied) + one allocation crediting
-    // `userId` with `cents`. The tree read model only reads allocations; the order row
-    // exists to satisfy the allocation's FK.
+  async function earn(
+    orderSeed: string, appId: string, userId: string, repoId: string, cents: number,
+    status = 'fulfilled'
+  ) {
+    // An order (any status) + one allocation crediting `userId` with `cents`.
+    // Allocation rows are written at order CREATION regardless of payment outcome, so
+    // seeding a non-'fulfilled' status here reproduces unpaid/failed/refunded money.
     await ctx.d1
       .prepare(
         `INSERT INTO commerce_orders
            (id, idempotency_key, buyer_user_id, app_id, seller_user_id, app_version,
             price_version, gross_cents, currency, lineage_snapshot_json, status)
-         VALUES (?, ?, ?, ?, ?, 'v1', 1, ?, 'usd', '{}', 'fulfilled')`
+         VALUES (?, ?, ?, ?, ?, 'v1', 1, ?, 'usd', '{}', ?)`
       )
-      .bind(orderSeed, `idem_${orderSeed}`, userId, appId, userId, cents)
+      .bind(orderSeed, `idem_${orderSeed}`, userId, appId, userId, cents, status)
       .run();
     await ctx.d1
       .prepare(
@@ -147,6 +150,42 @@ describe('Lineage tree read model (fetchLineageTree)', () => {
     expect(byRepo.get('repo_dhs')!.earnedCents).toBe(740);  // sam
     expect(byRepo.get('repo_dht')!.earnedCents).toBe(0);    // josh, no sales
     expect(byRepo.get('repo_sno')!.earnedCents).toBe(0);    // mara, no sales
+    expect(tree.lineageEarnedCents).toBe(4820 + 740);
+  });
+
+  it('resolves an app to its repo via the FORWARD link when repositories.app_id is NULL (prod shape)', async () => {
+    // Reproduce prod: a forge repo with app_id=NULL, but app_listings.repository_id set.
+    await user('usr_fwd', 'tfwd');
+    await ctx.d1.prepare(
+      `INSERT INTO repositories (id, app_id, owner_user_id, slug, storage_key, status)
+       VALUES ('repo_fwd', NULL, 'usr_fwd', 'fwdapp', 'key_fwd', 'active')`
+    ).run();
+    await ctx.d1.prepare(
+      `INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, repository_id)
+       VALUES ('fwdapp', 'FwdApp', 'T', 'D', 'usr_fwd', 'v1', 'MIT', '$0.00', '/data', '[]', '[]', '{}', 'repo_fwd')`
+    ).run();
+    // reverse link is NULL, so only the forward link (app_listings.repository_id) works.
+    expect(await resolveRepositoryIdForApp(ctx.d1, 'fwdapp')).toBe('repo_fwd');
+    const tree = (await fetchLineageTree(ctx.d1, await resolveRepositoryIdForApp(ctx.d1, 'fwdapp')))!;
+    expect(tree.rootRepositoryId).toBe('repo_fwd');
+  });
+
+  it('EXCLUDES unpaid/failed orders and out-of-lineage money from earnings (regression)', async () => {
+    // Money that was never collected — an allocation row exists (written at order
+    // creation) but the order is not fulfilled. Must NOT count toward the public card.
+    await earn('ord_creating', 't-dronehunter', 'usr_tn', 'repo_dh', 100000, 'creating');
+    await earn('ord_failed', 't-dronehunter', 'usr_tn', 'repo_dh', 100000, 'payment_failed');
+    // A fulfilled sale from an UNRELATED lineage the same owner made (different repo) —
+    // must NOT fold into THIS tree's "earned across the lineage".
+    await user('usr_other', 'tother');
+    await appAndRepo('t-otherapp', 'repo_other', 'usr_other');
+    await earn('ord_other', 't-otherapp', 'usr_tn', 'repo_other', 900000, 'fulfilled');
+
+    const tree = (await fetchLineageTree(ctx.d1, 'repo_dh'))!;
+    const byRepo = new Map(tree.nodes.map((n) => [n.repositoryId, n]));
+    // nate still shows ONLY his real fulfilled in-lineage $48.20 — not the $1000 unpaid
+    // nor the $9000 from the other app.
+    expect(byRepo.get('repo_dh')!.earnedCents).toBe(4820);
     expect(tree.lineageEarnedCents).toBe(4820 + 740);
   });
 

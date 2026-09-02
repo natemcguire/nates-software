@@ -20,3 +20,10 @@
 /tree/*.svg
   Content-Type: image/svg+xml; charset=utf-8
   Cache-Control: public, max-age=60, s-maxage=300
+
+# The plain-words explainer. Served as text/markdown it triggers a DOWNLOAD in browsers
+# (the most-clicked "what is this" link on a source-reader launch). Force text/plain so it
+# renders inline. (nosniff is intentionally absent so the browser displays it as text.)
+/vision.md
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300

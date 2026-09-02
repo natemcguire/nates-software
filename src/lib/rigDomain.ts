@@ -184,45 +184,9 @@ export interface RigContainer {
   readonly portalUrl?: string;
 }
 
-// Initial demo fleet used when callers instantiate without custom fleet options
-export const INITIAL_FLEET: readonly RigContainer[] = [
-  {
-    id: 'rig-wa-9812',
-    appId: 'wallart',
-    name: 'nate/wallart',
-    port: 3002,
-    memoryMb: 48,
-    memoryCapMb: 256,
-    sqlitePath: '/data/wallart.sqlite',
-    sqliteSizeBytes: 15518920,
-    walJournalSizeBytes: 0,
-    status: 'healthy'
-  },
-  {
-    id: 'rig-rc-4401',
-    appId: 'retro-calc',
-    name: 'sam/retro-calc',
-    port: 3001,
-    memoryMb: 24,
-    memoryCapMb: 256,
-    sqlitePath: '/data/app.sqlite',
-    sqliteSizeBytes: 1468006,
-    walJournalSizeBytes: 0,
-    status: 'healthy'
-  },
-  {
-    id: 'rig-st-1109',
-    appId: 'sailtrack',
-    name: 'nate/sailtrack',
-    port: 3003,
-    memoryMb: 38,
-    memoryCapMb: 256,
-    sqlitePath: '/data/telemetry.sqlite',
-    sqliteSizeBytes: 4404019,
-    walJournalSizeBytes: 0,
-    status: 'healthy'
-  }
-];
+// (A fabricated INITIAL_FLEET demo fixture — fake sam/retro-calc, nate/sailtrack with
+// byte-exact sqlite sizes — used to live here with zero importers. Removed pre-launch;
+// the RIG fleet is sourced from live state, not a hardcoded demo.)
 
 // Legal State Transitions
 export const LEGAL_RIG_TRANSITIONS: Readonly<Record<RigLifecycleState, readonly RigLifecycleState[]>> = {
