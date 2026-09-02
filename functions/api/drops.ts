@@ -13,7 +13,7 @@ import {
   hashVoterKey,
   DropRankingInput
 } from '../../src/lib/hotwireBackend';
-import { validateDropSubmission, parseAndValidatePrice } from '../../src/lib/hotwireDomain';
+import { validateDropSubmission, parseAndValidatePrice, RESERVED_APP_IDS } from '../../src/lib/hotwireDomain';
 import { buildRepositoryStorageKey } from '../../src/lib/forgeDomain';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
@@ -281,6 +281,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: validation.errors.join(' ') }, { status: 400 });
     }
 
+    // SECURITY (Codex #5): reserved-name enforcement at the DB/creation
+    // BOUNDARY, not only inside the pure validator. dropId is the
+    // server-resolved id (client-supplied id is only ever a candidate —
+    // trimmed above) that will become both app_listings.id and
+    // app_listings.hostname, i.e. the literal <id>.nates-software.com
+    // subdomain the router serves. Redundant with validateDropSubmission's
+    // internal RESERVED_APP_IDS check by design: this is the endpoint itself
+    // refusing to write a reserved id/hostname, independent of validator
+    // internals, so this guard survives even if validateDropSubmission's
+    // rules ever drift. Migration 0035 adds the same rule as a DB trigger
+    // as the final backstop for any other write path.
+    if (RESERVED_APP_IDS.has(dropId.toLowerCase())) {
+      return Response.json({
+        success: false,
+        error: `Drop ID '${dropId}' is reserved and cannot be used.`
+      }, { status: 400 });
+    }
+
     // Strict price validation
     const priceValidation = parseAndValidatePrice(price);
     if (!priceValidation.valid) {
@@ -444,9 +462,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // THEN the repository, THEN a follow-up UPDATE binds repository_id onto
     // the listing. All of this stays inside the one atomic D1 batch below —
     // still never a partial/fake write, just FK-legal statement order.
+    // SECURITY (Codex #5): hostname is the router's AUTHORITATIVE host-match
+    // column (`WHERE hostname = ? OR id = ?`) and migration 0035 now enforces
+    // a DB-level trigger rejecting NULL/reserved hostnames on every insert.
+    // Explicitly bind hostname = dropId here so new listings never rely on
+    // the router's `OR id = ?` fallback and never hit that trigger's
+    // NULL-hostname rejection. dropId was already run through
+    // validateDropSubmission() above (which rejects RESERVED_APP_IDS), so
+    // this is defense-in-depth on top of the DB trigger, not the only guard.
     const listingStmt = env.DB.prepare(`
-      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error, repository_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error, repository_id, hostname)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         tagline = excluded.tagline,
@@ -460,6 +486,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         deployment_state = excluded.deployment_state,
         deployment_error = excluded.deployment_error,
         repository_id = COALESCE(excluded.repository_id, app_listings.repository_id),
+        hostname = COALESCE(app_listings.hostname, excluded.hostname),
         deployment_evidence_json = NULL,
         active_deployment_id = NULL,
         active_commit_oid = NULL
@@ -482,7 +509,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       initialDeploymentError,
       // A brand-new repository doesn't exist as a row yet — bind it onto the
       // listing in the follow-up UPDATE once it's been inserted below.
-      newRepositoryStmt ? null : linkedRepositoryId
+      newRepositoryStmt ? null : linkedRepositoryId,
+      dropId
     );
 
     const linkRepositoryToListingStmt = newRepositoryStmt

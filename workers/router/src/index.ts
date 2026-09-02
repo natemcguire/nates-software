@@ -4,6 +4,7 @@
 // Preserves all 13 authoritative proxied hostnames via passthrough allowlist.
 
 import { getMediaType } from './mediaType';
+import { buildOriginAuthToken } from './originAuth';
 
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -80,6 +81,21 @@ export const EXCLUSION_HOSTNAMES = new Set([
   'picfitai.nates-software.com',
   'american-gardener.nates-software.com',
   'rig-provider.nates-software.com',
+]);
+
+/**
+ * First-party-looking subdomains that must NEVER be served from a tenant
+ * app_listings row, even by the `OR id = ?` legacy-match fallback in the
+ * router's host lookup (Codex #5). Mirrors RESERVED_APP_IDS in
+ * src/lib/hotwireDomain.ts and the DB-level guard trigger added in migration
+ * 0035 — kept here too as router-side defense-in-depth so a bad/legacy row
+ * (or a future write path that bypasses the app layer and the DB trigger)
+ * still can never be dispatched to a tenant origin under one of these names.
+ */
+export const RESERVED_ROUTER_SUBDOMAINS = new Set([
+  'www', 'apex', 'api', 'admin', 'app', 'auth', 'login', 'account', 'mail', 'static', 'assets',
+  'cdn', 'router', 'gateway', 'rig-provider', 'ops', 'status', 'help', 'support', 'docs',
+  'chat', 'git', 'gitsmith', 'hotwire', 'inbox', 'slopshop', 'rig', 'dyno', 'profile',
 ]);
 
 const json = (body: unknown, status = 200) =>
@@ -190,13 +206,33 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
     }
 
     if (!listing && env?.DB) {
-      listing = await env.DB.prepare(`
+      // SECURITY (Codex #5): prefer the AUTHORITATIVE hostname column. Only
+      // fall back to the legacy `id = ?` match when the requested subdomain
+      // is not itself a reserved/first-party name — a reserved subdomain
+      // (e.g. "inbox", "chat", "admin") must NEVER be servable from a tenant
+      // app_listings row even via the id-fallback, regardless of what's in
+      // the DB. Migration 0035 backstops this with a DB trigger that refuses
+      // to let any row's id/hostname be a reserved name in the first place;
+      // this is router-side defense-in-depth on top of that DB invariant.
+      const hostnameQuery = `
         SELECT a.id, a.origin_kind, a.origin_ref, a.deployment_state, a.active_deployment_id,
                dr.status AS revisionStatus
         FROM app_listings a
         LEFT JOIN deployment_revisions dr ON dr.id = a.active_deployment_id
-        WHERE a.hostname = ? OR a.id = ?
-      `).bind(subdomain, subdomain).first<AppListingRecord>();
+        WHERE a.hostname = ?
+      `;
+      listing = await env.DB.prepare(hostnameQuery).bind(subdomain).first<AppListingRecord>();
+
+      if (!listing && !RESERVED_ROUTER_SUBDOMAINS.has(subdomain)) {
+        const idFallbackQuery = `
+          SELECT a.id, a.origin_kind, a.origin_ref, a.deployment_state, a.active_deployment_id,
+                 dr.status AS revisionStatus
+          FROM app_listings a
+          LEFT JOIN deployment_revisions dr ON dr.id = a.active_deployment_id
+          WHERE a.id = ?
+        `;
+        listing = await env.DB.prepare(idFallbackQuery).bind(subdomain).first<AppListingRecord>();
+      }
 
       if (listing && env?.HOST_CACHE) {
         try {
@@ -276,7 +312,22 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       // defense-in-depth for the proxy path.)
       originRequest.headers.delete('Cookie');
       originRequest.headers.delete('Authorization');
-      originRequest.headers.set('X-NSW-Origin-Auth', originSecret);
+      // SECURITY (Codex #4): never forward the raw platform-global
+      // ORIGIN_SHARED_SECRET to a tenant origin — attacker-controlled tenant
+      // app code that captured it could replay it to forge a router->origin
+      // authenticated request against ANY OTHER app. Instead send a
+      // request-scoped proof signed with a PER-APP derived key, bound to
+      // this appId/host/method/path with a short expiry — useless if
+      // captured and replayed elsewhere or later. See originAuth.ts for the
+      // full scheme and the origin-side verification contract.
+      const originAuthToken = await buildOriginAuthToken({
+        globalSecret: originSecret,
+        appId: listing.id,
+        host: originHost,
+        method: originRequest.method,
+        path: url.pathname
+      });
+      originRequest.headers.set('X-NSW-Origin-Auth', originAuthToken);
       return fetch(originRequest);
     }
 

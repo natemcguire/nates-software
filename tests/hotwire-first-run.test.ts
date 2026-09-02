@@ -372,6 +372,77 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(appInDb).not.toBeNull();
       expect((appInDb as any).name).toBe('Retro Paint 95');
       expect((appInDb as any).version).toBe('v1.0.0');
+
+      // SECURITY (Codex #5): hostname is the router's authoritative host-match
+      // column. It must be persisted at creation time, not left NULL relying
+      // on the router's `OR id = ?` fallback.
+      expect((appInDb as any).hostname).toBe(dropId);
+    });
+
+    // SECURITY (Codex #5): RESERVED_APP_IDS must be enforced at the DB/creation
+    // BOUNDARY (the drops.ts POST handler itself), not only inside the pure
+    // validateDropSubmission() function tested above. This proves the actual
+    // HTTP endpoint refuses to write a reserved id/hostname to app_listings —
+    // the id becomes <id>.nates-software.com, so a maker registering a
+    // reserved word could otherwise impersonate the first-party app shell
+    // (e.g. inbox/chat/admin.nates-software.com).
+    it('should reject a reserved app id at the /api/drops POST endpoint with 400 and write nothing to app_listings', async () => {
+      for (const reservedId of ['inbox', 'chat', 'admin', 'ADMIN', 'Api']) {
+        const req = new Request('http://localhost/api/drops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+          body: JSON.stringify({
+            id: reservedId,
+            name: 'Impersonation Attempt',
+            version: 'v1.0.0',
+            price: '$15.00'
+          })
+        });
+
+        const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+        expect(res.status).toBe(400);
+        const data = await res.json();
+        expect(data.success).toBe(false);
+        expect(data.error).toContain('reserved');
+
+        const row = await ctx.d1.prepare('SELECT id FROM app_listings WHERE lower(id) = ?').bind(reservedId.toLowerCase()).first();
+        expect(row).toBeNull();
+      }
+    });
+
+    // Migration 0035: the reserved-name rule is also a DB-level invariant, so
+    // it holds even for a write path that bypasses drops.ts entirely (a
+    // future admin tool, a raced/alternate insert, or a bulk import) — the
+    // trigger, not application code, is the final backstop.
+    it('should have the DB trigger (migration 0035) reject a reserved id/hostname on a raw INSERT that bypasses the app layer entirely', async () => {
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, hostname)
+          VALUES ('inbox', 'Fake Inbox', 'x', 'x', 'usr_nate', 'v1.0.0', 'MIT', '$1.00', 'x', '[]', '[]', '{}', 'inbox')
+        `).run()
+      ).rejects.toThrow();
+
+      const row = await ctx.d1.prepare("SELECT id FROM app_listings WHERE id = 'inbox'").first();
+      expect(row).toBeNull();
+    });
+
+    it('POST /api/drops always persists a non-reserved hostname equal to the drop id, never relying on a NULL-hostname router fallback', async () => {
+      // Documents the actual non-null invariant for hostname: it is not a
+      // trigger-level NOT NULL guard (see migration 0035's header for why —
+      // SQLite BEFORE INSERT triggers on a real table can't assign computed
+      // defaults into NEW), it's enforced at the write boundary in
+      // functions/api/drops.ts, which always binds hostname = dropId.
+      const dropId = 'hostname-invariant-app';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({ id: dropId, name: 'Hostname Invariant App', version: 'v1.0.0', price: '$5.00' })
+      });
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(200);
+
+      const row = await ctx.d1.prepare('SELECT hostname FROM app_listings WHERE id = ?').bind(dropId).first();
+      expect((row as any).hostname).toBe(dropId);
     });
   });
 

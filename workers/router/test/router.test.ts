@@ -2,12 +2,46 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import routerWorker, {
   handleRequest,
   EXCLUSION_HOSTNAMES,
+  RESERVED_ROUTER_SUBDOMAINS,
   extractSubdomain,
   normalizeHostname,
   Env,
   AppListingRecord,
   R2ObjectBody
 } from '../src/index';
+import { buildOriginAuthToken, deriveOriginAppKey } from '../src/originAuth';
+
+/**
+ * Verifies a X-NSW-Origin-Auth token the same way an origin is documented to
+ * (see originAuth.ts module header): split the 6 "~"-separated fields,
+ * recompute the per-app derived key from the SAME global secret, recompute
+ * the HMAC over the bound fields, and compare. Used by tests below to assert
+ * the token is a valid, app-scoped signed proof — never the raw secret.
+ */
+async function verifyOriginAuthToken(
+  token: string,
+  expected: { globalSecret: string; appId: string; host: string; method: string; path: string; nowSeconds?: number }
+): Promise<boolean> {
+  const parts = token.split('~');
+  if (parts.length !== 6) return false;
+  const [version, appId, host, expiresAtStr, nonce] = parts;
+  if (version !== 'v1') return false;
+  if (appId !== expected.appId || host !== expected.host) return false;
+  const expiresAt = Number(expiresAtStr);
+  const nowSeconds = expected.nowSeconds ?? Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(expiresAt) || expiresAt < nowSeconds) return false;
+
+  const expectedToken = await buildOriginAuthToken({
+    globalSecret: expected.globalSecret,
+    appId: expected.appId,
+    host: expected.host,
+    method: expected.method,
+    path: expected.path,
+    now: expiresAt * 1000 - 60 * 1000,
+    nonce
+  });
+  return expectedToken === token;
+}
 import { resolveAppRoute } from '../../../src/App';
 
 describe('Cloudflare Router Worker (workers/router)', () => {
@@ -320,7 +354,12 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const body = await res.text();
       expect(body).toBe(htmlBody);
 
-      expect(mockStmt.bind).toHaveBeenCalledWith('cool-app', 'cool-app');
+      // SECURITY (Codex #5): the router now queries by the authoritative
+      // hostname column FIRST and only falls back to `id = ?` if that misses.
+      // The hostname-only query already resolved this listing, so bind is
+      // called with just the subdomain, and the id-fallback query never runs.
+      expect(mockStmt.bind).toHaveBeenCalledWith('cool-app');
+      expect(mockStmt.bind).not.toHaveBeenCalledWith('cool-app', 'cool-app');
       expect(r2GetSpy).toHaveBeenCalledWith('apps/cool-app/revisions/rev_999/index.html');
     });
 
@@ -947,7 +986,20 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(forwardedReq.url).toBe('https://container-app-worker.internal.workers.dev/api/v1/items?limit=10&page=2');
       expect(forwardedReq.method).toBe('GET');
       expect(forwardedReq.headers.get('X-Custom-Header')).toBe('custom-val');
-      expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('test-origin-secret-xyz');
+      // SECURITY (Codex #4): the raw global secret must never be forwarded.
+      // The header must be a request-scoped, app-scoped signed proof instead.
+      const originAuthToken = forwardedReq.headers.get('X-NSW-Origin-Auth');
+      expect(originAuthToken).not.toBeNull();
+      expect(originAuthToken).not.toBe('test-origin-secret-xyz');
+      expect(
+        await verifyOriginAuthToken(originAuthToken!, {
+          globalSecret: 'test-origin-secret-xyz',
+          appId: 'container-app',
+          host: 'container-app-worker.internal.workers.dev',
+          method: 'GET',
+          path: '/api/v1/items'
+        })
+      ).toBe(true);
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
 
@@ -1002,7 +1054,19 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(forwardedReq.headers.get('Content-Type')).toBe('application/json');
       expect(forwardedReq.headers.get('Authorization')).toBeNull();
       expect(forwardedReq.headers.get('Cookie')).toBeNull();
-      expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('test-origin-secret-xyz');
+      // SECURITY (Codex #4): app-scoped signed proof, not the raw global secret.
+      const originAuthToken = forwardedReq.headers.get('X-NSW-Origin-Auth');
+      expect(originAuthToken).not.toBeNull();
+      expect(originAuthToken).not.toBe('test-origin-secret-xyz');
+      expect(
+        await verifyOriginAuthToken(originAuthToken!, {
+          globalSecret: 'test-origin-secret-xyz',
+          appId: 'api-container',
+          host: 'api-container.workers.dev',
+          method: 'POST',
+          path: '/submit'
+        })
+      ).toBe(true);
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
 
@@ -1197,7 +1261,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
 
-    it('sets X-NSW-Origin-Auth header on proxied requests matching env.ORIGIN_SHARED_SECRET', async () => {
+    it('sets a request-scoped, app-scoped signed X-NSW-Origin-Auth token, never the raw ORIGIN_SHARED_SECRET (Codex #4)', async () => {
       const { env, d1PrepareSpy } = createMockEnv({ ORIGIN_SHARED_SECRET: 'custom-secret-456' });
 
       const containerRecord: AppListingRecord = {
@@ -1222,7 +1286,109 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(res.status).toBe(200);
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const forwardedReq = mockFetch.mock.calls[0][0] as Request;
-      expect(forwardedReq.headers.get('X-NSW-Origin-Auth')).toBe('custom-secret-456');
+      const originAuthToken = forwardedReq.headers.get('X-NSW-Origin-Auth');
+
+      // The disclosed value is never the raw platform-global secret.
+      expect(originAuthToken).not.toBeNull();
+      expect(originAuthToken).not.toBe('custom-secret-456');
+      expect(originAuthToken).not.toContain('custom-secret-456');
+
+      // It IS a valid v1 signed proof bound to this exact appId/host/method/path.
+      expect(
+        await verifyOriginAuthToken(originAuthToken!, {
+          globalSecret: 'custom-secret-456',
+          appId: 'auth-container',
+          host: 'auth-container.workers.dev',
+          method: 'GET',
+          path: '/api/test'
+        })
+      ).toBe(true);
+    });
+
+    it('an origin-auth token minted for one app cannot authenticate as a different app (Codex #4 cross-tenant forgery)', async () => {
+      const globalSecret = 'shared-platform-secret';
+
+      // Router mints a token for app "victim-app" at its own host.
+      const tokenForVictim = await buildOriginAuthToken({
+        globalSecret,
+        appId: 'victim-app',
+        host: 'victim-app.workers.dev',
+        method: 'GET',
+        path: '/api/data'
+      });
+
+      // An attacker who captured tokenForVictim (e.g. from their own tenant
+      // origin logs after triggering a proxied request) tries to replay it
+      // against a DIFFERENT app's origin, "attacker-app". A correctly
+      // implemented origin only trusts a token whose bound appId matches its
+      // own configured appId, so the token is rejected outright...
+      expect(
+        await verifyOriginAuthToken(tokenForVictim, {
+          globalSecret,
+          appId: 'attacker-app',
+          host: 'attacker-app.workers.dev',
+          method: 'GET',
+          path: '/api/data'
+        })
+      ).toBe(false);
+
+      // ...and even ignoring the appId mismatch, the signature itself does
+      // not verify against attacker-app's per-app derived key, because the
+      // per-app key derivation and the signed payload are BOTH bound to the
+      // original appId ("victim-app"), not a global secret usable anywhere.
+      const attackerDerivedKey = await deriveOriginAppKey(globalSecret, 'attacker-app');
+      const victimDerivedKey = await deriveOriginAppKey(globalSecret, 'victim-app');
+      expect(Buffer.from(attackerDerivedKey).toString('hex')).not.toBe(
+        Buffer.from(victimDerivedKey).toString('hex')
+      );
+    });
+
+    it('rejects an origin-auth token whose bound host/method/path does not match the actual proxied request', async () => {
+      const globalSecret = 'rebind-secret';
+      const token = await buildOriginAuthToken({
+        globalSecret,
+        appId: 'app-x',
+        host: 'app-x.workers.dev',
+        method: 'GET',
+        path: '/read-only'
+      });
+
+      // Same token, but the verifying origin checks it against a different
+      // path (as if an attacker tried to replay a captured GET /read-only
+      // token against POST /admin/delete) — must fail.
+      expect(
+        await verifyOriginAuthToken(token, {
+          globalSecret,
+          appId: 'app-x',
+          host: 'app-x.workers.dev',
+          method: 'POST',
+          path: '/admin/delete'
+        })
+      ).toBe(false);
+    });
+
+    it('rejects an expired origin-auth token', async () => {
+      const globalSecret = 'expiry-secret';
+      const mintedAt = Date.now() - 10 * 60 * 1000; // 10 minutes ago, well past the 60s TTL
+      const token = await buildOriginAuthToken({
+        globalSecret,
+        appId: 'app-y',
+        host: 'app-y.workers.dev',
+        method: 'GET',
+        path: '/status',
+        now: mintedAt
+      });
+
+      expect(
+        await verifyOriginAuthToken(token, {
+          globalSecret,
+          appId: 'app-y',
+          host: 'app-y.workers.dev',
+          method: 'GET',
+          path: '/status',
+          nowSeconds: Math.floor(Date.now() / 1000)
+        })
+      ).toBe(false);
     });
 
     it('fails closed (503) and does not proxy when ORIGIN_SHARED_SECRET is undefined/missing', async () => {
@@ -1285,6 +1451,120 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         expect(mockFetch).not.toHaveBeenCalled();
         expect(r2GetSpy).not.toHaveBeenCalled();
       }
+    });
+  });
+
+  // ==========================================================================
+  // 9. RESERVED / FIRST-PARTY SUBDOMAIN GUARD (Codex #5)
+  // ==========================================================================
+  describe('9. Reserved-Subdomain id-Fallback Guard (Codex #5)', () => {
+    it('never issues the id-fallback D1 query for a reserved subdomain, even if hostname lookup misses', async () => {
+      const { env, d1PrepareSpy } = createMockEnv();
+
+      // hostname match misses (no listing has this reserved word as hostname,
+      // which migration 0035's DB trigger also guarantees) -> first() resolves null.
+      const bindSpy = vi.fn().mockReturnThis();
+      d1PrepareSpy.mockReturnValue({
+        bind: bindSpy,
+        first: vi.fn().mockResolvedValue(null)
+      });
+
+      const req = new Request('https://inbox.nates-software.com/');
+      const res = await handleRequest(req, env);
+
+      expect(res.status).toBe(404);
+      // Only ONE D1 query (the hostname-only lookup) — the id-fallback query
+      // is never issued for a reserved subdomain like "inbox".
+      expect(d1PrepareSpy).toHaveBeenCalledTimes(1);
+      expect(bindSpy).toHaveBeenCalledWith('inbox');
+      expect(bindSpy).not.toHaveBeenCalledWith('inbox', 'inbox');
+    });
+
+    it('never dispatches a tenant listing to a reserved subdomain via the id-fallback match', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      // Simulate a hypothetical bad/legacy row: app_listings.id = 'inbox' with
+      // a DIFFERENT (non-matching) hostname. Even if this row somehow existed
+      // (migration 0035's trigger is meant to prevent it going forward), the
+      // router must never resolve https://inbox.nates-software.com/ to it via
+      // the `OR id = ?` fallback, because "inbox" is a reserved/first-party
+      // subdomain. (Note: unlike "chat"/"hotwire"/etc., "inbox" is reserved
+      // but is NOT one of the 13 EXCLUSION_HOSTNAMES passthrough hosts, so
+      // this request actually reaches the D1 host-resolution step being
+      // tested here rather than short-circuiting at the exclusion allowlist.)
+      const maliciousRow: AppListingRecord = {
+        id: 'inbox',
+        origin_kind: 'r2_static',
+        origin_ref: null,
+        deployment_state: 'active',
+        active_deployment_id: 'rev_evil',
+        revisionStatus: 'healthy'
+      };
+
+      const bindSpy = vi.fn().mockReturnThis();
+      // hostname query misses (this row's hostname column doesn't equal
+      // 'inbox'); only if the router incorrectly ran the id-fallback query
+      // would it find this row.
+      d1PrepareSpy.mockReturnValue({
+        bind: bindSpy,
+        first: vi.fn().mockResolvedValue(null)
+      });
+
+      const req = new Request('https://inbox.nates-software.com/secret-plan.html');
+      const res = await handleRequest(req, env);
+
+      expect(res.status).toBe(404);
+      expect(d1PrepareSpy).toHaveBeenCalledTimes(1);
+      expect(r2GetSpy).not.toHaveBeenCalled();
+      // Sanity: prove the guard is actually what's stopping this, not just a
+      // coincidental miss — the malicious row would have matched the
+      // id-fallback query had it run.
+      expect(maliciousRow.id).toBe('inbox');
+    });
+
+    it('still resolves a legitimate tenant app whose subdomain is not reserved via the id-fallback', async () => {
+      const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
+
+      const legitRecord: AppListingRecord = {
+        id: 'my-cool-app',
+        origin_kind: 'r2_static',
+        origin_ref: null,
+        deployment_state: 'active',
+        active_deployment_id: 'rev_legit',
+        revisionStatus: 'healthy'
+      };
+
+      const bindSpy = vi.fn().mockReturnThis();
+      let callCount = 0;
+      d1PrepareSpy.mockImplementation(() => ({
+        bind: bindSpy,
+        first: vi.fn().mockImplementation(() => {
+          callCount += 1;
+          // First call (hostname match) misses; second call (id fallback) hits.
+          return Promise.resolve(callCount === 1 ? null : legitRecord);
+        })
+      }));
+
+      r2GetSpy.mockResolvedValue({
+        body: '<h1>Legit</h1>',
+        httpMetadata: { contentType: 'text/html; charset=utf-8' },
+        httpEtag: '"rev_legit-index"',
+        size: 14
+      });
+
+      const req = new Request('https://my-cool-app.nates-software.com/');
+      const res = await handleRequest(req, env);
+
+      expect(res.status).toBe(200);
+      expect(d1PrepareSpy).toHaveBeenCalledTimes(2);
+      expect(bindSpy).toHaveBeenCalledWith('my-cool-app');
+    });
+
+    it('RESERVED_ROUTER_SUBDOMAINS matches RESERVED_APP_IDS in src/lib/hotwireDomain.ts', async () => {
+      const { RESERVED_APP_IDS } = await import('../../../src/lib/hotwireDomain');
+      expect(Array.from(RESERVED_ROUTER_SUBDOMAINS).sort()).toEqual(
+        Array.from(RESERVED_APP_IDS as Set<string>).sort()
+      );
     });
   });
 });
