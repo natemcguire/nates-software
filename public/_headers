@@ -13,3 +13,10 @@
 
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
+
+# The lineage share card (/tree/:app.svg) is a Pages Function returning SVG. Pages can
+# stamp text/html on function routes it treats as HTML — which breaks it as an og:image.
+# A _headers rule forces the correct image content-type for the .svg card path.
+/tree/*.svg
+  Content-Type: image/svg+xml; charset=utf-8
+  Cache-Control: public, max-age=60, s-maxage=300

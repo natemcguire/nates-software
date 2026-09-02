@@ -202,7 +202,6 @@ export const onRequestGet = async ({ params, request, env }: { params: { app: st
   const headers = {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'public, max-age=60, s-maxage=120',
-    'X-Content-Type-Options': 'nosniff',
   };
 
   const errorPage = (msg: string, status: number) =>
