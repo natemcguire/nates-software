@@ -123,4 +123,64 @@ describe('Commerce P4 authoritative refund processor', () => {
     const row: any = await ctx.d1.prepare(`SELECT status FROM stripe_event_inbox WHERE event_id='evt_refund_live'`).first();
     expect(row.status).toBe('terminal_failure');
   });
+
+  // Regression for Codex Critical #2: two DIFFERENT (distinct stripe_refund_id) succeeded
+  // refund events racing must NOT both finalize. D1 does not throw on a zero-row
+  // conditional UPDATE, so the loser's guarded order CAS must be checked BEFORE any
+  // allocation/obligation/inbox-processed writes — this proves the loser aborts cleanly
+  // instead of double-counting against the single order total the winner already committed.
+  it('concurrent DISTINCT refunds: the CAS loser does not insert obligations or mark processed (retryable instead)', async () => {
+    await event('evt_refund_race_a', 're_race_a');
+    await event('evt_refund_race_b', 're_race_b');
+
+    // Both workers race processStripeInboxEvent for TWO DIFFERENT refund events on the
+    // SAME order at the same time. Each independently self-claims its own inbox event,
+    // re-fetches its own authoritative Stripe object, reads the SAME starting order state
+    // (refunded_cents=0, state_version=1), and only then races to commit its guarded order
+    // CAS UPDATE — exactly the interleaving the bug report describes.
+    const [resultA, resultB] = await Promise.all([
+      processStripeInboxEvent(ctx.d1, env, 'evt_refund_race_a', {
+        stripeFetchOverride: stripeFetch(stripeRefund('re_race_a', 500))
+      }),
+      processStripeInboxEvent(ctx.d1, env, 'evt_refund_race_b', {
+        stripeFetchOverride: stripeFetch(stripeRefund('re_race_b', 500))
+      })
+    ]);
+
+    const results = [resultA, resultB];
+    const winners = results.filter((r) => r.success && !r.retryable);
+    const losers = results.filter((r) => !r.success && r.retryable);
+
+    // Exactly one of the two racing refunds finalizes; the other must be retryable, never
+    // a silent second success (that would be the double-count bug).
+    expect(winners.length).toBe(1);
+    expect(losers.length).toBe(1);
+
+    // Money conservation: the order's refunded_cents must reflect EXACTLY the ONE refund
+    // that actually won the CAS (500c) — never both (1000c).
+    const order: any = await ctx.d1.prepare(`SELECT refunded_cents, state_version FROM commerce_orders WHERE id='ord_refund'`).first();
+    expect(order.refunded_cents).toBe(500);
+    expect(order.state_version).toBe(2);
+
+    // The loser must NOT have inserted refund_allocations or recovery_obligations —
+    // exactly one refund's worth of allocations/obligations exist, not two.
+    const allocationRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_refund_allocations`).first();
+    const obligationRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_recovery_obligations`).first();
+    expect(allocationRows.n).toBe(2); // one row per allocation (maker, pool) for the ONE winning refund
+    expect(obligationRows.n).toBe(1); // one recovery obligation (maker) for the ONE winning refund
+
+    const recoveryTotal: any = await ctx.d1.prepare(`SELECT COALESCE(SUM(amount_cents),0) AS total FROM commerce_recovery_obligations`).first();
+    expect(recoveryTotal.total).toBe(450); // 500c * (1350/1500) maker share — not 900 (double-counted)
+
+    // The loser's inbox event must be retryable, NOT marked processed as if it succeeded.
+    const loserEventId = resultA === losers[0] ? 'evt_refund_race_a' : 'evt_refund_race_b';
+    const loserRow: any = await ctx.d1.prepare(`SELECT status FROM stripe_event_inbox WHERE event_id=?`).bind(loserEventId).first();
+    expect(loserRow.status).toBe('retryable_failure');
+
+    // The loser's OWN canonical refund record was still durably upserted (that write is
+    // idempotent and safe regardless of the order CAS outcome) but never finalized.
+    const loserRefundId = resultA === losers[0] ? 're_race_a' : 're_race_b';
+    const loserRefund: any = await ctx.d1.prepare(`SELECT finalized_at FROM commerce_refunds WHERE stripe_refund_id=?`).bind(loserRefundId).first();
+    expect(loserRefund.finalized_at).toBeNull();
+  });
 });
