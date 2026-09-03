@@ -280,28 +280,31 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                   <button
                     key={s.id}
                     onClick={() => { playClickSound(); setSelectedStarter(s); }}
-                    className={`w-full text-left p-3 border-2 flex items-center justify-between transition-all ${
+                    className={`w-full text-left p-3 border-[3px] flex items-center justify-between transition-all relative ${
                       selectedStarter?.id === s.id
-                        ? 'bg-blue-50 border-t-black border-l-black border-b-white border-r-white shadow-inner font-bold'
-                        : 'bg-white border-t-white border-l-white border-b-black border-r-black hover:bg-gray-100'
+                        ? 'bg-w95-blue text-white border-w95-blue ring-2 ring-yellow-300 shadow-[3px_3px_0_rgba(0,0,0,0.35)] font-bold'
+                        : 'bg-white border-t-white border-l-white border-b-black border-r-black hover:bg-blue-50'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-3xl bg-white p-1 rounded border border-gray-300">{s.avatar}</span>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-gray-900">{s.name}</span>
+                          <span className={`text-sm font-bold ${selectedStarter?.id === s.id ? 'text-white' : 'text-gray-900'}`}>{s.name}</span>
                           <span className="bg-blue-100 text-blue-800 text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">
                             {s.category}
                           </span>
+                          {selectedStarter?.id === s.id && (
+                            <span className="bg-yellow-300 text-black text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">✓ SELECTED</span>
+                          )}
                         </div>
-                        <div className="text-gray-600 text-xs mt-0.5 line-clamp-1">{s.tagline}</div>
+                        <div className={`text-xs mt-0.5 line-clamp-1 ${selectedStarter?.id === s.id ? 'text-blue-100' : 'text-gray-600'}`}>{s.tagline}</div>
                       </div>
                     </div>
 
                     <div className="text-right font-mono shrink-0 pl-2">
-                      <div className="text-xs font-bold text-green-800">{s.price}</div>
-                      <div className="text-[10px] text-gray-500">Full source included</div>
+                      <div className={`text-xs font-bold ${selectedStarter?.id === s.id ? 'text-yellow-300' : 'text-green-800'}`}>{s.price}</div>
+                      <div className={`text-[10px] ${selectedStarter?.id === s.id ? 'text-blue-200' : 'text-gray-500'}`}>Full source included</div>
                     </div>
                   </button>
                 ))}
@@ -671,7 +674,9 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               setStep((prev) => (prev + 1) as any);
             }}
             disabled={!selectedStarter}
-            className="btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+            className={`btn-w95 btn-w95-primary px-6 py-1.5 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50 ${
+              selectedStarter ? 'wizard-continue-ready' : ''
+            }`}
           >
             <span>Continue</span>
             <ArrowRight size={13} />

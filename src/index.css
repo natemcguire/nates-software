@@ -32,6 +32,85 @@ html, body {
   }
 }
 
+/* ===================================================================
+   Global Windows-95 scrollbar. Applies to EVERY scroll container in
+   the app (WebKit/Blink via ::-webkit-scrollbar, Firefox via the
+   scrollbar-* fallback) so all 49-odd scroll areas get the chunky
+   retro look with a beveled track, a raised thumb, and arrow buttons.
+   =================================================================== */
+* {
+  scrollbar-width: auto;                 /* Firefox: keep the classic thick bar */
+  scrollbar-color: #c0c0c0 #dfdfdf;      /* thumb / track (Firefox has no arrows) */
+}
+
+::-webkit-scrollbar {
+  width: 17px;
+  height: 17px;
+}
+
+/* Track: light dithered gray, sunken. */
+::-webkit-scrollbar-track {
+  background-color: #dfdfdf;
+  background-image:
+    linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%),
+    linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%);
+  background-size: 2px 2px;
+  background-position: 0 0, 1px 1px;
+}
+
+/* Thumb: raised gray bevel (white top/left, dark bottom/right). */
+::-webkit-scrollbar-thumb {
+  background-color: #c0c0c0;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  box-shadow: inset 1px 1px 0 #dfdfdf, inset -1px -1px 0 #808080;
+}
+::-webkit-scrollbar-thumb:active {
+  border-color: #404040 #ffffff #ffffff #404040;
+}
+
+/* Arrow buttons at the ends of the bar (up / down / left / right). */
+::-webkit-scrollbar-button {
+  background-color: #c0c0c0;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  background-repeat: no-repeat;
+  background-position: center;
+  display: block;
+}
+::-webkit-scrollbar-button:active { border-color: #404040 #ffffff #ffffff #404040; }
+/* Only show the single button at each end (start-decrement + end-increment). */
+::-webkit-scrollbar-button:single-button { width: 17px; height: 17px; }
+::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M4 1 L7 6 L1 6 Z' fill='%23000'/></svg>");
+}
+::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M1 2 L7 2 L4 7 Z' fill='%23000'/></svg>");
+}
+::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M6 1 L6 7 L1 4 Z' fill='%23000'/></svg>");
+}
+::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M2 1 L2 7 L7 4 Z' fill='%23000'/></svg>");
+}
+/* Hide the extra (double) buttons so we get exactly one arrow per end. */
+::-webkit-scrollbar-button:double-button { display: none; }
+::-webkit-scrollbar-corner { background: #c0c0c0; }
+
+/* Wizard "Continue" attention pulse — fires when an app is picked, drawing the
+   eye to the next action. Runs a few times then settles (not a forever-blink). */
+@keyframes wizard-continue-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 221, 51, 0); transform: translateY(0); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 221, 51, 0.85); transform: translateY(-1px); }
+}
+.wizard-continue-ready {
+  animation: wizard-continue-pulse 0.7s ease-in-out 3;
+  outline: 2px solid #ffdd33;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wizard-continue-ready { animation: none; }
+}
+
 /* Classic Win95 Bevel Button - Scaled & Readable */
 .btn-w95 {
   display: inline-flex;
