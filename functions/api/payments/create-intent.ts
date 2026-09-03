@@ -3,7 +3,7 @@
 // Snapshot authoritative price & lineage DAG allocations in D1 and create Stripe PaymentIntent.
 
 import { requireAuth } from '../_auth';
-import { calculateAllocations, fetchRepositoryAncestry, CommerceValidationError, ContributorInput } from '../../../src/lib/commerceDomain';
+import { calculateAllocations, fetchFrozenLiens, CommerceValidationError } from '../../../src/lib/commerceDomain';
 
 type PaymentIntentRecoveryResult =
   | { ok: true; paymentIntentId: string; clientSecret: string }
@@ -343,41 +343,29 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
-    // Read repository lineage ancestry DAG from D1
-    const ancestors = await fetchRepositoryAncestry(env.DB, repositoryId);
-
-    // Read active contributor revenue shares for this repository (dark/no-op when repositoryId is null)
-    let contributors: ContributorInput[] = [];
-    if (repositoryId) {
-      const contributorRows: any = await env.DB.prepare(`
-        SELECT contributor_user_id AS userId, basis_points AS basisPoints
-        FROM contributor_shares
-        WHERE repository_id = ? AND status = 'active'
-        ORDER BY created_at ASC, id ASC
-      `).bind(repositoryId).all();
-
-      contributors = (contributorRows?.results || []).map((row: any) => ({
-        userId: row.userId,
-        bps: row.basisPoints
-      }));
-    }
+    // Read the frozen ancestor liens captured at fork-confirm time for this
+    // repository (see migration 0038 / src/lib/commerceDomain.ts). Liens are
+    // frozen once, at fork time, so this is a single indexed read instead of
+    // walking the ancestry chain generation-by-generation at buy time.
+    // Dark/no-op when repositoryId is null (unlinked product = no liens).
+    const liens = repositoryId ? await fetchFrozenLiens(env.DB, repositoryId) : [];
 
     // Calculate deterministic allocations. Never call Stripe or fabricate a
-    // charge if contributor shares fail validation (e.g. an impossible
-    // over-cap state) — fail the order honestly instead.
+    // charge if the frozen liens fail validation (e.g. an impossible
+    // over-cap state that should have been blocked at fork time) — fail the
+    // order honestly instead.
     let calculation;
     try {
       calculation = calculateAllocations({
         grossCents: product.priceCents,
         currency: product.currency,
         sellerUserId: product.sellerUserId,
-        repositoryId,
-        ancestors,
-        contributors
+        sellerRepositoryId: repositoryId,
+        liens
       });
     } catch (allocErr: any) {
       if (allocErr instanceof CommerceValidationError) {
-        console.error('[COMMERCE CONTRIBUTOR ALLOCATION INVALID]', allocErr);
+        console.error('[COMMERCE LIEN ALLOCATION INVALID]', allocErr);
         const failedOrderId = `ord_${crypto.randomUUID().replace(/-/g, '')}`;
         await env.DB.prepare(`
           INSERT INTO commerce_orders (
@@ -385,7 +373,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             seller_user_id, app_version, price_version, gross_cents,
             currency, lineage_policy, lineage_snapshot_json, status, failure_code,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'payment_failed', 'contributor_allocation_invalid', datetime('now'), datetime('now'))
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'payment_failed', 'lien_allocation_invalid', datetime('now'), datetime('now'))
         `).bind(
           failedOrderId,
           trimmedIdempotencyKey,
@@ -397,12 +385,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           product.priceVersion,
           product.priceCents,
           product.currency,
-          'maker_70_lineage_20_pool_10',
+          'additive_frozen_liens_house_first',
           JSON.stringify({ error: allocErr.message })
         ).run();
 
         return Response.json(
-          { success: false, error: `Contributor allocation is invalid: ${allocErr.message}` },
+          { success: false, error: `Lien allocation is invalid: ${allocErr.message}` },
           { status: 500 }
         );
       }
@@ -433,13 +421,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         product.priceVersion,
         calculation.grossCents,
         calculation.currency,
-        calculation.lineagePolicy,
+        'additive_frozen_liens_house_first',
         calculation.snapshotJson
       )
     );
 
-    // 2. Persist immutable commerce_order_allocations rows
+    // 2. Persist immutable commerce_order_allocations rows.
+    // basis_points is nullable — platform/seller rows carry no fixed bps rate
+    // (the seller's cut is a floored remainder, not a bps split). Skip any
+    // allocation with amountCents <= 0 as defense-in-depth: calculateAllocations
+    // already skips zero-amount liens, so this should never trigger, but the
+    // table CHECK (amount_cents >= 0) alone would otherwise allow a 0-cents row
+    // to be written for a payable role, which the ethos forbids.
     for (const alloc of calculation.allocations) {
+      if (alloc.amountCents <= 0) continue;
       const allocId = `coa_${crypto.randomUUID().replace(/-/g, '')}`;
       statements.push(
         env.DB.prepare(`
@@ -479,7 +474,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           buyerUserId: buyer.id,
           sellerUserId: product.sellerUserId,
           isRoot: calculation.isRoot,
-          ancestorCount: ancestors.length
+          ancestorCount: liens.length
         })
       )
     );
@@ -542,10 +537,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       stripeParams.append('metadata[buyerUserId]', buyer.id);
       stripeParams.append('metadata[sellerUserId]', product.sellerUserId);
       stripeParams.append('metadata[priceVersion]', product.priceVersion.toString());
-      stripeParams.append('metadata[lineagePolicy]', calculation.lineagePolicy);
-      stripeParams.append('metadata[makerCents]', calculation.makerCents.toString());
-      stripeParams.append('metadata[lineageTotalCents]', calculation.lineageTotalCents.toString());
-      stripeParams.append('metadata[protocolPoolCents]', calculation.protocolPoolCents.toString());
+      stripeParams.append('metadata[lineagePolicy]', 'additive_frozen_liens_house_first');
+      stripeParams.append('metadata[sellerCents]', calculation.sellerCents.toString());
+      stripeParams.append('metadata[ancestorTotalCents]', calculation.ancestorTotalCents.toString());
+      stripeParams.append('metadata[platformCents]', calculation.platformCents.toString());
 
       stripeRes = await fetch('https://api.stripe.com/v1/payment_intents', {
         method: 'POST',
