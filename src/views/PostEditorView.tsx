@@ -572,7 +572,7 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 <CheckCircle2 size={16} className="text-green-700" /> Lineage Split Guarantee:
               </div>
               <p className="text-gray-700 leading-relaxed">
-                When developers fork and monetize this application, you receive <b>20%</b> of all downstream registered sales automatically deposited to your connected Stripe account.
+                When developers fork and monetize this application, you earn the royalty rate you set here on every downstream registered sale, frozen at fork time and automatically deposited to your connected Stripe account.
               </p>
             </div>
           </div>

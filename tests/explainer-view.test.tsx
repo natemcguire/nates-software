@@ -45,13 +45,12 @@ describe('Consolidated About/Explainer window (Spec M)', () => {
     expect(html).toContain('Fork any app, change it with an AI agent, and sell your');
   });
 
-  it('renders the 70/20/10 money model with the 90/10 root case', () => {
+  it('renders the flat-10%-platform / frozen-royalty money model with the 90/10 root case', () => {
     const html = renderWindow();
     expect(html).toContain('The Money Model');
-    expect(html).toContain('70%');
-    expect(html).toContain('20%');
+    expect(html).toContain('frozen the day you forked');
     expect(html).toContain('10%');
-    expect(html).toContain('90/10');
+    expect(html).toContain('90% you / 10% us');
   });
 
   it('renders honest descriptions for core apps (HOTWIRE, SLOPSHOP, GITSMITH, INBOX, DYNO, PROFILE)', () => {

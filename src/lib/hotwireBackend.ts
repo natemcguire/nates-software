@@ -21,7 +21,7 @@ export const MAKER_BADGE_TIERS: Record<MakerBadgeTier, MakerBadgeInfo> = {
     minStreak: 0,
     multiplier: 1.0,
     feeWaiverPercent: 0,
-    perkDescription: 'Base distribution rank and standard 70% maker royalty share.'
+    perkDescription: 'Base distribution rank and the standard platform fee.'
   },
   'Iron Maker': {
     tier: 'Iron Maker',

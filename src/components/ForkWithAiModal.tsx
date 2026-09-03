@@ -269,7 +269,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
             <>
               {/* Fork Explainer Banner */}
               <div className="bg-blue-50 border border-blue-200 text-blue-950 p-2.5 rounded text-xs leading-relaxed">
-                Forking gives you your own private copy of this app's code to change with AI — and if you sell it later, you keep 70%.
+                Forking gives you your own private copy of this app's code to change with AI — and if you sell it later, the platform takes a flat 10%, the maker you forked from earns their frozen royalty, and you keep the rest.
               </div>
 
               {/* Header Metadata */}
@@ -292,7 +292,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 </div>
 
                 <div className="text-right font-mono text-[11px]">
-                  <div className="text-emerald-800 font-bold">70% Maker Royalty</div>
+                  <div className="text-emerald-800 font-bold">Frozen Maker Royalty</div>
                   {resolvedRepoSlug ? (
                     <div className="text-blue-800 font-bold flex items-center gap-1 justify-end">
                       <Network size={11} className="text-blue-600" />

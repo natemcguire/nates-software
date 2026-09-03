@@ -632,9 +632,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             </div>
 
             <div className="border border-slate-700 rounded-lg p-3 bg-slate-900/60 space-y-2">
-              <div className="font-bold text-xs text-white">How a sale splits: 70 / 20 / 10</div>
+              <div className="font-bold text-xs text-white">How a sale splits</div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                Someone forks <strong>{app.name}</strong>, sells their version, and the money splits on its own: <strong>70%</strong> to whoever sold it, <strong>20%</strong> back to @{app.author || app.creator} for building the original, and <strong>10%</strong> to the platform.
+                Someone forks <strong>{app.name}</strong>, sells their version, and the money splits on its own: <strong>10%</strong> to the platform, @{app.author || app.creator} earns the royalty they set for building the original (frozen at fork time), and whoever sold it keeps the rest.
               </p>
             </div>
 

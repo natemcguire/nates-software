@@ -162,14 +162,14 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Get paid on every sale</div>
-              You keep <strong className="text-green-800">70%</strong>. <strong>20%</strong> goes up the chain
-              to the makers you forked from. <strong>10%</strong> keeps the lights on here. Built something
-              original with no parents? That 20% comes back to you, so it's <strong>90% you / 10% us</strong>.
+              <strong>10%</strong> keeps the lights on here. Any makers you forked from earn the
+              royalty rate they set, frozen the day you forked. You keep the rest. Built something
+              original with no parents? There's nothing to pay upstream, so it's <strong className="text-green-800">90% you / 10% us</strong>.
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Fork and remix</div>
               Fork anyone's app, change it with AI in SLOPSHOP or the <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI,
-              and sell your version. When your fork sells, the makers you built on earn that 20% too. Forks of forks pay everyone up the line.
+              and sell your version. When your fork sells, the makers you built on earn their own frozen royalty. Forks of forks pay everyone up the line.
             </div>
           </div>
           <div className="text-[11px] text-gray-500 mt-2.5 border-t border-gray-200 pt-2">

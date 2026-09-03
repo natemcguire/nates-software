@@ -346,10 +346,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
       : `$${(parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15).toFixed(2)}`;
 
   // Parse authoritative allocations for display
-  const makerAlloc = quote?.allocations?.find(a => a.role === 'maker');
-  const poolAlloc = quote?.allocations?.find(a => a.role === 'protocol_pool');
+  const makerAlloc = quote?.allocations?.find(a => a.role === 'seller');
+  const poolAlloc = quote?.allocations?.find(a => a.role === 'platform');
   const ancestorAllocs = quote?.allocations?.filter(a => a.role === 'ancestor') || [];
-  const contributorAllocs = quote?.allocations?.filter(a => a.role === 'contributor') || [];
 
   const artifactLinks = fulfilledOrder?.binaries ? publishedArtifactLinks(fulfilledOrder.binaries) : [];
 
@@ -482,17 +481,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                     <span>Authoritative Lineage Split:</span>
                   </div>
 
-                  {/* Maker Allocation */}
+                  {/* Seller Allocation */}
                   {makerAlloc && (
                     <div className="flex justify-between text-gray-700">
                       <span>
-                        ⚡ {(makerAlloc.basisPoints / 100).toFixed(0)}% to maker ({makerAlloc.recipientUserId ? `@${makerAlloc.recipientUserId}` : (app.creator || app.author || '@maker')}):
+                        ⚡ {(makerAlloc.basisPoints / 100).toFixed(0)}% to seller ({makerAlloc.recipientUserId ? `@${makerAlloc.recipientUserId}` : (app.creator || app.author || '@maker')}):
                       </span>
                       <span className="font-bold">${(makerAlloc.amountCents / 100).toFixed(2)}</span>
                     </div>
                   )}
 
-                  {/* Ancestor Allocations */}
+                  {/* Ancestor Allocations (frozen royalty owed to upstream makers) */}
                   {ancestorAllocs.map((anc, idx) => (
                     <div key={idx} className="flex justify-between text-gray-700">
                       <span>
@@ -502,20 +501,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                     </div>
                   ))}
 
-                  {/* Contributor Allocations */}
-                  {contributorAllocs.map((cnt, idx) => (
-                    <div key={idx} className="flex justify-between text-gray-700">
-                      <span>
-                        🤝 {(cnt.basisPoints / 100).toFixed(0)}% to contributor (@{cnt.recipientUserId}):
-                      </span>
-                      <span className="font-bold">${(cnt.amountCents / 100).toFixed(2)}</span>
-                    </div>
-                  ))}
-
-                  {/* Protocol Pool Allocation */}
+                  {/* Platform Allocation */}
                   {poolAlloc && (
                     <div className="flex justify-between text-gray-700">
-                      <span>🛡️ {(poolAlloc.basisPoints / 100).toFixed(0)}% to platform &amp; protocol pool:</span>
+                      <span>🛡️ {(poolAlloc.basisPoints / 100).toFixed(0)}% to platform:</span>
                       <span className="font-bold">${(poolAlloc.amountCents / 100).toFixed(2)}</span>
                     </div>
                   )}

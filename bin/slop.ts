@@ -1464,16 +1464,18 @@ export function handleTest(): SlopCommandResult {
     checkResults.push({ name: "Micro-Dyno Port Allocator range [3001..3010] collision avoidance", pass: false, details: err.message });
   }
 
-  // Check 3: Lineage Ledger 70/20/10 exact cent conservation
+  // Check 3: Lineage Ledger flat-10%-platform + frozen-royalty exact cent conservation
   try {
     const priceCents = 1500;
-    const authorCut = Math.floor(priceCents * 0.70);
-    const parentCut = Math.floor(priceCents * 0.20);
-    const platformCut = priceCents - authorCut - parentCut;
-    const pass = (authorCut + parentCut + platformCut) === priceCents && authorCut === 1050 && parentCut === 300 && platformCut === 150;
-    checkResults.push({ name: "Lineage Ledger 70/20/10 exact cent conservation", pass });
+    const platformCut = Math.floor(priceCents * 0.10);
+    const remainder = priceCents - platformCut;
+    const ancestorRoyaltyBps = 2000; // example frozen royalty rate for this proof only, not a fixed platform rule
+    const ancestorCut = Math.floor(remainder * ancestorRoyaltyBps / 10000);
+    const sellerCut = remainder - ancestorCut;
+    const pass = (platformCut + ancestorCut + sellerCut) === priceCents && platformCut === 150 && ancestorCut === 270 && sellerCut === 1080;
+    checkResults.push({ name: "Lineage Ledger flat-10%-platform + frozen-royalty exact cent conservation", pass });
   } catch (err: any) {
-    checkResults.push({ name: "Lineage Ledger 70/20/10 exact cent conservation", pass: false, details: err.message });
+    checkResults.push({ name: "Lineage Ledger flat-10%-platform + frozen-royalty exact cent conservation", pass: false, details: err.message });
   }
 
   // Check 4: GITSMITH CAS compare-and-swap atomic ref verification

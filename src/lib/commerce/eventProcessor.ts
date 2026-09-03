@@ -41,7 +41,7 @@ export interface ProcessorOptions {
  *    - Exactly one commerce_licenses record (hashed key + last4)
  *    - Exactly one commerce_license_secrets record (AES-256-GCM encrypted)
  *    - Exactly one commerce_license_secret_events record
- *    - One commerce_transfer_outbox row per positive maker/ancestor allocation (never protocol pool)
+ *    - One commerce_transfer_outbox row per positive maker/ancestor allocation (never the platform's own cut)
  *    - commerce_order_events audit row
  *    - stripe_event_inbox status -> processed
  *    (NOTE ON SHELF_ITEMS: Legacy shelf_items requires plaintext license_key. To uphold the security invariant
@@ -450,7 +450,7 @@ export async function processStripeInboxEvent(
   );
 
   // E. One outbox row per positive payable allocation to a real recipient
-  // (maker, ancestor, or contributor). The protocol pool is never paid out —
+  // (maker, ancestor, or contributor). The platform's own cut is never paid out —
   // it has no recipientUserId and is excluded by that condition. Migration
   // 0029 widened the outbox trigger to admit the 'contributor' role precisely
   // so a granted contributor's carved share is queued for payout like any

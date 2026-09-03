@@ -68,7 +68,7 @@ function renderTreePage(tree: LineageTree): string {
 
   // Share copy from real stats — an unfurled tree link should say something true.
   const ogTitle = `${rootApp} has ${tree.totalForks} fork${tree.totalForks === 1 ? '' : 's'} — see the lineage tree`;
-  const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own forever; when a fork sells, 70% to the seller / 20% up the tree.`;
+  const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own forever; when a fork sells, the platform takes a flat 10% and every maker up the tree earns their own frozen royalty.`;
   const ogUrl = `https://nates-software.com/tree/${rootApp}`;
   const ogImage = `https://nates-software.com/tree/${rootApp}.svg`;
 

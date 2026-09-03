@@ -99,7 +99,7 @@ export const AuthModal: React.FC = () => {
         {/* Benefit Line & Contextual Action Header */}
         <div className="p-3 bg-w95-gray border-b border-gray-300 space-y-2">
           <p className="text-gray-700 text-xs leading-normal">
-            Create an account to keep your forks, vote on drops, and earn 70% when you sell.
+            Create an account to keep your forks, vote on drops, and get paid when you sell.
           </p>
           {actionDescription && (
             <div className="bg-blue-100 border border-blue-400 text-blue-950 px-2.5 py-1.5 rounded flex items-center gap-2 font-mono text-[11px]">

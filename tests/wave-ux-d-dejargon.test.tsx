@@ -95,7 +95,7 @@ describe('WAVE-UX-D Specification Tests', () => {
         </AuthContext.Provider>
       );
 
-      expect(html).toContain("Forking gives you your own private copy of this app&#x27;s code to change with AI — and if you sell it later, you keep 70%.");
+      expect(html).toContain("Forking gives you your own private copy of this app&#x27;s code to change with AI — and if you sell it later, the platform takes a flat 10%, the maker you forked from earns their frozen royalty, and you keep the rest.");
     });
 
     it('renders logged-in fork owner as @{username} without @guest', () => {
