@@ -3,7 +3,7 @@
 A marketplace for software you buy once and own — not rent. Every purchase issues a real license
 key tied to your account. The source comes with it: you can fork any app, change it (with an AI
 agent in the loop if you want), and sell your version. When a fork sells, the revenue splits back
-down the lineage automatically.
+to every upstream maker's frozen royalty share automatically.
 
 The whole thing is presented as a Windows-95-style desktop in the browser. That's a deliberate
 choice, not a gimmick — it makes a pile of separate tools (a forge, a runtime, a mailbox, a
@@ -20,11 +20,15 @@ stop paying you have nothing. This flips that:
   key is hashed at rest; the secret is encrypted with AES-256-GCM. You also get the source.
 - **Fork and resell.** Any app with published source can be forked into your own namespace, modified,
   and relisted. Forking is free.
-- **Lineage royalties.** When a downstream fork sells, the money splits **70% to the seller, 20%
-  across the ancestor chain, 10% to a protocol pool**. A root app has no ancestors, so its 20%
-  returns to the maker — a **90/10** split. Allocations are computed server-side from the
-  authoritative price and lineage graph, written as immutable rows at purchase time, and settled
-  from a durable outbox. The client never proposes a price or a split.
+- **Frozen-lien royalties.** Every app is Personal (fork it for yourself, no resale) or Resale at a
+  maker-set royalty rate `r` (0–100%). When someone forks a Resale app, `r` freezes onto that fork
+  edge and rides along with every descendant — a downstream maker can never alter or drop a lien
+  they inherited. On a sale, the platform takes a flat 10% off the top, each upstream lien-holder is
+  paid their frozen `r%` of the remainder (oldest first, additive, never nested), and the seller
+  keeps what's left; any rounding dust goes to the platform. A root app has no inherited liens, so
+  its maker keeps everything above the flat 10% fee. Allocations are computed server-side from the
+  authoritative price and the frozen lien chain, written as immutable rows at purchase time, and
+  settled from a durable outbox. The client never proposes a price or a split.
 
 ## How a purchase actually works
 
