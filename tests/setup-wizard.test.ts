@@ -96,7 +96,9 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
 
   it('wires SETUP desktop icon with START HERE and gates first-run auto-open in App.tsx (#6, F5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('SETUP.EXE (START HERE)');
+    // The SETUP desktop icon label is now just 'SETUP.EXE' (parenthetical suffixes
+    // were removed from all icon labels); it still opens the setup window.
+    expect(source).toContain("id: 'setup', label: 'SETUP.EXE'");
     expect(source).toContain('nsw_setup_wizard_seen');
     // Flash fix: the setup window is closed on first paint and OPENED (once) after the
     // session check resolves, for first-run/logged-out visitors — instead of opening by

@@ -93,7 +93,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
     if (dragRef.current.hasMoved) {
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
       const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
-      const iconWidth = 112; // w-28 = 112px
+      const iconWidth = 128; // w-32 = 128px
       const iconHeight = 90;
       const taskbarHeight = 40;
 
@@ -148,6 +148,9 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
         top: `${currentPos.y}px`,
         zIndex: isDragging ? 35 : 10,
         touchAction: 'none',
+        // Smoothly fly to a new position (e.g. WHAT_IS_THIS moving from screen-center
+        // to its grid spot when the intro reveal starts). Disabled while dragging.
+        transition: isDragging ? 'none' : 'left 0.6s cubic-bezier(0.22,1,0.36,1), top 0.6s cubic-bezier(0.22,1,0.36,1)',
         ...(introDelayMs !== undefined ? ({ '--reveal-delay': `${introDelayMs}ms` } as React.CSSProperties) : {})
       }
     : { touchAction: 'none' };
@@ -160,7 +163,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
       onPointerCancel={handlePointerCancel}
       onContextMenu={onContextMenu}
       style={style}
-      className={`desktop-icon group flex flex-col items-center justify-center p-2.5 rounded cursor-pointer select-none text-center hover:bg-blue-900/50 border border-transparent hover:border-yellow-200/60 w-28 relative ${
+      className={`desktop-icon group flex flex-col items-center justify-center p-2 rounded cursor-pointer select-none text-center hover:bg-blue-900/50 border border-transparent hover:border-yellow-200/60 w-32 relative ${
         isDragging ? 'opacity-90 ring-1 ring-yellow-300/70' : ''
       } ${introClassName || ''}`}
     >

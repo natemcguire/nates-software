@@ -126,7 +126,7 @@ const ICON_POSITIONS_KEY = 'nsw_icon_positions';
 // Bump when the default icon set/order changes so everyone gets the fresh clean
 // layout once (old drag positions are dropped), instead of keeping a stale/scattered
 // arrangement. Users can re-drag afterwards; those saves are kept until the next bump.
-const ICON_LAYOUT_VERSION = '4';
+const ICON_LAYOUT_VERSION = '5';
 const ICON_LAYOUT_VERSION_KEY = 'nsw_icon_layout_v';
 
 function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
@@ -154,7 +154,7 @@ function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
 // two-line wrapped label (e.g. WHAT_IS_THIS.TXT) never touches its neighbor,
 // on laptops and at any font zoom. Column pitch = iconWidth + gapX = 140px;
 // row pitch = iconHeight + gapY = 116px (labels can be 2 lines tall + emoji).
-const ICON_GRID = { startX: 16, startY: 16, iconWidth: 112, iconHeight: 96, gapX: 28, gapY: 20, rowsPerCol: 6 } as const;
+const ICON_GRID = { startX: 16, startY: 16, iconWidth: 128, iconHeight: 96, gapX: 24, gapY: 20, rowsPerCol: 6 } as const;
 
 // Default layout has THREE spatial groups:
 //   • main  — the working apps, a 3-row × 2-col block in the TOP-LEFT.
@@ -448,10 +448,14 @@ export function AppInner() {
   const triggerIntroReveal = useCallback(() => {
     setIntroPhase((prev) => {
       if (prev !== 'waiting') return prev;
-      // roll a random 0–900ms start delay for each icon (order differs every run).
-      const ids = ['setup', 'hotwire', 'gitsmith', 'chat', 'profile', 'papers', 'github', 'slopshop', 'inbox', 'dyno', 'terminal'];
+      // Roll a random start delay per icon so the reveal order differs every run.
+      // The working apps + references come in FIRST (0–800ms); the "coming soon"
+      // group comes in LAST (1000–1700ms), so it clearly trails the real apps.
+      const mainIds = ['setup', 'hotwire', 'gitsmith', 'chat', 'profile', 'papers', 'github'];
+      const soonIds = ['slopshop', 'inbox', 'dyno', 'terminal'];
       const delays: Record<string, number> = {};
-      ids.forEach((id) => { delays[id] = Math.floor(Math.random() * 900); });
+      mainIds.forEach((id) => { delays[id] = Math.floor(Math.random() * 800); });
+      soonIds.forEach((id) => { delays[id] = 1000 + Math.floor(Math.random() * 700); });
       setRevealDelays(delays);
       // hold on 'primed' (still hidden) for 2s, then start the slow reveal.
       setTimeout(() => setIntroPhase('revealing'), 2000);
@@ -466,6 +470,18 @@ export function AppInner() {
 
   const [iconPositions, setIconPositions] = useState<Record<string, { x: number; y: number }>>(loadSavedIconPositions);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+
+  // Auto-layout on resize: bump a tick so icons WITHOUT a manually-dragged position
+  // recompute from getGroupedIconPosition (which reads the live viewport) — keeps
+  // the bottom clusters hugging the corners instead of overlapping/clipping.
+  const [, setViewportTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let raf = 0;
+    const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setViewportTick(t => t + 1)); };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); cancelAnimationFrame(raf); };
+  }, []);
 
   const handleIconPositionChange = (id: string, pos: { x: number; y: number }) => {
     setIconPositions(prev => {
@@ -682,31 +698,38 @@ export function AppInner() {
         type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'refs' | 'soon'; comingSoon?: boolean };
         const icons: DeskIcon[] = [
           // --- TOP-LEFT: the working apps (3×2 block) ---
-          { id: 'setup', label: 'SETUP.EXE (START HERE)', icon: '🚀', group: 'main', onClick: () => { playClickSound(); openWindow('setup'); } },
+          { id: 'setup', label: 'SETUP.EXE', icon: '🚀', group: 'main', onClick: () => { playClickSound(); openWindow('setup'); } },
           { id: 'whatis', label: 'WHAT_IS_THIS.TXT', icon: '❓', group: 'main', onClick: () => { playClickSound(); triggerIntroReveal(); openWindow('mktg'); } },
-          { id: 'hotwire', label: 'HOTWIRE (Drops)', icon: '🔥', group: 'main', onClick: () => { playClickSound(); openWindow('hotwire'); } },
-          { id: 'gitsmith', label: 'GITSMITH (Forge)', icon: '📁', group: 'main', onClick: () => { playClickSound(); openWindow('gitsmith'); } },
-          { id: 'chat', label: 'CHAT (IRC)', icon: '💬', group: 'main', onClick: () => { playClickSound(); openWindow('chat'); } },
-          { id: 'profile', label: 'ACCOUNT.CFG (Profile)', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
+          { id: 'hotwire', label: 'HOTWIRE', icon: '🔥', group: 'main', onClick: () => { playClickSound(); openWindow('hotwire'); } },
+          { id: 'gitsmith', label: 'GITSMITH', icon: '📁', group: 'main', onClick: () => { playClickSound(); openWindow('gitsmith'); } },
+          { id: 'chat', label: 'CHAT', icon: '💬', group: 'main', onClick: () => { playClickSound(); openWindow('chat'); } },
+          { id: 'profile', label: 'ACCOUNT.CFG', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
           // --- BOTTOM-LEFT: references, on their own ---
           { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'refs', onClick: () => { playClickSound(); openWindow('papers'); } },
           { id: 'github', label: 'Source on GitHub', icon: '🌐', group: 'refs', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
           // --- BOTTOM-RIGHT: coming soon (dimmed + SOON, still clickable) ---
-          { id: 'slopshop', label: 'SLOPSHOP (AI Mod)', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
+          { id: 'slopshop', label: 'SLOPSHOP', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
           { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('inbox'); } },
-          { id: 'dyno', label: 'DYNO (Speedometer)', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },
+          { id: 'dyno', label: 'DYNO', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },
           { id: 'terminal', label: 'TERMINAL.EXE', icon: '💻', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('terminal'); } },
         ];
         const groupIndex: Record<'main' | 'refs' | 'soon', number> = { main: 0, refs: 0, soon: 0 };
         return icons.map((item) => {
           const idxInGroup = groupIndex[item.group]++;
-          const pos = iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup);
+          const isWhatis = item.id === 'whatis';
+          // During the intro, WHAT_IS_THIS sits DEAD CENTER of the screen (it's the
+          // one thing to click). It flies to its grid spot once the reveal starts.
+          const introCentered = isWhatis && (introPhase === 'waiting' || introPhase === 'primed');
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+          const pos = introCentered
+            ? { x: Math.round(vw / 2 - 64), y: Math.round(vh / 2 - 60) }
+            : (iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup));
           desktopIconOpeners[item.id] = item.onClick;
           // Intro: WHAT_IS_THIS is the only icon visible up front (the trigger).
           // 'waiting' + 'primed' = the rest stay hidden (primed = the 2s dramatic
           // pause before the reveal). 'revealing' = they assemble via the canvas
-          // voxel effect (below); the label fades up with .desktop-icon-label-in.
-          const isWhatis = item.id === 'whatis';
+          // voxel effect (below).
           const introClass =
             (introPhase === 'waiting' || introPhase === 'primed')
               ? (isWhatis ? '' : 'desktop-intro-hidden')

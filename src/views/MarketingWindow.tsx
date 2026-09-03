@@ -130,18 +130,15 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
           <div className="text-w95-blue font-bold text-base mb-2">What is this?</div>
           <p className="text-gray-800 text-xs leading-relaxed font-sans mb-2.5">
-            A marketplace for software you buy once and own — not rent. Every purchase gives you the running
-            web app, the full source in a Git repo, and a real license key with your name on it. Fork any app,
-            change it with an AI agent, and sell your version; when a fork sells, revenue splits back down the
-            lineage. No subscription, ever.
+            A marketplace for software you <strong>buy once and own</strong> — not rent. Every purchase gives
+            you the running web app, the full source in a Git repo, and a real license key with your name on it.
+            Cancel nothing, because there's nothing to cancel. No subscription, ever.
           </p>
-          <div className="bg-gray-100 border border-gray-400 p-2.5 rounded text-xs">
-            <div className="font-bold text-gray-900 mb-0.5 font-mono">The Money Model</div>
-            <div className="text-gray-700 font-sans leading-relaxed">
-              <strong className="text-green-800">70%</strong> to the seller, <strong>20%</strong> up the fork lineage,
-              <strong> 10%</strong> to the protocol — a root app with no ancestors is <strong>90/10</strong>.
-            </div>
-          </div>
+          <p className="text-gray-800 text-xs leading-relaxed font-sans">
+            The twist: every app can be <strong>forked</strong>. Copy one, change it by talking to an AI agent,
+            and sell your version. And when you sell, the money flows back down the fork chain — the makers you
+            built on top of get their cut, automatically. Good work pays its authors, forever.
+          </p>
         </div>
 
         {/* ── HOW IT WORKS ────────────────────────────────────────── */}
@@ -149,29 +146,26 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           <div className="text-w95-blue font-bold text-base mb-2">How it works</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-700 text-xs leading-relaxed">
             <div>
-              <div className="font-bold text-gray-900 mb-0.5">Buy it, own it</div>
-              Buy an app once. It's yours: the live web app, the source repo, and a license key.
-              Cancel nothing, because there's nothing to cancel.
+              <div className="font-bold text-gray-900 mb-0.5">1 · Buy it, own it</div>
+              Buy an app once and it's yours: the live web app, the source repo, and a license key with your name
+              on it. It works the way a hammer works — you own the thing, not a login.
             </div>
             <div>
-              <div className="font-bold text-gray-900 mb-0.5">Publish and sell</div>
-              Push your code to our forge and it builds and goes live on its own URL. No Dockerfile,
-              no servers to set up. List it, set a price, drop it on HOTWIRE, and people buy it.
+              <div className="font-bold text-gray-900 mb-0.5">2 · Fork &amp; remix</div>
+              Like an app but want it different? Fork it and change it with an AI agent in SLOPSHOP — "add dark
+              mode", "export to PDF" — right in the browser. No permission needed, no deep coding.
             </div>
             <div>
-              <div className="font-bold text-gray-900 mb-0.5">Get paid on every sale</div>
-              You keep <strong className="text-green-800">70%</strong>. <strong>20%</strong> goes up the chain
-              to the makers you forked from. <strong>10%</strong> keeps the lights on here. Built something
-              original with no parents? That 20% comes back to you, so it's <strong>90% you / 10% us</strong>.
+              <div className="font-bold text-gray-900 mb-0.5">3 · Publish &amp; sell</div>
+              Push your version to the forge and it builds and goes live on its own URL — no Dockerfile, no servers.
+              Set a price, drop it on HOTWIRE, and people buy it.
             </div>
             <div>
-              <div className="font-bold text-gray-900 mb-0.5">Fork and remix</div>
-              Fork anyone's app, change it with AI in SLOPSHOP or the <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI,
-              and sell your version. When your fork sells, the makers you built on earn that 20% too. Forks of forks pay everyone up the line.
+              <div className="font-bold text-gray-900 mb-0.5">4 · Everyone gets paid</div>
+              When your version sells, you keep the lion's share, the platform takes a small cut to keep the lights
+              on, and a slice flows up the fork chain to the makers you built on. Write something ten people fork,
+              and you earn from every one of those sales.
             </div>
-          </div>
-          <div className="text-[11px] text-gray-500 mt-2.5 border-t border-gray-200 pt-2">
-            Makers can also put a slice of an app's future sales up for grabs. Contribute code that gets merged, and you earn a cut of every sale from then on.
           </div>
         </div>
 
