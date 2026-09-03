@@ -68,16 +68,16 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
       {/* Account / Login Widget */}
       <AccountWidget className="mr-1" />
 
-      {/* System Tray (Scale / Audio / Clock / Status) */}
-      <div className="h-7 px-2.5 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-2.5">
+      {/* System Tray (Scale / Audio / Clock / Status) — sized up for laptop legibility */}
+      <div className="h-8 px-3 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-3">
         {/* Scale Switcher Button */}
         {onCycleScale && (
           <button
             onClick={() => { playClickSound(); onCycleScale(); }}
-            className="hover:scale-105 transition-transform flex items-center gap-1 text-[11px] font-mono font-bold bg-white/60 px-1.5 py-0.5 rounded border border-gray-400 text-blue-900 shadow-sm"
+            className="hover:scale-105 transition-transform flex items-center gap-1 text-[13px] font-mono font-bold bg-white/60 px-2 py-0.5 rounded border border-gray-400 text-blue-900 shadow-sm"
             title={`Current View Zoom: ${scalePercent}%. Click to cycle scale (100% -> 115% -> 130%)`}
           >
-            <ZoomIn size={12} />
+            <ZoomIn size={14} />
             <span>{scalePercent}%</span>
           </button>
         )}
@@ -87,14 +87,14 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
           className="hover:scale-110 transition-transform text-gray-700"
           title={soundOn ? "Sound Effects Enabled (Click to Mute)" : "Sound Effects Muted (Click to Unmute)"}
         >
-          {soundOn ? <Volume2 size={14} className="text-blue-900" /> : <VolumeX size={14} className="text-gray-500" />}
+          {soundOn ? <Volume2 size={17} className="text-blue-900" /> : <VolumeX size={17} className="text-gray-500" />}
         </button>
 
         <span title="Portable Software & Storage Freedom" className="flex items-center">
-          <ShieldCheck size={14} className="text-green-700" />
+          <ShieldCheck size={17} className="text-green-700" />
         </span>
 
-        <span className="font-mono text-[11px] text-gray-800">
+        <span className="font-mono text-[13px] font-bold text-gray-800">
           {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </span>
       </div>

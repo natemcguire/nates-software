@@ -8,6 +8,8 @@ export interface DesktopIconProps {
   badge?: string;
   position?: { x: number; y: number };
   onPositionChange?: (newPos: { x: number; y: number }) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  onOpen?: () => void;
 }
 
 const DRAG_THRESHOLD = 5; // Pixels of movement required to distinguish dragging from a click
@@ -18,7 +20,8 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   onClick,
   badge,
   position,
-  onPositionChange
+  onPositionChange,
+  onContextMenu
 }) => {
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number }>(position || { x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -137,6 +140,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
+      onContextMenu={onContextMenu}
       style={style}
       className={`desktop-icon group flex flex-col items-center justify-center p-2.5 rounded cursor-pointer select-none text-center hover:bg-blue-900/50 border border-transparent hover:border-yellow-200/60 w-28 relative ${
         isDragging ? 'opacity-90 ring-1 ring-yellow-300/70' : ''
@@ -145,7 +149,10 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
       <div className="text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1">
         {icon}
       </div>
-      <div className="text-white text-xs font-bold text-shadow px-1.5 py-0.5 rounded line-clamp-2 leading-snug">
+      <div
+        className="text-white text-xs font-bold text-shadow px-1 py-0.5 rounded line-clamp-2 leading-snug w-full max-w-full break-words hyphens-auto"
+        style={{ overflowWrap: 'anywhere' }}
+      >
         {label}
       </div>
       {badge && (

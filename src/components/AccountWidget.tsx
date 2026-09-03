@@ -17,7 +17,7 @@ export const AccountWidget: React.FC<AccountWidgetProps> = ({
   return (
     <div
       data-testid="account-widget"
-      className={`h-7 px-2 bg-[#c0c0c0] text-black border-2 border-gray-500 border-r-white border-b-white flex items-center gap-1.5 font-mono text-[11px] select-none ${className}`}
+      className={`h-8 px-2.5 bg-[#c0c0c0] text-black border-2 border-gray-500 border-r-white border-b-white flex items-center gap-1.5 font-mono text-[13px] select-none ${className}`}
     >
       {isAuthenticated && user ? (
         <div className="flex items-center gap-1.5">

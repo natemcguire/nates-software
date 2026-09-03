@@ -99,6 +99,7 @@ import { EphemeralLiveApp } from './components/EphemeralLiveApp';
 import type { AppListing } from './data/mockData';
 import { useWindowManager } from './hooks/useWindowManager';
 import { DesktopIcon } from './components/DesktopIcon';
+import { DesktopContextMenu } from './components/DesktopContextMenu';
 import { RetroWindow } from './components/RetroWindow';
 import { DesktopTaskbar } from './components/DesktopTaskbar';
 import { StartMenu } from './components/StartMenu';
@@ -138,15 +139,15 @@ function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
   return {};
 }
 
+// Grid spacing must exceed the icon cell (w-28 = 112px) by enough that a
+// two-line wrapped label (e.g. WHAT_IS_THIS.TXT) never touches its neighbor,
+// on laptops and at any font zoom. Column pitch = iconWidth + gapX = 140px;
+// row pitch = iconHeight + gapY = 116px (labels can be 2 lines tall + emoji).
+const ICON_GRID = { startX: 16, startY: 16, iconWidth: 112, iconHeight: 96, gapX: 28, gapY: 20, rowsPerCol: 7 } as const;
 function getDefaultIconPosition(index: number): { x: number; y: number } {
-  const col = Math.floor(index / 8);
-  const row = index % 8;
-  const startX = 16;
-  const startY = 16;
-  const iconWidth = 112;
-  const iconHeight = 88;
-  const gapX = 12;
-  const gapY = 8;
+  const { startX, startY, iconWidth, iconHeight, gapX, gapY, rowsPerCol } = ICON_GRID;
+  const col = Math.floor(index / rowsPerCol);
+  const row = index % rowsPerCol;
   return {
     x: startX + col * (iconWidth + gapX),
     y: startY + row * (iconHeight + gapY)
@@ -418,6 +419,27 @@ export function AppInner() {
     });
   };
 
+  // Right-click context menu (Win95-style). `target` is 'desktop' or an icon id.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; target: string } | null>(null);
+
+  // "Align to grid" — drop every saved position so all icons fall back to the
+  // default grid (getDefaultIconPosition), snapping them into clean columns.
+  const alignIconsToGrid = () => {
+    playClickSound();
+    setIconPositions({});
+    if (typeof window !== 'undefined') {
+      try { localStorage.removeItem(ICON_POSITIONS_KEY); } catch { /* ignore */ }
+    }
+  };
+
+  const openContextMenu = (e: React.MouseEvent, target: string) => {
+    // Take over the browser's native right-click menu with our own.
+    e.preventDefault();
+    e.stopPropagation();
+    playClickSound();
+    setContextMenu({ x: e.clientX, y: e.clientY, target });
+  };
+
   const handleDesktopPointerDown = (e: React.PointerEvent) => {
     if (
       (e.target as HTMLElement).closest('.RetroWindow') ||
@@ -466,11 +488,22 @@ export function AppInner() {
     navy: 'bg-[#000033]'
   };
 
+  // Populated as the desktop icons render (below); read by the right-click menu's
+  // "Open" action. Fresh each render so it always reflects the current icon set.
+  const desktopIconOpeners: Record<string, () => void> = {};
+
   return (
     <div
       onPointerDown={handleDesktopPointerDown}
       onPointerMove={handleDesktopPointerMove}
       onPointerUp={handleDesktopPointerUp}
+      onContextMenu={(e) => {
+        // Only take over the right-click on the bare desktop — let windows,
+        // inputs, and links keep their native menu (so text fields still work).
+        const el = e.target as HTMLElement;
+        if (el.closest('.RetroWindow') || el.closest('input') || el.closest('textarea') || el.closest('a')) return;
+        if (!el.closest('.desktop-icon')) openContextMenu(e, 'desktop');
+      }}
       className={`fixed inset-0 select-none overflow-hidden pb-10 transition-colors duration-500 ${bgStyles[theme]}`}
       style={{
         backgroundImage: theme === 'teal' ? `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 1px, transparent 1px)` : undefined,
@@ -655,6 +688,8 @@ export function AppInner() {
         }
       ].map((item, index) => {
         const pos = iconPositions[item.id] || getDefaultIconPosition(index);
+        // Record each icon's opener so the right-click "Open" action can invoke it.
+        desktopIconOpeners[item.id] = item.onClick;
         return (
           <DesktopIcon
             key={item.id}
@@ -664,9 +699,36 @@ export function AppInner() {
             position={pos}
             onPositionChange={(newPos) => handleIconPositionChange(item.id, newPos)}
             onClick={item.onClick}
+            onContextMenu={(e) => openContextMenu(e, item.id)}
+            onOpen={item.onClick}
           />
         );
       })}
+
+      {contextMenu && (
+        <DesktopContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={
+            contextMenu.target === 'desktop'
+              ? [
+                  { label: 'Align Icons to Grid', icon: '▦', onClick: alignIconsToGrid, separatorAfter: true },
+                  { label: 'Refresh', icon: '↻', onClick: () => { playClickSound(); window.location.reload(); }, separatorAfter: true },
+                  { label: 'What is this?', icon: '❔', onClick: () => { playClickSound(); openWindow('mktg'); } },
+                  { label: 'Open Terminal', icon: '💻', onClick: () => { playClickSound(); openWindow('terminal'); }, separatorAfter: true },
+                  { label: 'Properties (Theme & Text)', icon: '⚙', disabled: true },
+                ]
+              : (() => {
+                  const opener = desktopIconOpeners[contextMenu.target];
+                  return [
+                    { label: 'Open', icon: '📂', onClick: opener, separatorAfter: true },
+                    { label: 'Align Icons to Grid', icon: '▦', onClick: alignIconsToGrid },
+                  ];
+                })()
+          }
+        />
+      )}
 
       {/* Floating Application Windows */}
 
