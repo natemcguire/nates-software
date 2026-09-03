@@ -1,6 +1,6 @@
 import { AccountWidget } from './AccountWidget';
 import React, { useState } from 'react';
-import { Volume2, VolumeX, ShieldCheck, ZoomIn } from 'lucide-react';
+import { Volume2, VolumeX, ShieldCheck } from 'lucide-react';
 import { toggleSound, isSoundEnabled, playClickSound } from '../lib/soundEngine';
 
 export interface TaskbarTab {
@@ -14,15 +14,11 @@ export interface TaskbarTab {
 interface DesktopTaskbarProps {
   tabs: TaskbarTab[];
   onStartClick: () => void;
-  displayScale?: number;
-  onCycleScale?: () => void;
 }
 
 export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
   tabs,
-  onStartClick,
-  displayScale = 1.0,
-  onCycleScale
+  onStartClick
 }) => {
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
 
@@ -31,8 +27,6 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
     setSoundOn(next);
     if (next) playClickSound();
   };
-
-  const scalePercent = Math.round(displayScale * 100);
 
   return (
     <div className="fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
@@ -68,20 +62,8 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
       {/* Account / Login Widget */}
       <AccountWidget className="mr-1" />
 
-      {/* System Tray (Scale / Audio / Clock / Status) — sized up for laptop legibility */}
+      {/* System Tray (Audio / Clock / Status) — sized up for laptop legibility */}
       <div className="h-8 px-3 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-3">
-        {/* Scale Switcher Button */}
-        {onCycleScale && (
-          <button
-            onClick={() => { playClickSound(); onCycleScale(); }}
-            className="hover:scale-105 transition-transform flex items-center gap-1 text-[13px] font-mono font-bold bg-white/60 px-2 py-0.5 rounded border border-gray-400 text-blue-900 shadow-sm"
-            title={`Current View Zoom: ${scalePercent}%. Click to cycle scale (100% -> 115% -> 130%)`}
-          >
-            <ZoomIn size={14} />
-            <span>{scalePercent}%</span>
-          </button>
-        )}
-
         <button
           onClick={handleToggleSound}
           className="hover:scale-110 transition-transform text-gray-700"

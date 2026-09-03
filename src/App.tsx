@@ -384,24 +384,6 @@ export function AppInner() {
     }
   }, [authLoading, isAuthenticated, openWindow]);
 
-  const getInitialScale = () => {
-    if (typeof window === 'undefined') return 1.0;
-    const w = window.innerWidth;
-    if (w >= 2200) return 1.30;
-    if (w >= 1600) return 1.15;
-    return 1.0;
-  };
-
-  const [displayScale, setDisplayScale] = useState<number>(getInitialScale);
-
-  const cycleScale = () => {
-    setDisplayScale(prev => {
-      if (prev <= 1.0) return 1.15;
-      if (prev <= 1.15) return 1.30;
-      return 1.0;
-    });
-  };
-
   const [iconPositions, setIconPositions] = useState<Record<string, { x: number; y: number }>>(loadSavedIconPositions);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
@@ -716,8 +698,7 @@ export function AppInner() {
                   { label: 'Align Icons to Grid', icon: '▦', onClick: alignIconsToGrid, separatorAfter: true },
                   { label: 'Refresh', icon: '↻', onClick: () => { playClickSound(); window.location.reload(); }, separatorAfter: true },
                   { label: 'What is this?', icon: '❔', onClick: () => { playClickSound(); openWindow('mktg'); } },
-                  { label: 'Open Terminal', icon: '💻', onClick: () => { playClickSound(); openWindow('terminal'); }, separatorAfter: true },
-                  { label: 'Properties (Theme & Text)', icon: '⚙', disabled: true },
+                  { label: 'Open Terminal', icon: '💻', onClick: () => { playClickSound(); openWindow('terminal'); } },
                 ]
               : (() => {
                   const opener = desktopIconOpeners[contextMenu.target];
@@ -1105,8 +1086,6 @@ export function AppInner() {
       <DesktopTaskbar
         tabs={taskbarTabs}
         onStartClick={() => setStartMenuOpen(prev => !prev)}
-        displayScale={displayScale}
-        onCycleScale={cycleScale}
       />
     </div>
   );
