@@ -25,18 +25,29 @@ export const DesktopContextMenu: React.FC<DesktopContextMenuProps> = ({ x, y, it
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
+    // Ignore the pointer events belonging to the SAME right-click that opened
+    // this menu (they arrive after mount and would otherwise self-close it).
+    // A short arming delay + skipping the right mouse button handles both the
+    // native contextmenu sequence and re-opening the menu on another spot.
+    let armed = false;
+    const armTimer = setTimeout(() => { armed = true; }, 0);
+    const onDown = (e: PointerEvent | MouseEvent) => {
+      if (!armed) return;
+      // A right-click elsewhere should re-open (handled by the desktop), not just
+      // close; a left-click / any click outside the menu closes it.
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    // Use pointerdown so it closes before a subsequent click lands elsewhere.
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey);
     window.addEventListener('resize', onClose);
+    window.addEventListener('scroll', onClose, true);
     return () => {
+      clearTimeout(armTimer);
       window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', onClose);
+      window.removeEventListener('scroll', onClose, true);
     };
   }, [onClose]);
 
