@@ -66,6 +66,10 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
 
   // Price for Publish
   const [publishPrice, setPublishPrice] = useState<string>('15');
+  // Maker-chosen royalty (%) taken when a downstream fork resells this app. Blank means
+  // 0% — never a hidden default; the maker must opt in to a nonzero royalty.
+  const [publishRoyaltyPct, setPublishRoyaltyPct] = useState<string>('');
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
 
   // Backend States
   const [gitsmithState, setGitsmithState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
@@ -549,6 +553,51 @@ This panel shows the real "slop publish" command and the revenue split it would 
         'Not Published — Honest Status',
         'info'
       );
+    }
+  };
+
+  // Set-Listing-Price modal "Save Price" -> a REAL, authenticated POST to /api/drops.
+  // This is the only place in SLOPSHOP that actually creates/updates a marketplace
+  // listing. It must never claim success without a genuinely successful response —
+  // on any non-ok response, the real server error is surfaced instead.
+  const handleSavePriceAndPublish = async () => {
+    playClickSound();
+    const pct = Number(publishRoyaltyPct);
+    const royaltyBps = Math.min(10000, Math.max(0, Math.round((Number.isFinite(pct) ? pct : 0) * 100)));
+    // coordinateFromForgeRepository can leave version as the literal placeholder
+    // 'Forge repository' when no known catalog entry exists — /api/drops requires real
+    // semver, so fall back to v1.0.0 rather than sending a value the server will reject.
+    const publishVersion = /^v?\d+\.\d+\.\d+$/.test(coordinate.version) ? coordinate.version : 'v1.0.0';
+
+    setIsPublishing(true);
+    try {
+      const res = await fetch('/api/drops', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: coordinate.appId,
+          name: coordinate.name,
+          tagline: coordinate.tagline,
+          version: publishVersion,
+          price: `$${publishPrice}.00`,
+          royaltyBps
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to publish listing (${res.status})`);
+      }
+      setModalType(null);
+      showAlert(
+        `"${makerHandle}/${coordinate.appId}" published at $${publishPrice}.00 with a ${(royaltyBps / 100).toFixed(2)}% fork royalty.`,
+        'Published',
+        'success'
+      );
+    } catch (err: any) {
+      showAlert(err?.message || 'Failed to publish listing', 'Publish Failed', 'error');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -1442,6 +1491,24 @@ This panel shows the real "slop publish" command and the revenue split it would 
                   <span className="text-xs text-[#555]">.00</span>
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-bold mb-1">
+                  Your royalty when someone forks &amp; resells (%):
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="0"
+                    value={publishRoyaltyPct}
+                    onChange={(e) => setPublishRoyaltyPct(e.target.value)}
+                    className="w-full bg-white border-2 border-[#808080] border-r-[#ffffff] border-b-[#ffffff] px-2 py-1 font-mono text-sm outline-none"
+                  />
+                  <span className="text-xs text-[#555]">%</span>
+                </div>
+              </div>
               <div className="text-[11px] text-[#555] bg-white border border-[#808080] p-2">
                 At ${publishPrice}.00:
                 <br />• <b>70%</b> (${((Number(publishPrice) || 0) * 0.7).toFixed(2)}) goes directly to you.
@@ -1450,10 +1517,11 @@ This panel shows the real "slop publish" command and the revenue split it would 
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
-                  onClick={() => setModalType(null)}
-                  className="btn-w95 px-4 py-1 text-xs font-bold"
+                  onClick={handleSavePriceAndPublish}
+                  disabled={isPublishing}
+                  className="btn-w95 px-4 py-1 text-xs font-bold disabled:opacity-60"
                 >
-                  Save Price
+                  {isPublishing ? 'Publishing…' : 'Save Price'}
                 </button>
               </div>
             </div>
