@@ -74,7 +74,7 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
 
     expect(html).toContain('Publish');
     expect(html).toContain('List your version for sale');
-    expect(html).toContain('you keep 70%');
+    expect(html).toContain('platform takes 10%');
   });
 
   it('renders the 2-column work area: terminal on the left and RIG run panel on the right', () => {
@@ -94,17 +94,25 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
     expect(html).toContain('status');
   });
 
-  it('renders the 70 / 20 / 10 automated settlement ledger note once', () => {
+  it('renders the additive money-model ledger note once, with no fixed 70/20/10 split', () => {
     const html = renderSlopshop();
 
     expect(html).toContain('When your fork sells, the split is settled automatically:');
-    expect(html).toContain('70%');
-    expect(html).toContain('you');
-    expect(html).toContain('20%');
-    expect(html).toContain('up the fork lineage');
+    expect(html).toContain('platform');
     expect(html).toContain('10%');
-    expect(html).toContain('protocol');
-    expect(html).toContain('A root app with no ancestors is 90 / 10.');
+    expect(html).toContain('upstream maker');
+    expect(html).toContain('you keep the rest');
+
+    expect(html).not.toContain('70 / 20 / 10');
+    expect(html).not.toContain('70%');
+    expect(html).not.toContain('20%');
+    expect(html).not.toContain('protocol liquidity');
+    expect(html).not.toContain('up the fork lineage');
+  });
+
+  it('renders a "How the money works" affordance near the publish UI', () => {
+    const html = renderSlopshop();
+    expect(html).toMatch(/How the money works/i);
   });
 
   it('renders dynamic primary actions and 3-cell status bar', () => {
@@ -334,5 +342,40 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
     const idx = componentSource.indexOf("fetch('/api/drops'");
     const idx2 = idx === -1 ? componentSource.indexOf('fetch(\"/api/drops\"') : idx;
     expect(idx2, '/api/drops fetch call should exist in source').toBeGreaterThan(-1);
+  });
+
+  it('source: the price-modal split preview uses the additive model (platform 10% + own royalty rate), not fixed 70/20/10', () => {
+    const priceModalMatch = componentSource.match(
+      /\{modalType === 'price' &&[\s\S]*?\n {6}\)\}/
+    );
+    expect(priceModalMatch, 'price modal JSX block should be present').toBeTruthy();
+    const priceModalBlock = priceModalMatch![0];
+
+    // Platform 10% computed from the live price input.
+    expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.1\b/);
+    // Seller remainder computed as 90% of price (before any upstream liens).
+    expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.9\b/);
+    // The maker's own chosen royalty rate is echoed back as what THEY will earn.
+    expect(priceModalBlock).toMatch(/publishRoyaltyPct/);
+
+    expect(priceModalBlock).not.toMatch(/\*\s*0\.7\b/);
+    expect(priceModalBlock).not.toMatch(/\*\s*0\.2\b/);
+    expect(priceModalBlock).not.toContain('protocol liquidity');
+  });
+});
+
+describe('SlopshopView money-model copy (E3): no leftover 70/20/10 language anywhere', () => {
+  it('renders and source contain no fixed 70/20/10 split language', () => {
+    const html = renderSlopshop();
+
+    for (const banned of ['70 / 20 / 10', '70%', '20%', 'protocol liquidity', 'up the fork lineage']) {
+      expect(html, `rendered HTML should not contain "${banned}"`).not.toContain(banned);
+      expect(componentSource, `component source should not contain "${banned}"`).not.toContain(banned);
+    }
+  });
+
+  it('renders a "How the money works" affordance that can open the White Papers explainer', () => {
+    expect(componentSource).toMatch(/How the money works/i);
+    expect(componentSource).toMatch(/onOpenWhitePapers/);
   });
 });
