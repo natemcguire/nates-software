@@ -212,80 +212,29 @@ export function calculateAllocations(input: AllocationCalculationInput): Allocat
   };
 }
 
-// TODO(A2): replaced by fetchFrozenLiens. fetchRepositoryAncestry (and its
-// AncestorNode return type) belonged to the old nested 70/20/10 royalty model
-// and referenced COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL, which no longer
-// exists under the additive frozen-lien model. Left commented out rather than
-// deleted per Task A1 scope; Task A2 replaces this with fetchFrozenLiens.
-//
-// export interface AncestorNode {
-//   repositoryId: string | null;
-//   userId: string;
-//   depth: number;
-// }
-//
-// /**
-//  * Traverses the canonical `repository_forks` table in D1 to construct the
-//  * immutable ancestry DAG up to the root repository.
-//  * Detects cycles and preserves ancestry order from nearest parent (depth 1) to root.
-//  */
-// export async function fetchRepositoryAncestry(
-//   db: any,
-//   repositoryId: string | null | undefined
-// ): Promise<AncestorNode[]> {
-//   if (!db || !repositoryId || typeof repositoryId !== 'string' || !repositoryId.trim()) {
-//     return [];
-//   }
-//
-//   const startRepoId = repositoryId.trim();
-//   const ancestors: AncestorNode[] = [];
-//   const visitedRepoIds = new Set<string>([startRepoId]);
-//   let currentChildId = startRepoId;
-//
-//   // Bound the walk to the maximum payable lineage size. Each generation is one
-//   // sequential D1 query, so without this ceiling a maliciously deep (but free
-//   // and depth-unbounded) fork chain would make every checkout issue tens of
-//   // thousands of D1 subrequests — exhausting the Cloudflare subrequest/CPU
-//   // budget and burning D1 quota (a request→DB amplification DoS). Cap the number
-//   // of queries at FORK_LINEAGE_TOTAL + 1 and fail closed the same way the
-//   // downstream validateAncestors cap would, so an over-deep listing is honestly
-//   // unpurchasable rather than an amplification vector.
-//   const MAX_ANCESTORS = 2000;
-//
-//   while (true) {
-//     const fork: any = await db.prepare(`
-//       SELECT f.parent_repository_id AS parentRepositoryId,
-//              f.depth,
-//              r.owner_user_id AS ownerUserId
-//       FROM repository_forks f
-//       JOIN repositories r ON r.id = f.parent_repository_id
-//       WHERE f.child_repository_id = ?
-//     `).bind(currentChildId).first();
-//
-//     if (!fork || !fork.parentRepositoryId || !fork.ownerUserId) {
-//       break;
-//     }
-//
-//     const parentRepoId = String(fork.parentRepositoryId).trim();
-//     if (visitedRepoIds.has(parentRepoId)) {
-//       throw new CommerceValidationError(`Cycle detected in repository lineage for repository ID: ${parentRepoId}`);
-//     }
-//     visitedRepoIds.add(parentRepoId);
-//
-//     ancestors.push({
-//       repositoryId: parentRepoId,
-//       userId: String(fork.ownerUserId).trim(),
-//       depth: ancestors.length + 1
-//     });
-//
-//     if (ancestors.length > MAX_ANCESTORS) {
-//       throw new CommerceValidationError(
-//         `Repository lineage exceeds the maximum of ${MAX_ANCESTORS} ancestors and cannot be settled.`
-//       );
-//     }
-//
-//     currentChildId = parentRepoId;
-//   }
-//
-//   return ancestors;
-// }
+/**
+ * Reads the frozen ancestor liens captured at fork-confirm time for a given
+ * seller repository, from the `repository_fork_liens` table (see migration
+ * 0038 / Task B1). Replaces the old `fetchRepositoryAncestry` per-generation
+ * walk: liens are frozen once at fork time, so buy-time settlement is a
+ * single indexed read instead of a chain of sequential D1 subrequests.
+ *
+ * Returns liens sorted root-first (highest depth first), matching the order
+ * `calculateAllocations` expects.
+ */
+export async function fetchFrozenLiens(db: any, sellerRepositoryId: string): Promise<LienInput[]> {
+  const result: any = await db.prepare(`
+    SELECT ancestor_user_id, ancestor_repository_id, bps, depth
+    FROM repository_fork_liens
+    WHERE holder_of_repository_id = ?
+    ORDER BY depth DESC
+  `).bind(sellerRepositoryId).all();
+
+  const rows = result?.results ?? [];
+  return rows.map((row: any) => ({
+    ancestorUserId: row.ancestor_user_id,
+    ancestorRepositoryId: row.ancestor_repository_id,
+    bps: row.bps,
+    depth: row.depth,
+  }));
+}
