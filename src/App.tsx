@@ -123,10 +123,21 @@ import { playClickSound, playSuccessChime } from './lib/soundEngine';
 import { useAlert } from './context/AlertContext';
 
 const ICON_POSITIONS_KEY = 'nsw_icon_positions';
+// Bump when the default icon set/order changes so everyone gets the fresh clean
+// layout once (old drag positions are dropped), instead of keeping a stale/scattered
+// arrangement. Users can re-drag afterwards; those saves are kept until the next bump.
+const ICON_LAYOUT_VERSION = '2';
+const ICON_LAYOUT_VERSION_KEY = 'nsw_icon_layout_v';
 
 function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
   if (typeof window === 'undefined') return {};
   try {
+    // One-time reset to the clean default grid when the layout version changes.
+    if (localStorage.getItem(ICON_LAYOUT_VERSION_KEY) !== ICON_LAYOUT_VERSION) {
+      localStorage.removeItem(ICON_POSITIONS_KEY);
+      localStorage.setItem(ICON_LAYOUT_VERSION_KEY, ICON_LAYOUT_VERSION);
+      return {};
+    }
     const raw = localStorage.getItem(ICON_POSITIONS_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
@@ -588,14 +599,11 @@ export function AppInner() {
         </div>
       </div>
 
-      {/* Desktop App Icons */}
+      {/* Desktop App Icons. Order = the clean default grid layout (fills column 1
+          top-to-bottom, then column 2): entry point first, then core apps, then
+          utilities, then docs/links. README_FIRST was removed (redundant with
+          WHAT_IS_THIS). Users can still drag + "Align Icons to Grid" to reset. */}
       {[
-        {
-          id: 'whatis',
-          label: 'WHAT_IS_THIS.TXT',
-          icon: '❓',
-          onClick: () => { playClickSound(); openWindow('mktg'); }
-        },
         {
           id: 'setup',
           label: 'SETUP.EXE (START HERE)',
@@ -603,22 +611,10 @@ export function AppInner() {
           onClick: () => { playClickSound(); openWindow('setup'); }
         },
         {
-          id: 'readme',
-          label: 'README_FIRST.TXT',
-          icon: '📄',
+          id: 'whatis',
+          label: 'WHAT_IS_THIS.TXT',
+          icon: '❓',
           onClick: () => { playClickSound(); openWindow('mktg'); }
-        },
-        {
-          id: 'terminal',
-          label: 'TERMINAL.EXE',
-          icon: '💻',
-          onClick: () => { playClickSound(); openWindow('terminal'); }
-        },
-        {
-          id: 'chat',
-          label: 'CHAT (IRC)',
-          icon: '💬',
-          onClick: () => { playClickSound(); openWindow('chat'); }
         },
         {
           id: 'hotwire',
@@ -627,16 +623,16 @@ export function AppInner() {
           onClick: () => { playClickSound(); openWindow('hotwire'); }
         },
         {
-          id: 'slopshop',
-          label: 'SLOPSHOP (AI Mod)',
-          icon: '🔧',
-          onClick: () => { playClickSound(); openWindow('slopshop'); }
-        },
-        {
           id: 'gitsmith',
           label: 'GITSMITH (Forge)',
           icon: '📁',
           onClick: () => { playClickSound(); openWindow('gitsmith'); }
+        },
+        {
+          id: 'slopshop',
+          label: 'SLOPSHOP (AI Mod)',
+          icon: '🔧',
+          onClick: () => { playClickSound(); openWindow('slopshop'); }
         },
         {
           id: 'inbox',
@@ -649,6 +645,18 @@ export function AppInner() {
           label: 'DYNO (Speedometer)',
           icon: '🏎️',
           onClick: () => { playClickSound(); openWindow('dyno'); }
+        },
+        {
+          id: 'chat',
+          label: 'CHAT (IRC)',
+          icon: '💬',
+          onClick: () => { playClickSound(); openWindow('chat'); }
+        },
+        {
+          id: 'terminal',
+          label: 'TERMINAL.EXE',
+          icon: '💻',
+          onClick: () => { playClickSound(); openWindow('terminal'); }
         },
         {
           id: 'profile',
