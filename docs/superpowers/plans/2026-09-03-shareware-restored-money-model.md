@@ -366,16 +366,28 @@ CREATE TRIGGER repository_fork_liens_immutable_delete BEFORE DELETE ON repositor
 
 ## Phase E — Publish rate UI + explainer + copy
 
-### Task E1: Accept `royalty_bps` at publish
+### Task E1: Accept `royalty_bps` at publish — API + the actual UI form
+
+**Context:** The maker sets their listing PRICE in the "Set Listing Price" modal in `src/views/SlopshopView.tsx` (modal block ~`1416-1456`, state `publishPrice`/`setPublishPrice` at ~`67-68`, opened via `setModalType('price')` ~`1224`, button label ~`1228`). This same modal is where the maker must ALSO set their **royalty rate** — a real input, not a hardcoded value. The publish request flows to `POST /api/drops` (`functions/api/drops.ts`), which writes `commerce_products` (~`566-578`) with validation near `~431-492`. The `slop publish` CLI echo lines in SlopshopView (~`530`, ~`537`) must carry the rate too.
 
 **Files:**
-- Modify: `functions/api/drops.ts` (the `commerce_products` insert ~`566-578`; validation near `431-492`)
-- Test: `tests/hotwire.test.ts` or `tests/checkout-flow.test.tsx` (whichever covers drops publish) — add a case.
+- Modify: `functions/api/drops.ts` (accept + validate `royaltyBps`; bind into the `commerce_products` insert)
+- Modify: `src/views/SlopshopView.tsx` (add a royalty-% input to the Set-Listing-Price modal; new state `publishRoyaltyPct`/`setPublishRoyaltyPct`; thread it into the publish request body and the `slop publish` echo)
+- Test (API): `tests/hotwire.test.ts` or `tests/checkout-flow.test.tsx` (whichever covers drops publish) — add a case.
+- Test (UI): `tests/slopshop-redesign.test.tsx` (existing) — assert the royalty input renders and its value is sent on publish.
 
-- [ ] **Step 1: Write failing test** — publishing with `royaltyBps: 1500` persists `commerce_products.royalty_bps = 1500`; out-of-range (>10000) is rejected.
+**Constraints (from Global Constraints):** rate is 0–100% shown to the user, stored as integer basis points `[0,10000]` (percent × 100). Default 0 (= free to fork & resell). NEVER hardcode the rate anywhere — it is always the maker's chosen value. Do not hardcode a suggested/placeholder rate that gets silently submitted; an empty field means 0.
+
+- [ ] **Step 1: Write failing API test** — publishing with `royaltyBps: 1500` persists `commerce_products.royalty_bps = 1500`; `royaltyBps: 10001` is rejected (4xx); omitted → defaults to 0.
 - [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3: Implement** — validate `royaltyBps` ∈ [0,10000] (default 0), bind into the `commerce_products` insert.
-- [ ] **Step 4: Run — PASS. Commit** `feat(publish): per-listing royalty rate`.
+- [ ] **Step 3: Implement API** — validate `royaltyBps` ∈ [0,10000] (integer; default 0), bind into the `commerce_products` insert. Match the file's existing validation/error style (see the `grantable_bps` validation nearby as a pattern).
+- [ ] **Step 4: Run API test — PASS.**
+- [ ] **Step 5: Write failing UI test** in `tests/slopshop-redesign.test.tsx` — the Set-Listing-Price modal renders a royalty-rate input (label mentions "royalty"/"%"); entering e.g. `15` and publishing includes `royaltyBps: 1500` in the request body. (Grep the modal's publish handler to see how the request is built; assert on the fetch/gateway payload.)
+- [ ] **Step 6: Run — FAIL.**
+- [ ] **Step 7: Implement UI** — add `publishRoyaltyPct` state (string, default ''), a labeled number input in the price modal ("Your royalty when someone forks & resells this (%)"), convert to bps (`Math.round(pct*100)`, clamp 0–10000) when building the publish body, and include it in the `slop publish` echo lines. Convert a blank field to 0.
+- [ ] **Step 8: Run UI test — PASS. Commit** `feat(publish): maker sets per-listing royalty rate (API + form)`.
+
+> NOTE: The 70/20/10 **split-preview** math inside this same modal (~`1446-1449`) is fixed in Task E3 (it rewrites all SlopshopView money copy in one pass). E1 adds the input + persistence; E3 rewrites the preview to the additive model driven by this input. The two tasks touch the same file — run E1 before E3 and let E3 rebase onto E1's changes.
 
 ### Task E2: "Shareware, Restored" explainer doc + tab
 
@@ -389,16 +401,20 @@ CREATE TRIGGER repository_fork_liens_immutable_delete BEFORE DELETE ON repositor
 - [ ] **Step 3: Author `moneyModelData.ts`** — export a markdown string (manifesto voice, anti-slop) covering: the two modes, one rate frozen at fork, `Σr` COGS shown to forkers, additive settlement + house tip, all-sales-final + owner discretion, prove-it-before-sale ethos, worked example. Add it as `moneyModel` in the papers map with a title/subtitle/icon.
 - [ ] **Step 4: Run — PASS. Commit** `feat(docs): Shareware, Restored explainer`.
 
-### Task E3: SLOPSHOP link + fix 70/20/10 copy + Σr COGS
+### Task E3: Fix all remaining 70/20/10 copy (SLOPSHOP + ProfileView) + explainer link + Σr COGS
+
+**Context:** After E1 adds the royalty input, the last hardcoded 70/20/10 money copy lives in two views. Rewrite ALL of it to the additive model. (MarketingWindow + TldrButton were already fixed ad-hoc in commit 935717d — do not touch those; just confirm no 70/20/10 remains anywhere with a grep.)
 
 **Files:**
-- Modify: `src/views/SlopshopView.tsx` (lines ~42, ~550, ~615, ~1123, ~1453)
-- Test: `tests/slopshop-redesign.test.tsx` (existing — update assertions)
+- Modify: `src/views/SlopshopView.tsx` — `STATUS_MESSAGES[4]` (~`42`, "Sales settle 70 / 20 / 10"), the `slop publish` help line "(70/20/10 split)" (~`615`), the publish-panel body string ~`550`, the "up the fork lineage" block ~`1123`, and the live split-preview math in the price modal (~`1446-1449`, the `* 0.7 / 0.2 / 0.1` lines + "protocol liquidity"). Replace with the additive preview driven by the E1 royalty input + inherited `Σr`: show platform 10%, each upstream lien, and the seller's remainder. Add a "📜 How the money works" affordance opening the E2 explainer (reuse an `onOpen*` prop or add `onOpenWhitePapers`).
+- Modify: `src/views/ProfileView.tsx` — the earnings/Stripe labels at ~`658` ("Total earned · your 70% + 20% from forks"), ~`664` ("from your sales (70%) · … from forks of your apps (20%)"), and ~`956` ("Get paid via Stripe (your 70% + 20% from forks):"). Rewrite to model-neutral language: e.g. "Total earned · your sales + royalties from forks", "from your sales · from forks of your apps", "Get paid via Stripe". Do NOT invent new percentages — earnings are now dynamic per lien, so the labels must not state any fixed split. Verify the underlying `royalties.makerSalesCents` / `royalties.lineageEarnedCents` data still maps sensibly (rename display copy only; if those fields' semantics changed under the new model, note it — do not silently mislabel).
+- Test: `tests/slopshop-redesign.test.tsx` (existing) and a ProfileView test if one exists (grep `tests/` for ProfileView; if none, add a minimal render assertion that no "70%"/"20%"/"70 / 20 / 10" text appears).
 
-- [ ] **Step 1: Update test** — SlopshopView no longer renders "70 / 20 / 10"; renders a "How the money works" affordance; the publish preview shows `Σr` COGS + platform 10% + seller remainder.
+- [ ] **Step 1: Update/author tests** — assert neither SlopshopView nor ProfileView renders "70%", "20%", "70 / 20 / 10", "protocol liquidity", or "up the fork lineage"; SlopshopView renders a "How the money works" affordance; the price-modal preview shows platform 10% + seller remainder computed from the royalty input.
 - [ ] **Step 2: Run — FAIL.**
-- [ ] **Step 3: Implement** — replace the 5 hardcoded strings (STATUS_MESSAGES[4], the two `slop publish` help lines, the "up the fork lineage" block, the live split math at ~1453) with the additive model; compute the preview from `royaltyBps` + inherited `Σr`; add a link/button that opens the explainer (reuse an existing `onOpen*` prop or a new `onOpenWhitePapers`).
-- [ ] **Step 4: Run — PASS. Commit** `feat(slopshop): additive-model copy + money explainer link`.
+- [ ] **Step 3: Implement** the rewrites above.
+- [ ] **Step 4: Grep guard** — `grep -rn "70 / 20 / 10\|70%\|20%\|protocol liquidity\|up the fork lineage" src/` returns nothing (except unrelated legitimate matches, which you must justify). 
+- [ ] **Step 5: Run — PASS. Commit** `feat(ui): retire all remaining 70/20/10 copy; additive money preview + explainer link`.
 
 ---
 
