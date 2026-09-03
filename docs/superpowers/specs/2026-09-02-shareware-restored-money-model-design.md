@@ -45,13 +45,16 @@ Rate is an integer basis-points value in `[0, 10000]` (0–100%). At fork time, 
 
 ### 3.3 Settlement on a paid sale of gross `G` cents
 
-1. **Platform fee:** `platform = round(0.10 × G)`, off the top. Remainder `R = G − platform`.
-2. **Additive ancestor liens off the same base `R`:** for each frozen ancestor lien `r_i` on the seller's fork chain, **oldest (root) first**:
-   - `pay_i = round(r_i × R)`, taken **from `R`** (not from another ancestor's cut — additive, not nested).
-   - If the running total would exceed `R`, later liens are truncated to what remains (this cannot normally happen because forks with `Σr > 100%` are blocked at §3.2).
-3. **Seller keeps** `R − Σ pay_i`.
+**Rounding rule — the house tip.** Every allocation to a *maker* (platform base fee, ancestor liens, seller) is computed with **`floor`**, never `round`. Whatever cents are left over after flooring all maker allocations — the rounding remainder — **accrue to the platform (the house).** The house is always made whole to the exact cent, and no maker is ever over-paid by a rounding artifact. This replaces the earlier "seller absorbs remainder" rule.
 
-No nesting, no dust: a grandparent's `10%` is `10% of R`, the same base as the parent's — so deep originators earn real money, not pennies. Because `Σr ≤ 100%` is enforced at fork time, the seller is never over-charged.
+1. **Platform base fee:** `platform_base = floor(0.10 × G)`. Running remainder `R = G − platform_base`.
+2. **Additive ancestor liens off the same base `R`:** for each frozen ancestor lien `r_i` on the seller's fork chain, **oldest (root) first**:
+   - `pay_i = floor(r_i × R)`, taken **from `R`** (not from another ancestor's cut — additive, not nested).
+   - Running total of liens may not exceed `R`; it cannot normally, because forks with `Σr > 100%` are blocked at §3.2.
+3. **Seller keeps** `seller = floor(R − Σ pay_i)` (already integer; the floor is a no-op guard).
+4. **House tip:** `platform_total = platform_base + (G − platform_base − Σ pay_i − seller)`. The parenthesized term is the leftover cents from every floor above; it is added to the platform. By construction `platform_total + Σ pay_i + seller == G` exactly.
+
+No nesting, no dust to a maker: a grandparent's `10%` is `floor(10% of R)`, the same base as the parent's — so deep originators earn real money, not pennies. Any sub-cent dust rounds up to the house, never down to a maker.
 
 ### 3.4 Dropped concepts
 
@@ -76,25 +79,51 @@ Ann **cannot** be zeroed by Bob choosing 0% — her lien is frozen and runs with
 
 **Conservation:** 1000 + 900 + 900 + 7200 = 10000. ✓
 
+**Dust example (house tip in action).** Same chain, Carol sells for **$9.99 (999¢)**:
+- `platform_base = floor(0.10 × 999) = floor(99.9) = 99`. R = 999 − 99 = 900.
+- Ann: `floor(0.10 × 900) = 90`. Bob: `floor(0.10 × 900) = 90`. Seller: 900 − 180 = 720.
+- Leftover dust from the platform floor: `999 − 99 − 90 − 90 − 720 = 0` here, but at other prices (e.g. $9.95 → platform_base 99 vs 99.5) the fractional cents that flooring drops are summed and **added to the platform**, never to a maker. The house is exact to the cent every time.
+
+### 3.6 Refunds — buyer beware, sole-arbiter discretion
+
+**Default: all sales are final. No self-serve refunds, no buyer-initiated refund flow, no automatic refunds.** The marketplace ethos is *buyer beware* — but it is earned, not careless (see §3.7).
+
+**The one exception:** Nate, as owner of Nate's Software, may issue a refund **at his sole discretion** as a fair and wise arbiter. This is a deliberate human escape hatch, not a policy the buyer can invoke.
+
+Mechanics (builds on the existing `refundProcessor`):
+- A refund can only be initiated through an **owner-only** admin path, gated to Nate's identity (server-side authorization, not a client flag). No maker, buyer, or ordinary user can reach it.
+- Refunds are issued via Stripe; the existing `processRefundInboxEvent` handles the authoritative webhook and records `commerce_refunds` / `commerce_refund_observations` as today.
+- **Money reversal follows the same house-first rounding.** When a sale is refunded, the recorded allocations for that order are reversed. Any rounding on partial reversals floors maker clawbacks and lets the **house absorb the dust** (the house tip works in both directions — never claw back more than a maker actually received, never leave the ledger short: the platform balances it). Exact clawback semantics for already-paid-out ancestors are specified in the plan.
+- The dispute/chargeback path (`disputeProcessor`) is unchanged — a bank-initiated chargeback is not a discretionary refund and keeps its existing handling.
+
+### 3.7 Ethos — prove it works before it can be sold
+
+"Buyer beware" is only fair if the buyer isn't buying vaporware. A pillar of the model: **an app cannot be listed for paid sale until it is proven to run.** Concretely — a listing is gated on a successful, evidenced build+health run in the RIG runtime (a green preview is *evidence*, per the RIG contract). Free/Personal apps may be published freely; **Resale (paid) listings require passing that gate.** This makes final-sale defensible: you can only buy software the platform has watched boot. Exact gate wiring (which build/health signal, where the check lives in the publish flow) is specified in the plan against the existing RIG + publish path.
+
 ## 4. Invariants (preserved from current engine)
 
 - **Conservation of cents:** Σ all allocations == gross. Enforced by a fatal guard.
-- **Deterministic:** same inputs → same allocation, always. No floating drift; integer-cents rounding with the remainder absorbed by the seller.
+- **Deterministic:** same inputs → same allocation, always. No floating drift; all maker allocations use integer-cents `floor`, and the rounding remainder (the "house tip") accrues to the platform — a maker is never over-paid by a rounding artifact, and the house is exact to the cent.
 - **Immutable allocation rows** recorded at purchase time; webhooks never move money directly, only enqueue outbox work.
 - **Frozen liens are immutable once a fork edge exists.** The set of `(ancestor, r_i)` liens on a fork chain is captured at fork time and never mutated by any later listing rate change. This is a new first-class invariant.
 - **`Σr ≤ 100%` enforced at fork time**, so settlement can never over-allocate.
+- **House-first rounding both directions:** `floor` on every maker credit and clawback; the platform absorbs all rounding dust. The house is exact to the cent on sale and on refund.
+- **Refunds are owner-only and discretionary.** No code path lets a buyer or maker trigger a refund. The only initiator is Nate via a server-authorized admin path.
+- **Paid listings are gated on a proven RIG run.** A Resale listing cannot go live for sale without build+health evidence.
 - **Basis-points guard** from the old engine is replaced by the conservation-of-cents guard as the source of truth (allocations no longer sum to a fixed 10000 across fixed buckets, since the split is dynamic).
 
 ## 5. Deliverables
 
-1. **`src/lib/commerceDomain.ts`** — rewrite `calculateAllocations`: platform 10% off the top, then **additive frozen-lien** allocations (`round(r_i × R)` per ancestor, oldest first), seller absorbs remainder. Remove contributor/pool branches. Keep the conservation guard; drop the fixed-BPS guard. Input is now the seller's **frozen lien set**, not live ancestor rates.
+1. **`src/lib/commerceDomain.ts`** — rewrite `calculateAllocations`: platform base 10% `floor` off the top, then **additive frozen-lien** allocations (`floor(r_i × R)` per ancestor, oldest first), seller keeps the floored remainder, **rounding dust to the house** (§3.3). Remove contributor/pool branches. Keep the conservation guard; drop the fixed-BPS guard. Input is the seller's **frozen lien set**, not live ancestor rates.
 2. **Fork-time lien capture + `Σr ≤ 100%` gate** — wherever a fork is created (forge/`slop fork` provisioning + listing publish), snapshot the inherited liens onto the new edge and block/clamp forks whose `Σr` would exceed 100%. Likely a schema addition (a `fork_liens` table or a frozen-liens column on the listing/repo edge) — validated in the plan against the current listings/lineage schema.
-3. **`src/lib/commerce/*` + `functions/api/*`** — update outbox/event/transfer processors to the new allocation shape (payout targets: platform, each ancestor lien-holder, seller). Remove protocol-pool and contributor payout paths.
-4. **Explainer doc** — new markdown in `src/data/` (e.g. `moneyModelData.ts`), manifesto-voiced under the title **"Shareware, Restored"**, added as a tab in `WhitePapersView`. Explains the two modes, the frozen-lien-at-fork rule, the `Σr` COGS shown to forkers, and the additive worked example.
-5. **SLOPSHOP** — add a visible "📜 How the money works →" link that opens the explainer; fix the hardcoded 70/20/10 strings in `SlopshopView.tsx` (lines ~42, ~550, ~615, ~1123, ~1453) and the live-preview split math (~1453) to the additive frozen-lien model; surface `Σr` COGS at fork time.
-6. **Tests** — rewrite commerce/royalty/lineage/acceptance suites for additive-lien math + conservation + `Σr ≤ 100%` fork gate + frozen-lien immutability (a child cannot zero an ancestor). Delete contributor/pool tests. Add additive + rounding + deep-chain + single-hop + root-sale + 0%-child-cannot-drop-ancestor cases.
-7. **Docs** — update `AGENTS.md` §1 (Lineage Ledger Economics) and `README.md` to describe the new model.
-8. **Grok steelman** — DONE (2026-09-02). The additive frozen-lien model in this spec *is* the result of that review. A follow-up round can steelman the revised model before/after implementation.
+3. **`src/lib/commerce/*` + `functions/api/*`** — update outbox/event/transfer processors to the new allocation shape (payout targets: platform, each ancestor lien-holder, seller). Remove protocol-pool and contributor payout paths. Apply house-first `floor` rounding.
+4. **Refund policy layer** — an **owner-only** admin refund path gated to Nate's identity server-side; no buyer/maker-reachable refund flow. Reuses `refundProcessor`; adds house-first clawback rounding. Ensure no self-serve refund entrypoint exists.
+5. **Paid-listing gate** — block a Resale listing from going on sale without RIG build+health evidence (ethos §3.7). Wire into the existing publish flow.
+6. **Explainer doc** — new markdown in `src/data/` (e.g. `moneyModelData.ts`), manifesto-voiced under the title **"Shareware, Restored"**, added as a tab in `WhitePapersView`. Explains the two modes, the frozen-lien-at-fork rule, the `Σr` COGS shown to forkers, the house-tip rounding, all-sales-final + owner discretion, prove-it-works ethos, and the additive worked example.
+7. **SLOPSHOP** — add a visible "📜 How the money works →" link that opens the explainer; fix the hardcoded 70/20/10 strings in `SlopshopView.tsx` (lines ~42, ~550, ~615, ~1123, ~1453) and the live-preview split math (~1453) to the additive frozen-lien model; surface `Σr` COGS at fork time.
+8. **Tests** — rewrite commerce/royalty/lineage/acceptance suites for additive-lien math + conservation + house-first floor/dust + `Σr ≤ 100%` fork gate + frozen-lien immutability (a child cannot zero an ancestor) + owner-only refund gate + paid-listing RIG gate. Delete contributor/pool tests. Add additive + rounding-dust + deep-chain + single-hop + root-sale + 0%-child-cannot-drop-ancestor cases.
+9. **Docs** — update `AGENTS.md` §1 (Lineage Ledger Economics) and `README.md` to describe the new model + ethos.
+10. **Grok steelman** — DONE (2026-09-02). The additive frozen-lien model in this spec *is* the result of that review. A follow-up round can steelman the revised model before/after implementation.
 
 ## 6. Migration & data
 
