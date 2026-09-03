@@ -38,21 +38,22 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
         app_version, price_version, gross_cents, currency,
         lineage_policy, lineage_snapshot_json, stripe_payment_intent_id,
         status, state_version, created_at, updated_at
-      ) VALUES (?, ?, 'usr_nate', 'dronehunter', 'usr_nate', 'v1.0.0', 1, ?, 'usd', 'maker_70_lineage_20_pool_10', '{}', ?, ?, ?, datetime('now'), datetime('now'))
+      ) VALUES (?, ?, 'usr_nate', 'dronehunter', 'usr_nate', 'v1.0.0', 1, ?, 'usd', 'additive_frozen_liens_house_first', '{}', ?, ?, ?, datetime('now'), datetime('now'))
     `).bind(orderId, `idem_${orderId}`, grossCents, piId, status, stateVersion).run();
 
+    // Root sale, no liens: platform flat 10% off the top, seller keeps R.
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
         lineage_depth, basis_points, amount_cents
-      ) VALUES (?, ?, 0, 'maker', 'usr_nate', 0, 9000, 1350)
+      ) VALUES (?, ?, 1, 'seller', 'usr_nate', 0, NULL, 1350)
     `).bind(`coa_m_${orderId}`, orderId).run();
 
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
         lineage_depth, basis_points, amount_cents
-      ) VALUES (?, ?, 1, 'protocol_pool', NULL, NULL, 1000, 150)
+      ) VALUES (?, ?, 2, 'platform', NULL, NULL, NULL, 150)
     `).bind(`coa_p_${orderId}`, orderId).run();
 
     const eventId = `evt_${orderId}`;

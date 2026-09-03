@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
-import { calculateAllocations, MAKER_FLOOR_BPS } from '../src/lib/commerceDomain';
 
 describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () => {
   let ctx: TestD1Context;
@@ -645,32 +644,4 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
   });
 
-  describe('5. Byte-Identical Allocation Engine Safety Invariant', () => {
-    it('confirms calculateAllocations NEVER emits a contributor allocation row in Phase 1', () => {
-      const rootRes = calculateAllocations({
-        grossCents: 1500,
-        currency: 'usd',
-        sellerUserId: 'usr_nate',
-        repositoryId: 'repo_dronehunter'
-      });
-
-      expect(rootRes.allocations.map(a => a.role)).toEqual(['maker', 'protocol_pool']);
-      expect(rootRes.allocations.every(a => a.role !== ('contributor' as any))).toBe(true);
-
-      const forkRes = calculateAllocations({
-        grossCents: 2000,
-        currency: 'usd',
-        sellerUserId: 'usr_sam',
-        repositoryId: 'repo_fork',
-        ancestors: [{ userId: 'usr_nate', repositoryId: 'repo_root', depth: 1 }]
-      });
-
-      expect(forkRes.allocations.map(a => a.role)).toEqual(['maker', 'ancestor', 'protocol_pool']);
-      expect(forkRes.allocations.every(a => a.role !== ('contributor' as any))).toBe(true);
-    });
-
-    it('confirms MAKER_FLOOR_BPS is set to 1000', () => {
-      expect(MAKER_FLOOR_BPS).toBe(1000);
-    });
-  });
 });

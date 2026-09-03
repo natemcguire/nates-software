@@ -7,7 +7,6 @@ import {
 } from './fixtures/d1Harness';
 import * as fs from 'fs';
 import * as path from 'path';
-import { calculateAllocations } from '../src/lib/commerceDomain';
 
 describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
   let ctx: TestD1Context;
@@ -374,14 +373,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(contribRecovery?.allocation_id).toBe('coa_pop_contrib');
       expect(contribRecovery?.amount_cents).toBe(300);
 
-      // Verify DARK invariant: calculateAllocations emits NO contributor rows
-      const allocCalc = calculateAllocations({
-        grossCents: 3000,
-        currency: 'usd',
-        sellerUserId: 'usr_nate',
-        repositoryId: 'repo_pop_test'
-      });
-      expect(allocCalc.allocations.some((a: any) => a.role === 'contributor')).toBe(false);
+      // NOTE: this used to also assert a "DARK invariant" that calculateAllocations
+      // never emits a 'contributor' row. Under the "Shareware, Restored" money
+      // model that's no longer just a runtime invariant — calculateAllocations'
+      // AllocationCalculationInput has no repositoryId/ancestors/contributors
+      // fields and its AllocationRole union is 'platform' | 'ancestor' | 'seller',
+      // so a contributor row is now a compile-time impossibility, not just a
+      // runtime guarantee. See src/lib/commerceDomain.ts and
+      // tests/money-model-additive-liens.test.ts.
 
       // Verify final PRAGMA foreign_key_check is completely clean
       expect(legacy.runForeignKeyCheck()).toEqual([]);

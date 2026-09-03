@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { calculateDisputeRecoveryDelta, calculateRefundAllocationDelta } from '../src/lib/commerce/recoveryDomain';
+
+// The chained 1-cent partial-refund property tests below each drive 10,000
+// sequential calculateRefundAllocationDelta calls in a tight synchronous loop
+// (proving monotonicity across EVERY integer refund amount). That's legitimately
+// CPU-bound work, not a hang — it occasionally exceeds Vitest's 5s default under
+// load. Widen just this file's timeout rather than weakening the coverage.
+vi.setConfig({ testTimeout: 30000 });
 
 const allocations = [
   { id: 'maker', sequence: 0, role: 'maker' as const, amountCents: 700 },

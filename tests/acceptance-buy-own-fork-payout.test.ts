@@ -1,4 +1,4 @@
-// ACCEPTANCE TEST — buy → own → fork → contributor-payout, fully offline.
+// ACCEPTANCE TEST — buy → own → fork → ancestor-payout, fully offline.
 //
 // This is the definition-of-done proof for the core marketplace loop. It runs
 // entirely against the local D1 test harness with a MOCKED Stripe (no network,
@@ -18,20 +18,20 @@
 //      pass its `stripeFetchOverride` option (the commerce layer's built-in
 //      seam) so the GET returns a 'succeeded' intent matching the durable order.
 //
-// The chain proved here:
+// The chain proved here, under the "Shareware, Restored" additive frozen-lien
+// money model (see docs/superpowers/specs/2026-09-02-shareware-restored-money-model-design.md):
 //   BUY   — buyer creates an order for a root app; a signed 'succeeded' webhook
-//           is processed and the order is fulfilled.
+//           is processed and the order is fulfilled. Root sale => platform 10%
+//           flat fee, seller keeps the remainder (no liens).
 //   OWN   — exactly one license (+ encrypted secret) is minted to the buyer, and
 //           the buyer's private shelf projection shows it.
 //   FORK  — a downstream repo is forked from the root repo (repository_forks +
-//           canonical lineage), given its own app/listing/product, and granted a
-//           contributor share.
+//           canonical lineage), and a frozen ancestor lien is captured onto the
+//           fork edge (repository_fork_liens — see migration 0038).
 //   PAYOUT— a second buyer purchases the forked app; fulfillment queues a
-//           pending transfer_outbox row for EACH real recipient: the fork maker,
-//           the upstream ancestor (root maker), AND the contributor. The
-//           contributor-outbox assertion is the regression guard for the
-//           silent-money bug where contributor earnings were recorded but never
-//           queued for payout.
+//           pending transfer_outbox row for EACH payable recipient: the fork
+//           seller AND the upstream ancestor (root maker), off their frozen
+//           lien. 'platform' is never paid out via Connect — it's the house.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
@@ -104,29 +104,28 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     repoId: string;
     sellerId: string;
     priceCents: number;
-    grantableBps?: number;
+    royaltyBps?: number;
   }) {
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES (?, ?, 'Tagline', 'Desc', ?, 'v1.0.0', 'MIT', '$0.00', '/data', '[]', '[]', '{}')
     `).bind(opts.appId, opts.appId, opts.sellerId).run();
 
-    // grantable_bps defaults to 0 (migration 0029) and the cap trigger
-    // (migration 0030) rejects any contributor share beyond it — so a repo
-    // that will grant contributor shares must open its grantable pool.
     await ctx.d1.prepare(`
-      INSERT INTO repositories (id, app_id, owner_user_id, slug, storage_key, status, grantable_bps)
-      VALUES (?, ?, ?, ?, ?, 'active', ?)
-    `).bind(opts.repoId, opts.appId, opts.sellerId, opts.appId, `key_${opts.repoId}`, opts.grantableBps ?? 0).run();
+      INSERT INTO repositories (id, app_id, owner_user_id, slug, storage_key, status)
+      VALUES (?, ?, ?, ?, ?, 'active')
+    `).bind(opts.repoId, opts.appId, opts.sellerId, opts.appId, `key_${opts.repoId}`).run();
 
     await ctx.d1.prepare(`
-      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status)
-      VALUES (?, ?, ?, ?, 'usd', 'active')
-    `).bind(opts.appId, opts.repoId, opts.sellerId, opts.priceCents).run();
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
+      VALUES (?, ?, ?, ?, 'usd', 'active', ?)
+    `).bind(opts.appId, opts.repoId, opts.sellerId, opts.priceCents, opts.royaltyBps ?? 0).run();
   }
 
-  // Immutable fork-origin record. fetchRepositoryAncestry walks this to derive
-  // the ancestor allocation for the parent repo's owner at purchase time.
+  // Immutable fork-origin record (repository_forks) plus the frozen ancestor
+  // lien captured onto the fork edge at fork-confirm time (repository_fork_liens,
+  // migration 0038). fetchFrozenLiens reads this table directly at buy time —
+  // liens are frozen once, not re-derived by walking the ancestry chain.
   async function seedFork(opts: {
     childRepoId: string;
     parentRepoId: string;
@@ -146,19 +145,19 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     ).run();
   }
 
-  async function grantContributorShare(opts: {
+  async function seedFrozenLien(opts: {
     id: string;
-    repoId: string;
-    contributorId: string;
-    grantedById: string;
+    holderOfRepositoryId: string;
+    ancestorRepositoryId: string;
+    ancestorUserId: string;
     bps: number;
+    depth: number;
   }) {
     await ctx.d1.prepare(`
-      INSERT INTO contributor_shares (
-        id, repository_id, contributor_user_id, granted_by_user_id,
-        basis_points, status, activated_at
-      ) VALUES (?, ?, ?, ?, ?, 'active', datetime('now'))
-    `).bind(opts.id, opts.repoId, opts.contributorId, opts.grantedById, opts.bps).run();
+      INSERT INTO repository_fork_liens (
+        id, holder_of_repository_id, ancestor_repository_id, ancestor_user_id, bps, depth
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(opts.id, opts.holderOfRepositoryId, opts.ancestorRepositoryId, opts.ancestorUserId, opts.bps, opts.depth).run();
   }
 
   // ---- Mocked Stripe --------------------------------------------------------
@@ -277,9 +276,9 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
   }
 
   // ==========================================================================
-  // 1. BUY → OWN  (root app: maker 90% / protocol pool 10%)
+  // 1. BUY → OWN  (root app, no liens: platform flat 10% / seller keeps the rest)
   // ==========================================================================
-  it('BUY → OWN: a root purchase fulfills the order, mints exactly one license + encrypted secret to the buyer, and queues a maker payout with conserved allocations', async () => {
+  it('BUY → OWN: a root purchase fulfills the order, mints exactly one license + encrypted secret to the buyer, and queues a seller payout with conserved allocations', async () => {
     await seedUser('usr_root_maker');
     await seedUser('usr_buyer_a');
     await seedApp({ appId: 'acc-root', repoId: 'repo-acc-root', sellerId: 'usr_root_maker', priceCents: 1500 });
@@ -293,10 +292,12 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     });
 
     // --- Allocation conservation: sum(allocations) === gross_cents ----------
+    // $15.00 root sale, no liens: platform_base = floor(0.10*1500) = 150,
+    // seller keeps the remainder R = 1350. No ancestor rows (isRoot).
     const allocs = await allocationsFor(order.orderId);
     expect(allocs).toEqual([
-      { sequence: 0, role: 'maker', recipientUserId: 'usr_root_maker', amountCents: 1350 },
-      { sequence: 1, role: 'protocol_pool', recipientUserId: null, amountCents: 150 }
+      { sequence: 1, role: 'seller', recipientUserId: 'usr_root_maker', amountCents: 1350 },
+      { sequence: 2, role: 'platform', recipientUserId: null, amountCents: 150 }
     ]);
     expect(allocs.reduce((s, a) => s + a.amountCents, 0)).toBe(order.grossCents);
 
@@ -304,7 +305,7 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     const result = await deliverAndProcessWebhook(order, 'evt_acc_root');
     expect(result.success).toBe(true);
     expect(result.status).toBe('fulfilled');
-    expect(result.outboxCount).toBe(1); // maker only; protocol pool never paid
+    expect(result.outboxCount).toBe(1); // seller only; platform (house) never paid out via Connect
 
     // INVARIANT: order fulfilled
     const fulfilled: any = await ctx.d1.prepare(`
@@ -335,7 +336,7 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(secrets.results![0].ciphertext_base64).toBeTruthy();
     expect(secrets.results![0].iv_base64).toBeTruthy();
 
-    // INVARIANT: one pending maker payout obligation (destination = maker)
+    // INVARIANT: one pending seller payout obligation (destination = seller)
     const outbox = await outboxFor(order.orderId);
     expect(outbox).toEqual([
       { destinationUserId: 'usr_root_maker', amountCents: 1350, status: 'pending' }
@@ -389,29 +390,28 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
   });
 
   // ==========================================================================
-  // 3. FORK → CONTRIBUTOR PAYOUT
-  //    Root repo (usr_root_maker) --forked--> fork repo (usr_fork_maker),
-  //    with a contributor (usr_contributor) granted 1000 bps on the fork.
-  //    A $20.00 purchase of the forked app splits:
-  //      maker    7000 - 1000 = 6000 bps -> 1200c  (usr_fork_maker)
-  //      ancestor 2000 bps               ->  400c  (usr_root_maker)   [lineage]
-  //      contributor 1000 bps            ->  200c  (usr_contributor)  [carve]
-  //      protocol pool 1000 bps          ->  200c  (never paid out)
+  // 3. FORK → ANCESTOR PAYOUT
+  //    Root repo (usr_root_maker) --forked--> fork repo (usr_fork_maker), with
+  //    a frozen 10% ancestor lien captured onto the fork edge at fork-confirm
+  //    time (repository_fork_liens — see migration 0038 / src/lib/royaltyLiens.ts).
+  //    A $20.00 (2000c) purchase of the forked app settles additively:
+  //      platform_base = floor(0.10 * 2000)            = 200c
+  //      R             = 2000 - 200                     = 1800c
+  //      ancestor (10% of R, root maker's frozen lien)  = floor(0.10*1800) = 180c
+  //      seller (fork maker) keeps R - ancestor          = 1800 - 180 = 1620c
+  //      conservation: 200 + 180 + 1620 = 2000c
   // ==========================================================================
-  it('FORK → CONTRIBUTOR PAYOUT: purchasing a forked app emits a contributor allocation AND queues a pending contributor payout obligation, alongside maker + ancestor payouts', async () => {
+  it('FORK → ANCESTOR PAYOUT: purchasing a forked app pays its frozen ancestor lien AND queues a pending ancestor payout obligation, alongside the seller payout', async () => {
     // Ownership loop from step 1 so the fork has a real parent + license history.
     await seedUser('usr_root_maker');
     await seedUser('usr_fork_maker');
-    await seedUser('usr_contributor');
     await seedUser('usr_buyer_a');
     await seedUser('usr_buyer_b');
 
-    await seedApp({ appId: 'acc-root', repoId: 'repo-acc-root', sellerId: 'usr_root_maker', priceCents: 1500 });
+    await seedApp({ appId: 'acc-root', repoId: 'repo-acc-root', sellerId: 'usr_root_maker', priceCents: 1500, royaltyBps: 1000 });
 
     // FORK: a downstream app forked from the root repo, owned by the fork maker.
-    // Open a 6000 bps grantable pool (fork maker's 7000 bps slice minus the
-    // 1000 bps maker floor) so the contributor grant is admitted by the cap trigger.
-    await seedApp({ appId: 'acc-fork', repoId: 'repo-acc-fork', sellerId: 'usr_fork_maker', priceCents: 2000, grantableBps: 6000 });
+    await seedApp({ appId: 'acc-fork', repoId: 'repo-acc-fork', sellerId: 'usr_fork_maker', priceCents: 2000 });
     await seedFork({
       childRepoId: 'repo-acc-fork',
       parentRepoId: 'repo-acc-root',
@@ -420,13 +420,15 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
       depth: 1
     });
 
-    // A contributor carved a 1000 bps share of the fork maker's slice.
-    await grantContributorShare({
-      id: 'cs_acc_1',
-      repoId: 'repo-acc-fork',
-      contributorId: 'usr_contributor',
-      grantedById: 'usr_fork_maker',
-      bps: 1000
+    // The root maker's 10% royalty rate is frozen onto the fork edge at
+    // fork-confirm time — a real lien row, not a live re-derivation.
+    await seedFrozenLien({
+      id: 'fl_acc_1',
+      holderOfRepositoryId: 'repo-acc-fork',
+      ancestorRepositoryId: 'repo-acc-root',
+      ancestorUserId: 'usr_root_maker',
+      bps: 1000,
+      depth: 1
     });
 
     await createSession('usr_buyer_b', 'tok_buyer_b');
@@ -439,45 +441,42 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     });
     expect(order.grossCents).toBe(2000);
 
-    // INVARIANT: a 'contributor' allocation row is emitted with conserved cents
+    // INVARIANT: an 'ancestor' allocation row is emitted with conserved cents.
     const allocs = await allocationsFor(order.orderId);
     const byRole = Object.fromEntries(allocs.map(a => [a.role, a]));
 
-    expect(byRole.maker).toMatchObject({ recipientUserId: 'usr_fork_maker', amountCents: 1200 });
-    expect(byRole.ancestor).toMatchObject({ recipientUserId: 'usr_root_maker', amountCents: 400 });
-    expect(byRole.contributor).toMatchObject({ recipientUserId: 'usr_contributor', amountCents: 200 });
-    expect(byRole.protocol_pool).toMatchObject({ recipientUserId: null, amountCents: 200 });
+    expect(byRole.ancestor).toMatchObject({ recipientUserId: 'usr_root_maker', amountCents: 180 });
+    expect(byRole.seller).toMatchObject({ recipientUserId: 'usr_fork_maker', amountCents: 1620 });
+    expect(byRole.platform).toMatchObject({ recipientUserId: null, amountCents: 200 });
 
-    // Conservation of cents and basis points across the full split.
+    // Conservation of cents across the full split.
     expect(allocs.reduce((s, a) => s + a.amountCents, 0)).toBe(order.grossCents);
 
     // Fulfill the forked purchase.
     const result = await deliverAndProcessWebhook(order, 'evt_acc_fork');
     expect(result.success).toBe(true);
     expect(result.status).toBe('fulfilled');
-    // maker + ancestor + contributor => 3 payout obligations (never protocol pool)
-    expect(result.outboxCount).toBe(3);
+    // seller + ancestor => 2 payout obligations ('platform' is the house — never paid via Connect)
+    expect(result.outboxCount).toBe(2);
 
-    // INVARIANT (regression guard): a pending payout obligation is queued for
-    // EACH real recipient — including the contributor. Before the fix,
-    // contributor earnings were recorded but silently never queued for payout.
+    // INVARIANT: a pending payout obligation is queued for EACH payable
+    // recipient — the fork seller AND the upstream ancestor lien-holder.
     const outbox = await outboxFor(order.orderId);
     expect(outbox).toEqual([
-      { destinationUserId: 'usr_fork_maker', amountCents: 1200, status: 'pending' },
-      { destinationUserId: 'usr_root_maker', amountCents: 400, status: 'pending' },
-      { destinationUserId: 'usr_contributor', amountCents: 200, status: 'pending' }
+      { destinationUserId: 'usr_fork_maker', amountCents: 1620, status: 'pending' },
+      { destinationUserId: 'usr_root_maker', amountCents: 180, status: 'pending' }
     ]);
 
-    // Explicit, isolated assertion on the contributor payout obligation.
-    const contributorPayout: any = await ctx.d1.prepare(`
+    // Explicit, isolated assertion on the ancestor payout obligation.
+    const ancestorPayout: any = await ctx.d1.prepare(`
       SELECT destination_user_id AS destinationUserId, amount_cents AS amountCents, status
       FROM commerce_transfer_outbox
-      WHERE order_id = ? AND destination_user_id = 'usr_contributor'
+      WHERE order_id = ? AND destination_user_id = 'usr_root_maker'
     `).bind(order.orderId).all();
-    expect(contributorPayout.results).toHaveLength(1);
-    expect(contributorPayout.results![0]).toEqual({
-      destinationUserId: 'usr_contributor',
-      amountCents: 200,
+    expect(ancestorPayout.results).toHaveLength(1);
+    expect(ancestorPayout.results![0]).toEqual({
+      destinationUserId: 'usr_root_maker',
+      amountCents: 180,
       status: 'pending'
     });
 
