@@ -19,6 +19,8 @@ export interface DesktopIconProps {
   comingSoon?: boolean;
   /** Play the canvas voxel-assembly reveal on the glyph (intro sequence). */
   voxelReveal?: boolean;
+  /** Random start delay (ms) before this icon's voxel reveal begins. */
+  voxelDelayMs?: number;
 }
 
 const DRAG_THRESHOLD = 5; // Pixels of movement required to distinguish dragging from a click
@@ -34,7 +36,8 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   introClassName,
   introDelayMs,
   comingSoon,
-  voxelReveal
+  voxelReveal,
+  voxelDelayMs
 }) => {
   const [voxelDone, setVoxelDone] = useState(false);
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number }>(position || { x: 0, y: 0 });
@@ -163,7 +166,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
     >
       <div className={`text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1 flex items-center justify-center ${comingSoon ? 'grayscale opacity-55' : ''}`} style={{ minHeight: 64 }}>
         {voxelReveal && !voxelDone
-          ? <VoxelReveal glyph={icon} size={64} grid={12} duration={3} onDone={() => setVoxelDone(true)} />
+          ? <VoxelReveal glyph={icon} size={64} grid={12} duration={2.4} startDelayMs={voxelDelayMs} onDone={() => setVoxelDone(true)} />
           : icon}
       </div>
       <div

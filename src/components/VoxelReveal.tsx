@@ -9,6 +9,8 @@ interface VoxelRevealProps {
   grid?: number;
   /** Seconds the assembly takes. */
   duration?: number;
+  /** Delay (ms) before the assembly starts (canvas stays blank until then). */
+  startDelayMs?: number;
   /** Fires once the reveal finishes so the parent can swap to the real glyph. */
   onDone?: () => void;
 }
@@ -24,6 +26,7 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
   size = 64,
   grid = 12,
   duration = 3,
+  startDelayMs = 0,
   onDone,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -77,7 +80,10 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
     if (reduced) { setDone(true); onDone?.(); return; }
 
     const frame = (now: number) => {
-      const t = Math.min(1, (now - t0) / (duration * 1000));
+      // Hold blank until the random start delay elapses (staggered per-icon reveal).
+      const elapsed = now - t0 - startDelayMs;
+      if (elapsed < 0) { raf = requestAnimationFrame(frame); return; }
+      const t = Math.min(1, elapsed / (duration * 1000));
       ctx.clearRect(0, 0, size, size);
       for (let i = 0; i < cellSolid.length; i++) {
         if (!cellSolid[i]) continue;
@@ -102,7 +108,7 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [glyph, size, grid, duration, onDone]);
+  }, [glyph, size, grid, duration, startDelayMs, onDone]);
 
   // Once done, render nothing (parent shows the real DOM glyph).
   if (done) return null;

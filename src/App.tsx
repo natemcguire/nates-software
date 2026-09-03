@@ -170,7 +170,9 @@ function getGroupedIconPosition(group: 'main' | 'refs' | 'soon', indexInGroup: n
   const rowPitch = iconHeight + gapY;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
-  const bottomY = vh - 40 - iconHeight - 16; // one row above the 40px taskbar
+  // Clear the 40px taskbar AND the icon's 2-line label (which extends ~40px below
+  // the glyph box): taskbar 40 + label 48 + margin 16 = 104px of bottom clearance.
+  const bottomY = vh - iconHeight - 104;
 
   if (group === 'main') {
     // 3×2 block: fill down each column (3 per column), then wrap to the next column.
@@ -437,19 +439,27 @@ export function AppInner() {
     if (INTRO_EVERY_RELOAD) return 'waiting';
     return localStorage.getItem(INTRO_SEEN_KEY) ? 'done' : 'waiting';
   });
+  // Per-icon random reveal-start offset (ms), rolled fresh each reveal so icons
+  // come in in a different order/timing every load.
+  const [revealDelays, setRevealDelays] = useState<Record<string, number>>({});
   // Called when the visitor clicks WHAT_IS_THIS during the intro: after a beat, the
-  // rest voxel-fade in slowly for a dramatic effect. Wait ~2s (they read the popup),
-  // then the reveal itself runs a few seconds.
+  // rest voxel-fade in for a dramatic effect. Wait ~2s (they read the popup), then
+  // the reveal runs a few seconds with each icon starting at a random offset.
   const triggerIntroReveal = useCallback(() => {
     setIntroPhase((prev) => {
       if (prev !== 'waiting') return prev;
+      // roll a random 0–900ms start delay for each icon (order differs every run).
+      const ids = ['setup', 'hotwire', 'gitsmith', 'chat', 'profile', 'papers', 'github', 'slopshop', 'inbox', 'dyno', 'terminal'];
+      const delays: Record<string, number> = {};
+      ids.forEach((id) => { delays[id] = Math.floor(Math.random() * 900); });
+      setRevealDelays(delays);
       // hold on 'primed' (still hidden) for 2s, then start the slow reveal.
       setTimeout(() => setIntroPhase('revealing'), 2000);
-      // mark done after the reveal has fully played out (2s wait + ~3.5s animation).
+      // mark done after the reveal has fully played out.
       setTimeout(() => {
         setIntroPhase('done');
         try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* ignore */ }
-      }, 6000);
+      }, 6500);
       return 'primed';
     });
   }, []);
@@ -704,6 +714,10 @@ export function AppInner() {
                 ? (isWhatis ? '' : 'desktop-icon-reveal-wrap')
                 : '';
           const doVoxel = introPhase === 'revealing' && !isWhatis;
+          // Each icon's voxel assembly starts at a random offset (computed ONCE when
+          // the reveal begins — see revealDelays) so the order/timing differs every
+          // load. Stable within a reveal (no re-randomize on re-render → no flicker).
+          const voxelDelayMs = doVoxel ? (revealDelays[item.id] ?? 0) : 0;
           return (
             <DesktopIcon
               key={item.id}
@@ -718,6 +732,7 @@ export function AppInner() {
               onOpen={item.onClick}
               introClassName={introClass}
               voxelReveal={doVoxel}
+              voxelDelayMs={voxelDelayMs}
             />
           );
         });

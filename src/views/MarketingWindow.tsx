@@ -124,7 +124,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       </div>
 
       {/* Shared scroll area */}
-      <div className="flex-1 overflow-y-auto mb-3 nsw-no-scrollbar">
+      <div className="flex-1 overflow-y-auto mb-3">
 
         {/* ── WHAT IS THIS? ───────────────────────────────────────── */}
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
