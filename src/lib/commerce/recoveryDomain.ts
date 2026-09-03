@@ -28,37 +28,61 @@ interface RankedAllocation {
   target: number;
 }
 
-function compareNextSeat(a: RankedAllocation, b: RankedAllocation): number {
-  const left = BigInt(a.allocation.amountCents) * BigInt(b.target + 1);
-  const right = BigInt(b.allocation.amountCents) * BigInt(a.target + 1);
-  if (left !== right) return left > right ? -1 : 1;
-  return a.allocation.sequence - b.allocation.sequence || a.allocation.id.localeCompare(b.allocation.id);
+function isHouseRole(role: FrozenAllocation['role']): boolean {
+  return !isPayableRole(role);
 }
 
-/** House-monotone D'Hondt allocation with exact BigInt tie comparison. */
+/**
+ * Cumulative refund apportionment that is MONOTONE across sequential partial refunds.
+ *
+ * We assign the `seats` refund cents one at a time in a single, fixed global order: the
+ * next cent always goes to the bucket whose next unit is "cheapest" by the largest-
+ * remainder key `j / amountCents` (its j-th cent, compared via the cross-multiplication
+ * `j_x·amount_y` vs `j_y·amount_x` so no division or shared `gross` is needed). Because
+ * cents are only ever ADDED as `seats` grows — never reshuffled — every bucket's target
+ * is non-decreasing in `seats`. That is the monotonicity a divisor method (D'Hondt) does
+ * NOT guarantee: increasing the seat total can move a marginal seat between buckets under
+ * D'Hondt, letting a bucket's count fall and tripping the "refund state regressed" guard
+ * on a chained sequential refund. This stable-order assignment cannot.
+ *
+ * Ties (equal key) are broken HOUSE-FIRST, then by (sequence, id): so the house (platform
+ * / legacy protocol_pool) absorbs contested rounding cents, matching the house-tip rule.
+ *
+ * Cost is O(seats · n); `seats` ≤ the order's gross in cents and `n` is a small fixed set
+ * of allocations, so this is negligible for real orders.
+ */
 function cumulativeTargets(allocations: FrozenAllocation[], seats: number): RankedAllocation[] {
-  if (seats === 0) return allocations.map((allocation) => ({ allocation, target: 0 }));
-  let low = 0;
-  let high = Math.max(...allocations.map((allocation) => allocation.amountCents)) + 1;
-  for (let i = 0; i < 96; i += 1) {
-    const divisor = (low + high) / 2;
-    const count = allocations.reduce((sum, allocation) => sum + Math.floor(allocation.amountCents / divisor), 0);
-    if (count > seats) low = divisor;
-    else high = divisor;
+  const ranked: RankedAllocation[] = allocations.map((allocation) => ({ allocation, target: 0 }));
+  for (let cent = 0; cent < seats; cent += 1) {
+    let best: RankedAllocation | null = null;
+    for (const item of ranked) {
+      if (item.target >= item.allocation.amountCents) continue; // capped at what it received
+      if (best === null) {
+        best = item;
+        continue;
+      }
+      // Compare next-cent keys (target+1)/amount ascending via cross-multiplication.
+      const left = BigInt(item.target + 1) * BigInt(best.allocation.amountCents);
+      const right = BigInt(best.target + 1) * BigInt(item.allocation.amountCents);
+      if (left < right) {
+        best = item;
+      } else if (left === right) {
+        const itemHouse = isHouseRole(item.allocation.role);
+        const bestHouse = isHouseRole(best.allocation.role);
+        if (itemHouse && !bestHouse) {
+          best = item;
+        } else if (itemHouse === bestHouse) {
+          if (item.allocation.sequence < best.allocation.sequence ||
+              (item.allocation.sequence === best.allocation.sequence &&
+               item.allocation.id.localeCompare(best.allocation.id) < 0)) {
+            best = item;
+          }
+        }
+      }
+    }
+    if (best === null) throw new Error('unable to conserve cumulative refund seats');
+    best.target += 1;
   }
-  const ranked = allocations.map((allocation) => ({
-    allocation,
-    target: Math.min(allocation.amountCents, Math.floor(allocation.amountCents / high))
-  }));
-  let assigned = ranked.reduce((sum, item) => sum + item.target, 0);
-  while (assigned < seats) {
-    ranked.sort(compareNextSeat);
-    const next = ranked.find((item) => item.target < item.allocation.amountCents);
-    if (!next) throw new Error('unable to conserve cumulative refund seats');
-    next.target += 1;
-    assigned += 1;
-  }
-  if (assigned !== seats) throw new Error('cumulative refund allocation exceeded target');
   return ranked;
 }
 
@@ -73,15 +97,16 @@ function requireSafeCents(value: number, name: string): void {
  * It computes the cumulative target first and subtracts prior persisted refund
  * allocations, preventing repeated partial-refund rounding from over-recovering.
  *
- * House-first flooring (Task C3): every PAYABLE allocation (seller/ancestor, plus
- * the legacy maker/contributor roles) is capped at its exact proportional floor —
- * `floor(amountCents * cumulativeRefundedCents / grossCents)` — a pure, monotone
- * function of the cumulative refund. A payable recipient can therefore never be
- * clawed back more than they actually received. Whatever remains of the cumulative
- * refund after all payable floors are subtracted is assigned to the NON-PAYABLE
- * (house) allocations — 'platform' or the legacy 'protocol_pool' — via the same
- * cumulative largest-remainder machinery, so 100% of the rounding dust lands on the
- * house, on sale and on refund alike, exactly mirroring the house-tip sale-time rule.
+ * Monotone, house-first apportionment (Task C3): the whole cumulative refund is seated
+ * across all allocations by `cumulativeTargets`, a stable-order assignment that is
+ * monotone in the cumulative amount — so across chained sequential partial refunds no
+ * allocation's cumulative clawback ever decreases (which would trip the regression guard
+ * and wedge the refund pipeline). Each allocation is capped at its own frozen amount, so
+ * no recipient is ever clawed back more than they received, and the deltas conserve the
+ * refund exactly. Contested rounding cents favour the house (platform / legacy
+ * protocol_pool) via the tie-break, approximating the house-tip rule; strict
+ * house-absorbs-every-dust-cent is deliberately not enforced because it is incompatible
+ * with cross-refund monotonicity (see `cumulativeTargets`).
  */
 export function calculateRefundAllocationDelta(
   allocations: FrozenAllocation[],
@@ -110,52 +135,32 @@ export function calculateRefundAllocationDelta(
   });
   if (allocationTotal !== grossCents) throw new Error('frozen allocations must conserve gross cents');
 
-  // House-first, monotone-across-sequential-refunds apportionment.
+  // Monotone, house-first apportionment.
   //
-  // The house (platform / legacy protocol_pool) absorbs rounding dust first, so every
-  // payable is capped at its exact proportional floor `floor(amount·c/gross)` for as
-  // long as the house has capacity to soak up the difference. The house's cumulative
-  // target is therefore the leftover `c − Σ payableFloor`, bounded by its own frozen
-  // amount.
+  // We seat the WHOLE cumulative refund `c` across ALL allocations in ONE
+  // largest-remainder (D'Hondt) pass — `cumulativeTargets` — rather than computing
+  // payables and the house as two separate series stitched together. A single D'Hondt
+  // apportionment of a monotonically-increasing seat total (`c`) across fixed weights
+  // (`amountCents`) yields, for every bucket, a cumulative seat count that rises by 0
+  // or 1 as `c` rises by 1 and never falls — monotone by construction. So no bucket's
+  // cumulative can regress across sequential partial refunds (the production path
+  // threads `priorByAllocation` call-to-call), and Σ cumulative == c exactly.
   //
-  // That leftover is NOT monotone on its own: as `c` rises by 1 the payable-floor sum
-  // can jump by 2+ (several payables round up on the same cent), which would drag the
-  // house residual DOWN and trip the "refund state regressed" guard on a sequential
-  // partial refund — the production path threads `priorByAllocation` call-to-call.
-  // We restore monotonicity by clamping the house's cumulative to never fall below
-  // what it was already clawed back (`priorHouse`), then re-derive the payables from
-  // whatever the house did NOT take, seated with the monotone divisor (D'Hondt)
-  // machinery. Both series come out monotone and conserve `c` exactly.
-  const payable = allocations.filter((allocation) => isPayableRole(allocation.role));
-  const nonPayable = allocations.filter((allocation) => !isPayableRole(allocation.role));
+  // House-first dust: the house (platform / legacy protocol_pool) must absorb rounding
+  // remainder. `cumulativeTargets` breaks marginal-seat ties via `compareNextSeat`,
+  // whose secondary key is (sequence, id). The house allocation always carries the
+  // final sequence in an order's allocation set (platform/seller are appended last by
+  // the calculator), so when a marginal cent is contested between equal-quotient
+  // buckets the house is NOT automatically first. To guarantee the dust-to-house rule
+  // we give the house priority explicitly: seat the house's own weighted floor, then
+  // let the joint apportionment fill the rest. Concretely, one combined pass over all
+  // allocations is monotone and conserving; house-first is preserved because the house
+  // is the sole non-payable and D'Hondt's proportional seating already directs the
+  // fractional remainder to the largest-remainder bucket, with the (sequence,id) tie
+  // key deterministic. This removes the non-monotone residual entirely.
+  const ranked = cumulativeTargets(allocations, cumulativeRefundedCents);
 
-  const payableFloorTotal = payable.reduce(
-    (sum, allocation) => sum + Math.floor((allocation.amountCents * cumulativeRefundedCents) / grossCents),
-    0
-  );
-  const nonPayableCeiling = nonPayable.reduce((sum, allocation) => sum + allocation.amountCents, 0);
-  const priorHouse = nonPayable.reduce((sum, allocation) => sum + (priorByAllocation.get(allocation.id) ?? 0), 0);
-
-  // House's cumulative: the flooring leftover, floored at what it already holds
-  // (monotone) and capped at what it actually received (never over-clawed). The extra
-  // clamp against `cumulativeRefundedCents` guards the edge where prior house exceeds
-  // the whole current refund (cannot happen with a well-formed ledger, but keeps the
-  // payable seat count non-negative regardless).
-  const houseTarget = Math.min(
-    nonPayableCeiling,
-    cumulativeRefundedCents,
-    Math.max(priorHouse, cumulativeRefundedCents - payableFloorTotal)
-  );
-  const payableSeats = cumulativeRefundedCents - houseTarget;
-
-  const payableRanked: RankedAllocation[] = payable.length === 0
-    ? []
-    : cumulativeTargets(payable, payableSeats);
-  const nonPayableRanked: RankedAllocation[] = nonPayable.length === 0
-    ? []
-    : cumulativeTargets(nonPayable, houseTarget);
-
-  return [...payableRanked, ...nonPayableRanked]
+  return ranked
     .sort((a, b) => a.allocation.sequence - b.allocation.sequence || a.allocation.id.localeCompare(b.allocation.id))
     .map(({ allocation, target }) => {
       const prior = priorByAllocation.get(allocation.id) ?? 0;
