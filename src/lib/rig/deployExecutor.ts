@@ -155,19 +155,30 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
     // 2. Execute candidate build in hardened container if buildCommand is defined
     if (plan.buildCommand && plan.buildCommand.trim().length > 0) {
       const runnerImage = params.runnerImageDigest || 'node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e';
-      const memoryMb = Math.min(plan.memoryMb || 256, 256);
+      // The 256MB RUNTIME cap is far too small to `npm install` + build a real
+      // framework (it OOM-kills). Builds are ephemeral and get their own, larger
+      // ceiling; the tight cap still governs the long-lived runtime container.
+      const buildMemoryMb = 2048;
 
       const dockerArgs = [
         'run', '--rm', '--network=bridge',
-        `--memory=${memoryMb}m`,
-        `--memory-swap=${memoryMb}m`,
-        '--pids-limit=128',
-        '--cpus=1',
+        `--memory=${buildMemoryMb}m`,
+        `--memory-swap=${buildMemoryMb}m`,
+        '--pids-limit=512',
+        '--cpus=2',
         '--cap-drop=ALL',
         '--security-opt=no-new-privileges',
         '--read-only',
         `--user=${process.getuid?.() || 65532}:${process.getgid?.() || 65532}`,
-        '--tmpfs=/tmp:rw,noexec,nosuid,size=64m',
+        // npm/framework builds need a writable HOME + cache + exec-able tmp. The
+        // root FS stays read-only; only these tmpfs mounts are writable, and the
+        // bind-mounted /workspace is where node_modules + build output land.
+        '--tmpfs=/tmp:rw,exec,nosuid,size=512m',
+        '--tmpfs=/home/build:rw,exec,nosuid,size=1024m',
+        '--env=HOME=/home/build',
+        '--env=npm_config_cache=/home/build/.npm',
+        '--env=npm_config_update_notifier=false',
+        '--env=CI=1',
         '--mount', `type=bind,src=${workspace},dst=/workspace`,
         '--workdir=/workspace',
         runnerImage,

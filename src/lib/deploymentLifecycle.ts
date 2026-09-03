@@ -520,7 +520,16 @@ export function detectRigRuntime(
     const mainCandidate = mainField || (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : (fileSet.has('app.js') ? 'app.js' : 'dist/index.js')));
     const mainFile = mainIsHtml ? (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : (fileSet.has('app.js') ? 'app.js' : 'index.js'))) : mainCandidate;
 
-    const buildCmd = hasBuildScript ? 'npm run build' : undefined;
+    // A node build script (e.g. "vinext build", "next build") needs its
+    // dependencies present first — the build container starts with none. Install
+    // before building. Prefer a reproducible `npm ci` when a lockfile exists, else
+    // fall back to `npm install`. Without this the build fails with e.g.
+    // "vinext: not found" (exit 127) because the CLI it calls was never installed.
+    const hasLockfile = fileSet.has('package-lock.json') || fileSet.has('npm-shrinkwrap.json');
+    const installCmd = hasLockfile
+      ? 'npm ci --no-audit --no-fund || npm install --no-audit --no-fund'
+      : 'npm install --no-audit --no-fund';
+    const buildCmd = hasBuildScript ? `${installCmd} && npm run build` : undefined;
     const startCmd = hasStartScript ? 'npm start' : (mainIsHtml ? 'static-pages-runtime' : `node ${mainFile}`);
 
     const defaultPlan: DeploymentPlan = {
