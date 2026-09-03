@@ -77,7 +77,7 @@ export function useWindowManager(user?: AuthUser | null) {
     },
     mktg: {
       id: 'mktg',
-      title: "About Nate's Software — [README_FIRST.TXT]",
+      title: "About Nate's Software — [WHAT_IS_THIS.TXT]",
       icon: '📄',
       isOpen: false,
       isMinimized: false,

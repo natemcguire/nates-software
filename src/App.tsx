@@ -814,10 +814,10 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 0. Marketing / About Readme */}
+      {/* 0. Marketing / About ("What is this?") */}
       <ErrorBoundary
         key={`mktg-${windows.mktg.isOpen}`}
-        fallbackTitle="README_FIRST.TXT"
+        fallbackTitle="WHAT_IS_THIS.TXT"
         onDismiss={() => closeWindow('mktg')}
         resetKeys={[windows.mktg.isOpen]}
       >
