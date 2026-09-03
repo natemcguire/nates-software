@@ -164,34 +164,73 @@ describe('house-first refund flooring (Task C3)', () => {
     expect(full.find((row) => row.id === 'platform')!.cumulativeAmountCents).toBe(1000);
   });
 
-  it('never claws back more than a payable recipient actually received, even mid-sequence', () => {
-    // Sweep every cumulative refund amount and assert the hard invariants hold
-    // throughout: conservation, and no payable ever clawed back beyond what it
-    // actually received. The house's OWN clawback is also capped at what it
-    // received (1000). While the house has spare capacity (cumulative refund minus
-    // every payable's floor share <= 1000) every payable clawback additionally
-    // matches its strict proportional floor exactly — the house-first case this
-    // task exists to guarantee — and once the house is exhausted, any leftover
-    // dust legitimately spills back to payables (still bounded, still conserving).
-    const houseCents = 1000;
-    for (let c = 0; c <= 10000; c += 137) {
-      const rows = calculateRefundAllocationDelta(shareware, 10000, c);
-      const payableFloorTotal = payable(rows)
-        .reduce((sum, row) => sum + Math.floor((row.amountCents * c) / 10000), 0);
-      const houseHasCapacity = (c - payableFloorTotal) <= houseCents;
+  // CHAINED per-integer sweep — the ONLY sweep that exercises the production path,
+  // where refundProcessor.ts threads `priorByAllocation` (each allocation's cumulative
+  // so far) from one partial refund into the next. Walking c = 1..gross one cent at a
+  // time and feeding the previous cumulative back in is exactly how a stream of tiny
+  // partial refunds settles. The earlier bug (house cumulative computed as the
+  // non-monotone residual `c − Σ independent payable floors`) tripped the
+  // 'refund state regressed' guard here at c=12 on the shareware fixture; this test
+  // pins that it can never regress again.
+  function assertChainMonotoneAndHouseFirst(
+    fixture: ReadonlyArray<{ id: string; sequence: number; role: any; amountCents: number }>,
+    gross: number
+  ) {
+    const houseCeiling = fixture
+      .filter((a) => a.role === 'platform' || a.role === 'protocol_pool')
+      .reduce((sum, a) => sum + a.amountCents, 0);
+    let prior = new Map<string, number>();
+    for (let c = 1; c <= gross; c += 1) {
+      // No throw: the guard `prior > target` must never fire on a strictly rising c.
+      const rows = calculateRefundAllocationDelta(fixture as any, gross, c, prior);
 
-      for (const row of payable(rows)) {
-        expect(row.cumulativeAmountCents).toBeLessThanOrEqual(row.amountCents); // never over-clawed
-        if (houseHasCapacity) {
-          const floorShare = Math.floor((row.amountCents * c) / 10000);
-          expect(row.cumulativeAmountCents).toBe(floorShare); // house-first: exact floor
+      // (a) no bucket's cumulative exceeds its own frozen amount, and none regresses.
+      for (const row of rows) {
+        expect(row.cumulativeAmountCents).toBeLessThanOrEqual(row.amountCents);
+        expect(row.cumulativeAmountCents).toBeGreaterThanOrEqual(prior.get(row.id) ?? 0);
+      }
+      // (b) Σ cumulative == c exactly (conservation).
+      expect(rows.reduce((sum, row) => sum + row.cumulativeAmountCents, 0)).toBe(c);
+
+      // House-first: while the house can still absorb dust, no payable is clawed back
+      // beyond its exact proportional floor.
+      const houseCumulative = rows
+        .filter((row) => row.role === 'platform' || row.role === 'protocol_pool')
+        .reduce((sum, row) => sum + row.cumulativeAmountCents, 0);
+      if (houseCumulative < houseCeiling) {
+        for (const row of rows) {
+          if (row.role === 'platform' || row.role === 'protocol_pool') continue;
+          expect(row.cumulativeAmountCents).toBeLessThanOrEqual(Math.floor((row.amountCents * c) / gross));
         }
       }
-      for (const row of house(rows)) {
-        expect(row.cumulativeAmountCents).toBeLessThanOrEqual(row.amountCents); // house never over-clawed either
-      }
-      expect(rows.reduce((sum, row) => sum + row.deltaAmountCents, 0)).toBe(c); // conservation
+      prior = new Map(rows.map((row) => [row.id, row.cumulativeAmountCents]));
     }
+  }
+
+  it('chained 1-cent partial refunds across EVERY integer never regress (shareware fixture)', () => {
+    assertChainMonotoneAndHouseFirst(shareware, 10000);
+  });
+
+  it('chained 1-cent partial refunds across EVERY integer never regress (odd gross forces frequent rounding)', () => {
+    // gross 995 with $9.95-style house-tip amounts: platform 99, ann 89, bob 89,
+    // seller 718 (sum 995). Nearly every cent forces a fresh floor rounding decision.
+    const oddGross = [
+      { id: 'platform', sequence: 0, role: 'platform' as const, amountCents: 99 },
+      { id: 'ann', sequence: 1, role: 'ancestor' as const, amountCents: 89 },
+      { id: 'bob', sequence: 2, role: 'ancestor' as const, amountCents: 89 },
+      { id: 'carol', sequence: 3, role: 'seller' as const, amountCents: 718 }
+    ];
+    assertChainMonotoneAndHouseFirst(oddGross, 995);
+  });
+
+  it('chained 1-cent partial refunds across EVERY integer never regress (legacy maker/pool roles)', () => {
+    // protocol_pool is the legacy house bucket and must behave identically.
+    const legacy = [
+      { id: 'maker', sequence: 0, role: 'maker' as const, amountCents: 700 },
+      { id: 'ancestor', sequence: 1, role: 'ancestor' as const, amountCents: 200 },
+      { id: 'pool', sequence: 2, role: 'protocol_pool' as const, amountCents: 100 }
+    ];
+    assertChainMonotoneAndHouseFirst(legacy, 1000);
   });
 });
 

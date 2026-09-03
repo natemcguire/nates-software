@@ -110,48 +110,50 @@ export function calculateRefundAllocationDelta(
   });
   if (allocationTotal !== grossCents) throw new Error('frozen allocations must conserve gross cents');
 
+  // House-first, monotone-across-sequential-refunds apportionment.
+  //
+  // The house (platform / legacy protocol_pool) absorbs rounding dust first, so every
+  // payable is capped at its exact proportional floor `floor(amount·c/gross)` for as
+  // long as the house has capacity to soak up the difference. The house's cumulative
+  // target is therefore the leftover `c − Σ payableFloor`, bounded by its own frozen
+  // amount.
+  //
+  // That leftover is NOT monotone on its own: as `c` rises by 1 the payable-floor sum
+  // can jump by 2+ (several payables round up on the same cent), which would drag the
+  // house residual DOWN and trip the "refund state regressed" guard on a sequential
+  // partial refund — the production path threads `priorByAllocation` call-to-call.
+  // We restore monotonicity by clamping the house's cumulative to never fall below
+  // what it was already clawed back (`priorHouse`), then re-derive the payables from
+  // whatever the house did NOT take, seated with the monotone divisor (D'Hondt)
+  // machinery. Both series come out monotone and conserve `c` exactly.
   const payable = allocations.filter((allocation) => isPayableRole(allocation.role));
   const nonPayable = allocations.filter((allocation) => !isPayableRole(allocation.role));
+
+  const payableFloorTotal = payable.reduce(
+    (sum, allocation) => sum + Math.floor((allocation.amountCents * cumulativeRefundedCents) / grossCents),
+    0
+  );
   const nonPayableCeiling = nonPayable.reduce((sum, allocation) => sum + allocation.amountCents, 0);
+  const priorHouse = nonPayable.reduce((sum, allocation) => sum + (priorByAllocation.get(allocation.id) ?? 0), 0);
 
-  // Each payable allocation's floor share is its exact proportional floor of the
-  // cumulative refund — never more than it actually received, and non-decreasing in
-  // cumulativeRefundedCents (so it is house-monotone by construction).
-  const payableFloor: RankedAllocation[] = payable.map((allocation) => ({
-    allocation,
-    target: Math.floor((allocation.amountCents * cumulativeRefundedCents) / grossCents)
-  }));
-  const payableFloorTotal = payableFloor.reduce((sum, item) => sum + item.target, 0);
+  // House's cumulative: the flooring leftover, floored at what it already holds
+  // (monotone) and capped at what it actually received (never over-clawed). The extra
+  // clamp against `cumulativeRefundedCents` guards the edge where prior house exceeds
+  // the whole current refund (cannot happen with a well-formed ledger, but keeps the
+  // payable seat count non-negative regardless).
+  const houseTarget = Math.min(
+    nonPayableCeiling,
+    cumulativeRefundedCents,
+    Math.max(priorHouse, cumulativeRefundedCents - payableFloorTotal)
+  );
+  const payableSeats = cumulativeRefundedCents - houseTarget;
 
-  // Everything left over after every payable floor share belongs to the house first.
-  // If there is more than one non-payable row (e.g. a mixed legacy/new-model order
-  // carrying both 'protocol_pool' and 'platform'), split the house's remainder across
-  // them with the same house-monotone D'Hondt machinery so it still conserves.
-  const houseRemainder = cumulativeRefundedCents - payableFloorTotal;
-
-  let payableRanked: RankedAllocation[];
-  let nonPayableRanked: RankedAllocation[];
-  if (nonPayable.length === 0) {
-    // No house bucket exists on this order at all — every cent of the cumulative
-    // refund must come from payable allocations. Seat any dust the floor shares
-    // couldn't cover on top of the floors themselves, via the same house-monotone
-    // largest-remainder machinery, so it still conserves exactly.
-    payableRanked = houseRemainder === 0 ? payableFloor : cumulativeTargets(payable, cumulativeRefundedCents);
-    nonPayableRanked = [];
-  } else if (houseRemainder <= nonPayableCeiling) {
-    // Normal case: the house can absorb all the dust on top of its own proportional
-    // share without exceeding what it actually received.
-    payableRanked = payableFloor;
-    nonPayableRanked = cumulativeTargets(nonPayable, houseRemainder);
-  } else {
-    // Degenerate case: the house's own frozen amount is smaller than what's left
-    // after flooring every payable — the house is maxed out and the remaining dust
-    // must still be recovered from payables (floored again, on top of their own
-    // floor shares) so the whole cumulative refund still conserves exactly.
-    nonPayableRanked = nonPayable.map((allocation) => ({ allocation, target: allocation.amountCents }));
-    const payableRemainder = cumulativeRefundedCents - nonPayableCeiling;
-    payableRanked = cumulativeTargets(payable, payableRemainder);
-  }
+  const payableRanked: RankedAllocation[] = payable.length === 0
+    ? []
+    : cumulativeTargets(payable, payableSeats);
+  const nonPayableRanked: RankedAllocation[] = nonPayable.length === 0
+    ? []
+    : cumulativeTargets(nonPayable, houseTarget);
 
   return [...payableRanked, ...nonPayableRanked]
     .sort((a, b) => a.allocation.sequence - b.allocation.sequence || a.allocation.id.localeCompare(b.allocation.id))
