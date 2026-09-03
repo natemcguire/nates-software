@@ -19,6 +19,7 @@ import {
 } from '../../src/lib/forgeDomain';
 import { parseAndValidateSshKeyInput } from '../../src/lib/sshDomain';
 import { getProposalDiff } from '../../src/lib/gitsmith/gitStorage';
+import { buildInheritedLiens } from '../../src/lib/royaltyLiens';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
 
@@ -1059,7 +1060,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       const parent = await db.prepare(`
-        SELECT id, status FROM repositories WHERE id = ?
+        SELECT id, status, owner_user_id AS ownerUserId FROM repositories WHERE id = ?
       `).bind(parentRepositoryId).first();
       if (!parent) return failure('Parent repository not found.', 404);
       if ((parent as any).status !== 'active') {
@@ -1123,6 +1124,44 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const forkOutboxEventId = `evt_${crypto.randomUUID()}`;
       const refEventId = `revt_${crypto.randomUUID()}`;
 
+      // Capture frozen royalty liens onto the child at the moment the fork is
+      // confirmed (Task B2). The child inherits ALL of the parent's own
+      // liens (depth+1) plus a new lien for the parent itself at the
+      // parent's own listing royalty_bps (depth 1). Liens are immutable once
+      // written (migration 0038 triggers), so this must happen exactly once,
+      // atomically with the lineage edge below.
+      const parentListingRow = await db.prepare(`
+        SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId
+        FROM commerce_products WHERE repository_id = ?
+      `).bind(parentRepositoryId).first();
+      const parentListingBps = parentListingRow ? Number((parentListingRow as any).royaltyBps) || 0 : 0;
+      const parentOwnerUserId = parentListingRow
+        ? (parentListingRow as any).sellerUserId
+        : ((parent as any).ownerUserId || forkUserId);
+
+      const parentLiensResult: any = await db.prepare(`
+        SELECT ancestor_repository_id AS ancestorRepositoryId, ancestor_user_id AS ancestorUserId, bps, depth
+        FROM repository_fork_liens WHERE holder_of_repository_id = ?
+      `).bind(parentRepositoryId).all();
+      const parentLiens = parentLiensResult?.results ?? [];
+
+      const { liens: newLiens } = buildInheritedLiens(
+        parentLiens,
+        parentListingBps,
+        parentRepositoryId,
+        parentOwnerUserId,
+        childRepositoryId
+      );
+
+      const lienStatements = newLiens.map(lien => db.prepare(`
+        INSERT INTO repository_fork_liens (
+          id, holder_of_repository_id, ancestor_repository_id, ancestor_user_id, bps, depth, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        `lien_${crypto.randomUUID()}`, lien.holderOfRepositoryId, lien.ancestorRepositoryId,
+        lien.ancestorUserId, lien.bps, lien.depth
+      ));
+
       await db.batch([
         // 1. Immutable fork edge
         db.prepare(`
@@ -1163,7 +1202,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             parentCommitOid, childInitialCommitOid, lineageRootRepositoryId: derivedLineageRootId,
             depth: derivedDepth, actorUserId: forkUserId, status: 'active'
           })
-        )
+        ),
+        // 6. Frozen royalty liens captured onto the child (Task B2) — written
+        // atomically with the lineage edge above, immutable thereafter.
+        ...lienStatements
       ]);
 
       return Response.json({

@@ -36,7 +36,10 @@ export const CANONICAL_MIGRATIONS = [
   '0030_contributor_cap_triggers.sql',
   '0033_chat_presence_and_topic.sql',
   '0034_rig_verification_evidence_bundle.sql',
-  '0035_reserved_hostname_guard.sql'
+  '0035_reserved_hostname_guard.sql',
+  '0036_launch_honesty_cleanup.sql',
+  '0037_first_party_sso_tickets.sql',
+  '0038_shareware_restored_money_model.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];
