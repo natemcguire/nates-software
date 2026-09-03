@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildInheritedLiens } from '../src/lib/royaltyLiens';
+import { buildInheritedLiens, assertForkAllowed } from '../src/lib/royaltyLiens';
+import { CommerceValidationError } from '../src/lib/commerceDomain';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as gitApi from '../functions/api/git';
 import { hashSessionToken } from '../functions/api/_session';
@@ -61,6 +62,21 @@ describe('buildInheritedLiens (pure)', () => {
     const result = buildInheritedLiens([], 0, 'repo_root', 'nate', 'repo_child');
     expect(result.liens).toEqual([]);
     expect(result.sumBps).toBe(0);
+  });
+});
+
+describe('assertForkAllowed (pure)', () => {
+  it('does not throw when sumBps is exactly 10000 (100%)', () => {
+    expect(() => assertForkAllowed(10000)).not.toThrow();
+  });
+
+  it('does not throw for sumBps below 10000', () => {
+    expect(() => assertForkAllowed(2000)).not.toThrow();
+    expect(() => assertForkAllowed(0)).not.toThrow();
+  });
+
+  it('throws CommerceValidationError when sumBps exceeds 10000', () => {
+    expect(() => assertForkAllowed(10001)).toThrow(CommerceValidationError);
   });
 });
 
@@ -275,5 +291,162 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       SELECT * FROM repository_fork_liens WHERE holder_of_repository_id = ?
     `).bind(erinRepoId).all();
     expect(lienRows.results).toEqual([]);
+  });
+});
+
+describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
+  let ctx: TestD1Context;
+  const testEnv = (extra: Record<string, unknown> = {}) => ({
+    DB: ctx.d1,
+    GITSMITH_GATEWAY_URL: 'https://gateway.test',
+    GITSMITH_GATEWAY_FETCH: READY_GATEWAY_FETCH,
+    GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET,
+    ...extra
+  });
+
+  const createSession = async (userId: string, token: string) => {
+    const tokenHash = await hashSessionToken(token);
+    await ctx.d1.prepare(`
+      INSERT INTO user_sessions (token_hash, user_id, expires_at, created_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(tokenHash, userId, Date.now() + 3600000).run();
+  };
+
+  const post = (body: Record<string, unknown>) => gitApi.onRequestPost({
+    request: new Request('http://localhost/api/git', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GATEWAY_SECRET}`, Origin: 'http://localhost' },
+      body: JSON.stringify(body)
+    }),
+    env: testEnv()
+  });
+
+  const postAsUser = (token: string, body: Record<string, unknown>) => gitApi.onRequestPost({
+    request: new Request('http://localhost/api/git', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, Origin: 'http://localhost' },
+      body: JSON.stringify(body)
+    }),
+    env: testEnv()
+  });
+
+  it('rejects a fork REQUEST (Phase 1) whose inherited Σr + parent rate would exceed 10000 bps, before provisioning', async () => {
+    ctx = await createTestD1Database({ foreignKeys: true });
+
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_ann', 'ann', 'Ann', 'maker')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_bob', 'bob', 'Bob', 'maker')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_carol', 'carol', 'Carol', 'maker')
+    `).run();
+    await createSession('usr_ann', 'session_ann');
+    await createSession('usr_bob', 'session_bob');
+    await createSession('usr_carol', 'session_carol');
+
+    // 1. Ann creates the root repository with a 60% royalty rate.
+    const annCreateRes = await postAsUser('session_ann', { action: 'create-repository', slug: 'ann-root-b3' });
+    expect(annCreateRes.status).toBe(201);
+    const annRepoId = (await annCreateRes.json()).repository.id;
+
+    await post({
+      action: 'gateway-record-ref',
+      repositoryId: annRepoId,
+      refName: 'refs/heads/main',
+      oldOid: null,
+      newOid: OID_1,
+      operation: 'create',
+      idempotencyKey: 'ann_init_ref_b3'
+    });
+
+    await ctx.d1.prepare(`
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
+      VALUES ('app_ann_b3', 'Ann Root', 'Tagline', 'Desc', 'usr_ann', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
+      VALUES ('app_ann_b3', ?, 'usr_ann', 1000, 'usd', 'active', 6000)
+    `).bind(annRepoId).run();
+
+    // 2. Bob forks Ann (inherits Ann@6000/depth1). Well under 10000, allowed.
+    const bobForkReq = await postAsUser('session_bob', {
+      action: 'fork', parentRepositoryId: annRepoId, childSlug: 'bob-fork-b3', parentRefName: 'refs/heads/main'
+    });
+    expect(bobForkReq.status).toBe(201);
+    const bobRepoId = (await bobForkReq.json()).repository.id;
+
+    const bobConfirmRes = await post({
+      action: 'gateway-confirm-fork',
+      childRepositoryId: bobRepoId,
+      parentRepositoryId: annRepoId,
+      parentRefName: 'refs/heads/main',
+      parentCommitOid: OID_1,
+      childInitialCommitOid: OID_1,
+      idempotencyKey: 'idemp_bob_confirm_b3',
+      actorUserId: 'usr_bob'
+    });
+    expect(bobConfirmRes.status).toBe(201);
+
+    // Bob sets his own rate to 60% too. Bob's repo carries Ann@6000/depth1.
+    // Anyone forking Bob would inherit Ann@6000/depth2 + Bob@6000/depth1 = 12000 bps > 10000.
+    await ctx.d1.prepare(`
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
+      VALUES ('app_bob_b3', 'Bob Fork', 'Tagline', 'Desc', 'usr_bob', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
+      VALUES ('app_bob_b3', ?, 'usr_bob', 1000, 'usd', 'active', 6000)
+    `).bind(bobRepoId).run();
+
+    await post({
+      action: 'gateway-record-ref',
+      repositoryId: bobRepoId,
+      refName: 'refs/heads/main',
+      oldOid: OID_1,
+      newOid: OID_2,
+      operation: 'update',
+      idempotencyKey: 'bob_advance_ref_b3'
+    });
+
+    // 3. Carol attempts to fork Bob. Prospective Σr = 6000 (Ann) + 6000 (Bob) = 12000 > 10000.
+    // Must be rejected at Phase 1 (the fork REQUEST) before any provisioning.
+    const carolForkReq = await postAsUser('session_carol', {
+      action: 'fork', parentRepositoryId: bobRepoId, childSlug: 'carol-fork-b3', parentRefName: 'refs/heads/main'
+    });
+    expect(carolForkReq.status).toBeGreaterThanOrEqual(400);
+    expect(carolForkReq.status).toBeLessThan(500);
+
+    const carolForkBody = await carolForkReq.json();
+    expect(carolForkBody.success).toBe(false);
+
+    // No child repository was created for Carol.
+    const carolRepoRow = await ctx.d1.prepare(`
+      SELECT id FROM repositories WHERE owner_user_id = 'usr_carol' AND slug = 'carol-fork-b3'
+    `).first();
+    expect(carolRepoRow).toBeNull();
+
+    // No fork lineage edge was written.
+    const carolForkRow = await ctx.d1.prepare(`
+      SELECT * FROM repository_forks WHERE parent_repository_id = ? AND forked_by_user_id = 'usr_carol'
+    `).bind(bobRepoId).first();
+    expect(carolForkRow).toBeNull();
+
+    // No lien rows were written for any would-be Carol repository.
+    const anyCarolLiens = await ctx.d1.prepare(`
+      SELECT COUNT(*) AS n FROM repository_fork_liens
+      WHERE holder_of_repository_id IN (
+        SELECT id FROM repositories WHERE owner_user_id = 'usr_carol'
+      )
+    `).first();
+    expect((anyCarolLiens as any).n).toBe(0);
+
+    // No provisioning outbox event was queued for Carol's would-be fork.
+    const outboxRow = await ctx.d1.prepare(`
+      SELECT COUNT(*) AS n FROM forge_outbox_events
+      WHERE aggregate_type = 'fork' AND payload LIKE '%carol-fork-b3%'
+    `).first();
+    expect((outboxRow as any).n).toBe(0);
   });
 });

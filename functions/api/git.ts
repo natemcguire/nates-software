@@ -19,7 +19,7 @@ import {
 } from '../../src/lib/forgeDomain';
 import { parseAndValidateSshKeyInput } from '../../src/lib/sshDomain';
 import { getProposalDiff } from '../../src/lib/gitsmith/gitStorage';
-import { buildInheritedLiens } from '../../src/lib/royaltyLiens';
+import { buildInheritedLiens, assertForkAllowed } from '../../src/lib/royaltyLiens';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
 
@@ -2004,6 +2004,42 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
       if ((parent as any).visibility === 'private' && !(parent as any).memberRole) {
         return failure('Parent repository is not accessible.', 403);
+      }
+
+      // Σr <= 100% gate (Task B3): compute the prospective inherited lien set
+      // the child WOULD get if this fork is confirmed, using the same pure
+      // buildInheritedLiens math Phase 2 (gateway-confirm-fork) uses to
+      // actually write the liens. This is dry/read-only — no rows are
+      // written here. If the prospective sum exceeds 100%, reject the fork
+      // request outright, before any provisioning (repository row, member
+      // row, or outbox event) is created.
+      const gateParentListingRow = await db.prepare(`
+        SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId
+        FROM commerce_products WHERE repository_id = ?
+      `).bind(parentRepositoryId).first();
+      const gateParentListingBps = gateParentListingRow ? Number((gateParentListingRow as any).royaltyBps) || 0 : 0;
+      const gateParentOwnerUserId = gateParentListingRow
+        ? (gateParentListingRow as any).sellerUserId
+        : ((parent as any).ownerUserId || actor.id);
+
+      const gateParentLiensResult: any = await db.prepare(`
+        SELECT ancestor_repository_id AS ancestorRepositoryId, ancestor_user_id AS ancestorUserId, bps, depth
+        FROM repository_fork_liens WHERE holder_of_repository_id = ?
+      `).bind(parentRepositoryId).all();
+      const gateParentLiens = gateParentLiensResult?.results ?? [];
+
+      const { sumBps: prospectiveSumBps } = buildInheritedLiens(
+        gateParentLiens,
+        gateParentListingBps,
+        parentRepositoryId,
+        gateParentOwnerUserId,
+        'prospective_child' // dry run: no real child repository id exists yet
+      );
+
+      try {
+        assertForkAllowed(prospectiveSumBps);
+      } catch (error: any) {
+        return failure(error?.message || 'Inherited royalty liens would exceed 100%; fork blocked.', 422);
       }
 
       const parentRef = await db.prepare(`

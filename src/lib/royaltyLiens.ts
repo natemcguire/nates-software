@@ -9,6 +9,29 @@
 // This module is pure — no DB access — so the inheritance math can be unit
 // tested in isolation. functions/api/git.ts wires the DB reads/writes around
 // it inside the gateway-confirm-fork atomic batch.
+//
+// Task B3 adds the Σr <= 100% gate: a fork whose inherited Σr would exceed
+// 10000 bps must be rejected at fork-REQUEST time (before provisioning), not
+// merely refused at confirm/buy time. assertForkAllowed is the pure
+// assertion; functions/api/git.ts calls buildInheritedLiens(...) in a
+// dry/no-write way in the action==='fork' phase to compute prospective
+// sumBps, then calls this to decide whether to proceed.
+
+import { CommerceValidationError } from './commerceDomain';
+
+/**
+ * Throws CommerceValidationError if the prospective inherited Σr (in basis
+ * points) would exceed 100% (10000 bps). A sale could never cover liens that
+ * sum past the full sale price, so a fork that would create such a lien set
+ * must never be provisioned.
+ */
+export function assertForkAllowed(sumBps: number): void {
+  if (sumBps > 10000) {
+    throw new CommerceValidationError(
+      `Inherited royalty liens (${sumBps} bps) would exceed 100%; fork blocked.`
+    );
+  }
+}
 
 export interface ParentLien {
   ancestorRepositoryId: string;
