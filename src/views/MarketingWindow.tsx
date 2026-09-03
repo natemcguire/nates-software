@@ -133,13 +133,15 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             A marketplace for software you buy once and own — not rent. Every purchase gives you the running
             web app, the full source in a Git repo, native installers (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.dmg</code>, <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.exe</code>, and more),
             and a real license key with your name on it. Fork any app, change it with an AI agent, and sell your
-            version; when a fork sells, revenue splits back down the lineage. No subscription, ever.
+            version. Whoever built what you forked sets a royalty they earn when you sell. All sales are final —
+            and nothing goes on sale until it's been proven to run. No subscription, ever.
           </p>
           <div className="bg-gray-100 border border-gray-400 p-2.5 rounded text-xs">
             <div className="font-bold text-gray-900 mb-0.5 font-mono">The Money Model</div>
             <div className="text-gray-700 font-sans leading-relaxed">
-              <strong className="text-green-800">70%</strong> to the seller, <strong>20%</strong> up the fork lineage,
-              <strong> 10%</strong> to the protocol — a root app with no ancestors is <strong>90/10</strong>.
+              You set <strong>one royalty rate</strong> when you list. Fork someone and sell, and each maker you
+              built on earns the rate they set — frozen the day you forked, so it can never change on you.
+              The house takes a flat <strong className="text-green-800">10%</strong>. You keep the rest.
             </div>
           </div>
         </div>
