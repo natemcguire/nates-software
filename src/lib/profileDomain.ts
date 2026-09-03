@@ -239,7 +239,10 @@ export function calculateMakerEconomics(
     }
     const entry = breakdownMap.get(appId)!;
 
-    if (alloc.role === 'maker') {
+    // 'seller' is the maker's own direct-sale cut under the Shareware, Restored model;
+    // 'maker' is the retired pre-rewrite role, kept here so historical allocation rows
+    // still count toward earnings.
+    if (alloc.role === 'seller' || alloc.role === 'maker') {
       makerSalesCents += cents;
       entry.direct += cents;
     } else if (alloc.role === 'ancestor') {
