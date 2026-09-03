@@ -111,6 +111,37 @@ html, body {
   .wizard-continue-ready { animation: none; }
 }
 
+/* ===================================================================
+   First-visit intro: desktop icons start hidden, then "pixel fade" in
+   (staggered) after the "What is this?" popup appears. Per-icon delay
+   is set inline via --reveal-delay.
+   =================================================================== */
+.desktop-intro-hidden { opacity: 0; pointer-events: none; }
+
+@keyframes nsw-pixel-fade-in {
+  0%   { opacity: 0; transform: scale(0.6) translateY(6px); filter: blur(2px) contrast(2); image-rendering: pixelated; }
+  40%  { opacity: 0.5; transform: scale(0.92) translateY(2px); filter: blur(1px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: none; }
+}
+.desktop-icon-reveal {
+  opacity: 0;
+  animation: nsw-pixel-fade-in 0.45s steps(6, end) forwards;
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/* Popup entrance — a springy Win95 window "boot" pop. */
+@keyframes nsw-popup-in {
+  0%   { opacity: 0; transform: scale(0.82) translateY(10px); }
+  70%  { opacity: 1; transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.nsw-popup-enter { animation: nsw-popup-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-icon-reveal { animation: none; opacity: 1; }
+  .nsw-popup-enter { animation: none; }
+}
+
 /* Classic Win95 Bevel Button - Scaled & Readable */
 .btn-w95 {
   display: inline-flex;

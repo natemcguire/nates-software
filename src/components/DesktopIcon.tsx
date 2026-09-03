@@ -10,6 +10,10 @@ export interface DesktopIconProps {
   onPositionChange?: (newPos: { x: number; y: number }) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onOpen?: () => void;
+  /** Intro-sequence class (hidden / reveal) applied to the icon root. */
+  introClassName?: string;
+  /** Per-icon stagger delay (ms) for the reveal animation. */
+  introDelayMs?: number;
 }
 
 const DRAG_THRESHOLD = 5; // Pixels of movement required to distinguish dragging from a click
@@ -21,7 +25,9 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   badge,
   position,
   onPositionChange,
-  onContextMenu
+  onContextMenu,
+  introClassName,
+  introDelayMs
 }) => {
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number }>(position || { x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -130,7 +136,8 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
         left: `${currentPos.x}px`,
         top: `${currentPos.y}px`,
         zIndex: isDragging ? 35 : 10,
-        touchAction: 'none'
+        touchAction: 'none',
+        ...(introDelayMs !== undefined ? ({ '--reveal-delay': `${introDelayMs}ms` } as React.CSSProperties) : {})
       }
     : { touchAction: 'none' };
 
@@ -144,7 +151,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
       style={style}
       className={`desktop-icon group flex flex-col items-center justify-center p-2.5 rounded cursor-pointer select-none text-center hover:bg-blue-900/50 border border-transparent hover:border-yellow-200/60 w-28 relative ${
         isDragging ? 'opacity-90 ring-1 ring-yellow-300/70' : ''
-      }`}
+      } ${introClassName || ''}`}
     >
       <div className="text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1">
         {icon}

@@ -395,6 +395,31 @@ export function AppInner() {
     }
   }, [authLoading, isAuthenticated, openWindow]);
 
+  // First-visit intro sequence: icons start HIDDEN → auto-open the "What is this?"
+  // window with a pop animation → then the desktop icons pixel-fade in (staggered).
+  // First-time-only in production (localStorage flag); for TESTING it runs every
+  // reload (set INTRO_EVERY_RELOAD=false to make it once-only).
+  const INTRO_EVERY_RELOAD = true;
+  const INTRO_SEEN_KEY = 'nsw_intro_seen';
+  const [introPhase, setIntroPhase] = useState<'hidden' | 'revealing' | 'done'>(() => {
+    if (typeof window === 'undefined') return 'done';
+    if (INTRO_EVERY_RELOAD) return 'hidden';
+    return localStorage.getItem(INTRO_SEEN_KEY) ? 'done' : 'hidden';
+  });
+  useEffect(() => {
+    if (introPhase !== 'hidden') return;
+    // 1) pop the "What is this?" window shortly after load.
+    const t1 = setTimeout(() => openWindow('mktg'), 450);
+    // 2) then reveal the icons with the staggered pixel-fade.
+    const t2 = setTimeout(() => setIntroPhase('revealing'), 1050);
+    // 3) mark done once the reveal has played out.
+    const t3 = setTimeout(() => {
+      setIntroPhase('done');
+      try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* ignore */ }
+    }, 2600);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [introPhase, openWindow]);
+
   const [iconPositions, setIconPositions] = useState<Record<string, { x: number; y: number }>>(loadSavedIconPositions);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
@@ -556,7 +581,14 @@ export function AppInner() {
           <span className="text-amber-300 font-bold">?</span>
           <span>What is this?</span>
         </button>
-        {isAuthenticated && user ? (
+        {authLoading ? (
+          // Never flash logged-out → logged-in: hold a neutral placeholder until
+          // the session check resolves (matches the AccountWidget fix).
+          <div className="flex items-center gap-1.5 bg-black/30 px-2.5 py-1 rounded border border-white/10 text-white/60 text-[11px] font-tahoma">
+            <span className="inline-block w-3 h-3 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
+            <span>Loading…</span>
+          </div>
+        ) : isAuthenticated && user ? (
           <div
             data-testid="desktop-greeting"
             className="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma"
@@ -680,6 +712,10 @@ export function AppInner() {
         const pos = iconPositions[item.id] || getDefaultIconPosition(index);
         // Record each icon's opener so the right-click "Open" action can invoke it.
         desktopIconOpeners[item.id] = item.onClick;
+        const introClass =
+          introPhase === 'hidden' ? 'desktop-intro-hidden'
+          : introPhase === 'revealing' ? 'desktop-icon-reveal'
+          : '';
         return (
           <DesktopIcon
             key={item.id}
@@ -691,6 +727,8 @@ export function AppInner() {
             onClick={item.onClick}
             onContextMenu={(e) => openContextMenu(e, item.id)}
             onOpen={item.onClick}
+            introClassName={introClass}
+            introDelayMs={introPhase === 'revealing' ? index * 70 : undefined}
           />
         );
       })}
