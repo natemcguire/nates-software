@@ -987,6 +987,110 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       ctx.d1.batch = originalBatch;
     });
 
+    it('accepts and persists a maker-chosen royalty_bps into commerce_products (E1a)', async () => {
+      const dropId = 'royalty-bearing-app';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          id: dropId,
+          name: 'Royalty Bearing App',
+          version: 'v1.0.0',
+          price: '$15.00',
+          royaltyBps: 1500
+        })
+      });
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+
+      const product = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE app_id = ?').bind(dropId).first();
+      expect((product as any).royalty_bps).toBe(1500);
+    });
+
+    it('accepts the snake_case royalty_bps alias for symmetry with grantable_bps (E1a)', async () => {
+      const dropId = 'royalty-snake-app';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          id: dropId,
+          name: 'Royalty Snake App',
+          version: 'v1.0.0',
+          price: '$10.00',
+          royalty_bps: 2500
+        })
+      });
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(200);
+
+      const product = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE app_id = ?').bind(dropId).first();
+      expect((product as any).royalty_bps).toBe(2500);
+    });
+
+    it('defaults royalty_bps to 0 when omitted (blank field means 0, never a hardcoded rate) (E1a)', async () => {
+      const dropId = 'royalty-omitted-app';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          id: dropId,
+          name: 'Royalty Omitted App',
+          version: 'v1.0.0',
+          price: '$15.00'
+        })
+      });
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(200);
+
+      const product = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE app_id = ?').bind(dropId).first();
+      expect((product as any).royalty_bps).toBe(0);
+    });
+
+    it('rejects a royalty_bps above 10000 with a 422 and writes nothing (E1a)', async () => {
+      const dropId = 'royalty-overflow-app';
+      const req = new Request('http://localhost/api/drops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({
+          id: dropId,
+          name: 'Royalty Overflow App',
+          version: 'v1.0.0',
+          price: '$15.00',
+          royaltyBps: 10001
+        })
+      });
+      const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+      expect(res.status).toBe(422);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toBeTruthy();
+
+      const listing = await ctx.d1.prepare('SELECT id FROM app_listings WHERE id = ?').bind(dropId).first();
+      expect(listing).toBeNull();
+      const product = await ctx.d1.prepare('SELECT app_id FROM commerce_products WHERE app_id = ?').bind(dropId).first();
+      expect(product).toBeNull();
+    });
+
+    it('rejects a non-integer / negative royalty_bps with a 422 (E1a)', async () => {
+      for (const bad of [-1, 12.5]) {
+        const req = new Request('http://localhost/api/drops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+          body: JSON.stringify({
+            id: `royalty-bad-${String(bad).replace(/[^a-z0-9]/gi, '')}`,
+            name: 'Royalty Bad App',
+            version: 'v1.0.0',
+            price: '$15.00',
+            royaltyBps: bad
+          })
+        });
+        const res = await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
+        expect(res.status).toBe(422);
+      }
+    });
+
     it('should cascade delete drop_upvotes when an app listing is deleted', async () => {
       const cascadeAppId = 'cascade-vote-drop';
       // Insert test drop

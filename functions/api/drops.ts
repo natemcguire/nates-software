@@ -491,6 +491,29 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
+    // Validate the maker-chosen per-listing royalty rate (Shareware, Restored
+    // money model). Stored as integer basis points in [0, 10000] (0–100%).
+    // NEVER hardcoded: a maker who omits it (blank field) is choosing 0%
+    // (free to fork & resell). Mirrors the grantableBps validation above; also
+    // accepts the snake_case `royalty_bps` alias for symmetry.
+    const rawRoyaltyBps = body.royaltyBps !== undefined ? body.royaltyBps : body.royalty_bps;
+    let validatedRoyaltyBps = 0;
+    if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null) {
+      if (typeof rawRoyaltyBps !== 'number' || !Number.isSafeInteger(rawRoyaltyBps)) {
+        return Response.json({
+          success: false,
+          error: 'royaltyBps must be an integer between 0 and 10000'
+        }, { status: 422 });
+      }
+      if (rawRoyaltyBps < 0 || rawRoyaltyBps > 10000) {
+        return Response.json({
+          success: false,
+          error: 'royaltyBps must be between 0 and 10000'
+        }, { status: 422 });
+      }
+      validatedRoyaltyBps = rawRoyaltyBps;
+    }
+
     // NOTE on ordering: repositories.app_id references app_listings(id), and
     // app_listings.repository_id references repositories(id) — a genuine
     // circular FK pair. When we're provisioning a BRAND NEW repository in
@@ -564,18 +587,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const productPriceCents = priceValidation.priceCents;
     const honestProductStatus = repositoryHasCommit ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
-      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status)
-      SELECT id, ?, creator_id, ?, 'usd', ?
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
+      SELECT id, ?, creator_id, ?, 'usd', ?, ?
       FROM app_listings
       WHERE id = ? AND creator_id = ?
       ON CONFLICT(app_id) DO UPDATE SET
         repository_id = excluded.repository_id,
         price_cents = excluded.price_cents,
         status = excluded.status,
+        royalty_bps = excluded.royalty_bps,
         updated_at = CURRENT_TIMESTAMP
       WHERE commerce_products.seller_user_id = excluded.seller_user_id
       RETURNING app_id
-    `).bind(linkedRepositoryId, productPriceCents, honestProductStatus, dropId, creatorId);
+    `).bind(linkedRepositoryId, productPriceCents, honestProductStatus, validatedRoyaltyBps, dropId, creatorId);
 
     // Statement order matters for FK legality: listing (repo_id NULL for a
     // new repo) -> new repository (app_id now resolvable) -> link update ->
