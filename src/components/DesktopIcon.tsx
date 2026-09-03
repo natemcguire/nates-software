@@ -14,6 +14,8 @@ export interface DesktopIconProps {
   introClassName?: string;
   /** Per-icon stagger delay (ms) for the reveal animation. */
   introDelayMs?: number;
+  /** Dim the icon + show a "SOON" badge (still clickable). */
+  comingSoon?: boolean;
 }
 
 const DRAG_THRESHOLD = 5; // Pixels of movement required to distinguish dragging from a click
@@ -27,7 +29,8 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   onPositionChange,
   onContextMenu,
   introClassName,
-  introDelayMs
+  introDelayMs,
+  comingSoon
 }) => {
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number }>(position || { x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -153,15 +156,20 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
         isDragging ? 'opacity-90 ring-1 ring-yellow-300/70' : ''
       } ${introClassName || ''}`}
     >
-      <div className="text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1">
+      <div className={`text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1 ${comingSoon ? 'grayscale opacity-55' : ''}`}>
         {icon}
       </div>
       <div
-        className="text-white text-xs font-bold text-shadow px-1 py-0.5 rounded line-clamp-2 leading-snug w-full max-w-full break-words hyphens-auto"
+        className={`text-xs font-bold text-shadow px-1 py-0.5 rounded line-clamp-2 leading-snug w-full max-w-full break-words hyphens-auto ${comingSoon ? 'text-white/60' : 'text-white'}`}
         style={{ overflowWrap: 'anywhere' }}
       >
         {label}
       </div>
+      {comingSoon && (
+        <span className="absolute top-0.5 right-1 bg-yellow-300 text-black text-[9px] font-black px-1.5 py-0.5 rounded-sm border border-black/40 shadow tracking-wide">
+          SOON
+        </span>
+      )}
       {badge && (
         <span className="absolute top-1 right-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full border border-white shadow">
           {badge}

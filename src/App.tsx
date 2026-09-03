@@ -126,7 +126,7 @@ const ICON_POSITIONS_KEY = 'nsw_icon_positions';
 // Bump when the default icon set/order changes so everyone gets the fresh clean
 // layout once (old drag positions are dropped), instead of keeping a stale/scattered
 // arrangement. Users can re-drag afterwards; those saves are kept until the next bump.
-const ICON_LAYOUT_VERSION = '2';
+const ICON_LAYOUT_VERSION = '3';
 const ICON_LAYOUT_VERSION_KEY = 'nsw_icon_layout_v';
 
 function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
@@ -154,16 +154,37 @@ function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
 // two-line wrapped label (e.g. WHAT_IS_THIS.TXT) never touches its neighbor,
 // on laptops and at any font zoom. Column pitch = iconWidth + gapX = 140px;
 // row pitch = iconHeight + gapY = 116px (labels can be 2 lines tall + emoji).
-const ICON_GRID = { startX: 16, startY: 16, iconWidth: 112, iconHeight: 96, gapX: 28, gapY: 20, rowsPerCol: 7 } as const;
-function getDefaultIconPosition(index: number): { x: number; y: number } {
+const ICON_GRID = { startX: 16, startY: 16, iconWidth: 112, iconHeight: 96, gapX: 28, gapY: 20, rowsPerCol: 6 } as const;
+
+// Default layout with two spatial groups: the working apps flow TOP-LEFT
+// (column-major), and the "coming soon" apps are parked BOTTOM-RIGHT so they read
+// as a separate, not-yet-ready cluster. Positions are computed from the current
+// viewport so the soon cluster hugs the bottom-right corner on any screen.
+function getGroupedIconPosition(group: 'main' | 'soon', indexInGroup: number): { x: number; y: number } {
   const { startX, startY, iconWidth, iconHeight, gapX, gapY, rowsPerCol } = ICON_GRID;
-  const col = Math.floor(index / rowsPerCol);
-  const row = index % rowsPerCol;
+  const colPitch = iconWidth + gapX;
+  const rowPitch = iconHeight + gapY;
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+
+  if (group === 'main') {
+    const col = Math.floor(indexInGroup / rowsPerCol);
+    const row = indexInGroup % rowsPerCol;
+    return { x: startX + col * colPitch, y: startY + row * rowPitch };
+  }
+
+  // "soon" cluster: 2-wide block anchored to the bottom-right corner.
+  const SOON_COLS = 2;
+  const col = indexInGroup % SOON_COLS;   // 0 = left col of the cluster, 1 = right
+  const row = Math.floor(indexInGroup / SOON_COLS);
+  const clusterRightX = vw - iconWidth - 24;          // right column x
+  const clusterBottomY = vh - 40 - iconHeight - 16;   // above the 40px taskbar
   return {
-    x: startX + col * (iconWidth + gapX),
-    y: startY + row * (iconHeight + gapY)
+    x: clusterRightX - (SOON_COLS - 1 - col) * colPitch,
+    y: clusterBottomY - row * rowPitch,
   };
 }
+
 
 export function AppInner() {
   const { getApp, submitDrop } = useCatalog();
@@ -631,107 +652,53 @@ export function AppInner() {
         </div>
       </div>
 
-      {/* Desktop App Icons. Order = the clean default grid layout (fills column 1
-          top-to-bottom, then column 2): entry point first, then core apps, then
-          utilities, then docs/links. README_FIRST was removed (redundant with
-          WHAT_IS_THIS). Users can still drag + "Align Icons to Grid" to reset. */}
-      {[
-        {
-          id: 'setup',
-          label: 'SETUP.EXE (START HERE)',
-          icon: '🚀',
-          onClick: () => { playClickSound(); openWindow('setup'); }
-        },
-        {
-          id: 'whatis',
-          label: 'WHAT_IS_THIS.TXT',
-          icon: '❓',
-          onClick: () => { playClickSound(); openWindow('mktg'); }
-        },
-        {
-          id: 'hotwire',
-          label: 'HOTWIRE (Drops)',
-          icon: '🔥',
-          onClick: () => { playClickSound(); openWindow('hotwire'); }
-        },
-        {
-          id: 'gitsmith',
-          label: 'GITSMITH (Forge)',
-          icon: '📁',
-          onClick: () => { playClickSound(); openWindow('gitsmith'); }
-        },
-        {
-          id: 'slopshop',
-          label: 'SLOPSHOP (AI Mod)',
-          icon: '🔧',
-          onClick: () => { playClickSound(); openWindow('slopshop'); }
-        },
-        {
-          id: 'inbox',
-          label: 'Agent Inbox',
-          icon: '📫',
-          onClick: () => { playClickSound(); openWindow('inbox'); }
-        },
-        {
-          id: 'dyno',
-          label: 'DYNO (Speedometer)',
-          icon: '🏎️',
-          onClick: () => { playClickSound(); openWindow('dyno'); }
-        },
-        {
-          id: 'chat',
-          label: 'CHAT (IRC)',
-          icon: '💬',
-          onClick: () => { playClickSound(); openWindow('chat'); }
-        },
-        {
-          id: 'terminal',
-          label: 'TERMINAL.EXE',
-          icon: '💻',
-          onClick: () => { playClickSound(); openWindow('terminal'); }
-        },
-        {
-          id: 'profile',
-          label: 'ACCOUNT.CFG (Profile)',
-          icon: '👤',
-          onClick: () => { playClickSound(); openWindow('profile'); }
-        },
-        {
-          id: 'papers',
-          label: 'WHITE_PAPERS.DOC',
-          icon: '📖',
-          onClick: () => { playClickSound(); openWindow('papers'); }
-        },
-        {
-          id: 'github',
-          label: 'Source on GitHub',
-          icon: '🌐',
-          onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); }
-        }
-      ].map((item, index) => {
-        const pos = iconPositions[item.id] || getDefaultIconPosition(index);
-        // Record each icon's opener so the right-click "Open" action can invoke it.
-        desktopIconOpeners[item.id] = item.onClick;
-        const introClass =
-          introPhase === 'hidden' ? 'desktop-intro-hidden'
-          : introPhase === 'revealing' ? 'desktop-icon-reveal'
-          : '';
-        return (
-          <DesktopIcon
-            key={item.id}
-            id={item.id}
-            label={item.label}
-            icon={item.icon}
-            position={pos}
-            onPositionChange={(newPos) => handleIconPositionChange(item.id, newPos)}
-            onClick={item.onClick}
-            onContextMenu={(e) => openContextMenu(e, item.id)}
-            onOpen={item.onClick}
-            introClassName={introClass}
-            introDelayMs={introPhase === 'revealing' ? index * 70 : undefined}
-          />
-        );
-      })}
+      {/* Desktop App Icons. Two spatial groups: WORKING apps flow TOP-LEFT; the
+          "coming soon" apps (dimmed + SOON badge, still clickable) are parked
+          BOTTOM-RIGHT as a separate not-yet-ready cluster. */}
+      {(() => {
+        type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'soon'; comingSoon?: boolean };
+        const icons: DeskIcon[] = [
+          // --- TOP-LEFT: the working apps ---
+          { id: 'setup', label: 'SETUP.EXE (START HERE)', icon: '🚀', group: 'main', onClick: () => { playClickSound(); openWindow('setup'); } },
+          { id: 'whatis', label: 'WHAT_IS_THIS.TXT', icon: '❓', group: 'main', onClick: () => { playClickSound(); openWindow('mktg'); } },
+          { id: 'hotwire', label: 'HOTWIRE (Drops)', icon: '🔥', group: 'main', onClick: () => { playClickSound(); openWindow('hotwire'); } },
+          { id: 'gitsmith', label: 'GITSMITH (Forge)', icon: '📁', group: 'main', onClick: () => { playClickSound(); openWindow('gitsmith'); } },
+          { id: 'chat', label: 'CHAT (IRC)', icon: '💬', group: 'main', onClick: () => { playClickSound(); openWindow('chat'); } },
+          { id: 'profile', label: 'ACCOUNT.CFG (Profile)', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
+          { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'main', onClick: () => { playClickSound(); openWindow('papers'); } },
+          { id: 'github', label: 'Source on GitHub', icon: '🌐', group: 'main', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
+          // --- BOTTOM-RIGHT: coming soon (dimmed + SOON, still clickable) ---
+          { id: 'slopshop', label: 'SLOPSHOP (AI Mod)', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
+          { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('inbox'); } },
+          { id: 'dyno', label: 'DYNO (Speedometer)', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },
+          { id: 'terminal', label: 'TERMINAL.EXE', icon: '💻', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('terminal'); } },
+        ];
+        const groupIndex: Record<'main' | 'soon', number> = { main: 0, soon: 0 };
+        return icons.map((item) => {
+          const idxInGroup = groupIndex[item.group]++;
+          const pos = iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup);
+          desktopIconOpeners[item.id] = item.onClick;
+          const introClass =
+            introPhase === 'hidden' ? 'desktop-intro-hidden'
+            : introPhase === 'revealing' ? 'desktop-icon-reveal'
+            : '';
+          return (
+            <DesktopIcon
+              key={item.id}
+              id={item.id}
+              label={item.label}
+              icon={item.icon}
+              position={pos}
+              comingSoon={item.comingSoon}
+              onPositionChange={(newPos) => handleIconPositionChange(item.id, newPos)}
+              onClick={item.onClick}
+              onContextMenu={(e) => openContextMenu(e, item.id)}
+              onOpen={item.onClick}
+              introClassName={introClass}
+            />
+          );
+        });
+      })()}
 
       {contextMenu && (
         <DesktopContextMenu
