@@ -432,21 +432,25 @@ export function AppInner() {
   // in together. First-time-only in production; runs EVERY reload for testing.
   const INTRO_EVERY_RELOAD = true;
   const INTRO_SEEN_KEY = 'nsw_intro_seen';
-  const [introPhase, setIntroPhase] = useState<'waiting' | 'revealing' | 'done'>(() => {
+  const [introPhase, setIntroPhase] = useState<'waiting' | 'primed' | 'revealing' | 'done'>(() => {
     if (typeof window === 'undefined') return 'done';
     if (INTRO_EVERY_RELOAD) return 'waiting';
     return localStorage.getItem(INTRO_SEEN_KEY) ? 'done' : 'waiting';
   });
-  // Called when the visitor clicks WHAT_IS_THIS during the intro: reveal the rest.
+  // Called when the visitor clicks WHAT_IS_THIS during the intro: after a beat, the
+  // rest voxel-fade in slowly for a dramatic effect. Wait ~2s (they read the popup),
+  // then the reveal itself runs a few seconds.
   const triggerIntroReveal = useCallback(() => {
     setIntroPhase((prev) => {
       if (prev !== 'waiting') return prev;
-      // let the voxel reveal play, then settle.
+      // hold on 'primed' (still hidden) for 2s, then start the slow reveal.
+      setTimeout(() => setIntroPhase('revealing'), 2000);
+      // mark done after the reveal has fully played out (2s wait + ~3.5s animation).
       setTimeout(() => {
         setIntroPhase('done');
         try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* ignore */ }
-      }, 1400);
-      return 'revealing';
+      }, 6000);
+      return 'primed';
     });
   }, []);
 
@@ -688,14 +692,18 @@ export function AppInner() {
           const idxInGroup = groupIndex[item.group]++;
           const pos = iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup);
           desktopIconOpeners[item.id] = item.onClick;
-          // During 'waiting', only WHAT_IS_THIS is visible (it's the trigger); the
-          // rest are hidden until the visitor clicks it, then voxel-fade in together.
+          // Intro: WHAT_IS_THIS is the only icon visible up front (the trigger).
+          // 'waiting' + 'primed' = the rest stay hidden (primed = the 2s dramatic
+          // pause before the reveal). 'revealing' = they assemble via the canvas
+          // voxel effect (below); the label fades up with .desktop-icon-label-in.
+          const isWhatis = item.id === 'whatis';
           const introClass =
-            introPhase === 'waiting'
-              ? (item.id === 'whatis' ? '' : 'desktop-intro-hidden')
+            (introPhase === 'waiting' || introPhase === 'primed')
+              ? (isWhatis ? '' : 'desktop-intro-hidden')
               : introPhase === 'revealing'
-                ? (item.id === 'whatis' ? '' : 'desktop-icon-reveal')
+                ? (isWhatis ? '' : 'desktop-icon-reveal-wrap')
                 : '';
+          const doVoxel = introPhase === 'revealing' && !isWhatis;
           return (
             <DesktopIcon
               key={item.id}
@@ -709,6 +717,7 @@ export function AppInner() {
               onContextMenu={(e) => openContextMenu(e, item.id)}
               onOpen={item.onClick}
               introClassName={introClass}
+              voxelReveal={doVoxel}
             />
           );
         });

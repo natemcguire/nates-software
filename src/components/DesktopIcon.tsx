@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { VoxelReveal } from './VoxelReveal';
 
 export interface DesktopIconProps {
   id?: string;
@@ -16,6 +17,8 @@ export interface DesktopIconProps {
   introDelayMs?: number;
   /** Dim the icon + show a "SOON" badge (still clickable). */
   comingSoon?: boolean;
+  /** Play the canvas voxel-assembly reveal on the glyph (intro sequence). */
+  voxelReveal?: boolean;
 }
 
 const DRAG_THRESHOLD = 5; // Pixels of movement required to distinguish dragging from a click
@@ -30,8 +33,10 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   onContextMenu,
   introClassName,
   introDelayMs,
-  comingSoon
+  comingSoon,
+  voxelReveal
 }) => {
+  const [voxelDone, setVoxelDone] = useState(false);
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number }>(position || { x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{
@@ -156,8 +161,10 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
         isDragging ? 'opacity-90 ring-1 ring-yellow-300/70' : ''
       } ${introClassName || ''}`}
     >
-      <div className={`text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1 ${comingSoon ? 'grayscale opacity-55' : ''}`}>
-        {icon}
+      <div className={`text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1 flex items-center justify-center ${comingSoon ? 'grayscale opacity-55' : ''}`} style={{ minHeight: 64 }}>
+        {voxelReveal && !voxelDone
+          ? <VoxelReveal glyph={icon} size={64} grid={12} duration={3} onDone={() => setVoxelDone(true)} />
+          : icon}
       </div>
       <div
         className={`text-xs font-bold text-shadow px-1 py-0.5 rounded line-clamp-2 leading-snug w-full max-w-full break-words hyphens-auto ${comingSoon ? 'text-white/60' : 'text-white'}`}

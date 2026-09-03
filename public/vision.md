@@ -10,7 +10,7 @@ place for people like us to share, meet, and sell our soft-wares.
 It's also a place for people to buy things they want to own, like for real.
 
 When you buy an app here, you don't get a login to someone's server. You get the running app,
-the full source code in a git repo, native installers, whatever there is - a real license key
+the full source code in a git repo, and a real license key
 with your name on it. Cancel nothing, because there's nothing to cancel. It's yours the way a
 hammer is yours.
 

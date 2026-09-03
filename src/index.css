@@ -38,47 +38,46 @@ html, body {
    scrollbar-* fallback) so all 49-odd scroll areas get the chunky
    retro look with a beveled track, a raised thumb, and arrow buttons.
    =================================================================== */
+/* Vintage classic-Mac / Lisa / Xerox Star scrollbar: a dense DIAGONAL-HATCH track
+   with a PLAIN WHITE thumb and outlined arrow boxes at each end. Thin black
+   outlines, no 3D bevel — the 1983 look. */
 * {
-  scrollbar-width: auto;                 /* Firefox: keep the classic thick bar */
-  scrollbar-color: #c0c0c0 #dfdfdf;      /* thumb / track (Firefox has no arrows) */
+  scrollbar-width: auto;
+  scrollbar-color: #ffffff #ffffff;      /* Firefox: white thumb on white (no hatch) */
 }
 
 ::-webkit-scrollbar {
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
 }
 
-/* Track: light dithered gray, sunken. */
+/* Track: dense diagonal hatch (the defining vintage detail), thin black outline. */
 ::-webkit-scrollbar-track {
-  background-color: #dfdfdf;
-  background-image:
-    linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%),
-    linear-gradient(45deg, #cfcfcf 25%, transparent 25%, transparent 75%, #cfcfcf 75%);
-  background-size: 2px 2px;
-  background-position: 0 0, 1px 1px;
+  background-color: #ffffff;
+  background-image: repeating-linear-gradient(45deg, #000 0, #000 0.5px, transparent 0.5px, transparent 3px);
+  border-left: 1px solid #000;
+  border-right: 1px solid #000;
 }
 
-/* Thumb: raised gray bevel (white top/left, dark bottom/right). */
+/* Thumb: a plain WHITE block with a thin black outline (blank, no pattern). */
 ::-webkit-scrollbar-thumb {
-  background-color: #c0c0c0;
-  border: 2px solid;
-  border-color: #ffffff #404040 #404040 #ffffff;
-  box-shadow: inset 1px 1px 0 #dfdfdf, inset -1px -1px 0 #808080;
+  background-color: #ffffff;
+  border: 1px solid #000;
+  min-height: 28px;
 }
-::-webkit-scrollbar-thumb:active {
-  border-color: #404040 #ffffff #ffffff #404040;
-}
+::-webkit-scrollbar-thumb:hover { background-color: #f0f0f0; }
+::-webkit-scrollbar-thumb:active { background-color: #e4e4e4; }
 
-/* Arrow buttons at the ends of the bar (up / down / left / right). */
+/* Arrow buttons at the ends of the bar: white box, thin black outline. */
 ::-webkit-scrollbar-button {
-  background-color: #c0c0c0;
-  border: 2px solid;
-  border-color: #ffffff #404040 #404040 #ffffff;
+  background-color: #ffffff;
+  border: 1px solid #000;
   background-repeat: no-repeat;
   background-position: center;
   display: block;
 }
-::-webkit-scrollbar-button:active { border-color: #404040 #ffffff #ffffff #404040; }
+::-webkit-scrollbar-button:active { background-color: #e4e4e4; }
 /* Only show the single button at each end (start-decrement + end-increment). */
 ::-webkit-scrollbar-button:single-button { width: 17px; height: 17px; }
 ::-webkit-scrollbar-button:single-button:vertical:decrement {
@@ -96,6 +95,11 @@ html, body {
 /* Hide the extra (double) buttons so we get exactly one arrow per end. */
 ::-webkit-scrollbar-button:double-button { display: none; }
 ::-webkit-scrollbar-corner { background: #c0c0c0; }
+
+/* Opt-out: hide the scrollbar entirely on a container (still scrolls via wheel/
+   trackpad). Used on the About/"What is this?" window so it reads clean. */
+.nsw-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.nsw-no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 /* Wizard "Continue" attention pulse — fires when an app is picked, drawing the
    eye to the next action. Runs a few times then settles (not a forever-blink). */
@@ -118,32 +122,17 @@ html, body {
    =================================================================== */
 .desktop-intro-hidden { opacity: 0; pointer-events: none; }
 
-/* Voxel / blocky-pixel reveal: the icon assembles out of chunky square blocks.
-   A repeating hard-edged block mask (a pixel grid) is scaled down over the
-   animation while opacity ramps in hard steps, so the image "materializes" as
-   blocks snapping into place rather than a smooth blur. steps() = no tweening =
-   the retro voxel feel. All icons run it together (no per-icon stagger). */
-@keyframes nsw-voxel-in {
-  0% {
-    opacity: 0;
-    -webkit-mask-image: repeating-conic-gradient(#000 0% 25%, transparent 0% 50%);
-            mask-image: repeating-conic-gradient(#000 0% 25%, transparent 0% 50%);
-    -webkit-mask-size: 24px 24px; mask-size: 24px 24px;
-    transform: scale(0.9);
-  }
-  50% { opacity: 0.7; }
-  100% {
-    opacity: 1;
-    -webkit-mask-image: repeating-conic-gradient(#000 0% 25%, #000 0% 50%);
-            mask-image: repeating-conic-gradient(#000 0% 25%, #000 0% 50%);
-    -webkit-mask-size: 2px 2px; mask-size: 2px 2px;
-    transform: scale(1);
-  }
+/* During the voxel reveal the icon CONTAINER is visible immediately (the <canvas>
+   inside draws the glyph assembling out of blocks). The text LABEL fades up near
+   the end so it lands as the blocks finish. */
+.desktop-icon-reveal-wrap { opacity: 1; }
+.desktop-icon-reveal-wrap > div:last-of-type,
+.desktop-icon-reveal-wrap .text-shadow {
+  animation: nsw-label-in 3s ease-out forwards;
 }
-.desktop-icon-reveal {
-  opacity: 0;
-  image-rendering: pixelated;
-  animation: nsw-voxel-in 0.75s steps(6, end) forwards;
+@keyframes nsw-label-in {
+  0%, 55% { opacity: 0; }
+  100%    { opacity: 1; }
 }
 
 /* Popup entrance — a springy Win95 window "boot" pop. */

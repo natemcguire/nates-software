@@ -124,16 +124,16 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       </div>
 
       {/* Shared scroll area */}
-      <div className="flex-1 overflow-y-auto mb-3">
+      <div className="flex-1 overflow-y-auto mb-3 nsw-no-scrollbar">
 
         {/* ── WHAT IS THIS? ───────────────────────────────────────── */}
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
           <div className="text-w95-blue font-bold text-base mb-2">What is this?</div>
           <p className="text-gray-800 text-xs leading-relaxed font-sans mb-2.5">
             A marketplace for software you buy once and own — not rent. Every purchase gives you the running
-            web app, the full source in a Git repo, native installers (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.dmg</code>, <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.exe</code>, and more),
-            and a real license key with your name on it. Fork any app, change it with an AI agent, and sell your
-            version; when a fork sells, revenue splits back down the lineage. No subscription, ever.
+            web app, the full source in a Git repo, and a real license key with your name on it. Fork any app,
+            change it with an AI agent, and sell your version; when a fork sells, revenue splits back down the
+            lineage. No subscription, ever.
           </p>
           <div className="bg-gray-100 border border-gray-400 p-2.5 rounded text-xs">
             <div className="font-bold text-gray-900 mb-0.5 font-mono">The Money Model</div>
@@ -150,8 +150,8 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-700 text-xs leading-relaxed">
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Buy it, own it</div>
-              Buy an app once. It's yours: the live web app, the source repo, native installers,
-              and a license key. Cancel nothing, because there's nothing to cancel.
+              Buy an app once. It's yours: the live web app, the source repo, and a license key.
+              Cancel nothing, because there's nothing to cancel.
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Publish and sell</div>
