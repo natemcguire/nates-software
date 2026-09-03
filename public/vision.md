@@ -1,32 +1,28 @@
-# Nate's Software — the whole thing, in plain words
+# WELCOME TO NATE'S SOFTWARE EMPORIUM
 
 You know how you rent everything now? Photoshop, your email, that habit tracker, the thing
 that makes your invoices. You pay every month, forever, and the day you stop paying, it all
 locks up — even the files you made with it. You never owned any of it. You were renting.
 
-Nate's Software is the opposite bet: **you buy software once and you own it forever.**
+With AI, the makers and tinkerers don't have to live this way anymore. Nate's Software is a 
+place for people like us to share, meet, and sell our soft-wares.
+
+It's also a place for people to buy things they want to own, like for real.
 
 When you buy an app here, you don't get a login to someone's server. You get the running app,
-the full source code in a git repo, native installers (`.dmg`, `.exe`), and a real license key
+the full source code in a git repo, native installers, whatever there is - a real license key
 with your name on it. Cancel nothing, because there's nothing to cancel. It's yours the way a
 hammer is yours.
 
-## The part that makes it interesting
+## Go Fork and Multiply
 
-Every app here can be **forked** — copied, opened up, and changed. You don't need to ask
-permission and you don't need to be a hardcore programmer, because you change it by talking to
-an AI agent ("add a dark mode", "make it export to PDF"). Fork someone's app, make it better or
-different, and **sell your version.**
+You have slop, I have slop, we're all out here pushing code faster than we have ever before. 
+Our software marketplace is an opportunity to sell your slop to someone else. One man's trash
+is another man's treasure. Everything you see on hotwire can be **forked** — copied, opened up, 
+and changed. If you improve it, you can sell your version and take a royalty.
 
 Here's the twist that makes the whole thing fair instead of parasitic: **when your fork sells,
 the money splits back down the family tree.**
-
-- **70%** goes to you, the seller.
-- **20%** goes up the chain — to the people whose work you built on top of.
-- **10%** keeps the lights on (the platform).
-
-A brand-new app with no ancestors is **90% to the maker / 10% to the platform** — there's no
-lineage to pay, so that 20% just comes back to you.
 
 So if you write something original and ten people fork it and those forks sell, **you earn a cut
 of every one of those sales, forever.** Good ideas pay their authors. That's the vision in one
@@ -34,16 +30,27 @@ sentence: *make software something you own and something that pays the people it
 
 ## Why it looks like Windows 95
 
-Because it's a joke that's also serious. The whole thing runs as a fake retro desktop —
-draggable windows, a Start menu, that teal wallpaper. It's fun, it's honest about being a
-*place you operate* rather than a landing page trying to convert you, and it makes a complicated
-idea (a marketplace + a git forge + an app runtime) feel like a computer you already know how to
-use. The share cards you post to Twitter are modern and slick — retro tool, sharp storefront.
-That contrast is on purpose.
+Because we're going back to our roots. Fun in computing.
 
 ## The apps (a sitemap)
 
-Each of these is a real, working piece of the system. They stand alone, but they connect.
+In order to enable this ecosystem we're taking everything to the extreme - only the best for 
+our slop marketplace:
+
+Here's the whole machine in one breath. You **find** an app on HOTWIRE and buy it or fork it.
+Forking copies it into your own repo on GITSMITH — a real git forge, actual git-over-SSH, not a
+folder pretending to be one. You **change** it in SLOPSHOP by talking to an AI agent right in the
+browser. When you're ready to see it live, the platform **builds** your code and **runs** it —
+that's the engine that used to be a visible app called RIG, now folded quietly into the pipeline.
+When you want your change pulled back upstream, you send a merge proposal to the maker's INBOX,
+they read the actual diff, and they approve. When something sells, the money splits down the fork
+tree automatically. Everything sits on the edge — Cloudflare for the front door, hosting, and the
+database (D1/SQLite); the heavier building and always-on hosting spill over to AWS only where
+Cloudflare can't reach. One wildcard domain gives every app its own address, so adding an app is
+a database row, not a deploy. The point of all that plumbing is that none of it should be visible:
+you fork, you talk to an agent, you sell — the forge, the build, and the runtime just happen.
+
+Explain how these work in real english
 
 - **HOTWIRE** — the daily drop board. Every day at 12:01 AM makers drop new apps and people
   vote. It's the front page / the "what's new today".
@@ -65,19 +72,18 @@ Each of these is a real, working piece of the system. They stand alone, but they
 
 ## The money is real (but test-mode for now)
 
-The buy → own loop genuinely works: real Stripe checkout, a real cryptographic license minted to
-your account, the lineage split computed and recorded to the penny. It's currently in Stripe
-**test mode** — no real cards are charged yet — while the last onboarding pieces get finished.
-Nothing about the numbers is faked; the switch to live is a config flip, not a rewrite.
+The buy → own loop genuinely works end to end. You check out through real Stripe, and when the
+payment clears the platform mints you a real cryptographic license key tied to your account, drops
+the app onto your shelf with its downloads, and — in the same breath — writes down exactly how the
+sale splits down the fork tree, to the penny. Nothing about those numbers is faked; the split is
+computed and recorded on every purchase, and the payouts to each person up your lineage are queued
+as real, durable work (the kind that retries until it lands, so nobody's cut gets lost).
 
-## Where it's going
+The only thing that isn't live yet is the charge itself: Stripe is in **test mode**, so no real
+card is billed while the last onboarding pieces get finished. Flipping to real money is a config
+switch — the accounting, the licenses, and the lineage math are already the production versions.
 
-The near-term goal is simple: get it good enough that a skeptical stranger can land on it, buy
-something, fork it, change one thing with AI, sell their version, and watch the money split
-correctly — without ever reading a manual. Longer term: seed a marketplace where the best ideas
-compound, and the people who had them (and the people who improved them) both get paid.
 
-That's it. Own your software. Fork anything. Get paid when what you built gets built on.
 
 ---
 
