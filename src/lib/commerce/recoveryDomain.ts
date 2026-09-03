@@ -1,8 +1,20 @@
+// Payable roles under the "Shareware, Restored" model are 'seller' and 'ancestor'.
+// 'platform' is the house — non-payable, and the sole absorber of rounding dust on
+// both sale and refund. Legacy roles ('maker', 'protocol_pool', 'contributor') are
+// kept in the union for backward-compatible reads of historical allocation rows;
+// 'protocol_pool' was the house's old name and is treated identically to 'platform'.
+export type NonPayableAllocationRole = 'platform' | 'protocol_pool';
+export type PayableAllocationRole = 'seller' | 'ancestor' | 'maker' | 'contributor';
+
 export interface FrozenAllocation {
   id: string;
   sequence: number;
   amountCents: number;
-  role: 'maker' | 'ancestor' | 'protocol_pool' | 'contributor';
+  role: PayableAllocationRole | NonPayableAllocationRole;
+}
+
+function isPayableRole(role: FrozenAllocation['role']): boolean {
+  return role !== 'platform' && role !== 'protocol_pool';
 }
 
 export interface RefundAllocationDelta extends FrozenAllocation {
@@ -60,6 +72,16 @@ function requireSafeCents(value: number, name: string): void {
  * Allocates a newly observed cumulative refund against frozen purchase amounts.
  * It computes the cumulative target first and subtracts prior persisted refund
  * allocations, preventing repeated partial-refund rounding from over-recovering.
+ *
+ * House-first flooring (Task C3): every PAYABLE allocation (seller/ancestor, plus
+ * the legacy maker/contributor roles) is capped at its exact proportional floor —
+ * `floor(amountCents * cumulativeRefundedCents / grossCents)` — a pure, monotone
+ * function of the cumulative refund. A payable recipient can therefore never be
+ * clawed back more than they actually received. Whatever remains of the cumulative
+ * refund after all payable floors are subtracted is assigned to the NON-PAYABLE
+ * (house) allocations — 'platform' or the legacy 'protocol_pool' — via the same
+ * cumulative largest-remainder machinery, so 100% of the rounding dust lands on the
+ * house, on sale and on refund alike, exactly mirroring the house-tip sale-time rule.
  */
 export function calculateRefundAllocationDelta(
   allocations: FrozenAllocation[],
@@ -87,7 +109,51 @@ export function calculateRefundAllocationDelta(
     }
   });
   if (allocationTotal !== grossCents) throw new Error('frozen allocations must conserve gross cents');
-  return cumulativeTargets(allocations, cumulativeRefundedCents)
+
+  const payable = allocations.filter((allocation) => isPayableRole(allocation.role));
+  const nonPayable = allocations.filter((allocation) => !isPayableRole(allocation.role));
+  const nonPayableCeiling = nonPayable.reduce((sum, allocation) => sum + allocation.amountCents, 0);
+
+  // Each payable allocation's floor share is its exact proportional floor of the
+  // cumulative refund — never more than it actually received, and non-decreasing in
+  // cumulativeRefundedCents (so it is house-monotone by construction).
+  const payableFloor: RankedAllocation[] = payable.map((allocation) => ({
+    allocation,
+    target: Math.floor((allocation.amountCents * cumulativeRefundedCents) / grossCents)
+  }));
+  const payableFloorTotal = payableFloor.reduce((sum, item) => sum + item.target, 0);
+
+  // Everything left over after every payable floor share belongs to the house first.
+  // If there is more than one non-payable row (e.g. a mixed legacy/new-model order
+  // carrying both 'protocol_pool' and 'platform'), split the house's remainder across
+  // them with the same house-monotone D'Hondt machinery so it still conserves.
+  const houseRemainder = cumulativeRefundedCents - payableFloorTotal;
+
+  let payableRanked: RankedAllocation[];
+  let nonPayableRanked: RankedAllocation[];
+  if (nonPayable.length === 0) {
+    // No house bucket exists on this order at all — every cent of the cumulative
+    // refund must come from payable allocations. Seat any dust the floor shares
+    // couldn't cover on top of the floors themselves, via the same house-monotone
+    // largest-remainder machinery, so it still conserves exactly.
+    payableRanked = houseRemainder === 0 ? payableFloor : cumulativeTargets(payable, cumulativeRefundedCents);
+    nonPayableRanked = [];
+  } else if (houseRemainder <= nonPayableCeiling) {
+    // Normal case: the house can absorb all the dust on top of its own proportional
+    // share without exceeding what it actually received.
+    payableRanked = payableFloor;
+    nonPayableRanked = cumulativeTargets(nonPayable, houseRemainder);
+  } else {
+    // Degenerate case: the house's own frozen amount is smaller than what's left
+    // after flooring every payable — the house is maxed out and the remaining dust
+    // must still be recovered from payables (floored again, on top of their own
+    // floor shares) so the whole cumulative refund still conserves exactly.
+    nonPayableRanked = nonPayable.map((allocation) => ({ allocation, target: allocation.amountCents }));
+    const payableRemainder = cumulativeRefundedCents - nonPayableCeiling;
+    payableRanked = cumulativeTargets(payable, payableRemainder);
+  }
+
+  return [...payableRanked, ...nonPayableRanked]
     .sort((a, b) => a.allocation.sequence - b.allocation.sequence || a.allocation.id.localeCompare(b.allocation.id))
     .map(({ allocation, target }) => {
       const prior = priorByAllocation.get(allocation.id) ?? 0;
