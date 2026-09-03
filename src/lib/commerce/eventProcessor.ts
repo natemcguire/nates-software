@@ -450,15 +450,14 @@ export async function processStripeInboxEvent(
   );
 
   // E. One outbox row per positive payable allocation to a real recipient
-  // (maker, ancestor, or contributor). The platform's own cut is never paid out —
-  // it has no recipientUserId and is excluded by that condition. Migration
-  // 0029 widened the outbox trigger to admit the 'contributor' role precisely
-  // so a granted contributor's carved share is queued for payout like any
-  // other recipient; omitting it here left contributor earnings recorded but
-  // never paid.
+  // (seller or ancestor). 'platform' is the house's own cut off the top —
+  // it always has a null recipientUserId and is excluded by that condition,
+  // and is NEVER paid out via Connect. Migration 0038 (Shareware, Restored)
+  // widened the outbox trigger's payable role list to admit 'seller' and
+  // retired 'maker'/'contributor'/'protocol_pool'; this filter mirrors it.
   let outboxRowCount = 0;
   for (const alloc of allocations) {
-    if ((alloc.role === 'maker' || alloc.role === 'ancestor' || alloc.role === 'contributor') && alloc.amountCents > 0 && alloc.recipientUserId) {
+    if ((alloc.role === 'seller' || alloc.role === 'ancestor') && alloc.amountCents > 0 && alloc.recipientUserId) {
       const outboxId = `cto_${crypto.randomUUID().replace(/-/g, '')}`;
       statements.push(
         db.prepare(`
