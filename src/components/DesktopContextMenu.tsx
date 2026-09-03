@@ -52,7 +52,7 @@ export const DesktopContextMenu: React.FC<DesktopContextMenuProps> = ({ x, y, it
   }, [onClose]);
 
   // Clamp so the menu never runs off-screen (approx sizes; good enough for w95).
-  const MENU_W = 200;
+  const MENU_W = 232;
   const itemH = 26;
   const menuH = items.length * itemH + 8;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
@@ -73,14 +73,14 @@ export const DesktopContextMenu: React.FC<DesktopContextMenuProps> = ({ x, y, it
             type="button"
             disabled={it.disabled}
             onClick={() => { if (!it.disabled) { it.onClick?.(); onClose(); } }}
-            className={`w-full text-left px-6 py-1 flex items-center gap-2 ${
+            className={`w-full text-left pl-4 pr-4 py-1 flex items-center gap-2.5 ${
               it.disabled
                 ? 'text-gray-500 cursor-default'
                 : 'text-black hover:bg-w95-blue hover:text-white cursor-pointer'
             }`}
           >
-            {it.icon && <span className="w-4 text-center">{it.icon}</span>}
-            <span className="truncate">{it.label}</span>
+            {it.icon && <span className="w-4 text-center shrink-0">{it.icon}</span>}
+            <span className="whitespace-nowrap">{it.label}</span>
           </button>
           {it.separatorAfter && <div className="border-t border-gray-500 border-b border-b-white my-1 mx-1.5" />}
         </React.Fragment>
