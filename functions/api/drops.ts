@@ -584,6 +584,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     // (immediately purchasable) once its repository is genuinely deployable
     // (has a resolvable default-ref commit); otherwise it is honestly 'draft'
     // until GITSMITH/RIG actually produce a deployable revision.
+    //
+    // ETHOS (Shareware, Restored spec §3.7 — "prove-it" publish gate): a
+    // Resale listing may only become purchasable once the platform has
+    // actually watched its repo build/run at least once. You can only buy
+    // software the platform has watched boot. `repositoryHasCommit` (set
+    // above from a resolvable default_ref commit) is the sole source of
+    // truth for that proof — this line is the enforcement point, and
+    // functions/api/payments/create-intent.ts re-checks `status === 'active'`
+    // at buy time as the second, independent half of the same invariant.
     const productPriceCents = priceValidation.priceCents;
     const honestProductStatus = repositoryHasCommit ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
