@@ -644,4 +644,81 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
   });
 
+  describe('5. Migration 0030: cap-guard and no-strand triggers', () => {
+    // These DB-level triggers remain live schema (contributor_shares and
+    // repositories.grantable_bps are historical-data columns, not removed)
+    // even though the grant-CREATION API surface has been retired.
+    it('contributor_shares_cap_guard: DB trigger aborts direct insert that exceeds repository grantable_bps', async () => {
+      await ctx.d1.prepare(`INSERT OR IGNORE INTO users (id, username, display_name) VALUES ('usr_alice', 'alice', 'Alice')`).run();
+      await ctx.d1.prepare(`INSERT INTO repositories
+        (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+        VALUES ('repo-trig-cap','dronehunter','usr_nate','nate/trig-cap','private','refs/heads/main','repositories/repo-trig-cap','active',1000)`).run();
+
+      // First direct insert of 600 bps succeeds
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+        VALUES ('cs_trig_1', 'repo-trig-cap', 'usr_sam', 'usr_nate', 600, 'pending')
+      `).run();
+
+      // Second direct insert of 500 bps (total 1100 > 1000) is aborted by DB trigger
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+          VALUES ('cs_trig_2', 'repo-trig-cap', 'usr_alice', 'usr_nate', 500, 'pending')
+        `).run()
+      ).rejects.toThrow(/contributor share exceeds available repository grantable pool or repository does not exist/);
+
+      // Third direct insert of 400 bps (total 600 + 400 = 1000 <= 1000) succeeds
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+        VALUES ('cs_trig_3', 'repo-trig-cap', 'usr_alice', 'usr_nate', 400, 'pending')
+      `).run();
+
+      const total: any = await ctx.d1.prepare(`
+        SELECT SUM(basis_points) AS s FROM contributor_shares WHERE repository_id = 'repo-trig-cap' AND status IN ('active', 'pending')
+      `).first();
+      expect(total.s).toBe(1000);
+
+      // Insert for non-existent repository is aborted by DB trigger
+      await expect(
+        ctx.d1.prepare(`
+          INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+          VALUES ('cs_trig_bad_repo', 'repo-does-not-exist', 'usr_sam', 'usr_nate', 100, 'pending')
+        `).run()
+      ).rejects.toThrow(/contributor share exceeds available repository grantable pool or repository does not exist/);
+    });
+
+    it('repositories_grantable_no_strand: DB trigger aborts lowering grantable_bps below committed grants', async () => {
+      await ctx.d1.prepare(`INSERT OR IGNORE INTO users (id, username, display_name) VALUES ('usr_alice', 'alice', 'Alice')`).run();
+      await ctx.d1.prepare(`INSERT INTO repositories
+        (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
+        VALUES ('repo-trig-strand','dronehunter','usr_nate','nate/trig-strand','private','refs/heads/main','repositories/repo-trig-strand','active',2500)`).run();
+
+      // Commit 1500 bps in active and pending shares
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at)
+        VALUES ('cs_strand_1', 'repo-trig-strand', 'usr_sam', 'usr_nate', 1000, 'active', CURRENT_TIMESTAMP)
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
+        VALUES ('cs_strand_2', 'repo-trig-strand', 'usr_alice', 'usr_nate', 500, 'pending')
+      `).run();
+
+      // Attempting to lower grantable_bps to 1400 (< 1500 committed) is aborted by DB trigger
+      await expect(
+        ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 1400 WHERE id = 'repo-trig-strand'`).run()
+      ).rejects.toThrow(/repository grantable_bps cannot be lowered below committed grants/);
+
+      // Lowering to exactly 1500 (= 1500 committed) succeeds
+      await ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 1500 WHERE id = 'repo-trig-strand'`).run();
+      const updated: any = await ctx.d1.prepare(`SELECT grantable_bps FROM repositories WHERE id = 'repo-trig-strand'`).first();
+      expect(updated.grantable_bps).toBe(1500);
+
+      // Raising to 3000 succeeds
+      await ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 3000 WHERE id = 'repo-trig-strand'`).run();
+      const raised: any = await ctx.d1.prepare(`SELECT grantable_bps FROM repositories WHERE id = 'repo-trig-strand'`).first();
+      expect(raised.grantable_bps).toBe(3000);
+    });
+  });
+
 });

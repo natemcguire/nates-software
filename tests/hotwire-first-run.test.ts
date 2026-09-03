@@ -1009,7 +1009,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect((product as any).royalty_bps).toBe(1500);
     });
 
-    it('accepts the snake_case royalty_bps alias for symmetry with grantable_bps (E1a)', async () => {
+    it('accepts the snake_case royalty_bps alias (E1a)', async () => {
       const dropId = 'royalty-snake-app';
       const req = new Request('http://localhost/api/drops', {
         method: 'POST',

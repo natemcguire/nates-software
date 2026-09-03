@@ -364,9 +364,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     let initialDeploymentState = 'draft';
     // The client-supplied repositoryId is only a CANDIDATE. linkedRepositoryId
     // is set below strictly from an ownership-verified lookup — it must never
-    // retain the raw client value, or a maker could link (and write
-    // grantable_bps onto) a repository owned by someone else (a cross-user
-    // economic write). Unowned / unknown candidate => stays null (no link).
+    // retain the raw client value, or a maker could link a repository owned
+    // by someone else onto their own listing (a cross-user write). Unowned /
+    // unknown candidate => stays null (no link).
     const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     let linkedRepositoryId: string | null = null;
     let repositoryHasCommit = false;
@@ -428,74 +428,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       // stays honestly 'draft' regardless of the earlier lookup.
     }
 
-    // Validate grantable pool basis points (Phase A)
-    const hasGrantableField = 'grantableBps' in body || 'grantable_bps' in body;
-    const rawGrantableBps = body.grantableBps !== undefined ? body.grantableBps : body.grantable_bps;
-    let validatedGrantableBps: number | null = null;
-    if (hasGrantableField && rawGrantableBps !== undefined) {
-      if (typeof rawGrantableBps !== 'number' || !Number.isSafeInteger(rawGrantableBps)) {
-        return Response.json({
-          success: false,
-          error: 'grantableBps must be an integer between 0 and 10000'
-        }, { status: 422 });
-      }
-      if (rawGrantableBps < 0 || rawGrantableBps > 10000) {
-        return Response.json({
-          success: false,
-          error: 'grantableBps must be between 0 and 10000'
-        }, { status: 422 });
-      }
-
-      if (!linkedRepositoryId) {
-        if (rawGrantableBps > 0) {
-          return Response.json({
-            success: false,
-            error: 'Link a repository to set a grantable pool'
-          }, { status: 422 });
-        }
-      } else {
-        // Lineage lookup for root vs fork grantable cap. The cap MUST equal the
-        // buy-path contributor carve cap (commerceDomain calculateAllocations:
-        // makerBasisPoints - MAKER_FLOOR_BPS), i.e. root 9000-1000=8000, fork
-        // 7000-1000=6000. Allowing a higher grantable pool here would let an
-        // owner grant more than the buy path can carve, permanently failing
-        // checkout closed once those grants activate (they are irrevocable).
-        const forkEdge = await env.DB.prepare(
-          'SELECT 1 FROM repository_forks WHERE child_repository_id = ? LIMIT 1'
-        ).bind(linkedRepositoryId).first();
-        const isRoot = !forkEdge;
-        const maxAllowedBps = isRoot ? 8000 : 6000;
-
-        if (rawGrantableBps > maxAllowedBps) {
-          return Response.json({
-            success: false,
-            error: `Grantable pool ${rawGrantableBps} bps exceeds maximum allowable cap of ${maxAllowedBps} bps (${maxAllowedBps / 100}%) for ${isRoot ? 'root' : 'fork'} repository`
-          }, { status: 422 });
-        }
-
-        // Lowering check: cannot drop pool below sum of active + pending grants (Decision #2)
-        const grantedRow = await env.DB.prepare(`
-          SELECT COALESCE(SUM(basis_points), 0) AS totalGranted
-          FROM contributor_shares
-          WHERE repository_id = ? AND status IN ('active', 'pending')
-        `).bind(linkedRepositoryId).first();
-        const totalGranted = Number(grantedRow?.totalGranted || 0);
-        if (rawGrantableBps < totalGranted) {
-          return Response.json({
-            success: false,
-            error: `${totalGranted / 100}% is already granted; can't drop the pool below that`
-          }, { status: 422 });
-        }
-
-        validatedGrantableBps = rawGrantableBps;
-      }
-    }
-
     // Validate the maker-chosen per-listing royalty rate (Shareware, Restored
     // money model). Stored as integer basis points in [0, 10000] (0–100%).
     // NEVER hardcoded: a maker who omits it (blank field) is choosing 0%
-    // (free to fork & resell). Mirrors the grantableBps validation above; also
-    // accepts the snake_case `royalty_bps` alias for symmetry.
+    // (free to fork & resell). Also accepts the snake_case `royalty_bps`
+    // alias for symmetry.
     const rawRoyaltyBps = body.royaltyBps !== undefined ? body.royaltyBps : body.royalty_bps;
     let validatedRoyaltyBps = 0;
     if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null) {
@@ -612,18 +549,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     // Statement order matters for FK legality: listing (repo_id NULL for a
     // new repo) -> new repository (app_id now resolvable) -> link update ->
-    // product (repository_id now resolvable) -> optional grantable_bps.
+    // product (repository_id now resolvable).
     // All execute atomically in one D1 batch — if any leg fails, nothing is
     // persisted (never a partial/fake write).
     const statements: any[] = [listingStmt];
     if (newRepositoryStmt) statements.push(newRepositoryStmt);
     if (linkRepositoryToListingStmt) statements.push(linkRepositoryToListingStmt);
     statements.push(productStmt);
-    if (linkedRepositoryId && validatedGrantableBps !== null) {
-      statements.push(
-        env.DB.prepare('UPDATE repositories SET grantable_bps = ? WHERE id = ?').bind(validatedGrantableBps, linkedRepositoryId)
-      );
-    }
 
     const batchResults = await env.DB.batch(statements);
     if (!batchResults || batchResults.length < statements.length || batchResults.some((r: any) => !r.success)) {

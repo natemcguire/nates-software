@@ -81,5 +81,5 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async (_context?: unknown) => Response.json({
   success: false,
-  error: 'Grants are recorded only through the merge approval workflow.'
+  error: 'Contributor grants are no longer created. This surface is a read-only history of legacy grants.'
 }, { status: 405, headers: { Allow: 'GET' } });
