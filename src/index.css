@@ -118,17 +118,32 @@ html, body {
    =================================================================== */
 .desktop-intro-hidden { opacity: 0; pointer-events: none; }
 
-/* Pixelated fade-in: opacity ramps in hard steps (chunky/pixel feel) while a
-   blur+contrast "resolves" the icon. All icons run this AT THE SAME TIME (no
-   per-icon stagger) so they materialize together. */
-@keyframes nsw-pixel-fade-in {
-  0%   { opacity: 0;   filter: blur(3px) contrast(2.4) brightness(1.3); transform: scale(0.86); }
-  100% { opacity: 1;   filter: none;                                    transform: scale(1); }
+/* Voxel / blocky-pixel reveal: the icon assembles out of chunky square blocks.
+   A repeating hard-edged block mask (a pixel grid) is scaled down over the
+   animation while opacity ramps in hard steps, so the image "materializes" as
+   blocks snapping into place rather than a smooth blur. steps() = no tweening =
+   the retro voxel feel. All icons run it together (no per-icon stagger). */
+@keyframes nsw-voxel-in {
+  0% {
+    opacity: 0;
+    -webkit-mask-image: repeating-conic-gradient(#000 0% 25%, transparent 0% 50%);
+            mask-image: repeating-conic-gradient(#000 0% 25%, transparent 0% 50%);
+    -webkit-mask-size: 24px 24px; mask-size: 24px 24px;
+    transform: scale(0.9);
+  }
+  50% { opacity: 0.7; }
+  100% {
+    opacity: 1;
+    -webkit-mask-image: repeating-conic-gradient(#000 0% 25%, #000 0% 50%);
+            mask-image: repeating-conic-gradient(#000 0% 25%, #000 0% 50%);
+    -webkit-mask-size: 2px 2px; mask-size: 2px 2px;
+    transform: scale(1);
+  }
 }
 .desktop-icon-reveal {
   opacity: 0;
   image-rendering: pixelated;
-  animation: nsw-pixel-fade-in 0.6s steps(5, end) forwards;
+  animation: nsw-voxel-in 0.75s steps(6, end) forwards;
 }
 
 /* Popup entrance — a springy Win95 window "boot" pop. */

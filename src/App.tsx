@@ -93,7 +93,7 @@ export function resolveAppRoute(
   return { type: 'desktop' };
 }
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GitsmithView } from './views/GitsmithView';
 import { EphemeralLiveApp } from './components/EphemeralLiveApp';
 import type { AppListing } from './data/mockData';
@@ -126,7 +126,7 @@ const ICON_POSITIONS_KEY = 'nsw_icon_positions';
 // Bump when the default icon set/order changes so everyone gets the fresh clean
 // layout once (old drag positions are dropped), instead of keeping a stale/scattered
 // arrangement. Users can re-drag afterwards; those saves are kept until the next bump.
-const ICON_LAYOUT_VERSION = '3';
+const ICON_LAYOUT_VERSION = '4';
 const ICON_LAYOUT_VERSION_KEY = 'nsw_icon_layout_v';
 
 function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
@@ -156,32 +156,42 @@ function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
 // row pitch = iconHeight + gapY = 116px (labels can be 2 lines tall + emoji).
 const ICON_GRID = { startX: 16, startY: 16, iconWidth: 112, iconHeight: 96, gapX: 28, gapY: 20, rowsPerCol: 6 } as const;
 
-// Default layout with two spatial groups: the working apps flow TOP-LEFT
-// (column-major), and the "coming soon" apps are parked BOTTOM-RIGHT so they read
-// as a separate, not-yet-ready cluster. Positions are computed from the current
-// viewport so the soon cluster hugs the bottom-right corner on any screen.
-function getGroupedIconPosition(group: 'main' | 'soon', indexInGroup: number): { x: number; y: number } {
-  const { startX, startY, iconWidth, iconHeight, gapX, gapY, rowsPerCol } = ICON_GRID;
+// Default layout has THREE spatial groups:
+//   • main  — the working apps, a 3-row × 2-col block in the TOP-LEFT.
+//   • refs  — WHITE_PAPERS + Source on GitHub, a small "references" cluster parked
+//             on its own in the BOTTOM-LEFT, away from the apps.
+//   • soon  — the "coming soon" apps, a 2-wide block in the BOTTOM-RIGHT corner.
+// Positions are computed from the current viewport so bottom clusters hug the
+// corners on any screen.
+const MAIN_ROWS = 3; // 3 rows tall, filling column-major → a 3×2 block
+function getGroupedIconPosition(group: 'main' | 'refs' | 'soon', indexInGroup: number): { x: number; y: number } {
+  const { startX, startY, iconWidth, iconHeight, gapX, gapY } = ICON_GRID;
   const colPitch = iconWidth + gapX;
   const rowPitch = iconHeight + gapY;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+  const bottomY = vh - 40 - iconHeight - 16; // one row above the 40px taskbar
 
   if (group === 'main') {
-    const col = Math.floor(indexInGroup / rowsPerCol);
-    const row = indexInGroup % rowsPerCol;
+    // 3×2 block: fill down each column (3 per column), then wrap to the next column.
+    const col = Math.floor(indexInGroup / MAIN_ROWS);
+    const row = indexInGroup % MAIN_ROWS;
     return { x: startX + col * colPitch, y: startY + row * rowPitch };
   }
 
-  // "soon" cluster: 2-wide block anchored to the bottom-right corner.
+  if (group === 'refs') {
+    // Bottom-left cluster, side by side (2 wide).
+    return { x: startX + indexInGroup * colPitch, y: bottomY };
+  }
+
+  // "soon": 2-wide block anchored to the bottom-right corner.
   const SOON_COLS = 2;
   const col = indexInGroup % SOON_COLS;   // 0 = left col of the cluster, 1 = right
   const row = Math.floor(indexInGroup / SOON_COLS);
   const clusterRightX = vw - iconWidth - 24;          // right column x
-  const clusterBottomY = vh - 40 - iconHeight - 16;   // above the 40px taskbar
   return {
     x: clusterRightX - (SOON_COLS - 1 - col) * colPitch,
-    y: clusterBottomY - row * rowPitch,
+    y: bottomY - row * rowPitch,
   };
 }
 
@@ -416,30 +426,29 @@ export function AppInner() {
     }
   }, [authLoading, isAuthenticated, openWindow]);
 
-  // First-visit intro sequence: icons start HIDDEN → auto-open the "What is this?"
-  // window with a pop animation → then the desktop icons pixel-fade in (staggered).
-  // First-time-only in production (localStorage flag); for TESTING it runs every
-  // reload (set INTRO_EVERY_RELOAD=false to make it once-only).
+  // First-visit intro: on load, ONLY the "WHAT_IS_THIS.TXT" icon is visible — every
+  // other icon stays hidden. The visitor must CLICK it; that opens the "What is
+  // this?" window (which fades in) and triggers the rest of the icons to voxel-fade
+  // in together. First-time-only in production; runs EVERY reload for testing.
   const INTRO_EVERY_RELOAD = true;
   const INTRO_SEEN_KEY = 'nsw_intro_seen';
-  const [introPhase, setIntroPhase] = useState<'hidden' | 'revealing' | 'done'>(() => {
+  const [introPhase, setIntroPhase] = useState<'waiting' | 'revealing' | 'done'>(() => {
     if (typeof window === 'undefined') return 'done';
-    if (INTRO_EVERY_RELOAD) return 'hidden';
-    return localStorage.getItem(INTRO_SEEN_KEY) ? 'done' : 'hidden';
+    if (INTRO_EVERY_RELOAD) return 'waiting';
+    return localStorage.getItem(INTRO_SEEN_KEY) ? 'done' : 'waiting';
   });
-  useEffect(() => {
-    if (introPhase !== 'hidden') return;
-    // 1) pop the "What is this?" window shortly after load.
-    const t1 = setTimeout(() => openWindow('mktg'), 450);
-    // 2) then reveal the icons with the staggered pixel-fade.
-    const t2 = setTimeout(() => setIntroPhase('revealing'), 1050);
-    // 3) mark done once the reveal has played out.
-    const t3 = setTimeout(() => {
-      setIntroPhase('done');
-      try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* ignore */ }
-    }, 2600);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [introPhase, openWindow]);
+  // Called when the visitor clicks WHAT_IS_THIS during the intro: reveal the rest.
+  const triggerIntroReveal = useCallback(() => {
+    setIntroPhase((prev) => {
+      if (prev !== 'waiting') return prev;
+      // let the voxel reveal play, then settle.
+      setTimeout(() => {
+        setIntroPhase('done');
+        try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* ignore */ }
+      }, 1400);
+      return 'revealing';
+    });
+  }, []);
 
   const [iconPositions, setIconPositions] = useState<Record<string, { x: number; y: number }>>(loadSavedIconPositions);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
@@ -656,32 +665,37 @@ export function AppInner() {
           "coming soon" apps (dimmed + SOON badge, still clickable) are parked
           BOTTOM-RIGHT as a separate not-yet-ready cluster. */}
       {(() => {
-        type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'soon'; comingSoon?: boolean };
+        type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'refs' | 'soon'; comingSoon?: boolean };
         const icons: DeskIcon[] = [
-          // --- TOP-LEFT: the working apps ---
+          // --- TOP-LEFT: the working apps (3×2 block) ---
           { id: 'setup', label: 'SETUP.EXE (START HERE)', icon: '🚀', group: 'main', onClick: () => { playClickSound(); openWindow('setup'); } },
-          { id: 'whatis', label: 'WHAT_IS_THIS.TXT', icon: '❓', group: 'main', onClick: () => { playClickSound(); openWindow('mktg'); } },
+          { id: 'whatis', label: 'WHAT_IS_THIS.TXT', icon: '❓', group: 'main', onClick: () => { playClickSound(); triggerIntroReveal(); openWindow('mktg'); } },
           { id: 'hotwire', label: 'HOTWIRE (Drops)', icon: '🔥', group: 'main', onClick: () => { playClickSound(); openWindow('hotwire'); } },
           { id: 'gitsmith', label: 'GITSMITH (Forge)', icon: '📁', group: 'main', onClick: () => { playClickSound(); openWindow('gitsmith'); } },
           { id: 'chat', label: 'CHAT (IRC)', icon: '💬', group: 'main', onClick: () => { playClickSound(); openWindow('chat'); } },
           { id: 'profile', label: 'ACCOUNT.CFG (Profile)', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
-          { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'main', onClick: () => { playClickSound(); openWindow('papers'); } },
-          { id: 'github', label: 'Source on GitHub', icon: '🌐', group: 'main', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
+          // --- BOTTOM-LEFT: references, on their own ---
+          { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'refs', onClick: () => { playClickSound(); openWindow('papers'); } },
+          { id: 'github', label: 'Source on GitHub', icon: '🌐', group: 'refs', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
           // --- BOTTOM-RIGHT: coming soon (dimmed + SOON, still clickable) ---
           { id: 'slopshop', label: 'SLOPSHOP (AI Mod)', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
           { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('inbox'); } },
           { id: 'dyno', label: 'DYNO (Speedometer)', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },
           { id: 'terminal', label: 'TERMINAL.EXE', icon: '💻', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('terminal'); } },
         ];
-        const groupIndex: Record<'main' | 'soon', number> = { main: 0, soon: 0 };
+        const groupIndex: Record<'main' | 'refs' | 'soon', number> = { main: 0, refs: 0, soon: 0 };
         return icons.map((item) => {
           const idxInGroup = groupIndex[item.group]++;
           const pos = iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup);
           desktopIconOpeners[item.id] = item.onClick;
+          // During 'waiting', only WHAT_IS_THIS is visible (it's the trigger); the
+          // rest are hidden until the visitor clicks it, then voxel-fade in together.
           const introClass =
-            introPhase === 'hidden' ? 'desktop-intro-hidden'
-            : introPhase === 'revealing' ? 'desktop-icon-reveal'
-            : '';
+            introPhase === 'waiting'
+              ? (item.id === 'whatis' ? '' : 'desktop-intro-hidden')
+              : introPhase === 'revealing'
+                ? (item.id === 'whatis' ? '' : 'desktop-icon-reveal')
+                : '';
           return (
             <DesktopIcon
               key={item.id}

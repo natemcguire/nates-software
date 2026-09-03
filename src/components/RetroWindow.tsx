@@ -140,7 +140,7 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
         userSelect: 'none',
         WebkitUserSelect: 'none'
       }}
-      className="bg-w95-panel w95-border w95-shadow flex flex-col select-none"
+      className="bg-w95-panel w95-border w95-shadow flex flex-col select-none nsw-popup-enter"
     >
       {/* Title Bar */}
       <div
