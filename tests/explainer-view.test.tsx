@@ -41,14 +41,14 @@ describe('Consolidated About/Explainer window (Spec M)', () => {
 
   it('renders the buy-once ownership summary', () => {
     const html = renderWindow();
-    expect(html).toContain('A marketplace for software you buy once and own — not rent.');
-    expect(html).toContain('Fork any app, change it with an AI agent, and sell your');
+    expect(html).toContain('you buy apps outright');
+    expect(html).toContain('Fork any of it, change it with an AI agent, then sell your version');
   });
 
   it('renders the flat-10%-platform / frozen-royalty money model with the 90/10 root case', () => {
     const html = renderWindow();
     expect(html).toContain('The Money Model');
-    expect(html).toContain('frozen the day you forked');
+    expect(html).toContain('frozen the day they forked');
     expect(html).toContain('10%');
     expect(html).toContain('90% you / 10% us');
   });

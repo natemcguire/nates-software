@@ -38,7 +38,10 @@ const bannedPhrases = [
   '20% up',
   'protocol pool',
   'protocol liquidity',
-  'up the chain',
+  // NOTE: bare "up the chain" is NOT banned — it's legitimate new-model copy
+  // ("forks of forks pay everyone up the chain"). The old-model tell was the
+  // 20%-lineage phrasing, still guarded by the precise `/goes up the chain/`
+  // and `20% up` checks below.
   'up the fork lineage'
 ];
 

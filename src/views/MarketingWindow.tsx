@@ -103,7 +103,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           WELCOME TO NATE'S SOFTWARE EMPORIUM
         </div>
         <p className="text-gray-700 text-sm max-w-3xl mx-auto leading-relaxed font-bold">
-          Stop renting software. Own your files. Mod with AI.
+          Stop renting software. Own the source.
         </p>
         <div className="mt-2.5 flex items-center justify-center gap-2">
           <button
@@ -130,18 +130,17 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
           <div className="text-w95-blue font-bold text-base mb-2">What is this?</div>
           <p className="text-gray-800 text-xs leading-relaxed font-sans mb-2.5">
-            A marketplace for software you buy once and own — not rent. Every purchase gives you the running
-            web app, the full source in a Git repo, native installers (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.dmg</code>, <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.exe</code>, and more),
-            and a real license key with your name on it. Fork any app, change it with an AI agent, and sell your
-            version. Whoever built what you forked sets a royalty they earn when you sell. All sales are final —
-            and nothing goes on sale until it's been proven to run. No subscription, ever.
+            A Win95 desktop where you buy apps outright. You get the live web app, the full source in a Git repo,
+            native installers (<code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.dmg</code>, <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold text-black">.exe</code>, and more),
+            and a license key with your name on it. Fork any of it, change it with an AI agent, then sell your version.
+            Nothing lists until it proves it builds and runs. Sales are final. No subscription, ever.
           </p>
           <div className="bg-gray-100 border border-gray-400 p-2.5 rounded text-xs">
             <div className="font-bold text-gray-900 mb-0.5 font-mono">The Money Model</div>
             <div className="text-gray-700 font-sans leading-relaxed">
-              You set <strong>one royalty rate</strong> when you list. Fork someone and sell, and each maker you
-              built on earns the rate they set — frozen the day you forked, so it can never change on you.
-              The house takes a flat <strong className="text-green-800">10%</strong>. You keep the rest.
+              You set <strong>one royalty</strong> when you list. Anyone who forks your app and sells pays you that
+              rate, frozen the day they forked so you can't jack it up later. Forks of forks pay everyone up the chain.
+              The house takes a flat <strong className="text-green-800">10%</strong>. The seller keeps the rest.
             </div>
           </div>
         </div>
@@ -152,28 +151,24 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-700 text-xs leading-relaxed">
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Buy it, own it</div>
-              Buy an app once. It's yours: the live web app, the source repo, native installers,
-              and a license key. Cancel nothing, because there's nothing to cancel.
+              Buy an app once and it's yours. Live web app, Git repo, native installers, license key
+              with your name on it.
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Publish and sell</div>
-              Push your code to our forge and it builds and goes live on its own URL. No Dockerfile,
-              no servers to set up. List it, set a price, drop it on HOTWIRE, and people buy it.
+              Push your code to the forge and it builds onto its own URL. No Dockerfile, no servers.
+              Then list it on HOTWIRE at whatever price you set.
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Get paid on every sale</div>
-              <strong>10%</strong> keeps the lights on here. Any makers you forked from earn the
-              royalty rate they set, frozen the day you forked. You keep the rest. Built something
-              original with no parents? There's nothing to pay upstream, so it's <strong className="text-green-800">90% you / 10% us</strong>.
+              The house takes a flat <strong>10%</strong>. Makers you forked from earn the royalty they
+              froze the day you forked, and you keep the rest. Original app, no parents? <strong className="text-green-800">90% you / 10% us</strong>.
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Fork and remix</div>
               Fork anyone's app, change it with AI in SLOPSHOP or the <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI,
-              and sell your version. When your fork sells, the makers you built on earn their own frozen royalty. Forks of forks pay everyone up the line.
+              and sell your version. The makers you built on earn their frozen royalty. Forks of forks pay everyone up the chain.
             </div>
-          </div>
-          <div className="text-[11px] text-gray-500 mt-2.5 border-t border-gray-200 pt-2">
-            Makers can also put a slice of an app's future sales up for grabs. Contribute code that gets merged, and you earn a cut of every sale from then on.
           </div>
         </div>
 
