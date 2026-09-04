@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
-import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync, symlinkSync, statSync, lstatSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, mkdirSync, mkdtempSync, writeFileSync, symlinkSync, statSync, lstatSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -41,6 +41,27 @@ const trackedFork = async (slugOrArgs?: string | string[], options?: any) => {
 
 afterEach(() => {
   for (const worktree of createdWorktrees.splice(0)) rmSync(worktree, { recursive: true, force: true });
+});
+
+// GLOBAL credential isolation: every test runs with XDG_CONFIG_HOME pinned to a
+// fresh temp dir so the CLI can never read (or write) the developer's REAL
+// ~/.config/slop/credentials. Without this, one persisted login on the machine —
+// or one leaky login test — flips every "unauthenticated" honesty test into an
+// authenticated one (this actually happened: a suite run wrote the real file and
+// poisoned the next full run). The login-persistence block deeper in this file
+// overrides HOME itself and deletes XDG_CONFIG_HOME; that still resolves inside
+// its own temp HOME, so both layers stay isolated.
+const globalOriginalXdg = process.env.XDG_CONFIG_HOME;
+let globalXdgTemp: string | null = null;
+beforeEach(() => {
+  globalXdgTemp = mkdtempSync(join(tmpdir(), 'slop-test-xdg-'));
+  process.env.XDG_CONFIG_HOME = globalXdgTemp;
+});
+afterEach(() => {
+  if (globalOriginalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = globalOriginalXdg;
+  if (globalXdgTemp) rmSync(globalXdgTemp, { recursive: true, force: true });
+  globalXdgTemp = null;
 });
 
 describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
@@ -366,12 +387,30 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
 
   describe('slop push', () => {
     it('should truthfully fail when remote is unreachable without claiming false CAS success', () => {
-      const res = handlePush();
-      expect(res.command).toBe('push');
-      expect(res.success).toBe(false);
-      expect(res.data.casVerified).toBe(false);
-      expect(res.data.pushedGit).toBe(false);
-      expect(res.message).toContain('Push failed');
+      // Hermetic: build a throwaway repo whose `slop` remote points at a dead
+      // address. Previously this test ran bare handlePush() from the developer
+      // checkout's cwd — which meant it depended on that checkout's real `slop`
+      // remote and, once that remote pointed at the LIVE forge, the test was
+      // actually pushing this entire repository to production on every run.
+      // Tests must never touch a real remote.
+      const pushTempDir = mkdtempSync(join(tmpdir(), 'slop-push-unreachable-'));
+      const originalCwd = process.cwd();
+      try {
+        execSync(`git -C "${pushTempDir}" init -q -b main`, { stdio: 'pipe' });
+        writeFileSync(join(pushTempDir, 'README.md'), '# temp');
+        execSync(`git -C "${pushTempDir}" add -A && git -C "${pushTempDir}" -c user.name=Test -c user.email=test@test.com commit -qm init`, { stdio: 'pipe' });
+        execSync(`git -C "${pushTempDir}" remote add slop ssh://git@127.0.0.1:1/nobody/nowhere.git`, { stdio: 'pipe' });
+        process.chdir(pushTempDir);
+        const res = handlePush();
+        expect(res.command).toBe('push');
+        expect(res.success).toBe(false);
+        expect(res.data.casVerified).toBe(false);
+        expect(res.data.pushedGit).toBe(false);
+        expect(res.message).toContain('Push failed');
+      } finally {
+        process.chdir(originalCwd);
+        rmSync(pushTempDir, { recursive: true, force: true });
+      }
     });
   });
 
