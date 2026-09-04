@@ -373,13 +373,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const creatorId = authUser.id;
 
     
-    const existingListing = await env.DB.prepare('SELECT id, creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
-    if (existingListing && existingListing.creator_id !== creatorId) {
+    const ownershipListing = await env.DB.prepare('SELECT id, creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
+    if (ownershipListing && ownershipListing.creator_id !== creatorId) {
       return Response.json({
         success: false,
         error: 'Forbidden: drop listing ID is owned by another maker'
       }, { status: 403 });
     }
+    const existingListing = ownershipListing
+      ? await env.DB.prepare(`
+          SELECT id, creator_id, repository_id, deployment_state, deployment_error,
+                 deployment_evidence_json, active_deployment_id, active_commit_oid
+          FROM app_listings WHERE id = ?
+        `).bind(dropId).first()
+      : null;
 
     
     const mergedBinaries = typeof binaries === 'object' && binaries !== null ? { ...binaries } : {};
@@ -396,6 +403,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     let linkedRepositoryId: string | null = null;
+    let linkedDefaultCommitOid: string | null = null;
     try {
 
       const repoRecord = await env.DB.prepare(`
@@ -406,6 +414,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       `).bind(candidateRepositoryId || dropId, dropId, dropId, creatorId).first();
       if (repoRecord) {
         linkedRepositoryId = repoRecord.id;
+        linkedDefaultCommitOid = (repoRecord as any).defaultCommitOid || null;
         if (repoRecord.defaultCommitOid) {
           initialDeploymentState = 'source_ready';
         }
@@ -512,6 +521,42 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     }
 
+    const deploymentRanks: Record<string, number> = {
+      draft: 0,
+      source_ready: 1,
+      building: 2,
+      deployable: 3,
+      active: 4
+    };
+    const existingDeploymentState = String((existingListing as any)?.deployment_state || '');
+    const existingRepositoryId = (existingListing as any)?.repository_id || null;
+    const existingActiveCommitOid = (existingListing as any)?.active_commit_oid || null;
+    const sourceChanged = Boolean(existingListing && (
+      (existingRepositoryId && linkedRepositoryId && existingRepositoryId !== linkedRepositoryId) ||
+      (existingActiveCommitOid && linkedDefaultCommitOid && existingActiveCommitOid !== linkedDefaultCommitOid)
+    ));
+    const existingDeploymentRank = deploymentRanks[existingDeploymentState] ?? Number.POSITIVE_INFINITY;
+    const initialDeploymentRank = deploymentRanks[initialDeploymentState] ?? 0;
+    const preserveDeploymentMetadata = Boolean(
+      existingListing && !sourceChanged && existingDeploymentRank >= initialDeploymentRank
+    );
+    const persistedDeploymentState = preserveDeploymentMetadata ? existingDeploymentState : initialDeploymentState;
+    const deploymentStateUpdate = preserveDeploymentMetadata
+      ? 'app_listings.deployment_state'
+      : 'excluded.deployment_state';
+    const deploymentErrorUpdate = preserveDeploymentMetadata
+      ? 'app_listings.deployment_error'
+      : 'excluded.deployment_error';
+    const deploymentEvidenceUpdate = preserveDeploymentMetadata
+      ? 'app_listings.deployment_evidence_json'
+      : 'NULL';
+    const activeDeploymentUpdate = preserveDeploymentMetadata
+      ? 'app_listings.active_deployment_id'
+      : 'NULL';
+    const activeCommitUpdate = preserveDeploymentMetadata
+      ? 'app_listings.active_commit_oid'
+      : 'NULL';
+
     
     
     
@@ -578,13 +623,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         tags = excluded.tags,
         screenshots = excluded.screenshots,
         binaries = excluded.binaries,
-        deployment_state = excluded.deployment_state,
-        deployment_error = excluded.deployment_error,
+        deployment_state = ${deploymentStateUpdate},
+        deployment_error = ${deploymentErrorUpdate},
         repository_id = COALESCE(excluded.repository_id, app_listings.repository_id),
         hostname = COALESCE(app_listings.hostname, excluded.hostname),
-        deployment_evidence_json = NULL,
-        active_deployment_id = NULL,
-        active_commit_oid = NULL
+        deployment_evidence_json = ${deploymentEvidenceUpdate},
+        active_deployment_id = ${activeDeploymentUpdate},
+        active_commit_oid = ${activeCommitUpdate}
       WHERE app_listings.creator_id = excluded.creator_id
       RETURNING id, deployment_state
     `).bind(
@@ -679,7 +724,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     return Response.json({
       success: true,
       id: dropId,
-      deploymentState: initialDeploymentState,
+      deploymentState: persistedDeploymentState,
       repositoryId: linkedRepositoryId,
       repositoryProvisioned: Boolean(newRepositoryStmt),
       productStatus: honestProductStatus,
