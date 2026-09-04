@@ -226,7 +226,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   Install the <code className="win95-field bg-white px-1 py-0.5 font-mono text-black">slop</code> CLI
                 </h3>
                 <button
-                  onClick={() => handleCopy("npm install -g @nates-software/slop\nslop --help", 1)}
+                  onClick={() => handleCopy("npm install -g github:natemcguire/nates-software\nslop --help", 1)}
                   className="btn-w95 win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
                 >
                   {copiedIndex === 1 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
@@ -236,7 +236,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               <p className="text-xs text-black px-3">
                 Install the CLI globally and confirm it's on your path:
               </p>
-              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">{"$ npm install -g @nates-software/slop\n$ slop --help"}</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">{"$ npm install -g github:natemcguire/nates-software\n$ slop --help"}</pre>
             </div>
 
             <div className="border-2 border-gray-800 bg-[#c0c0c0] space-y-2">

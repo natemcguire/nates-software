@@ -816,12 +816,12 @@ export function getHonestDeploymentMessage(
 
   if (state === 'client_demo') {
     return {
-      headline: `${name} is running as a client-side demo.`,
-      subtext: 'This studio runs directly in your browser without a backend deployment revision.',
+      headline: `${name} ships as a client-side app.`,
+      subtext: 'It has no backend deployment revision. Open it at its own address to run it, or read the source below.',
       state: 'client_demo',
       guidance: [
-        'The application operates locally in the browser.',
-        'To deploy a standalone backend container, import source to GITSMITH and trigger RIG.'
+        'This app is designed to run entirely in the browser once opened at its own address.',
+        'To publish a live backend container instead, import source to GITSMITH and trigger a build.'
       ]
     };
   }

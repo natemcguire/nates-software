@@ -10,12 +10,15 @@ interface EphemeralLiveAppProps {
 }
 
 export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
-  const isVerifiedActive = (app.deploymentState === 'active') && Boolean(app.activeDeploymentId);
   const deploymentState: AppDeploymentState = app.deploymentState || 'draft';
+  const isVerifiedActive = (deploymentState === 'active') && Boolean(app.activeDeploymentId);
 
   const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
   const isValidUrl = /^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/serve/');
   const liveUrl = isValidUrl ? configuredLiveUrl : undefined;
+  // A client_demo app is a browser-only app with no backend revision — if it exposes a
+  // valid live URL, it genuinely runs there, so embed it instead of only showing a README.
+  const isRunnableClientDemo = deploymentState === 'client_demo' && Boolean(liveUrl);
 
   const honestInfo = getHonestDeploymentMessage({
     id: app.id,
@@ -32,7 +35,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
     ? (displayError.length > 160 ? `${displayError.slice(0, 160)}…` : displayError)
     : '';
 
-  const hasRunnableDeployment = isVerifiedActive && Boolean(liveUrl);
+  const hasRunnableDeployment = (isVerifiedActive || isRunnableClientDemo) && Boolean(liveUrl);
   const [owner, repoSlugName] = (app.repoSlug || '').includes('/')
     ? app.repoSlug!.split('/')
     : [undefined, undefined];

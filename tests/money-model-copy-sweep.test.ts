@@ -20,7 +20,9 @@ const sweptFiles = [
   'src/lib/commerce/transferWorker.ts',
   'src/lib/commerce/eventProcessor.ts',
   'functions/tree/[app].ts',
-  'bin/slop.ts'
+  'bin/slop.ts',
+  'public/icon-512.svg',
+  'public/icon-192.svg'
 ];
 
 

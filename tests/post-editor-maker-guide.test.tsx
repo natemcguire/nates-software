@@ -107,12 +107,12 @@ describe('NSW-57: Creator Studio Maker Guide rewrite (real flow, no stale claims
   describe('source: each command sits on its own line (no single-line concatenated commands)', () => {
     const source = readFileSync(path.join(repoRoot, 'src/views/PostEditorView.tsx'), 'utf-8');
 
-    it('does not concatenate "npm install" and "slop --help" onto one line', () => {
-      expect(source).not.toContain('npm install -g @nates-software/slop && slop --help');
+    it('does not concatenate the install command and "slop --help" onto one line', () => {
+      expect(source).not.toMatch(/npm install -g \S+ && slop --help/);
     });
 
     it('the install step\'s copy-command payload uses a newline between the two commands', () => {
-      expect(source).toContain('npm install -g @nates-software/slop\\nslop --help');
+      expect(source).toMatch(/npm install -g \S+\\nslop --help/);
     });
 
     it('uses the correct --price=15 (equals-sign) CLI flag syntax matching bin/slop.ts\'s actual parser', () => {

@@ -175,19 +175,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     playClickSound();
     setIsConnectingStripe(true);
     try {
-      const res = await fetch('/api/payments/connect', {
+      const res = await fetch('/api/payments/onboard', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country: 'US' })
       });
       const data = await res.json().catch(() => null);
-      if (res.ok && data?.url) {
-        window.open(data.url, '_blank', 'noopener,noreferrer');
-      } else if (res.ok && data?.success) {
-        showToast('Stripe Connect onboarding initiated.');
-        await loadProfileAndShelf();
+      if (res.ok && data?.onboardingUrl) {
+        window.open(data.onboardingUrl, '_blank', 'noopener,noreferrer');
       } else {
-        showToast('Stripe Connect payout onboarding is not configured on this server instance.');
+        showToast(data?.error || 'Stripe Connect payout onboarding is not available right now.');
       }
     } catch {
       showToast('Stripe Connect payout onboarding is not configured on this server instance.');
@@ -297,6 +295,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to load profile data');
       setSyncStatus('error');
+      if (!isAuthenticated && viewingUsername) {
+        setViewingUsername(null);
+        showToast(err.message || `No maker found for that handle.`);
+      }
     } finally {
       setIsLoading(false);
     }
