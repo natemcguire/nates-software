@@ -152,11 +152,12 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
+      const has = (v: unknown) => typeof v === 'string' && v.toLowerCase().includes(q);
       list = list.filter(a =>
-        a.name.toLowerCase().includes(q) ||
-        a.tagline.toLowerCase().includes(q) ||
-        a.author.toLowerCase().includes(q) ||
-        a.tags.some(t => t.toLowerCase().includes(q))
+        has(a.name) ||
+        has(a.tagline) ||
+        has(a.author) ||
+        (Array.isArray(a.tags) && a.tags.some(has))
       );
     }
 

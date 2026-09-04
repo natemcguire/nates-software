@@ -36,14 +36,14 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
 
   if (drop.tags !== undefined && !Array.isArray(drop.tags)) {
     errors.push('Tags must be an array of strings.');
-  } else if (Array.isArray(drop.tags) && (drop.tags.length > 20 || drop.tags.some(t => typeof t === 'string' && t.length > 40))) {
-    errors.push('Provide at most 20 tags, each at most 40 characters.');
+  } else if (Array.isArray(drop.tags) && (drop.tags.length > 20 || drop.tags.some(t => typeof t !== 'string' || t.length > 40))) {
+    errors.push('Provide at most 20 tags, each a string of at most 40 characters.');
   }
 
   if (drop.screenshots !== undefined && !Array.isArray(drop.screenshots)) {
     errors.push('Screenshots must be an array of image URLs.');
-  } else if (Array.isArray(drop.screenshots) && (drop.screenshots.length > 12 || drop.screenshots.some(s => typeof s === 'string' && s.length > 2048))) {
-    errors.push('Provide at most 12 screenshots, each URL at most 2048 characters.');
+  } else if (Array.isArray(drop.screenshots) && (drop.screenshots.length > 12 || drop.screenshots.some(s => typeof s !== 'string' || s.length > 2048))) {
+    errors.push('Provide at most 12 screenshots, each a string URL of at most 2048 characters.');
   }
 
   if (drop.id !== undefined && drop.id !== null && typeof drop.id === 'string' && drop.id.trim().length > 0) {

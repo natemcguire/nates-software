@@ -107,7 +107,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   };
 
   const resolveScreenshotUrl = (src: string): string => {
-    if (!src) return '';
+    if (!src || typeof src !== 'string') return '';
     if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:') || src.startsWith('/api/')) {
       return src;
     }
