@@ -71,7 +71,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 }) => {
   const { user, openAuthModal } = useAuth();
   const { refreshCatalog } = useCatalog();
-  const { showAlert } = useAlert();
+  const { showAlert, showToast } = useAlert();
 
   const [isForking, setIsForking] = useState(false);
   const [forkError, setForkError] = useState<string | null>(null);
@@ -105,7 +105,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
     navigator.clipboard.writeText(getCliCommand());
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
-    showAlert(`CLI command copied: ${getCliCommand()}`, "Command Copied", "success");
+    showToast(`CLI command copied: ${getCliCommand()}`);
   };
 
   const handleRealFork = async () => {

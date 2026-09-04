@@ -5,6 +5,7 @@ import {
   LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useAlert } from '../context/AlertContext';
 import { Win95Scroll } from '../components/Win95Scroll';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import {
@@ -27,6 +28,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenGitsmith
 }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
+  const { showToast } = useAlert();
 
   const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'published'>('shelf');
   const [viewingUsername, setViewingUsername] = useState<string | null>(initialUsername || null);
@@ -164,6 +166,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     navigator.clipboard.writeText(`slop login ${cliToken}`);
     setCliTokenCopied(true);
     setTimeout(() => setCliTokenCopied(false), 2500);
+    showToast('Copied: slop login <token>');
   };
 
   const loadProfileAndShelf = useCallback(async () => {
