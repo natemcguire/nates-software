@@ -421,10 +421,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     let linkedRepositoryId: string | null = null;
     let linkedDefaultCommitOid: string | null = null;
+    let linkedRepositoryVisibility: string | null = null;
     try {
 
       const repoRecord = await env.DB.prepare(`
-        SELECT r.id, rf.commit_oid AS defaultCommitOid
+        SELECT r.id, r.visibility, rf.commit_oid AS defaultCommitOid
         FROM repositories r
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
         WHERE (r.id = ? OR r.app_id = ? OR r.slug = ?) AND r.owner_user_id = ?
@@ -432,6 +433,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       if (repoRecord) {
         linkedRepositoryId = repoRecord.id;
         linkedDefaultCommitOid = (repoRecord as any).defaultCommitOid || null;
+        linkedRepositoryVisibility = (repoRecord as any).visibility || null;
         if (repoRecord.defaultCommitOid) {
           initialDeploymentState = 'source_ready';
         }
@@ -449,29 +451,32 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
 
 
-    let repositoryHasProvenBuild = false;
+    let verifiedRevision: any = null;
     try {
-      if (linkedRepositoryId) {
-
-
-        const existingDeploymentStateRow = await env.DB.prepare(
-          `SELECT deployment_state AS deploymentState FROM app_listings WHERE id = ?`
-        ).bind(dropId).first();
-        const hasDeployableListingState = Boolean(
-          existingDeploymentStateRow &&
-          ['deployable', 'active'].includes((existingDeploymentStateRow as any).deploymentState)
-        );
-
-
-        const healthyRevisionRow = hasDeployableListingState
-          ? null
-          : await env.DB.prepare(
-              `SELECT id FROM deployment_revisions WHERE repository_id = ? AND status = 'healthy' LIMIT 1`
-            ).bind(linkedRepositoryId).first();
-
-        repositoryHasProvenBuild = hasDeployableListingState || Boolean(healthyRevisionRow);
+      if (linkedRepositoryId && linkedDefaultCommitOid) {
+        verifiedRevision = await env.DB.prepare(`
+          SELECT dr.id AS deploymentRevisionId, dr.commit_oid AS commitOid,
+                 dr.build_run_id AS buildRunId, dr.environment, dr.url,
+                 dr.runtime_config_digest AS runtimeConfigDigest,
+                 br.source_manifest_digest AS sourceManifestDigest,
+                 br.result_digest AS resultDigest,
+                 br.evidence_bundle_sha256 AS evidenceBundleSha256
+          FROM deployment_revisions dr
+          JOIN build_runs br ON br.id = dr.build_run_id
+          WHERE dr.app_id = ?
+            AND dr.repository_id = ?
+            AND dr.commit_oid = ?
+            AND dr.status = 'healthy'
+            AND br.repository_id = dr.repository_id
+            AND br.commit_oid = dr.commit_oid
+            AND br.status = 'passed'
+          ORDER BY CASE dr.environment WHEN 'production' THEN 0 WHEN 'staging' THEN 1 ELSE 2 END,
+                   dr.revision_number DESC
+          LIMIT 1
+        `).bind(dropId, linkedRepositoryId, linkedDefaultCommitOid).first();
       }
     } catch {}
+    const repositoryHasProvenBuild = Boolean(verifiedRevision);
 
 
     
@@ -710,6 +715,73 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           .bind(newRepositoryId, dropId, creatorId)
       : null;
 
+    let releaseId: string | null = null;
+    let releaseStmt: any = null;
+    if (verifiedRevision && linkedRepositoryId && linkedDefaultCommitOid && linkedRepositoryVisibility) {
+      const artifactRows = await env.DB.prepare(`
+        SELECT id, kind, r2_key AS r2Key, sha256, media_type AS mediaType,
+               size_bytes AS sizeBytes, platform, architecture
+        FROM build_artifacts
+        WHERE build_run_id = ?
+        ORDER BY id
+      `).bind(verifiedRevision.buildRunId).all();
+      const artifactManifest = {
+        binaries: mergedBinaries,
+        artifacts: artifactRows.results || [],
+        build: {
+          sourceManifestDigest: verifiedRevision.sourceManifestDigest || null,
+          resultDigest: verifiedRevision.resultDigest || null,
+          evidenceBundleSha256: verifiedRevision.evidenceBundleSha256 || null
+        },
+        deployment: {
+          id: verifiedRevision.deploymentRevisionId,
+          environment: verifiedRevision.environment,
+          url: verifiedRevision.url || null,
+          runtimeConfigDigest: verifiedRevision.runtimeConfigDigest
+        }
+      };
+      releaseId = `rel_${crypto.randomUUID().replace(/-/g, '')}`;
+      releaseStmt = env.DB.prepare(`
+        INSERT INTO commerce_releases (
+          id, app_id, repository_id, seller_user_id, commit_oid,
+          deployment_revision_id, build_run_id, version, binaries_json,
+          artifact_manifest_json, resale_enabled, forking_enabled, visibility,
+          published_at
+        )
+        SELECT ?, ?, dr.repository_id, ?, dr.commit_oid,
+               dr.id, br.id, ?, ?, ?, ?, ?, r.visibility, CURRENT_TIMESTAMP
+        FROM deployment_revisions dr
+        JOIN build_runs br ON br.id = dr.build_run_id
+        JOIN repositories r ON r.id = dr.repository_id
+        JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
+        WHERE dr.id = ?
+          AND dr.app_id = ?
+          AND dr.repository_id = ?
+          AND dr.commit_oid = ?
+          AND rf.commit_oid = dr.commit_oid
+          AND dr.status = 'healthy'
+          AND br.status = 'passed'
+          AND br.repository_id = dr.repository_id
+          AND br.commit_oid = dr.commit_oid
+          AND r.owner_user_id = ?
+        RETURNING id
+      `).bind(
+        releaseId,
+        dropId,
+        creatorId,
+        version.trim(),
+        JSON.stringify(mergedBinaries),
+        JSON.stringify(artifactManifest),
+        resaleEnabled ? 1 : 0,
+        forkingEnabled ? 1 : 0,
+        verifiedRevision.deploymentRevisionId,
+        dropId,
+        linkedRepositoryId,
+        linkedDefaultCommitOid,
+        creatorId
+      );
+    }
+
     
     
     
@@ -733,8 +805,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const payoutsEnabled = Boolean((payoutAccount as any)?.payoutsEnabled);
     const honestProductStatus = repositoryHasProvenBuild && payoutsEnabled ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
-      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps, resale_enabled, forking_enabled)
-      SELECT id, ?, creator_id, ?, 'usd', ?, ?, ?, ?
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps, resale_enabled, forking_enabled, release_id)
+      SELECT id, ?, creator_id, ?, 'usd', ?, ?, ?, ?, ?
       FROM app_listings
       WHERE id = ? AND creator_id = ?
       ON CONFLICT(app_id) DO UPDATE SET
@@ -744,6 +816,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         royalty_bps = excluded.royalty_bps,
         resale_enabled = excluded.resale_enabled,
         forking_enabled = excluded.forking_enabled,
+        release_id = excluded.release_id,
         updated_at = CURRENT_TIMESTAMP
       WHERE commerce_products.seller_user_id = excluded.seller_user_id
       RETURNING app_id
@@ -754,6 +827,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       validatedRoyaltyBps,
       resaleEnabled ? 1 : 0,
       forkingEnabled ? 1 : 0,
+      releaseId,
       dropId,
       creatorId
     );
@@ -768,6 +842,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (newRepositoryMemberStmt) statements.push(newRepositoryMemberStmt);
     if (newRepositoryOutboxStmt) statements.push(newRepositoryOutboxStmt);
     if (linkRepositoryToListingStmt) statements.push(linkRepositoryToListingStmt);
+    if (releaseStmt) statements.push(releaseStmt);
     statements.push(productStmt);
 
     const batchResults = await env.DB.batch(statements);
@@ -777,7 +852,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const productResultIdx = statements.indexOf(productStmt);
     const listingWritten = Boolean(batchResults?.[0]?.results?.[0]);
     const productWritten = Boolean(batchResults?.[productResultIdx]?.results?.[0]);
-    if (!listingWritten || !productWritten) {
+    const releaseWritten = !releaseStmt || Boolean(batchResults?.[statements.indexOf(releaseStmt)]?.results?.[0]);
+    if (!listingWritten || !productWritten || !releaseWritten) {
       return Response.json({ success: false, error: 'Drop ID was claimed concurrently by another maker' }, { status: 409 });
     }
 
@@ -790,6 +866,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       repositoryId: linkedRepositoryId,
       repositoryProvisioned: Boolean(newRepositoryStmt),
       productStatus: honestProductStatus,
+      releaseId,
       payoutsEnabled,
       batchWindow,
       message: honestProductStatus === 'active'

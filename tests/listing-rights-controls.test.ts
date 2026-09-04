@@ -6,7 +6,7 @@ import * as repoTreeApi from '../functions/api/repo-tree';
 import * as repoFileApi from '../functions/api/repo-file';
 import * as createIntentApi from '../functions/api/payments/create-intent';
 import * as orderApi from '../functions/api/payments/orders/[id]';
-import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
+import { bindTestCommerceRelease, createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { hashSessionToken } from '../functions/api/_session';
 
 describe('NSW-120 listing resale controls', () => {
@@ -246,6 +246,7 @@ describe('NSW-127 private-source listing controls', () => {
         royalty_bps, resale_enabled, forking_enabled
       ) VALUES (?, ?, 'usr_nate', 2500, 'usd', 'active', 0, 1, 0)
     `).bind(appId, repositoryId).run();
+    await bindTestCommerceRelease(ctx.d1, appId, { repositoryId });
   });
 
   afterEach(() => {
@@ -425,7 +426,7 @@ describe('NSW-127 private-source listing controls', () => {
       INSERT INTO repositories (id, owner_user_id, slug, visibility, default_ref, storage_key, status)
       VALUES (?, 'usr_nate', 'private-source-mismatch', 'public', 'refs/heads/main', ?, 'active')
     `).bind(otherRepositoryId, `repositories/${otherRepositoryId}`).run();
-    await ctx.d1.prepare('UPDATE commerce_products SET repository_id = ? WHERE app_id = ?')
+    await ctx.d1.prepare('UPDATE commerce_products SET repository_id = ?, release_id = NULL WHERE app_id = ?')
       .bind(otherRepositoryId, appId).run();
     const response = await repoTreeApi.onRequestGet({
       request: new Request(`http://localhost/api/repo-tree?repoId=${repositoryId}`),

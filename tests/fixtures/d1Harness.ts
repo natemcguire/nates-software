@@ -35,7 +35,8 @@ export const CANONICAL_MIGRATIONS = [
   '0036_launch_honesty_cleanup.sql',
   '0037_first_party_sso_tickets.sql',
   '0038_shareware_restored_money_model.sql',
-  '0039_listing_rights_controls.sql'
+  '0039_listing_rights_controls.sql',
+  '0040_immutable_commerce_releases.sql'
 ] as const;
 
 export type MigrationFileName = typeof CANONICAL_MIGRATIONS[number];
@@ -73,6 +74,101 @@ export interface D1Database {
   batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
   exec(query: string): Promise<D1ExecResult>;
   dump(): Promise<ArrayBuffer>;
+}
+
+export async function bindTestCommerceRelease(
+  db: D1Database,
+  appId: string,
+  options: { repositoryId?: string; commitOid?: string } = {}
+): Promise<string> {
+  const token = appId.replace(/[^a-zA-Z0-9_]/g, '_');
+  const product: any = await db.prepare(`
+    SELECT cp.repository_id AS repositoryId, cp.seller_user_id AS sellerUserId,
+           cp.resale_enabled AS resaleEnabled, cp.forking_enabled AS forkingEnabled,
+           a.version, a.binaries
+    FROM commerce_products cp
+    JOIN app_listings a ON a.id = cp.app_id
+    WHERE cp.app_id = ?
+  `).bind(appId).first();
+  if (!product) throw new Error(`Missing commerce product fixture for ${appId}`);
+
+  const repositoryId = options.repositoryId || product.repositoryId || `repo_test_release_${token}`;
+  const commitOid = options.commitOid || 'f'.repeat(40);
+  const buildRunId = `build_test_release_${token}`;
+  const deploymentRevisionId = `deploy_test_release_${token}`;
+  const releaseId = `rel_test_release_${token}`;
+  const repository: any = await db.prepare('SELECT id FROM repositories WHERE id = ?')
+    .bind(repositoryId).first();
+
+  if (!repository) {
+    await db.prepare(`
+      INSERT INTO repositories (
+        id, app_id, owner_user_id, slug, visibility, default_ref, storage_key, status
+      ) VALUES (?, ?, ?, ?, 'public', 'refs/heads/main', ?, 'active')
+    `).bind(repositoryId, appId, product.sellerUserId, `test-release-${token}`, `repositories/${repositoryId}`).run();
+  } else {
+    await db.prepare('UPDATE repositories SET app_id = ? WHERE id = ?')
+      .bind(appId, repositoryId).run();
+  }
+  await db.prepare('UPDATE app_listings SET repository_id = ? WHERE id = ?')
+    .bind(repositoryId, appId).run();
+  await db.prepare('UPDATE commerce_products SET repository_id = ? WHERE app_id = ?')
+    .bind(repositoryId, appId).run();
+  await db.prepare(`
+    INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+    VALUES (?, 'refs/heads/main', ?, 1, ?)
+    ON CONFLICT(repository_id, ref_name) DO UPDATE SET commit_oid = excluded.commit_oid
+  `).bind(repositoryId, commitOid, product.sellerUserId).run();
+  await db.prepare(`
+    INSERT INTO build_runs (
+      id, repository_id, commit_oid, purpose, status, runner_image_digest,
+      build_command, source_manifest_digest, result_digest
+    ) VALUES (?, ?, ?, 'release', 'passed', 'sha256:test-runner', 'npm run build', 'sha256:test-source', 'sha256:test-result')
+  `).bind(buildRunId, repositoryId, commitOid).run();
+  const revision: any = await db.prepare(`
+    SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRevision
+    FROM deployment_revisions WHERE app_id = ? AND environment = 'production'
+  `).bind(appId).first();
+  await db.prepare(`
+    INSERT INTO deployment_revisions (
+      id, app_id, repository_id, commit_oid, build_run_id, environment,
+      revision_number, status, runtime_config_digest, deployed_by_user_id, deployed_at
+    ) VALUES (?, ?, ?, ?, ?, 'production', ?, 'healthy', 'sha256:test-runtime', ?, CURRENT_TIMESTAMP)
+  `).bind(
+    deploymentRevisionId,
+    appId,
+    repositoryId,
+    commitOid,
+    buildRunId,
+    revision?.nextRevision || 1,
+    product.sellerUserId
+  ).run();
+  const repositoryRow: any = await db.prepare('SELECT visibility FROM repositories WHERE id = ?')
+    .bind(repositoryId).first();
+  await db.prepare(`
+    INSERT INTO commerce_releases (
+      id, app_id, repository_id, seller_user_id, commit_oid,
+      deployment_revision_id, build_run_id, version, binaries_json,
+      artifact_manifest_json, resale_enabled, forking_enabled, visibility
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    releaseId,
+    appId,
+    repositoryId,
+    product.sellerUserId,
+    commitOid,
+    deploymentRevisionId,
+    buildRunId,
+    product.version,
+    product.binaries || '{}',
+    JSON.stringify({ binaries: JSON.parse(product.binaries || '{}'), artifacts: [] }),
+    product.resaleEnabled,
+    product.forkingEnabled,
+    repositoryRow.visibility
+  ).run();
+  await db.prepare('UPDATE commerce_products SET release_id = ? WHERE app_id = ?')
+    .bind(releaseId, appId).run();
+  return releaseId;
 }
 
 export interface ForeignKeyViolation {

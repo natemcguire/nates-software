@@ -422,10 +422,14 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
     }
 
     const product: any = await env.DB.prepare(`
-      SELECT app_id AS appId, repository_id AS repositoryId, seller_user_id AS sellerUserId,
-             price_cents AS priceCents, currency, price_version AS priceVersion, status
-      FROM commerce_products
-      WHERE app_id = ?
+      SELECT cp.app_id AS appId, cp.repository_id AS repositoryId, cp.seller_user_id AS sellerUserId,
+             cp.price_cents AS priceCents, cp.currency, cp.price_version AS priceVersion, cp.status,
+             cp.release_id AS releaseId, cr.app_id AS releaseAppId,
+             cr.repository_id AS releaseRepositoryId, cr.seller_user_id AS releaseSellerUserId,
+             cr.version AS releaseVersion, cr.commit_oid AS releaseCommitOid
+      FROM commerce_products cp
+      LEFT JOIN commerce_releases cr ON cr.id = cp.release_id
+      WHERE cp.app_id = ?
     `).bind(appId).first();
 
     if (!product) {
@@ -436,6 +440,16 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
       return Response.json(
         { success: false, error: `Product is not active for purchasing (status: ${product.status})` },
         { status: 400 }
+      );
+    }
+
+    if (!product.releaseId || product.releaseAppId !== appId ||
+        product.releaseRepositoryId !== product.repositoryId ||
+        product.releaseSellerUserId !== product.sellerUserId ||
+        !product.releaseCommitOid) {
+      return Response.json(
+        { success: false, error: 'Product does not have a verified immutable release bound for purchase' },
+        { status: 409 }
       );
     }
 
@@ -490,10 +504,10 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
         await env.DB.prepare(`
           INSERT INTO commerce_orders (
             id, idempotency_key, buyer_user_id, app_id, repository_id,
-            seller_user_id, app_version, price_version, gross_cents,
+            seller_user_id, release_id, app_version, price_version, gross_cents,
             currency, lineage_policy, lineage_snapshot_json, status, failure_code,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'payment_failed', 'lien_allocation_invalid', datetime('now'), datetime('now'))
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'payment_failed', 'lien_allocation_invalid', datetime('now'), datetime('now'))
         `).bind(
           failedOrderId,
           trimmedIdempotencyKey,
@@ -501,7 +515,8 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
           appId,
           repositoryId,
           product.sellerUserId,
-          appListing.version || 'v1.0.0',
+          product.releaseId,
+          product.releaseVersion,
           product.priceVersion,
           product.priceCents,
           product.currency,
@@ -524,10 +539,10 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
       env.DB.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, repository_id,
-          seller_user_id, app_version, price_version, gross_cents,
+          seller_user_id, release_id, app_version, price_version, gross_cents,
           currency, lineage_policy, lineage_snapshot_json, status,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', datetime('now'), datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'creating', datetime('now'), datetime('now'))
       `).bind(
         orderId,
         trimmedIdempotencyKey,
@@ -535,7 +550,8 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
         appId,
         repositoryId,
         product.sellerUserId,
-        appListing.version || 'v1.0.0',
+        product.releaseId,
+        product.releaseVersion,
         product.priceVersion,
         calculation.grossCents,
         calculation.currency,
