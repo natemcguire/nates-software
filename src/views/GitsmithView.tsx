@@ -307,9 +307,6 @@ export const GitsmithView: React.FC = () => {
     ? (selectedRepo.source === 'showcase' ? selectedRepo.files : repoTreeFiles)
     : [];
 
-  // Authoritative file tree for canonical repositories, fetched from /api/repo-tree
-  // (a proxy over the GITSMITH gateway's real `git ls-tree -r` listing). No hardcoded
-  // or synthetic file list is substituted — an empty/loading/error state is shown as-is.
   useEffect(() => {
     let isCancelled = false;
 
@@ -594,19 +591,19 @@ export const GitsmithView: React.FC = () => {
   const codeLines = fileContent !== null ? fileContent.split('\n') : [];
 
   return (
-    <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
-      <div className="bg-[#1e293b] border-b border-slate-700 px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
+    <div className="flex flex-col h-full bg-[#c0c0c0] text-black font-tahoma text-xs overflow-hidden select-none">
+      <div className="bg-[#c0c0c0] border-b border-[#808080] px-3 py-2 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div 
             onClick={() => { playClickSound(); setSearchQuery(''); }}
-            className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 rounded-md border border-slate-700 shadow-inner cursor-pointer hover:border-sky-400 transition-colors"
+            className="win95-btn px-2.5 py-1 flex items-center gap-1.5 font-bold cursor-pointer bg-[#dfdfdf] hover:bg-white text-black"
           >
-            <Code size={16} className="text-sky-400" />
-            <span className="font-bold text-white text-sm tracking-wide font-mono">GITSMITH</span>
-            <span className="bg-sky-600 text-white text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">FORGE</span>
+            <Code size={16} className="text-blue-800" />
+            <span className="font-bold text-black text-sm tracking-wide font-mono">GITSMITH</span>
+            <span className="bg-blue-800 text-white text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">FORGE</span>
           </div>
-          <span className="text-slate-400 font-mono text-xs hidden sm:inline flex items-center gap-1.5">
-            <Globe size={13} className="text-sky-400" />
+          <span className="text-gray-600 font-mono text-[11px] hidden sm:inline flex items-center gap-1.5">
+            <Globe size={13} className="text-blue-700" />
             <span>Repository control plane · Git transport requires the GITSMITH gateway</span>
           </span>
         </div>
@@ -619,7 +616,7 @@ export const GitsmithView: React.FC = () => {
               setShowCreateRepo(true);
             }}
             disabled={Boolean(user) && !gatewayReady}
-            className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:text-slate-400 disabled:border-slate-600 px-2.5 py-1 rounded border border-sky-400 text-white font-bold"
+            className="win95-btn px-2.5 py-1 text-black font-bold flex items-center gap-1 text-[11px] bg-[#dfdfdf] hover:bg-white disabled:opacity-50"
           >
             <Plus size={14} /> New Repository
           </button>
@@ -627,9 +624,9 @@ export const GitsmithView: React.FC = () => {
       </div>
 
       {showCreateRepo && (
-        <form onSubmit={handleCreateRepository} className="bg-slate-900 border-b border-sky-700 px-4 py-3 flex items-end gap-3 flex-wrap">
+        <form onSubmit={handleCreateRepository} className="bg-[#ece9d8] border-b border-[#808080] p-3 flex items-end gap-3 flex-wrap">
           <div className="flex-1 min-w-[220px]">
-            <label htmlFor="gitsmith-repo-slug" className="block text-[11px] text-sky-300 font-bold mb-1">Repository slug</label>
+            <label htmlFor="gitsmith-repo-slug" className="block text-[11px] text-gray-800 font-bold mb-1">Repository slug</label>
             <input
               id="gitsmith-repo-slug"
               value={newRepoSlug}
@@ -638,47 +635,47 @@ export const GitsmithView: React.FC = () => {
               pattern="[a-z0-9][a-z0-9._-]*"
               maxLength={100}
               required
-              className="w-full bg-slate-950 border border-slate-600 rounded px-3 py-1.5 text-white font-mono focus:outline-none focus:border-sky-400"
+              className="win95-field bg-white text-black px-2 py-1 text-xs font-mono w-full focus:outline-none"
             />
           </div>
           <div>
-            <label htmlFor="gitsmith-repo-visibility" className="block text-[11px] text-sky-300 font-bold mb-1">Visibility</label>
+            <label htmlFor="gitsmith-repo-visibility" className="block text-[11px] text-gray-800 font-bold mb-1">Visibility</label>
             <select
               id="gitsmith-repo-visibility"
               value={newRepoVisibility}
               onChange={event => setNewRepoVisibility(event.target.value as typeof newRepoVisibility)}
-              className="bg-slate-950 border border-slate-600 rounded px-3 py-1.5 text-white"
+              className="win95-field bg-white text-black px-2 py-1 text-xs"
             >
               <option value="public">Public</option>
               <option value="unlisted">Unlisted</option>
               <option value="private">Private</option>
             </select>
           </div>
-          <button disabled={isCreatingRepo} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-3 py-1.5 rounded font-bold">
+          <button disabled={isCreatingRepo} className="win95-btn bg-[#dfdfdf] hover:bg-white text-black font-bold px-3 py-1.5 text-xs disabled:opacity-50">
             {isCreatingRepo ? 'Queuing…' : 'Create & Provision'}
           </button>
-          <button type="button" onClick={() => setShowCreateRepo(false)} className="p-1.5 text-slate-400 hover:text-white" aria-label="Close repository form">
+          <button type="button" onClick={() => setShowCreateRepo(false)} className="win95-btn p-1 text-black hover:bg-[#dfdfdf]" aria-label="Close repository form">
             <X size={16} />
           </button>
-          <p className="basis-full text-[11px] text-slate-400">The control plane creates a provisioning record first. Git objects and refs become active only after confirmation from the authoritative gateway.</p>
+          <p className="basis-full text-[11px] text-gray-600">The control plane creates a provisioning record first. Git objects and refs become active only after confirmation from the authoritative gateway.</p>
         </form>
       )}
 
       {showingShowcases ? (
-        <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono flex items-center justify-between">
+        <div className="bg-[#fff3cd] border-b border-[#ffeeba] px-3 py-1.5 text-[11px] text-[#856404] font-mono flex items-center justify-between">
           <span>DEMO GALLERY — Bundled showcase snapshots for UI preview only. Not canonical repositories, gateway objects, or live forge state.</span>
           <button
             onClick={() => {
               setShowBundledExamples(false);
               setSelectedRepo(canonicalRepositories.length > 0 ? canonicalRepositories[0] : null);
             }}
-            className="text-amber-300 hover:text-white underline text-[11px] ml-3 shrink-0"
+            className="win95-btn px-2 py-0.5 text-[10px] text-black underline ml-3 shrink-0"
           >
             Close Demo Gallery
           </button>
         </div>
       ) : canonicalRepositories.length > 0 ? null : (
-        <div className={`${canonicalLoadState === 'error' ? 'bg-red-950/80 border-red-700 text-red-200' : 'bg-slate-900 border-slate-700 text-slate-300'} border-b px-4 py-2 text-[11px] font-mono`}>
+        <div className={`${canonicalLoadState === 'error' ? 'bg-[#f8d7da] border-[#f5c6cb] text-[#721c24]' : 'bg-[#ece9d8] border-[#808080] text-gray-700'} border-b px-3 py-1.5 text-[11px] font-mono`}>
           {canonicalLoadState === 'loading'
             ? 'LOADING CANONICAL FORGE…'
             : canonicalLoadState === 'error'
@@ -689,28 +686,28 @@ export const GitsmithView: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         <div 
           style={{ width: `${sidebarWidth}px`, minWidth: '220px', maxWidth: '520px' }}
-          className="border-r border-slate-700 bg-[#0f172a] flex flex-col overflow-hidden shrink-0"
+          className="border-r border-[#808080] bg-[#ece9d8] flex flex-col overflow-hidden shrink-0"
         >
-          <div className="p-3 border-b border-slate-700 bg-[#1e293b]">
+          <div className="p-2 border-b border-[#808080] bg-[#c0c0c0]">
             <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+              <Search size={14} className="absolute left-2 top-2 text-gray-500" />
               <input
                 type="text"
                 placeholder="Find a repository or maker..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#0f172a] border border-slate-600 rounded-md px-3 py-1.5 pl-8 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-sky-400 shadow-inner"
+                className="win95-field bg-white text-black w-full px-2 py-1 pl-7 text-xs placeholder-gray-500 focus:outline-none"
               />
             </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1 font-mono">
+            <div className="flex items-center justify-between text-[11px] text-gray-700 mt-2 px-1 font-mono">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => { playClickSound(); setFilterMine(false); }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                  className={`px-2 py-0.5 text-[10px] font-bold transition-colors win95-btn ${
                     !filterMine
-                      ? 'bg-sky-600 text-white shadow-sm'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                      ? 'bg-white text-blue-900 border-2'
+                      : 'bg-[#c0c0c0] text-gray-700 hover:bg-[#dfdfdf]'
                   }`}
                 >
                   All ({repositoryCatalog.length})
@@ -719,27 +716,27 @@ export const GitsmithView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => { playClickSound(); setFilterMine(true); }}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                    className={`px-2 py-0.5 text-[10px] font-bold transition-colors win95-btn ${
                       filterMine
-                        ? 'bg-emerald-600 text-white shadow-sm'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                        ? 'bg-white text-emerald-800 border-2'
+                        : 'bg-[#c0c0c0] text-gray-700 hover:bg-[#dfdfdf]'
                     }`}
                   >
                     Mine ({repositoryCatalog.filter(r => r.owner === user.username).length})
                   </button>
                 )}
               </div>
-              <span className={showingShowcases ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+              <span className={showingShowcases ? 'text-amber-800 font-bold' : 'text-emerald-800 font-bold'}>
                 {showingShowcases ? 'Bundled snapshots' : 'Canonical D1'}
               </span>
             </div>
           </div>
 
-          <Win95Scroll className="flex-1 divide-y divide-slate-800">
+          <Win95Scroll className="flex-1 divide-y divide-[#d0d0d0] bg-white win95-field">
             {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
-              <div className="p-4 space-y-3 text-slate-300">
-                <p className="font-bold text-white">No canonical repositories to show.</p>
-                <p className="text-[11px] leading-relaxed text-slate-400">
+              <div className="p-4 space-y-3 text-gray-700">
+                <p className="font-bold text-black">No canonical repositories to show.</p>
+                <p className="text-[11px] leading-relaxed text-gray-600">
                   {canonicalLoadState === 'error'
                     ? 'The control plane could not be reached. Retry before creating, cloning, or forking anything.'
                     : user ? 'Create a repository to provision its authoritative bare Git storage.' : 'Sign in to create a repository, or explore the demo gallery.'}
@@ -751,15 +748,15 @@ export const GitsmithView: React.FC = () => {
                     setSelectedRepo(GITSMITH_REPOS[0]);
                     setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
                   }}
-                  className="w-full border border-amber-700 bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 rounded px-3 py-2 text-[11px] font-bold"
+                  className="win95-btn w-full bg-[#dfdfdf] hover:bg-white text-black px-3 py-2 text-[11px] font-bold"
                 >
                   Open Demo Gallery (Bundled Examples)
                 </button>
               </div>
             )}
             {filterMine && user?.username && filteredRepos.length === 0 && repositoryCatalog.length > 0 && (
-              <div className="p-4 text-center space-y-2 text-slate-400">
-                <p className="font-bold text-white text-xs">No repositories owned by @{user.username}</p>
+              <div className="p-4 text-center space-y-2 text-gray-600">
+                <p className="font-bold text-black text-xs">No repositories owned by @{user.username}</p>
                 <p className="text-[11px]">Click "New Repository" above to create your first forge repo.</p>
               </div>
             )}
@@ -772,40 +769,41 @@ export const GitsmithView: React.FC = () => {
                   onClick={() => {
                     playClickSound();
                     setSelectedRepo(repo);
-                    // Canonical repos have no local file list to seed from; the real
-                    // tree loads asynchronously from /api/repo-tree. Showcase repos
-                    // keep their bundled demo files (explicitly labeled, opt-in only).
                     setActiveFile(repo.source === 'showcase' ? (repo.files.find(f => f.type === 'file') || repo.files[0] || null) : null);
                   }}
-                  className={`p-3.5 cursor-pointer transition-all ${
+                  className={`p-3 cursor-pointer transition-all ${
                     isSelected
-                      ? 'bg-slate-800/90 border-l-4 border-sky-400 shadow-sm'
-                      : 'hover:bg-slate-800/50 text-slate-300'
+                      ? 'bg-[#000080] text-white'
+                      : 'hover:bg-[#f0f0f0] text-black'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2 font-bold text-sm">
                       <span className="text-base">{repo.avatar}</span>
-                      <span className={isSelected ? 'text-sky-300' : 'text-white'}>{repo.owner}/{repo.name}</span>
+                      <span className={isSelected ? 'text-white' : 'text-blue-900'}>{repo.owner}/{repo.name}</span>
                       {isOwner && (
-                        <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-700 font-bold">
+                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border font-bold ${
+                          isSelected ? 'bg-emerald-900 text-emerald-100 border-emerald-400' : 'bg-emerald-100 text-emerald-800 border-emerald-600'
+                        }`}>
                           you
                         </span>
                       )}
                     </div>
-                    <span className="text-[10px] font-mono text-slate-300 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-700">
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                      isSelected ? 'bg-[#000060] text-white border-blue-400' : 'bg-[#ece9d8] text-gray-700 border-[#808080]'
+                    }`}>
                       {repo.branch}
                     </span>
                   </div>
 
-                  <p className="text-slate-400 text-xs line-clamp-2 mb-2 leading-relaxed">
+                  <p className={`text-xs line-clamp-2 mb-2 leading-relaxed ${isSelected ? 'text-gray-200' : 'text-gray-600'}`}>
                     {repo.description}
                   </p>
 
-                  <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
-                    <span className="flex items-center gap-1"><CircleDot size={11} className="text-amber-400" /> {repo.language ? repo.language.split('/')[0] : 'unknown'}</span>
-                    <span className="flex items-center gap-1"><Star size={11} className="text-yellow-400" /> {repo.stars ?? 'not tracked'}</span>
-                    <span className="flex items-center gap-1"><GitFork size={11} className="text-sky-400" /> {repo.forks ?? 'not synced'}</span>
+                  <div className={`flex items-center gap-3 text-[11px] font-mono ${isSelected ? 'text-gray-200' : 'text-gray-500'}`}>
+                    <span className="flex items-center gap-1"><CircleDot size={11} className={isSelected ? 'text-amber-300' : 'text-amber-600'} /> {repo.language ? repo.language.split('/')[0] : 'unknown'}</span>
+                    <span className="flex items-center gap-1"><Star size={11} className={isSelected ? 'text-yellow-300' : 'text-yellow-600'} /> {repo.stars ?? 'not tracked'}</span>
+                    <span className="flex items-center gap-1"><GitFork size={11} className={isSelected ? 'text-blue-200' : 'text-blue-700'} /> {repo.forks ?? 'not synced'}</span>
                   </div>
                 </div>
               );
@@ -815,24 +813,24 @@ export const GitsmithView: React.FC = () => {
 
         <div
           onMouseDown={startResizeSidebar}
-          className="w-1.5 hover:w-2 bg-slate-800 hover:bg-sky-500 cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
+          className="w-1.5 hover:w-2 bg-[#808080] hover:bg-[#000080] cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
           title="Drag to resize repository sidebar"
         >
-          <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
+          <GripVertical size={10} className="text-white group-hover:text-yellow-200" />
         </div>
 
-        <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3 min-w-0">
+        <div className="flex-1 flex flex-col bg-[#ece9d8] overflow-y-auto p-3 space-y-3 min-w-0">
           {!selectedRepo || repositoryCatalog.length === 0 ? (
-            <div className="m-auto max-w-xl rounded-lg border border-slate-700 bg-slate-900 p-6 text-center shadow-xl">
-              <Code size={36} className="mx-auto mb-3 text-sky-400" />
-              <h1 className="text-lg font-bold text-white">
+            <div className="m-auto max-w-xl border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] p-6 text-center shadow">
+              <Code size={36} className="mx-auto mb-3 text-blue-800" />
+              <h1 className="text-lg font-bold text-black">
                 {canonicalLoadState === 'loading'
                   ? 'Loading the forge…'
                   : canonicalLoadState === 'error'
                     ? 'Forge Control Plane Unavailable'
                     : 'Start with an authoritative repository'}
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+              <p className="mt-2 text-sm leading-relaxed text-gray-700">
                 {canonicalLoadState === 'error'
                   ? 'GITSMITH could not load the canonical catalog. Nothing from the bundled examples is being presented as live repository state.'
                   : canonicalLoadState === 'loading'
@@ -841,31 +839,31 @@ export const GitsmithView: React.FC = () => {
               </p>
             </div>
           ) : (<>
-          <div className="bg-[#1e293b] border border-slate-700 rounded-lg p-4 shadow-sm">
+          <div className="bg-[#c0c0c0] border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] p-3 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
               <div>
                 <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
                   <span className="text-2xl">{selectedRepo.avatar}</span>
-                  <h1 className="text-xl font-bold text-white flex items-center gap-1.5 font-mono">
-                    <span className="text-slate-400 font-normal">{selectedRepo.owner}</span>
-                    <span className="text-slate-500">/</span>
-                    <span className="text-sky-400 font-black">{selectedRepo.name}</span>
+                  <h1 className="text-xl font-bold text-black flex items-center gap-1.5 font-mono">
+                    <span className="text-gray-700 font-normal">{selectedRepo.owner}</span>
+                    <span className="text-gray-400">/</span>
+                    <span className="text-blue-900 font-black">{selectedRepo.name}</span>
                   </h1>
-                  <span className="bg-slate-900 text-slate-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
+                  <span className="win95-field bg-white text-gray-800 text-[10px] font-bold px-2 py-0.5">
                     {selectedRepo.visibility}
                   </span>
                   {user?.username && selectedRepo.owner === user.username && (
-                    <span className="bg-emerald-950 text-emerald-300 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-700">
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 border border-emerald-600">
                       Owned by you
                     </span>
                   )}
                   <span className={`${
                     selectedRepo.source === 'showcase'
-                      ? 'bg-amber-950 text-amber-300 border-amber-700'
+                      ? 'bg-amber-100 text-amber-800 border-amber-600'
                       : selectedRepo.status === 'active' && selectedRepo.lastCommit.sha !== 'No projected ref'
-                        ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                        : 'bg-amber-950 text-amber-300 border-amber-700'
-                  } text-[11px] font-bold px-2 py-0.5 rounded-full border`}>
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-600'
+                        : 'bg-amber-100 text-amber-800 border-amber-600'
+                  } text-[10px] font-bold px-2 py-0.5 border`}>
                     {selectedRepo.source === 'canonical'
                       ? (selectedRepo.status === 'provisioning'
                           ? 'Provisioning'
@@ -875,7 +873,7 @@ export const GitsmithView: React.FC = () => {
                       : 'Demo Showcase'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+                <p className="text-xs text-gray-800 max-w-3xl leading-relaxed">
                   {selectedRepo.description}
                 </p>
               </div>
@@ -887,7 +885,7 @@ export const GitsmithView: React.FC = () => {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => playClickSound()}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-md font-bold text-xs flex items-center gap-1.5 transition-colors shadow-md"
+                    className="win95-btn bg-[#dfdfdf] hover:bg-white text-black px-3 py-1 font-bold text-xs flex items-center gap-1.5"
                   >
                     <Play size={13} fill="currentColor" />
                     <span>▷ View Live App</span>
@@ -909,51 +907,51 @@ export const GitsmithView: React.FC = () => {
                       playSuccessChime();
                       setShowForkModal(true);
                     }}
-                    className="bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold px-3.5 py-1.5 rounded-md text-xs flex items-center gap-1.5 transition-all shadow-md border border-amber-400"
+                    className="win95-btn bg-[#dfdfdf] hover:bg-white text-black font-bold px-3 py-1 text-xs flex items-center gap-1.5"
                     title="Fork into isolated worktree with Claude Code / AGY / Cursor"
                   >
-                    <Bot size={14} className="text-yellow-200" />
+                    <Bot size={14} className="text-blue-900" />
                     <span>⚡ Fork with AI</span>
-                    <span className="bg-amber-900/60 px-1.5 py-0.5 rounded text-[10px] text-amber-200 font-mono">{selectedRepo.forks ?? 'local'}</span>
+                    <span className="win95-field bg-white px-1.5 py-0.5 text-[10px] text-gray-800 font-mono">{selectedRepo.forks ?? 'local'}</span>
                   </button>
 
                   <button
                     onClick={() => {
                       handleCopyClone(selectedRepo);
                     }}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-3.5 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                    className="win95-btn bg-[#dfdfdf] hover:bg-white text-black px-3 py-1 text-xs font-bold flex items-center gap-1.5"
                     title="Copy SLOP install command"
                   >
-                    {copiedClone ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                    {copiedClone ? <Check size={13} className="text-emerald-700" /> : <Copy size={13} />}
                     <span>{copiedClone ? 'Install copied!' : 'Install'}</span>
                   </button>
                 </div>
-                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                <div className="text-[11px] font-mono text-gray-600 flex items-center gap-1">
                   <span>your fork &rarr;</span>
-                  <span className="text-emerald-400 font-bold">
+                  <span className="text-emerald-800 font-bold">
                     @{user?.username || 'you'}/{selectedRepo.name}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-700 flex items-center justify-between text-xs text-slate-300 flex-wrap gap-2 font-mono">
+            <div className="pt-2 border-t border-[#808080] flex items-center justify-between text-xs text-gray-800 flex-wrap gap-2 font-mono">
               <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5 text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+                <span className="win95-field bg-white px-2 py-0.5 text-blue-900 font-bold flex items-center gap-1.5">
                   <GitBranch size={13} /> {selectedRepo.branch}
                 </span>
-                <span>Storage: <strong className="text-emerald-400 font-semibold">{selectedRepo.sqlitePath}</strong></span>
-                <span>License: <strong className="text-white">{selectedRepo.license}</strong></span>
+                <span>Storage: <strong className="text-emerald-800 font-semibold">{selectedRepo.sqlitePath}</strong></span>
+                <span>License: <strong className="text-black">{selectedRepo.license}</strong></span>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded border border-slate-700">
-                <Clock size={13} className="text-slate-400" />
-                <span className="text-slate-400">
+              <div className="win95-field bg-white px-2 py-0.5 text-gray-700 flex items-center gap-2">
+                <Clock size={13} className="text-gray-500" />
+                <span className="text-gray-600">
                   {selectedRepo.source === 'canonical' ? 'Authoritative ref:' : 'Bundled snapshot:'}
                 </span>
-                <span className="text-sky-400 font-bold">{selectedRepo.lastCommit.sha}</span>
-                <span className="text-white">"{selectedRepo.lastCommit.message}"</span>
-                <span className="bg-slate-800 text-slate-300 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-slate-600">
+                <span className="text-blue-900 font-bold">{selectedRepo.lastCommit.sha}</span>
+                <span className="text-black">"{selectedRepo.lastCommit.message}"</span>
+                <span className="bg-[#ece9d8] text-gray-700 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-[#808080]">
                   {selectedRepo.source === 'canonical'
                     ? (selectedRepo.lastCommit.sha === 'No projected ref' ? 'NO REF PROJECTED' : 'D1 PROJECTION')
                     : 'DEMO ONLY'}
@@ -962,33 +960,33 @@ export const GitsmithView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 border-b border-slate-700 select-none">
+          <div className="flex items-center gap-1 border-b border-[#808080] select-none pt-1">
             <button
               onClick={() => { playClickSound(); setActiveTab('code'); }}
-              className={`px-4 py-2 border-b-2 font-bold text-xs flex items-center gap-2 transition-colors ${
+              className={`win95-btn px-3 py-1 font-bold text-xs flex items-center gap-1.5 ${
                 activeTab === 'code'
-                  ? 'border-sky-400 text-sky-400 bg-slate-800/40 rounded-t'
-                  : 'border-transparent text-slate-400 hover:text-white'
+                  ? 'bg-white text-blue-900 border-2'
+                  : 'bg-[#c0c0c0] text-gray-700 hover:bg-[#dfdfdf]'
               }`}
             >
               <Code size={14} /> Code &amp; Files
             </button>
             <button
               onClick={() => { playClickSound(); setActiveTab('commits'); }}
-              className={`px-4 py-2 border-b-2 font-bold text-xs flex items-center gap-2 transition-colors ${
+              className={`win95-btn px-3 py-1 font-bold text-xs flex items-center gap-1.5 ${
                 activeTab === 'commits'
-                  ? 'border-sky-400 text-sky-400 bg-slate-800/40 rounded-t'
-                  : 'border-transparent text-slate-400 hover:text-white'
+                  ? 'bg-white text-blue-900 border-2'
+                  : 'bg-[#c0c0c0] text-gray-700 hover:bg-[#dfdfdf]'
               }`}
             >
               <Clock size={14} /> Commit Log &amp; CAS Reflog
             </button>
             <button
               onClick={() => { playClickSound(); setActiveTab('lineage'); }}
-              className={`px-4 py-2 border-b-2 font-bold text-xs flex items-center gap-2 transition-colors ${
+              className={`win95-btn px-3 py-1 font-bold text-xs flex items-center gap-1.5 ${
                 activeTab === 'lineage'
-                  ? 'border-sky-400 text-sky-400 bg-slate-800/40 rounded-t'
-                  : 'border-transparent text-slate-400 hover:text-white'
+                  ? 'bg-white text-blue-900 border-2'
+                  : 'bg-[#c0c0c0] text-gray-700 hover:bg-[#dfdfdf]'
               }`}
             >
               <Sparkles size={14} /> Royalty Settlement
@@ -996,26 +994,26 @@ export const GitsmithView: React.FC = () => {
           </div>
 
           {activeTab === 'code' && (
-            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] shadow-md flex flex-col flex-1 min-h-[420px]">
-              <div className="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between font-mono text-xs">
-                <div className="flex items-center gap-2 text-white font-bold">
-                  <FileCode size={15} className="text-sky-400" />
+            <div className="border-2 border-t-[#808080] border-l-[#808080] border-b-white border-r-white bg-[#c0c0c0] flex flex-col flex-1 min-h-[420px]">
+              <div className="bg-[#c0c0c0] border-b border-[#808080] px-3 py-1.5 flex items-center justify-between font-mono text-xs text-black">
+                <div className="flex items-center gap-2 text-black font-bold">
+                  <FileCode size={15} className="text-blue-800" />
                   <span>{selectedRepo.name}</span>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-sky-300">{activeFile?.name || (displayedFiles[0]?.name || 'README.md')}</span>
+                  <span className="text-gray-400">/</span>
+                  <span className="text-blue-900">{activeFile?.name || (displayedFiles[0]?.name || 'README.md')}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   {fileContent !== null && (
-                    <span className="text-slate-400 text-[11px]">
+                    <span className="text-gray-600 text-[11px]">
                       {codeLines.length} lines · {activeFile?.size || 'Raw UTF-8'}
                     </span>
                   )}
                   <button
                     onClick={handleCopyCode}
                     disabled={!fileContent}
-                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-600 px-2 py-1 rounded text-[11px] flex items-center gap-1 font-mono transition-colors"
+                    className="win95-btn px-2 py-0.5 text-[11px] bg-[#dfdfdf] hover:bg-white text-black flex items-center gap-1 font-mono disabled:opacity-40"
                   >
-                    {copiedCode ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                    {copiedCode ? <Check size={11} className="text-emerald-700" /> : <Copy size={11} />}
                     <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
                   </button>
                 </div>
@@ -1024,16 +1022,16 @@ export const GitsmithView: React.FC = () => {
               <div className="flex flex-1 overflow-hidden">
                 <Win95Scroll
                   style={{ width: `${fileTreeWidth}px`, minWidth: '160px', maxWidth: '460px' }}
-                  className="bg-[#0f172a] p-2 space-y-1 shrink-0"
+                  className="bg-white win95-field p-2 space-y-0.5 shrink-0"
                 >
-                  <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 tracking-wider font-mono">
+                  <div className="text-[10px] font-bold text-gray-600 uppercase px-2 py-1 tracking-wider font-mono">
                     Repository Files
                   </div>
                   {selectedRepo?.source !== 'showcase' && repoTreeLoading && (
-                    <div className="px-2 py-1.5 text-[11px] text-slate-400 font-mono">Loading tree…</div>
+                    <div className="px-2 py-1.5 text-[11px] text-gray-600 font-mono">Loading tree…</div>
                   )}
                   {selectedRepo?.source !== 'showcase' && !repoTreeLoading && repoTreeError && (
-                    <div className="px-2 py-1.5 text-[11px] text-rose-300 font-mono leading-relaxed">{repoTreeError}</div>
+                    <div className="px-2 py-1.5 text-[11px] text-red-700 font-mono leading-relaxed">{repoTreeError}</div>
                   )}
                   {displayedFiles.map((file, idx) => {
                     const isFileActive = (activeFile?.name || displayedFiles[0]?.name || 'README.md') === file.name;
@@ -1044,17 +1042,17 @@ export const GitsmithView: React.FC = () => {
                           playClickSound();
                           setActiveFile(file);
                         }}
-                        className={`w-full text-left px-3 py-1.5 rounded-md flex items-center justify-between text-xs font-mono transition-colors ${
+                        className={`w-full text-left px-2 py-1 flex items-center justify-between text-xs font-mono transition-colors ${
                           isFileActive
-                            ? 'bg-sky-600 text-white font-bold shadow'
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            ? 'bg-[#000080] text-white font-bold'
+                            : 'text-black hover:bg-[#ece9d8]'
                         }`}
                       >
                         <span className="flex items-center gap-2 truncate">
                           {file.type === 'dir' ? (
-                            <Folder size={14} className="text-sky-400 shrink-0" />
+                            <Folder size={14} className={isFileActive ? 'text-yellow-300 shrink-0' : 'text-yellow-600 shrink-0'} />
                           ) : (
-                            <FileText size={14} className={isFileActive ? 'text-white' : 'text-slate-400 shrink-0'} />
+                            <FileText size={14} className={isFileActive ? 'text-white shrink-0' : 'text-gray-600 shrink-0'} />
                           )}
                           <span className="truncate">{file.name}</span>
                         </span>
@@ -1066,39 +1064,39 @@ export const GitsmithView: React.FC = () => {
 
                 <div
                   onMouseDown={startResizeFileTree}
-                  className="w-1.5 hover:w-2 bg-slate-800 hover:bg-sky-500 cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
+                  className="w-1.5 hover:w-2 bg-[#808080] hover:bg-[#000080] cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
                   title="Drag to resize file tree panel"
                 >
-                  <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
+                  <GripVertical size={10} className="text-white group-hover:text-yellow-200" />
                 </div>
 
                 {fileLoading ? (
-                  <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs text-slate-400 flex items-center justify-center">
+                  <div className="flex-1 bg-white win95-field p-6 font-mono text-xs text-gray-600 flex items-center justify-center">
                     <div className="flex items-center gap-2">
-                      <Clock size={16} className="animate-spin text-sky-400" />
+                      <Clock size={16} className="animate-spin text-blue-800" />
                       <span>Loading file from repository…</span>
                     </div>
                   </div>
                 ) : fileError ? (
-                  <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs overflow-auto flex items-start">
-                    <div className="max-w-xl p-4 bg-rose-950/50 border border-rose-800 rounded-lg text-rose-300 space-y-2">
-                      <div className="font-bold flex items-center gap-2 text-rose-400 text-sm">
-                        <X size={16} className="text-rose-400" />
+                  <div className="flex-1 bg-white win95-field p-6 font-mono text-xs overflow-auto flex items-start">
+                    <div className="max-w-xl p-4 bg-[#f8d7da] border border-[#f5c6cb] rounded text-[#721c24] space-y-2">
+                      <div className="font-bold flex items-center gap-2 text-[#721c24] text-sm">
+                        <X size={16} className="text-[#721c24]" />
                         <span>File Read Unavailable</span>
                       </div>
-                      <p className="text-xs leading-relaxed text-rose-200">{fileError}</p>
-                      <p className="text-[11px] text-rose-400/80">Authoritative Git storage is queried via /api/repo-file. No synthetic fallback is generated.</p>
+                      <p className="text-xs leading-relaxed text-[#721c24]">{fileError}</p>
+                      <p className="text-[11px] text-red-900/80">Authoritative Git storage is queried via /api/repo-file. No synthetic fallback is generated.</p>
                     </div>
                   </div>
                 ) : fileContent !== null ? (
-                  <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-auto text-slate-100 flex min-w-0">
-                    <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1 shrink-0">
+                  <div className="flex-1 bg-white win95-field p-3 font-mono text-xs overflow-auto text-black flex min-w-0">
+                    <div className="select-none text-gray-400 text-right pr-3 border-r border-[#d0d0d0] font-mono space-y-0.5 shrink-0 bg-[#f8f8f8]">
                       {codeLines.map((_: string, i: number) => (
                         <div key={i} className="leading-relaxed">{i + 1}</div>
                       ))}
                     </div>
 
-                    <div className="pl-4 flex-1 space-y-1 overflow-x-auto select-text font-mono text-slate-200">
+                    <div className="pl-3 flex-1 space-y-0.5 overflow-x-auto select-text font-mono text-black">
                       {codeLines.map((line: string, i: number) => (
                         <div key={i} className="leading-relaxed whitespace-pre font-mono">
                           {line || ' '}
@@ -1107,7 +1105,7 @@ export const GitsmithView: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs text-slate-500 flex items-center justify-center">
+                  <div className="flex-1 bg-white win95-field p-6 font-mono text-xs text-gray-500 flex items-center justify-center">
                     <span>Select a file from the repository to view its contents.</span>
                   </div>
                 )}
@@ -1116,27 +1114,27 @@ export const GitsmithView: React.FC = () => {
           )}
 
           {activeTab === 'commits' && (
-            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-3 shadow-md">
-              <div className="font-mono text-sm font-bold text-white mb-2 flex items-center justify-between">
+            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] p-3 space-y-2 shadow-sm">
+              <div className="font-mono text-xs font-bold text-black mb-2 flex items-center justify-between">
                 <span>{selectedRepo.source === 'canonical' ? 'Canonical Default-Ref Projection' : 'Bundled Commit Snapshot'}</span>
-                <span className={`text-xs font-normal ${selectedRepo.source === 'canonical' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                <span className={`text-xs font-normal ${selectedRepo.source === 'canonical' ? 'text-emerald-800 font-bold' : 'text-amber-800 font-bold'}`}>
                   {selectedRepo.source === 'canonical' ? selectedRepo.branch : 'Not a canonical gateway reflog'}
                 </span>
               </div>
 
               <div className="space-y-2 font-mono text-xs">
-                <div className="bg-[#0f172a] p-3.5 rounded-lg border border-slate-700 flex items-center justify-between">
+                <div className="win95-field bg-white p-3 flex items-center justify-between">
                   <div>
-                    <div className="text-white font-bold text-sm">{selectedRepo.lastCommit.message}</div>
-                    <div className="text-slate-400 text-xs mt-1">
-                      Authored by <strong className="text-sky-300">@{selectedRepo.lastCommit.author}</strong> ({selectedRepo.lastCommit.time})
+                    <div className="text-black font-bold text-sm">{selectedRepo.lastCommit.message}</div>
+                    <div className="text-gray-600 text-xs mt-1">
+                      Authored by <strong className="text-blue-900">@{selectedRepo.lastCommit.author}</strong> ({selectedRepo.lastCommit.time})
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="bg-slate-800 text-sky-400 px-2.5 py-1 rounded border border-slate-700 font-bold">
+                    <span className="win95-btn px-2 py-0.5 text-blue-900 font-mono font-bold text-xs bg-[#dfdfdf]">
                       {selectedRepo.lastCommit.sha}
                     </span>
-                    <span className="bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-600 font-bold text-[10px]">
+                    <span className="bg-[#ece9d8] text-gray-700 px-2 py-0.5 rounded border border-[#808080] font-bold text-[10px]">
                       {selectedRepo.source === 'canonical' ? 'D1 PROJECTION' : 'UNVERIFIED SNAPSHOT'}
                     </span>
                   </div>
@@ -1146,32 +1144,32 @@ export const GitsmithView: React.FC = () => {
           )}
 
           {activeTab === 'lineage' && (
-            <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-4 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] p-3 space-y-3 shadow-sm">
+              <div className="flex items-center justify-between border-b border-[#808080] pb-2 text-black">
                 <div>
-                  <h3 className="font-bold text-sm text-white">Platform Fee / Frozen Ancestor Royalty Settlement</h3>
-                  <p className="text-xs text-slate-400">Mathematical splits automatically credited upon license purchase or fork fee.</p>
+                  <h3 className="font-bold text-sm text-black">Platform Fee / Frozen Ancestor Royalty Settlement</h3>
+                  <p className="text-xs text-gray-600">Mathematical splits automatically credited upon license purchase or fork fee.</p>
                 </div>
-                <span className="bg-amber-950 text-amber-300 border border-amber-700 px-2.5 py-1 rounded text-xs font-mono font-bold">
+                <span className="bg-[#ece9d8] text-gray-800 border border-[#808080] px-2 py-0.5 text-xs font-mono font-bold">
                   Immutable Protocol Rule
                 </span>
               </div>
 
               <div className="grid grid-cols-3 gap-3 font-mono text-xs">
-                <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
-                  <div className="text-slate-400 mb-1 font-bold">Root Release</div>
-                  <div className="text-2xl font-black text-emerald-400">90% / 10%</div>
-                  <div className="text-[11px] text-slate-400 mt-1">No ancestor claim: maker keeps 90%, platform takes 10%.</div>
+                <div className="win95-field bg-white p-3">
+                  <div className="text-gray-600 mb-1 font-bold text-xs">Root Release</div>
+                  <div className="text-xl font-black text-emerald-800">90% / 10%</div>
+                  <div className="text-[11px] text-gray-600 mt-1">No ancestor claim: maker keeps 90%, platform takes 10%.</div>
                 </div>
-                <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
-                  <div className="text-slate-400 mb-1 font-bold">Downstream Release</div>
-                  <div className="text-2xl font-black text-sky-400">10% + royalty + rest</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Platform's flat 10% / each upstream maker's frozen royalty / seller keeps the rest.</div>
+                <div className="win95-field bg-white p-3">
+                  <div className="text-gray-600 mb-1 font-bold text-xs">Downstream Release</div>
+                  <div className="text-xl font-black text-blue-900">10% + royalty + rest</div>
+                  <div className="text-[11px] text-gray-600 mt-1">Platform's flat 10% / each upstream maker's frozen royalty / seller keeps the rest.</div>
                 </div>
-                <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
-                  <div className="text-slate-400 mb-1 font-bold">Selected Repository</div>
-                  <div className="text-lg font-black text-amber-400">No sale projection loaded</div>
-                  <div className="text-[11px] text-slate-400 mt-1">A purchase-time lineage snapshot is required before showing exact allocations.</div>
+                <div className="win95-field bg-white p-3">
+                  <div className="text-gray-600 mb-1 font-bold text-xs">Selected Repository</div>
+                  <div className="text-lg font-black text-amber-800">No sale projection loaded</div>
+                  <div className="text-[11px] text-gray-600 mt-1">A purchase-time lineage snapshot is required before showing exact allocations.</div>
                 </div>
               </div>
             </div>
