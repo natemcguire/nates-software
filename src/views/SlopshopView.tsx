@@ -281,7 +281,7 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
 
       appendLines([
         { text: `› slop fork ${coordinate.slug}`, type: 'input' },
-        { text: 'cloning from gitsmith.nates-software.com …', type: 'dim' }
+        { text: 'cloning from gitsmith-ssh.nates-software.com …', type: 'dim' }
       ]);
 
       try {

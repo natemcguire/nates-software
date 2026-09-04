@@ -759,7 +759,7 @@ export function getHonestDeploymentMessage(
       subtext: cleanError || 'Source has not been imported into GITSMITH and built by RIG.',
       state: 'draft',
       guidance: [
-        `1. Add GITSMITH remote: git remote add gitsmith git@gitsmith.nates-software.com:${app.id}.git`,
+        `1. Add GITSMITH remote: git remote add slop ssh://git@gitsmith-ssh.nates-software.com:22/<handle>/${app.id}.git (or just run: slop init ${app.id})`,
         '2. Push your project source code (Node, Python, Rust, Go, Dockerfile, or static HTML).',
         '3. RIG will automatically detect project type, execute candidate build, verify health, and promote to active.'
       ]
