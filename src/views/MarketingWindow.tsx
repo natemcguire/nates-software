@@ -16,6 +16,13 @@ interface MarketingWindowProps {
   onDismiss: () => void;
 }
 
+interface SpecItem {
+  name: string;
+  desc: string;
+  soon?: boolean;
+  onOpen?: () => void;
+}
+
 export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onOpenSetup,
   onOpenHotwire,
@@ -29,7 +36,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
 }) => {
   const { user } = useAuth();
 
-  const specs = [
+  const specs: SpecItem[] = [
     {
       name: 'HOTWIRE',
       desc: 'App store marketplace',
