@@ -538,11 +538,11 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       `).first();
 
       expect(order).toBeTruthy();
-      expect(order.status).toBe('payment_failed');
-      expect(order.failure_code).toBe('stripe_secret_missing');
+      expect(order.status).toBe('creating');
+      expect(order.failure_code).toBeNull();
     });
 
-    it('fails honestly when Stripe API returns an HTTP error (e.g. 400 Bad Request)', async () => {
+    it('keeps the order resumable when Stripe returns a non-card 4xx error', async () => {
       await createSession('usr_nate', 'test_token_buyer');
 
       globalThis.fetch = vi.fn().mockResolvedValue({
@@ -581,14 +581,16 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         SELECT status, failure_code FROM commerce_orders WHERE idempotency_key = 'key_stripe_err_1'
       `).first();
 
-      expect(order.status).toBe('payment_failed');
-      expect(order.failure_code).toBe('parameter_invalid_empty');
+      expect(order.status).toBe('creating');
+      expect(order.failure_code).toBeNull();
     });
 
-    it('fails honestly when Stripe network request throws', async () => {
+    it('keeps a Stripe 5xx outcome resumable', async () => {
       await createSession('usr_nate', 'test_token_buyer');
 
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection timed out'));
+      globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        error: { message: 'Stripe is temporarily unavailable', type: 'api_error', code: 'api_error' }
+      }), { status: 503 }));
 
       const req = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
@@ -612,14 +614,59 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
       expect(res.status).toBe(502);
       expect(data.success).toBe(false);
-      expect(data.error).toMatch(/Failed to connect to Stripe/);
+      expect(data.error).toMatch(/temporarily unavailable/);
+      expect(res.headers.get('Retry-After')).toBe('2');
 
       const order: any = await ctx.d1.prepare(`
         SELECT status, failure_code FROM commerce_orders WHERE idempotency_key = 'key_network_err_1'
       `).first();
 
+      expect(order.status).toBe('creating');
+      expect(order.failure_code).toBeNull();
+    });
+
+    it('marks a definitive Stripe card decline as payment_failed', async () => {
+      await createSession('usr_nate', 'test_token_buyer');
+
+      globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        error: {
+          message: 'Your card was declined.',
+          type: 'card_error',
+          code: 'card_declined',
+          decline_code: 'generic_decline'
+        }
+      }), { status: 402 }));
+
+      const req = new Request('http://localhost/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test_token_buyer',
+          'Idempotency-Key': 'key_card_declined_1'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
+      });
+
+      const env = {
+        DB: ctx.d1,
+        PAYMENTS_ENABLED: 'true',
+        STRIPE_SECRET_KEY: 'sk_test_123',
+        STRIPE_PUBLISHABLE_KEY: 'pk_test_123'
+      };
+
+      const res = await createIntentApi.onRequestPost({ request: req, env });
+      const data = await res.json();
+
+      expect(res.status).toBe(502);
+      expect(data.success).toBe(false);
+      expect(data.error).toMatch(/card was declined/i);
+
+      const order: any = await ctx.d1.prepare(`
+        SELECT status, failure_code FROM commerce_orders WHERE idempotency_key = 'key_card_declined_1'
+      `).first();
+
       expect(order.status).toBe('payment_failed');
-      expect(order.failure_code).toBe('stripe_network_error');
+      expect(order.failure_code).toBe('card_declined');
     });
   });
 
@@ -641,6 +688,82 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         ) VALUES (?, ?, 'usr_nate', 'dronehunter', NULL, 'usr_nate', 'v1.0.0', 1, 1500, 'usd', 'maker_70_lineage_20_pool_10', ?, 'creating', datetime('now'), datetime('now'))
       `).bind(orderId, idempotencyKey, JSON.stringify({ isRoot: true })).run();
     }
+
+    it('resumes with the same Stripe idempotency key when the response is lost after intent creation', async () => {
+      await createSession('usr_nate', 'test_token_buyer');
+
+      const stripeIntents = new Map<string, { id: string; client_secret: string; body: string }>();
+      let createCount = 0;
+      let loseResponse = true;
+      const stripeMock = vi.fn(async (_url: string, init?: RequestInit) => {
+        const headers = init?.headers as Record<string, string>;
+        const idempotencyKey = headers['Idempotency-Key'];
+        const body = String(init?.body || '');
+        let intent = stripeIntents.get(idempotencyKey);
+        if (!intent) {
+          createCount += 1;
+          intent = {
+            id: 'pi_created_before_network_drop',
+            client_secret: 'pi_created_before_network_drop_secret',
+            body
+          };
+          stripeIntents.set(idempotencyKey, intent);
+        } else {
+          expect(body).toBe(intent.body);
+        }
+        if (loseResponse) {
+          loseResponse = false;
+          throw new Error('Connection closed after Stripe committed the intent');
+        }
+        return new Response(JSON.stringify(intent), { status: 200 });
+      });
+
+      const request = () => new Request('http://localhost/api/payments/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test_token_buyer',
+          'Idempotency-Key': 'key_lost_after_create_1'
+        },
+        body: JSON.stringify({ appId: 'dronehunter' })
+      });
+
+      const firstRes = await createIntentApi.onRequestPost({
+        request: request(),
+        env: env(),
+        stripeFetchOverride: stripeMock as typeof fetch
+      });
+      expect(firstRes.status).toBe(502);
+      expect(firstRes.headers.get('Retry-After')).toBe('2');
+
+      const ambiguousOrder: any = await ctx.d1.prepare(`
+        SELECT id, status, failure_code AS failureCode, stripe_payment_intent_id AS piId
+        FROM commerce_orders WHERE idempotency_key = 'key_lost_after_create_1'
+      `).first();
+      expect(ambiguousOrder.status).toBe('creating');
+      expect(ambiguousOrder.failureCode).toBeNull();
+      expect(ambiguousOrder.piId).toBeNull();
+
+      const retryRes = await createIntentApi.onRequestPost({
+        request: request(),
+        env: env(),
+        stripeFetchOverride: stripeMock as typeof fetch
+      });
+      const retryData = await retryRes.json();
+
+      expect(retryRes.status).toBe(200);
+      expect(retryData.orderId).toBe(ambiguousOrder.id);
+      expect(retryData.paymentIntentId).toBe('pi_created_before_network_drop');
+      expect(retryData.clientSecret).toBe('pi_created_before_network_drop_secret');
+      expect(createCount).toBe(1);
+      expect(stripeIntents.size).toBe(1);
+      expect(stripeMock).toHaveBeenCalledTimes(2);
+
+      const firstHeaders = stripeMock.mock.calls[0][1]?.headers as Record<string, string>;
+      const retryHeaders = stripeMock.mock.calls[1][1]?.headers as Record<string, string>;
+      expect(firstHeaders['Idempotency-Key']).toBe(`pi_${ambiguousOrder.id}`);
+      expect(retryHeaders['Idempotency-Key']).toBe(firstHeaders['Idempotency-Key']);
+    });
 
     it('retries a "creating" order by retrieving the SAME PaymentIntent from Stripe (idempotency replay) and re-attaches it instead of stranding it', async () => {
       await createSession('usr_nate', 'test_token_buyer');
@@ -810,7 +933,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       STRIPE_PUBLISHABLE_KEY: 'pk_test_123'
     });
 
-    it('returns the same payment intent for identical idempotent request replays', async () => {
+    it('retrieves a persisted intent and returns its client secret when the first browser response is lost', async () => {
       await createSession('usr_nate', 'test_token_buyer');
 
       globalThis.fetch = vi.fn().mockResolvedValue({
@@ -832,9 +955,14 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       });
 
       const res1 = await createIntentApi.onRequestPost({ request: req1, env: env() });
-      const data1 = await res1.json();
       expect(res1.status).toBe(200);
-      expect(data1.paymentIntentId).toBe('pi_replay_123');
+
+      const persistedOrder: any = await ctx.d1.prepare(`
+        SELECT id, stripe_payment_intent_id AS piId, status
+        FROM commerce_orders WHERE idempotency_key = 'key_idempotency_replay'
+      `).first();
+      expect(persistedOrder.piId).toBe('pi_replay_123');
+      expect(persistedOrder.status).toBe('requires_payment');
 
       const req2 = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
@@ -851,10 +979,15 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
       expect(res2.status).toBe(200);
       expect(data2.success).toBe(true);
-      expect(data2.orderId).toBe(data1.orderId);
+      expect(data2.orderId).toBe(persistedOrder.id);
       expect(data2.paymentIntentId).toBe('pi_replay_123');
+      expect(data2.clientSecret).toBe('pi_replay_123_secret_xyz');
+      expect(data2.resumed).toBe(true);
 
-      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      const resumeCall = (globalThis.fetch as any).mock.calls[1];
+      expect(resumeCall[0]).toBe('https://api.stripe.com/v1/payment_intents/pi_replay_123');
+      expect(resumeCall[1].method).toBe('GET');
     });
 
     it('rejects reusing an idempotency key for a different app with 409 Conflict', async () => {
