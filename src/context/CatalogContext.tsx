@@ -148,6 +148,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               repoStatus: d.repoStatus || null,
               repoDefaultRef: d.repoDefaultRef || null,
               royaltyBps: typeof d.royaltyBps === 'number' ? d.royaltyBps : null,
+              resaleEnabled: d.resaleEnabled !== false,
+              forkingEnabled: d.forkingEnabled !== false,
               inheritedLiens: Array.isArray(d.inheritedLiens) ? d.inheritedLiens : [],
               productStatus: d.productStatus,
               hasVoted: Boolean(d.hasVoted),
@@ -297,7 +299,9 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           liveUrl: dropData.liveUrl || (dropData.binaries as any)?.web,
           repositoryId: dropData.repositoryId,
           grantableBps: dropData.grantableBps ?? dropData.grantable_bps,
-          royaltyBps: dropData.royaltyBps ?? dropData.royalty_bps
+          royaltyBps: dropData.royaltyBps ?? dropData.royalty_bps,
+          resaleEnabled: dropData.resaleEnabled ?? dropData.resale_enabled,
+          forkingEnabled: dropData.forkingEnabled ?? dropData.forking_enabled
         })
       });
 

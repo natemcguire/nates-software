@@ -5,6 +5,7 @@ import { AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
 import { CheckoutModal } from '../components/CheckoutModal';
 import { ForkWithAiModal } from '../components/ForkWithAiModal';
+import { RightsCard } from '../components/RightsCard';
 import { Win95Scroll } from '../components/Win95Scroll';
 import {
   Flame,
@@ -20,7 +21,8 @@ import {
   Snowflake,
   ArrowLeft,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  Lock
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
@@ -202,7 +204,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const openInspector = (app: AppListing) => {
     playClickSound();
     setSelectedApp(app);
-    setInspectTab('code');
+    setInspectTab((app.forkingEnabled ?? app.forking_enabled ?? true) ? 'code' : 'preview');
     if (onOpenApp) onOpenApp(app.id);
   };
 
@@ -407,6 +409,8 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
           apps.map((app, index) => {
             const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
             const royaltyBps = getRoyaltyBps(app);
+            const forkingEnabled = app.forkingEnabled ?? app.forking_enabled ?? true;
+            const resaleEnabled = app.resaleEnabled ?? app.resale_enabled ?? true;
             const listingStatus = deriveListingStatus({
               isDemo: app.isDemo,
               hasCanonicalRepo: Boolean(app.hasCanonicalRepo),
@@ -432,6 +436,16 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                     {royaltyBps > 0 && (
                       <span className="bg-[#e4f0f7] text-[#1c4a6b] border border-[#7ea6c4] font-mono text-[11px] px-1.5 flex items-center gap-0.5" title="Resale royalty — frozen onto every fork">
                         <Snowflake size={9} /> {(royaltyBps / 100).toFixed(1)}%
+                      </span>
+                    )}
+                    {!forkingEnabled && (
+                      <span className="bg-gray-200 text-gray-800 border border-gray-500 font-mono text-[10px] px-1.5">
+                        Private source
+                      </span>
+                    )}
+                    {forkingEnabled && !resaleEnabled && (
+                      <span className="bg-amber-100 text-amber-900 border border-amber-500 font-mono text-[10px] px-1.5">
+                        Personal forks only
                       </span>
                     )}
                   </div>
@@ -518,14 +532,17 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
   const makerKeeps = price - platformFee;
   const royaltyBps = getRoyaltyBps(app);
   const royaltyPct = royaltyBps / 100;
+  const forkingEnabled = app.forkingEnabled ?? app.forking_enabled ?? true;
+  const resaleEnabled = app.resaleEnabled ?? app.resale_enabled ?? true;
+  const upstreamRoyaltyBps = (app.inheritedLiens || []).reduce((total, lien) => total + lien.bps, 0);
   const hasPurchasableForgeSource = Boolean(app.hasCanonicalRepo && app.isRepoActive !== false && (app.repositoryId || app.repoSlug || app.repoName));
   const canBuy = hasPurchasableForgeSource && !app.isDemo && isAuthoritativeLive;
-  const canFork = Boolean(app.hasCanonicalRepo && (app.repoSlug || app.repositoryId || app.repoName)) && !app.isDemo && isAuthoritativeLive;
+  const canFork = forkingEnabled && Boolean(app.hasCanonicalRepo && (app.repoSlug || app.repositoryId || app.repoName)) && !app.isDemo && isAuthoritativeLive;
   const frozenDate = new Date().toISOString().slice(0, 10);
   const lienId = `${(app.name || 'APP').slice(0, 2).toUpperCase()}-${(app.id || '0000').slice(-4).toUpperCase()}`;
 
   const inspectTabs: { id: InspectTab; label: string; icon: React.ReactNode; meta?: string }[] = [
-    { id: 'code', label: 'Code', icon: <FileCode size={12} /> },
+    ...(forkingEnabled ? [{ id: 'code' as InspectTab, label: 'Code', icon: <FileCode size={12} /> }] : []),
     { id: 'readme', label: 'README', icon: <FileText size={12} /> },
     { id: 'preview', label: 'See it run', icon: <Play size={12} />, meta: '(preview)' },
     { id: 'lineage', label: 'Lineage', icon: <span>🌳</span> }
@@ -543,7 +560,9 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
               <h2 className="font-bold text-base text-blue-900 leading-tight">{app.name}</h2>
               <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 border border-green-300">{app.version}</span>
             </div>
-            <div className="text-[11px] text-[#2b5fa8]">by @{app.author || app.creator || 'maker'} · you&rsquo;re buying the source, not a subscription</div>
+            <div className="text-[11px] text-[#2b5fa8]">
+              by @{app.author || app.creator || 'maker'} · {forkingEnabled ? 'source included' : 'private-source app'} · no subscription
+            </div>
             <p className="text-[11px] text-gray-700 mt-0.5 line-clamp-2">{app.tagline}</p>
           </div>
         </div>
@@ -564,8 +583,15 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
         <div className="flex-1 win95-field bg-[#fbfbf8] border border-gray-600 overflow-hidden flex flex-col min-h-0">
           {inspectTab === 'preview' ? (
             <ArtifactSandbox app={app} onOpenPostEditor={onOpenPostEditor} />
-          ) : inspectTab === 'code' ? (
+          ) : inspectTab === 'code' && forkingEnabled ? (
             <CodeInspector app={app} />
+          ) : inspectTab === 'code' ? (
+            <div className="flex-1 grid place-items-center p-5 text-center text-gray-700 bg-white">
+              <div>
+                <Lock size={28} className="mx-auto mb-2 text-gray-500" />
+                <div className="font-bold">Source is private for this app</div>
+              </div>
+            </div>
           ) : inspectTab === 'readme' ? (
             <Win95Scroll className="flex-1 p-4 text-[12px] leading-relaxed text-gray-800 bg-white">
               <h3 className="font-bold text-sm mb-1 font-mono"># {librarySlug(app)}</h3>
@@ -615,7 +641,9 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
           <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Own it</div>
           <div className="p-3">
             <div className="font-bold text-[26px] text-[#0a5a0a] leading-none">{money(price)}</div>
-            <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source</div>
+            <div className="text-[11px] text-gray-600 mt-0.5">
+              {forkingEnabled ? 'Buy once · own the source' : 'Buy once · use the app'}
+            </div>
             <button
               disabled={!canBuy}
               onClick={() => {
@@ -623,30 +651,43 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
                 if (canBuy) setShowCheckoutModal(true);
               }}
               className={`win95-btn w-full mt-2.5 py-1.5 font-bold flex flex-col items-center ${canBuy ? 'bg-[#0a7d2a] text-white hover:brightness-110' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
-              title={canBuy ? 'Buy the source and license key' : 'Source not published to the forge yet'}
+              title={canBuy ? (forkingEnabled ? 'Buy the source and license key' : 'Buy the app and license key') : 'App is not ready for purchase'}
             >
-              <span>Buy source</span>
-              <span className="text-[11px] font-normal">get the repo + license key</span>
+              <span>{forkingEnabled ? 'Buy source' : 'Buy app'}</span>
+              <span className="text-[11px] font-normal">{forkingEnabled ? 'get the repo + license key' : 'get the running app + license key'}</span>
             </button>
-            <button
-              disabled={!canFork}
-              onClick={() => {
-                playClickSound();
-                if (canFork) setShowForkModal(true);
-              }}
-              className={`win95-btn w-full mt-1.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#dfdfdf] text-black hover:bg-white' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
-              title={canFork ? 'Fork it, remix, and sell your version' : 'Source not published to the forge yet'}
-            >
-              <span className="flex items-center gap-1"><GitFork size={12} /> Fork &amp; resell</span>
-              <span className="text-[11px] font-normal">remix it, sell your version</span>
-            </button>
-            {!canFork && (
+            {forkingEnabled && (
+              <button
+                disabled={!canFork}
+                onClick={() => {
+                  playClickSound();
+                  if (canFork) setShowForkModal(true);
+                }}
+                className={`win95-btn w-full mt-1.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#dfdfdf] text-black hover:bg-white' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
+                title={canFork ? (resaleEnabled ? 'Fork it, remix, and sell your version' : 'Fork it for personal use') : 'Source not published to the forge yet'}
+              >
+                <span className="flex items-center gap-1"><GitFork size={12} /> {resaleEnabled ? 'Fork & resell' : 'Fork for personal use'}</span>
+                <span className="text-[11px] font-normal">{resaleEnabled ? 'remix it, sell your version' : 'modify it privately'}</span>
+              </button>
+            )}
+            {!forkingEnabled && (
+              <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-300 p-1.5 mt-2">
+                Source is private and forking is disabled. This app remains available to buy and use.
+              </p>
+            )}
+            {forkingEnabled && !canFork && (
               <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-300 p-1.5 mt-2">
                 {app.isDemo ? 'Demo listing — no source published yet.' : !isAuthoritativeLive ? 'Offline — reconnect to buy or fork.' : 'This app hasn’t published source to the forge yet, so it can’t be bought or forked.'}
               </p>
             )}
           </div>
         </div>
+
+        <RightsCard
+          forkingEnabled={forkingEnabled}
+          resaleEnabled={resaleEnabled}
+          upstreamRoyaltyBps={upstreamRoyaltyBps}
+        />
 
         <div className="win95-field bg-white border border-gray-600">
           <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Where your {money(price)} goes</div>
@@ -690,11 +731,13 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
         </div>
       </div>
 
-      <ForkWithAiModal
-        isOpen={showForkModal}
-        onClose={() => setShowForkModal(false)}
-        app={app}
-      />
+      {forkingEnabled && (
+        <ForkWithAiModal
+          isOpen={showForkModal}
+          onClose={() => setShowForkModal(false)}
+          app={app}
+        />
+      )}
 
       <CheckoutModal
         isOpen={showCheckoutModal}

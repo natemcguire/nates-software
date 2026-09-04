@@ -46,6 +46,8 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [royaltyPercent, setRoyaltyPercent] = useState<number | ''>(
     Math.min(royaltyHeadroomPercent, typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10)
   );
+  const [resaleEnabled, setResaleEnabled] = useState(app.resaleEnabled ?? app.resale_enabled ?? true);
+  const [forkingEnabled, setForkingEnabled] = useState(app.forkingEnabled ?? app.forking_enabled ?? true);
   const isFork = typeof app.forkDepth === 'number' && app.forkDepth > 0;
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
@@ -143,6 +145,8 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
           version: version.trim(),
           price,
           royaltyBps,
+          resaleEnabled,
+          forkingEnabled,
           tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
           screenshots,
           binaries: {
@@ -541,6 +545,44 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="win95-field bg-white border border-gray-600 p-3">
+              <label className="flex items-start gap-2 text-xs text-black cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={resaleEnabled}
+                  onChange={(event) => setResaleEnabled(event.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-bold block">Allow others to resell forks of this app</span>
+                  {!resaleEnabled && (
+                    <span className="text-[11px] text-gray-700 block mt-1">
+                      Others can still fork and modify it for personal use, but cannot publish their fork for sale.
+                    </span>
+                  )}
+                </span>
+              </label>
+            </div>
+
+            <div className="win95-field bg-white border border-gray-600 p-3">
+              <label className="flex items-start gap-2 text-xs text-black cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!forkingEnabled}
+                  onChange={(event) => setForkingEnabled(!event.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-bold block">Private — hide source &amp; disable forking (app is still sellable)</span>
+                  {!forkingEnabled && (
+                    <span className="text-[11px] text-gray-700 block mt-1">
+                      Buyers receive the running app and license, without source access or fork rights.
+                    </span>
+                  )}
+                </span>
+              </label>
             </div>
 
             {requiresPayoutSetup && (

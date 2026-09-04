@@ -54,9 +54,11 @@ export async function handleGetOrder(context: { request: Request; env: any; para
     }
 
     const appListing: any = await env.DB.prepare(`
-      SELECT id, name, version, tagline, storage, binaries
-      FROM app_listings
-      WHERE id = ?
+      SELECT a.id, a.name, a.version, a.tagline, a.storage, a.binaries,
+             cp.forking_enabled AS forkingEnabled
+      FROM app_listings a
+      JOIN commerce_products cp ON cp.app_id = a.id
+      WHERE a.id = ?
     `).bind(order.appId).first();
 
     const seller: any = await env.DB.prepare(`
@@ -108,6 +110,11 @@ export async function handleGetOrder(context: { request: Request; env: any; para
       } catch {}
     }
 
+    const binaries = safePublishedArtifacts(parseObject(appListing?.binaries));
+    if (Number(appListing?.forkingEnabled) === 0) {
+      delete binaries.source;
+    }
+
     return Response.json({
       success: true,
       order: {
@@ -132,7 +139,7 @@ export async function handleGetOrder(context: { request: Request; env: any; para
         } : null,
         lineageSnapshot,
         storage: appListing?.storage || '',
-        binaries: safePublishedArtifacts(parseObject(appListing?.binaries)),
+        binaries,
         license: licensePayload
       }
     });

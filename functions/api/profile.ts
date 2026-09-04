@@ -84,19 +84,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     }
 
     const { results: publishedApps } = await env.DB.prepare(`
-        SELECT id, name, tagline, version, upvotes, forks, price, storage,
-               screenshots, binaries, tags, created_at AS createdAt
-        FROM app_listings
-        WHERE creator_id = ?
-        ORDER BY created_at DESC
+        SELECT a.id, a.name, a.tagline, a.version, a.upvotes, a.forks, a.price, a.storage,
+               a.screenshots, a.binaries, a.tags, a.created_at AS createdAt,
+               cp.forking_enabled AS forkingEnabled
+        FROM app_listings a
+        LEFT JOIN commerce_products cp ON cp.app_id = a.id
+        WHERE a.creator_id = ?
+        ORDER BY a.created_at DESC
       `).bind(user.id).all();
 
-    const formattedApps = (publishedApps || []).map((app: any) => ({
-      ...app,
-      screenshots: parseJsonColumn(app.screenshots, []),
-      binaries: safePublishedArtifacts(parseJsonColumn(app.binaries, {})),
-      tags: parseJsonColumn(app.tags, [])
-    }));
+    const formattedApps = (publishedApps || []).map((app: any) => {
+      const binaries = safePublishedArtifacts(parseJsonColumn(app.binaries, {}));
+      if (app.forkingEnabled !== null && app.forkingEnabled !== undefined && Number(app.forkingEnabled) === 0) {
+        delete binaries.source;
+      }
+      return {
+        ...app,
+        screenshots: parseJsonColumn(app.screenshots, []),
+        binaries,
+        tags: parseJsonColumn(app.tags, [])
+      };
+    });
 
     if (isSelf) {
       let royalties: ReturnType<typeof calculateMakerEconomics> = {

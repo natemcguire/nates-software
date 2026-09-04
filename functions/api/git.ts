@@ -489,10 +489,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       const repository = await db.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.status, r.visibility, r.default_ref AS defaultRef,
+               COALESCE(cp.forking_enabled, 1) AS forkingEnabled,
                CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
         FROM repositories r
         JOIN users owner_user ON owner_user.id = r.owner_user_id
         LEFT JOIN repository_members m ON m.repository_id = r.id AND m.user_id = ?
+        LEFT JOIN commerce_products cp
+          ON cp.repository_id = r.id
+          OR (cp.repository_id IS NULL AND cp.app_id = r.app_id)
         WHERE owner_user.username = ? AND r.slug = ?
         LIMIT 1
       `).bind((actor as any).id, (actor as any).id, owner, slug).first();
@@ -500,7 +504,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       if ((repository as any).status !== 'active') return failure('Repository is not active.', 409);
 
       const role = String((repository as any).memberRole || '');
-      const mayRead = (repository as any).visibility !== 'private' || Boolean(role);
+      const mayRead = (
+        (repository as any).visibility !== 'private' && Number((repository as any).forkingEnabled) !== 0
+      ) || Boolean(role);
       const mayWrite = ['writer', 'maintainer', 'owner'].includes(role);
       if ((operation === 'read' && !mayRead) || (operation === 'write' && !mayWrite)) {
         return failure('SSH key is not authorized for this repository operation.', 403);
@@ -1704,7 +1710,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
   if (auth.errorResponse) return auth.errorResponse;
   const actor = auth.user!;
 
-  if (action === 'create-repository' || action === 'fork') {
+  if (action === 'create-repository') {
     const readiness = await gatewayReadiness(env);
     if (!readiness.success || !readiness.ready) {
       return failure('GITSMITH gateway is not ready. No provisioning request was created.', 503);
@@ -1932,9 +1938,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       const gateParentListingRow = await db.prepare(`
-        SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId
-        FROM commerce_products WHERE repository_id = ?
-      `).bind(parentRepositoryId).first();
+        SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId,
+               forking_enabled AS forkingEnabled
+        FROM commerce_products
+        WHERE repository_id = ?
+           OR (repository_id IS NULL AND app_id = (SELECT app_id FROM repositories WHERE id = ?))
+        LIMIT 1
+      `).bind(parentRepositoryId, parentRepositoryId).first();
+      if (gateParentListingRow && Number((gateParentListingRow as any).forkingEnabled) === 0) {
+        return failure('Forking is disabled because this app keeps its source private.', 403);
+      }
+      const readiness = await gatewayReadiness(env);
+      if (!readiness.success || !readiness.ready) {
+        return failure('GITSMITH gateway is not ready. No provisioning request was created.', 503);
+      }
       const gateParentListingBps = gateParentListingRow ? Number((gateParentListingRow as any).royaltyBps) || 0 : 0;
       const gateParentOwnerUserId = gateParentListingRow
         ? (gateParentListingRow as any).sellerUserId

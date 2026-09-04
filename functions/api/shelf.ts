@@ -24,30 +24,37 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       SELECT cl.id, cl.app_id AS appId, cl.license_key_last4 AS licenseKeyLast4,
              cl.status, cl.issued_at AS purchasedDate, a.name, a.version,
              a.tagline, a.storage, a.binaries, u.avatar_url AS creatorAvatar,
-             u.username AS creatorUsername
+             u.username AS creatorUsername, cp.forking_enabled AS forkingEnabled
       FROM commerce_licenses cl
       JOIN app_listings a ON a.id = cl.app_id
       JOIN users u ON u.id = a.creator_id
+      LEFT JOIN commerce_products cp ON cp.app_id = a.id
       WHERE cl.owner_user_id = ? AND cl.status = 'active'
       ORDER BY cl.issued_at DESC, cl.id ASC
     `).bind(auth.user!.id).all();
 
-    const shelf = (results || []).map((row: any) => ({
-      id: row.id,
-      appId: row.appId,
-      name: row.name,
-      version: row.version,
-      tagline: row.tagline,
-      storage: row.storage,
-      licenseKeyLast4: row.licenseKeyLast4,
-      maskedKey: `NSW-${String(row.appId).slice(0, 2).toUpperCase()}-••••-${row.licenseKeyLast4}`,
-      purchasedDate: row.purchasedDate,
-      creatorAvatar: row.creatorAvatar,
-      creatorUsername: row.creatorUsername,
-      binaries: safePublishedArtifacts(parseObject(row.binaries)),
-      status: row.status,
-      source: 'commerce'
-    }));
+    const shelf = (results || []).map((row: any) => {
+      const binaries = safePublishedArtifacts(parseObject(row.binaries));
+      if (row.forkingEnabled !== null && row.forkingEnabled !== undefined && Number(row.forkingEnabled) === 0) {
+        delete binaries.source;
+      }
+      return {
+        id: row.id,
+        appId: row.appId,
+        name: row.name,
+        version: row.version,
+        tagline: row.tagline,
+        storage: row.storage,
+        licenseKeyLast4: row.licenseKeyLast4,
+        maskedKey: `NSW-${String(row.appId).slice(0, 2).toUpperCase()}-••••-${row.licenseKeyLast4}`,
+        purchasedDate: row.purchasedDate,
+        creatorAvatar: row.creatorAvatar,
+        creatorUsername: row.creatorUsername,
+        binaries,
+        status: row.status,
+        source: 'commerce'
+      };
+    });
 
     return Response.json({ success: true, shelf });
   } catch (error) {
