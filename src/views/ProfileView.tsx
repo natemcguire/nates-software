@@ -662,25 +662,64 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             ) : (
               <div className="space-y-2.5">
-                {publishedApps.map((app) => (
-                  <div key={app.id} className="border-2 border-gray-700 bg-blue-50/60 p-3 rounded flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl bg-white p-1 rounded border border-gray-400">{profileData.avatar}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-w95-blue">{app.name}</span>
-                          <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300 font-mono">
-                            {app.version}
-                          </span>
+                {publishedApps.map((app) => {
+                  const repoSlug = app.repoSlug || app.repoSlugName || (app.repoName ? `${app.creator || app.author || profileData.username}/${app.repoName}` : null);
+                  const hasRepo = Boolean(app.hasCanonicalRepo || app.repositoryId || repoSlug);
+                  const liveUrl = app.liveUrl || app.liveAppUrl || app.binaries?.web || null;
+
+                  return (
+                    <div key={app.id} className="border-2 border-gray-700 bg-blue-50/60 p-3 rounded flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl bg-white p-1 rounded border border-gray-400 shrink-0">{profileData.avatar}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-w95-blue">{app.name}</span>
+                            <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300 font-mono">
+                              {app.version}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-600 mt-0.5">{app.upvotes || 0} upvotes &middot; {app.forks || 0} downstream forks</div>
+                          <div className="text-[11px] text-gray-500 font-mono mt-1">App ID: {app.id}</div>
                         </div>
-                        <div className="text-xs text-gray-600 mt-0.5">{app.upvotes || 0} upvotes &middot; {app.forks || 0} downstream forks</div>
-                        <div className="text-[11px] text-gray-500 font-mono mt-1">App ID: {app.id}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {hasRepo ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              onOpenGitsmith?.(repoSlug || app.repositoryId || app.id);
+                            }}
+                            className="btn-w95 px-2.5 py-1 text-xs font-bold flex items-center gap-1 text-blue-900 hover:bg-white"
+                            title="Open canonical repository in GITSMITH"
+                          >
+                            <Terminal size={12} />
+                            <span>GITFORGE source</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-gray-400 font-mono">No forge repo</span>
+                        )}
+
+                        {liveUrl ? (
+                          <a
+                            href={liveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => playClickSound()}
+                            className="btn-w95 px-2.5 py-1 text-xs font-bold flex items-center gap-1 text-green-800 hover:bg-white inline-flex"
+                            title="View built live application"
+                          >
+                            <ExternalLink size={12} />
+                            <span>View live</span>
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-gray-400 font-mono">No live URL</span>
+                        )}
                       </div>
                     </div>
-
-                    <span className="text-[11px] text-gray-500">Release links are shown only after verified publication.</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
