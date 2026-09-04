@@ -1,9 +1,28 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { handleDrop, runSlopCli } from '../bin/slop.ts';
 
 describe('SLOP CLI Publisher (slop drop / slop publish)', () => {
-  it('should prepare metadata but fail closed without HOTWIRE transport', () => {
-    const res = handleDrop(['dronehunter', '--name=DroneHunter 95', '--price=15']);
+  const originalSlopToken = process.env.SLOP_SESSION_TOKEN;
+  const originalSessionToken = process.env.SESSION_TOKEN;
+  const originalAuthToken = process.env.AUTH_TOKEN;
+
+  beforeEach(() => {
+    delete process.env.SLOP_SESSION_TOKEN;
+    delete process.env.SESSION_TOKEN;
+    delete process.env.AUTH_TOKEN;
+  });
+
+  afterEach(() => {
+    if (originalSlopToken !== undefined) process.env.SLOP_SESSION_TOKEN = originalSlopToken;
+    else delete process.env.SLOP_SESSION_TOKEN;
+    if (originalSessionToken !== undefined) process.env.SESSION_TOKEN = originalSessionToken;
+    else delete process.env.SESSION_TOKEN;
+    if (originalAuthToken !== undefined) process.env.AUTH_TOKEN = originalAuthToken;
+    else delete process.env.AUTH_TOKEN;
+  });
+
+  it('should prepare metadata but fail closed without an authenticated CLI session', async () => {
+    const res = await handleDrop(['dronehunter', '--name=DroneHunter 95', '--price=15']);
     expect(res.success).toBe(false);
     expect(res.command).toBe('drop');
     expect(res.data.appId).toBe('dronehunter');
@@ -11,6 +30,7 @@ describe('SLOP CLI Publisher (slop drop / slop publish)', () => {
     expect(res.data.batch).toBeNull();
     expect(res.data.queued).toBe(false);
     expect(res.data.published).toBe(false);
+    expect(res.message).toContain('slop login');
   });
 
   it('should route slop publish through runSlopCli router', async () => {

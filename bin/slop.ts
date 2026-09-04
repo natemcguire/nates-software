@@ -247,6 +247,15 @@ export function deleteStoredCredentials(): boolean {
   return false;
 }
 
+export function resolveCliToken(options: any = {}): string {
+
+
+  return options.sessionToken || options.token
+    || (typeof process !== 'undefined' ? (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN) : '')
+    || readStoredCredentials()?.sessionToken
+    || '';
+}
+
 export async function promptToStartEngines(result: SlopCommandResult): Promise<SlopCommandResult> {
   if (!result.success || result.command !== "fork" || !isNode || !process.stdin?.isTTY || !process.stdout?.isTTY) {
     return result;
@@ -365,7 +374,100 @@ export function handleClone(slugArg?: string, destDirArg?: string): SlopCommandR
   };
 }
 
-export function handleInit(args: string[] = []): SlopCommandResult {
+function configureLocalGitRemote(cwd: string, remoteUrl: string): { configured: boolean; error: string | null } {
+  try {
+    const cp = getChildProcess();
+    if (!cp?.execFileSync) throw new Error('child_process is unavailable');
+    const remotes = String(cp.execFileSync('git', ['remote'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
+      .split(/\s+/).filter(Boolean);
+    cp.execFileSync('git', remotes.includes('slop')
+      ? ['remote', 'set-url', 'slop', remoteUrl]
+      : ['remote', 'add', 'slop', remoteUrl], { cwd, stdio: 'pipe' });
+    const actual = String(cp.execFileSync('git', ['remote', 'get-url', 'slop'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
+    if (actual !== remoteUrl) throw new Error('Git did not preserve the requested remote URL.');
+    return { configured: true, error: null };
+  } catch (error: any) {
+    return { configured: false, error: error?.stderr?.toString().trim() || error?.message || 'Unable to configure publication remote.' };
+  }
+}
+
+async function provisionRepositoryAndReadiness(
+  controlPlaneUrl: string,
+  token: string,
+  slug: string,
+  options: any
+): Promise<{ repository: any; readiness: any } | { error: string; status?: number }> {
+  const postGit = async (payload: any): Promise<any> => {
+    const requestInit = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    };
+    let res: Response;
+    if (options.env) {
+      const req = new Request(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, requestInit);
+      const gitModulePath = "../functions/api/git.ts";
+      const gitControlPlane = await import( gitModulePath);
+      res = await gitControlPlane.onRequestPost({ request: req, env: options.env });
+    } else if (options.fetchImpl) {
+      res = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, requestInit);
+    } else if (typeof fetch !== 'undefined') {
+      res = await fetch(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, { ...requestInit, signal: AbortSignal.timeout(8000) });
+    } else {
+      throw new Error('Control plane fetch is unavailable in this environment.');
+    }
+    const body: any = await res.json().catch(() => ({}));
+    return { res, body };
+  };
+
+  const getReadiness = async (): Promise<any> => {
+    const url = `${controlPlaneUrl.replace(/\/$/, '')}/api/git?action=gateway-readiness`;
+    let res: Response;
+    if (options.env) {
+      const req = new Request(url, { method: 'GET' });
+      const gitModulePath = "../functions/api/git.ts";
+      const gitControlPlane = await import( gitModulePath);
+      res = await gitControlPlane.onRequestGet({ request: req, env: options.env });
+    } else if (options.fetchImpl) {
+      res = await options.fetchImpl(url, { method: 'GET' });
+    } else if (typeof fetch !== 'undefined') {
+      res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(8000) });
+    } else {
+      throw new Error('Control plane fetch is unavailable in this environment.');
+    }
+    return res.json().catch(() => ({}));
+  };
+
+  let repository: any = null;
+  try {
+    const { res, body } = await postGit({ action: 'create-repository', slug });
+    if (res.status === 401) return { error: 'Authentication rejected by the control plane. Run "slop login" to refresh your CLI token.', status: 401 };
+    if (!res.ok || !body.success) return { error: body.error || `Repository creation returned status ${res.status}` };
+    repository = body.repository;
+  } catch (err: any) {
+    return { error: `Control plane unreachable at ${controlPlaneUrl}: ${err.message}` };
+  }
+
+
+  const maxPolls = 3;
+  for (let attempt = 0; attempt < maxPolls && repository?.status !== 'active'; attempt++) {
+    try {
+      const { res, body } = await postGit({ action: 'create-repository', slug });
+      if (res.ok && body.success) repository = body.repository;
+    } catch {}
+  }
+
+  let readiness: any = null;
+  try {
+    readiness = await getReadiness();
+  } catch (err: any) {
+    return { error: `Gateway readiness check failed: ${err.message}` };
+  }
+
+  return { repository, readiness };
+}
+
+export async function handleInit(args: string[] = [], options: any = {}): Promise<SlopCommandResult> {
   let projectName = args[0] && !args[0].startsWith("-") ? args[0] : "";
   let handle = "nate";
   let title = "";
@@ -381,7 +483,7 @@ export function handleInit(args: string[] = []): SlopCommandResult {
     if (arg.startsWith("--remote=")) requestedRemote = arg.slice("--remote=".length).trim();
   }
 
-  const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
+  const cwd = options.cwd || (typeof process !== "undefined" ? process.cwd() : "/tmp");
 
   if (!projectName) {
     try {
@@ -401,26 +503,56 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   const appId = projectName.toLowerCase().replace(/[^a-z0-9_-]/g, "");
   const formattedTitle = title || appId.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const formattedTagline = tagline || `${formattedTitle} — Built to share and multiply.`;
+
   let remoteConfigured = false;
   let remoteError: string | null = null;
+  let remoteUrl = "";
+  let authNote = '';
+  let repositoryId: string | null = null;
+
   if (requestedRemote && isNode) {
-    try {
-      const cp = getChildProcess();
-      if (!cp?.execFileSync) throw new Error('child_process is unavailable');
-      const remotes = String(cp.execFileSync('git', ['remote'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
-        .split(/\s+/).filter(Boolean);
-      cp.execFileSync('git', remotes.includes('slop')
-        ? ['remote', 'set-url', 'slop', requestedRemote]
-        : ['remote', 'add', 'slop', requestedRemote], { cwd, stdio: 'pipe' });
-      const actual = String(cp.execFileSync('git', ['remote', 'get-url', 'slop'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
-      if (actual !== requestedRemote) throw new Error('Git did not preserve the requested remote URL.');
-      remoteConfigured = true;
-    } catch (error: any) {
-      remoteError = error?.stderr?.toString().trim() || error?.message || 'Unable to configure publication remote.';
+
+    const result = configureLocalGitRemote(cwd, requestedRemote);
+    remoteConfigured = result.configured;
+    remoteError = result.error;
+    remoteUrl = requestedRemote;
+  } else if (isNode) {
+    const storedCreds = readStoredCredentials();
+    const token = resolveCliToken(options);
+    if (token) {
+      const resolvedHandle = storedCreds?.username || handle;
+      let controlPlaneUrl: string;
+      try {
+        controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
+      } catch (err: any) {
+        remoteError = err.message;
+        controlPlaneUrl = '';
+      }
+
+      if (controlPlaneUrl) {
+        const provisioned = await provisionRepositoryAndReadiness(controlPlaneUrl, token, appId, options);
+        if ('error' in provisioned) {
+          remoteError = provisioned.error;
+        } else {
+          repositoryId = provisioned.repository?.id || null;
+          const transport = provisioned.readiness?.transport;
+          if (transport?.host && transport?.port) {
+            const liveRemote = `ssh://git@${transport.host}:${transport.port}/${resolvedHandle}/${appId}.git`;
+            const result = configureLocalGitRemote(cwd, liveRemote);
+            remoteConfigured = result.configured;
+            remoteError = result.error;
+            remoteUrl = liveRemote;
+          } else {
+            remoteError = 'GITSMITH gateway transport is not yet active; repository was provisioned but no remote could be configured.';
+          }
+        }
+      }
+    } else {
+      authNote = 'Not authenticated. Run "slop login" first to have "slop init" provision a live repository and remote automatically.';
     }
   }
 
-  
+
   const configFile = "slop.json";
   try {
     const configPath = `${cwd}/${configFile}`;
@@ -438,9 +570,10 @@ export function handleInit(args: string[] = []): SlopCommandResult {
   const output = [
     `[SLOP INIT] Initialized Shareware Project: ${formattedTitle}`,
     remoteConfigured
-      ? `  ✔ Explicit publication remote configured: slop -> ${requestedRemote}`
+      ? `  ✔ Publication remote configured: slop -> ${remoteUrl}`
       : `  ℹ No publication remote configured. GITSMITH must provision one before slop push can publish.`,
-    remoteError ? `  ✖ Requested remote was not configured: ${remoteError}` : '',
+    remoteError ? `  ✖ Remote was not configured: ${remoteError}` : '',
+    authNote ? `  ℹ ${authNote}` : '',
     `  ✔ Project settings are configured in ${configFile}`,
     remoteConfigured
       ? `Ready for local work. Run "slop push" when you intentionally want to publish.`
@@ -459,9 +592,10 @@ export function handleInit(args: string[] = []): SlopCommandResult {
       tagline: formattedTagline,
       price: parseInt(price, 10) || 15,
       handle,
-      remoteUrl: remoteConfigured ? requestedRemote : null,
+      remoteUrl: remoteConfigured ? remoteUrl : null,
       remoteConfigured,
-      remoteError
+      remoteError,
+      repositoryId
     }
   };
 }
@@ -1028,6 +1162,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
   let remoteRef = "refs/heads/main";
   let sha = "unknown";
   let appId = args[0] || "my-shareware-app";
+  let suggestedPrice = 15;
   let gitError: string | null = null;
   let success = false;
   let remoteHeadVerified = false;
@@ -1054,6 +1189,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         try {
           const cfg = JSON.parse(fsMod.readFileSync(`${cwd}/slop.json`, 'utf-8'));
           if (cfg.name) appId = cfg.name.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+          if (typeof cfg.price === 'number' && Number.isFinite(cfg.price)) suggestedPrice = cfg.price;
         } catch {}
       }
 
@@ -1114,7 +1250,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       `  ✔ Remote push succeeded`,
       `  ✔ Remote ref verified: ${remoteRef} -> ${sha}`,
       `  ℹ This command does not publish a HOTWIRE drop or deploy an app.`,
-      `Next: run "slop drop" when you are ready to submit a release.`
+      `Next: run "slop drop --price ${suggestedPrice}" when you are ready to submit a release.`
     ].join("\n");
     console.log(output);
 
@@ -1155,34 +1291,163 @@ export function handlePush(args: string[] = []): SlopCommandResult {
   }
 }
 
-export function handleDrop(args: string[] = []): SlopCommandResult {
-  const target = args[0] || "dronehunter";
-  const appId = target.replace(/^[./]+/, "").split("/").pop() || "dronehunter";
-  const nameArg = args.find(a => a.startsWith("--name="))?.split("=")[1] || (appId.charAt(0).toUpperCase() + appId.slice(1));
-  const priceArg = args.find(a => a.startsWith("--price="))?.split("=")[1] || "15";
-  const priceCents = parseInt(priceArg, 10) * 100 || 1500;
+function readSlopJsonConfig(cwd: string): any {
+  try {
+    const fsMod = getFs();
+    const configPath = `${cwd}/slop.json`;
+    if (fsMod?.existsSync(configPath)) {
+      return JSON.parse(fsMod.readFileSync(configPath, 'utf-8') || '{}');
+    }
+  } catch {}
+  return {};
+}
 
-  const error = 'HOTWIRE CLI publication transport is not configured. No drop was queued and no deployment was created.';
-  console.error([
-    `[HOTWIRE PUBLISHER] Prepared local release metadata for ${nameArg}.`,
-    `  ℹ Requested price: $${(priceCents / 100).toFixed(2)}`,
-    `  ✖ ${error}`,
-    `  Open https://nates-software.com to submit through the authenticated drop form.`
-  ].join("\n"));
+export async function handleDrop(args: string[] = [], options: any = {}): Promise<SlopCommandResult> {
+  const target = args[0] && !args[0].startsWith('-') ? args[0] : "dronehunter";
+  const appId = target.replace(/^[./]+/, "").split("/").pop() || "dronehunter";
+  const cwd = options.cwd || (typeof process !== "undefined" ? process.cwd() : "/tmp");
+  const cfg = readSlopJsonConfig(cwd);
+
+  const nameArg = args.find(a => a.startsWith("--name="))?.split("=")[1] || cfg.name || (appId.charAt(0).toUpperCase() + appId.slice(1));
+  const priceArg = args.find(a => a.startsWith("--price="))?.split("=")[1] || (typeof cfg.price !== 'undefined' ? String(cfg.price) : "15");
+  const priceCents = parseInt(priceArg, 10) * 100 || 1500;
+  const taglineArg = args.find(a => a.startsWith("--tagline="))?.split("=")[1] || cfg.tagline;
+  const descriptionArg = args.find(a => a.startsWith("--description="))?.split("=")[1] || cfg.description;
+  const versionArg = args.find(a => a.startsWith("--version="))?.split("=")[1] || cfg.version || "v1.0.0";
+  const royaltyBpsArg = args.find(a => a.startsWith("--royaltyBps="))?.split("=")[1] ?? cfg.royaltyBps;
+  const royaltyBps = royaltyBpsArg !== undefined && royaltyBpsArg !== null && royaltyBpsArg !== ''
+    ? parseInt(String(royaltyBpsArg), 10) : undefined;
+  const repositoryIdArg = args.find(a => a.startsWith("--repositoryId="))?.split("=")[1] || cfg.repositoryId;
+
+  const token = resolveCliToken(options);
+
+  if (!token) {
+    const error = 'No authenticated CLI session is configured. Run "slop login" to publish a real HOTWIRE drop.';
+    console.error([
+      `[HOTWIRE PUBLISHER] Prepared local release metadata for ${nameArg}.`,
+      `  ℹ Requested price: $${(priceCents / 100).toFixed(2)}`,
+      `  ✖ ${error}`
+    ].join("\n"));
+
+    return {
+      success: false,
+      command: "drop",
+      message: error,
+      data: {
+        appId,
+        name: nameArg,
+        priceCents,
+        queued: false,
+        published: false,
+        deployed: false,
+        batch: null,
+        liveUrl: null
+      }
+    };
+  }
+
+  let controlPlaneUrl: string;
+  try {
+    controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
+  } catch (err: any) {
+    console.error(`[HOTWIRE PUBLISHER] ${err.message}`);
+    return {
+      success: false,
+      command: "drop",
+      message: err.message,
+      data: { appId, name: nameArg, priceCents, queued: false, published: false, deployed: false, batch: null, liveUrl: null }
+    };
+  }
+
+  const dropPayload: Record<string, any> = {
+    id: appId,
+    name: nameArg,
+    version: versionArg,
+    price: priceCents / 100
+  };
+  if (taglineArg) dropPayload.tagline = taglineArg;
+  if (descriptionArg) dropPayload.description = descriptionArg;
+  if (typeof royaltyBps === 'number' && Number.isFinite(royaltyBps)) dropPayload.royaltyBps = royaltyBps;
+  if (repositoryIdArg) dropPayload.repositoryId = repositoryIdArg;
+
+  const failClosed = (message: string): SlopCommandResult => {
+    console.error(`[HOTWIRE PUBLISHER] ${message}`);
+    return {
+      success: false,
+      command: "drop",
+      message,
+      data: { appId, name: nameArg, priceCents, queued: false, published: false, deployed: false, batch: null, liveUrl: null }
+    };
+  };
+
+  let dropRes: Response | null = null;
+  try {
+    const requestInit = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(dropPayload)
+    };
+
+    if (options.env) {
+      const req = new Request(`${controlPlaneUrl.replace(/\/$/, '')}/api/drops`, requestInit);
+      const dropsModulePath = "../functions/api/drops.ts";
+      const dropsControlPlane = await import( dropsModulePath);
+      dropRes = await dropsControlPlane.onRequestPost({ request: req, env: options.env });
+    } else if (options.fetchImpl) {
+      dropRes = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/drops`, requestInit);
+    } else if (typeof fetch !== 'undefined') {
+      dropRes = await fetch(`${controlPlaneUrl.replace(/\/$/, '')}/api/drops`, { ...requestInit, signal: AbortSignal.timeout(8000) });
+    } else {
+      return failClosed('Control plane fetch is unavailable in this environment.');
+    }
+  } catch (err: any) {
+    return failClosed(`Control plane unreachable at ${controlPlaneUrl}: ${err.message}`);
+  }
+
+  if (!dropRes) {
+    return failClosed('Control plane drop request failed: no response received.');
+  }
+
+  if (dropRes.status === 401) {
+    return failClosed('Authentication rejected by the control plane. Run "slop login" to refresh your CLI token.');
+  }
+
+  const dropBody: any = await dropRes.json().catch(() => ({}));
+  if (!dropRes.ok || !dropBody.success) {
+    const errMsg = dropBody.error || `Control plane drop returned status ${dropRes.status}`;
+    return failClosed(errMsg);
+  }
+
+  const output = [
+    `[HOTWIRE PUBLISHER] ${dropBody.message || 'Drop published.'}`,
+    `  ✔ Drop ID:            ${dropBody.id || appId}`,
+    `  ✔ Deployment state:   ${dropBody.deploymentState || 'unknown'}`,
+    `  ✔ Repository:         ${dropBody.repositoryId || 'unlinked'}${dropBody.repositoryProvisioned ? ' (newly provisioned)' : ''}`,
+    `  ✔ Product status:     ${dropBody.productStatus || 'unknown'}`,
+    dropBody.batchWindow ? `  ✔ Batch window:       ${JSON.stringify(dropBody.batchWindow)}` : ``
+  ].filter(Boolean).join("\n");
+  console.log(output);
 
   return {
-    success: false,
+    success: true,
     command: "drop",
-    message: error,
+    message: dropBody.message || 'Drop published successfully.',
     data: {
-      appId,
+      appId: dropBody.id || appId,
       name: nameArg,
       priceCents,
-      queued: false,
-      published: false,
-      deployed: false,
-      batch: null,
-      liveUrl: null
+      queued: true,
+      published: true,
+      deployed: dropBody.productStatus === 'active',
+      batch: dropBody.batchWindow || null,
+      liveUrl: null,
+      deploymentState: dropBody.deploymentState,
+      repositoryId: dropBody.repositoryId,
+      repositoryProvisioned: Boolean(dropBody.repositoryProvisioned),
+      productStatus: dropBody.productStatus
     }
   };
 }

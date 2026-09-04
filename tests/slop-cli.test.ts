@@ -46,8 +46,27 @@ afterEach(() => {
 describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
 
   describe('slop init [name]', () => {
-    it('should initialize locally without inventing a hosted publication remote', () => {
-      const res = handleInit(['my-awesome-game', '--title=My Awesome Game', '--price=20']);
+    const originalSlopToken = process.env.SLOP_SESSION_TOKEN;
+    const originalSessionToken = process.env.SESSION_TOKEN;
+    const originalAuthToken = process.env.AUTH_TOKEN;
+
+    beforeEach(() => {
+      delete process.env.SLOP_SESSION_TOKEN;
+      delete process.env.SESSION_TOKEN;
+      delete process.env.AUTH_TOKEN;
+    });
+
+    afterEach(() => {
+      if (originalSlopToken !== undefined) process.env.SLOP_SESSION_TOKEN = originalSlopToken;
+      else delete process.env.SLOP_SESSION_TOKEN;
+      if (originalSessionToken !== undefined) process.env.SESSION_TOKEN = originalSessionToken;
+      else delete process.env.SESSION_TOKEN;
+      if (originalAuthToken !== undefined) process.env.AUTH_TOKEN = originalAuthToken;
+      else delete process.env.AUTH_TOKEN;
+    });
+
+    it('should initialize locally without inventing a hosted publication remote', async () => {
+      const res = await handleInit(['my-awesome-game', '--title=My Awesome Game', '--price=20']);
       expect(res.success).toBe(true);
       expect(res.command).toBe('init');
       expect(res.data.appId).toBe('my-awesome-game');
@@ -55,14 +74,92 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.price).toBe(20);
       expect(res.data.remoteUrl).toBeNull();
       expect(res.data.remoteConfigured).toBe(false);
+      expect(res.message).not.toContain('undefined');
     });
 
-    it('should default cleanly without arguments', () => {
-      const res = handleInit();
+    it('should default cleanly without arguments', async () => {
+      const res = await handleInit();
       expect(res.success).toBe(true);
       expect(res.command).toBe('init');
       expect(res.data.price).toBe(15);
       expect(res.data.remoteUrl).toBeNull();
+    });
+
+    it('should not fabricate a live repository or remote when unauthenticated', async () => {
+      const res = await handleInit(['unauth-app']);
+      expect(res.success).toBe(true);
+      expect(res.data.remoteConfigured).toBe(false);
+      expect(res.data.remoteUrl).toBeNull();
+      expect(res.data.repositoryId).toBeNull();
+    });
+
+    it('should provision a live repository and configure the slop remote from gateway-readiness when authenticated', async () => {
+      const tempDir = join(tmpdir(), `slop-init-auth-${Date.now().toString(36)}`);
+      mkdirSync(tempDir, { recursive: true });
+      execSync(`git -c init.defaultBranch=main init "${tempDir}"`, { stdio: 'pipe' });
+
+      try {
+        const calls: string[] = [];
+        const mockFetch = async (url: string, init: any) => {
+          calls.push(url);
+          if (url.includes('/api/git?action=gateway-readiness')) {
+            return Response.json({
+              success: true,
+              ready: true,
+              transport: { protocol: 'ssh', configured: true, active: true, host: 'gitsmith-live.internal', port: 61022 }
+            });
+          }
+          if (url.endsWith('/api/git')) {
+            const body = JSON.parse(init.body);
+            expect(body.action).toBe('create-repository');
+            expect(body.appId).toBeUndefined();
+            expect(init.headers.Authorization).toBe('Bearer live-init-token');
+            return Response.json({
+              success: true,
+              repository: { id: 'repo_live_init', slug: body.slug, status: 'active', ownerUserId: 'usr_nate' }
+            }, { status: 201 });
+          }
+          throw new Error(`Unexpected fetch URL: ${url}`);
+        };
+
+        const res = await handleInit(['live-init-app'], {
+          cwd: tempDir,
+          fetchImpl: mockFetch,
+          sessionToken: 'live-init-token'
+        });
+
+        expect(res.success).toBe(true);
+        expect(res.data.remoteConfigured).toBe(true);
+        expect(res.data.remoteUrl).toBe('ssh://git@gitsmith-live.internal:61022/nate/live-init-app.git');
+        expect(res.data.repositoryId).toBe('repo_live_init');
+
+        const remoteUrl = execSync('git remote get-url slop', { cwd: tempDir, encoding: 'utf8' }).trim();
+        expect(remoteUrl).toBe('ssh://git@gitsmith-live.internal:61022/nate/live-init-app.git');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should surface a clear error and not fabricate a remote when the control plane rejects the CLI token', async () => {
+      const tempDir = join(tmpdir(), `slop-init-401-${Date.now().toString(36)}`);
+      mkdirSync(tempDir, { recursive: true });
+      execSync(`git -c init.defaultBranch=main init "${tempDir}"`, { stdio: 'pipe' });
+
+      try {
+        const mockFetch = async () => Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
+        const res = await handleInit(['rejected-app'], {
+          cwd: tempDir,
+          fetchImpl: mockFetch,
+          sessionToken: 'stale-token'
+        });
+
+        expect(res.success).toBe(true);
+        expect(res.data.remoteConfigured).toBe(false);
+        expect(res.data.remoteError).toContain('slop login');
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -279,14 +376,105 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop drop / slop publish', () => {
-    it('should never claim a queued drop without configured HOTWIRE transport', () => {
-      const res = handleDrop(['dronehunter', '--name=DroneHunter 95', '--price=15']);
+    const originalSlopToken = process.env.SLOP_SESSION_TOKEN;
+    const originalSessionToken = process.env.SESSION_TOKEN;
+    const originalAuthToken = process.env.AUTH_TOKEN;
+
+    beforeEach(() => {
+      delete process.env.SLOP_SESSION_TOKEN;
+      delete process.env.SESSION_TOKEN;
+      delete process.env.AUTH_TOKEN;
+    });
+
+    afterEach(() => {
+      if (originalSlopToken !== undefined) process.env.SLOP_SESSION_TOKEN = originalSlopToken;
+      else delete process.env.SLOP_SESSION_TOKEN;
+      if (originalSessionToken !== undefined) process.env.SESSION_TOKEN = originalSessionToken;
+      else delete process.env.SESSION_TOKEN;
+      if (originalAuthToken !== undefined) process.env.AUTH_TOKEN = originalAuthToken;
+      else delete process.env.AUTH_TOKEN;
+    });
+
+    it('should never claim a queued drop without an authenticated CLI session', async () => {
+      const res = await handleDrop(['dronehunter', '--name=DroneHunter 95', '--price=15']);
       expect(res.success).toBe(false);
       expect(res.command).toBe('drop');
       expect(res.data.appId).toBe('dronehunter');
       expect(res.data.priceCents).toBe(1500);
       expect(res.data.queued).toBe(false);
       expect(res.data.liveUrl).toBeNull();
+      expect(res.message).toContain('slop login');
+    });
+
+    it('should POST the real drop payload with Bearer auth and report only a true success:true response', async () => {
+      let capturedUrl = '';
+      let capturedInit: any = null;
+      const mockFetch = async (url: string, init: any) => {
+        capturedUrl = url;
+        capturedInit = init;
+        return Response.json({
+          success: true,
+          id: 'dronehunter',
+          deploymentState: 'source_ready',
+          repositoryId: 'repo_abc123',
+          repositoryProvisioned: false,
+          productStatus: 'active',
+          batchWindow: { start: '2026-09-02T00:01:00.000Z', end: '2026-09-03T00:01:00.000Z' },
+          message: 'Drop published successfully to Cloudflare D1'
+        });
+      };
+
+      const res = await handleDrop(
+        ['dronehunter', '--name=DroneHunter 95', '--price=15', '--version=v2.1.0', '--royaltyBps=1500'],
+        { fetchImpl: mockFetch, sessionToken: 'real-drop-token' }
+      );
+
+      expect(capturedUrl).toBe('https://nates-software.com/api/drops');
+      expect(capturedInit.method).toBe('POST');
+      expect(capturedInit.headers.Authorization).toBe('Bearer real-drop-token');
+      const body = JSON.parse(capturedInit.body);
+      expect(body).toMatchObject({
+        id: 'dronehunter',
+        name: 'DroneHunter 95',
+        version: 'v2.1.0',
+        price: 15,
+        royaltyBps: 1500
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.command).toBe('drop');
+      expect(res.data.queued).toBe(true);
+      expect(res.data.published).toBe(true);
+      expect(res.data.deployed).toBe(true);
+      expect(res.data.repositoryId).toBe('repo_abc123');
+      expect(res.data.batch).toEqual({ start: '2026-09-02T00:01:00.000Z', end: '2026-09-03T00:01:00.000Z' });
+    });
+
+    it('should fail closed and never report success when the control plane returns success:false', async () => {
+      const mockFetch = async () => Response.json({ success: false, error: 'version must match semver' }, { status: 400 });
+
+      const res = await handleDrop(
+        ['dronehunter', '--name=DroneHunter 95'],
+        { fetchImpl: mockFetch, sessionToken: 'real-drop-token' }
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.data.queued).toBe(false);
+      expect(res.data.published).toBe(false);
+      expect(res.message).toContain('version must match semver');
+    });
+
+    it('should surface a clear "run slop login" message on 401 and not claim success', async () => {
+      const mockFetch = async () => Response.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
+      const res = await handleDrop(
+        ['dronehunter', '--name=DroneHunter 95'],
+        { fetchImpl: mockFetch, sessionToken: 'expired-token' }
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.data.queued).toBe(false);
+      expect(res.message).toContain('slop login');
     });
   });
 
