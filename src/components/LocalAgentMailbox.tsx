@@ -136,11 +136,11 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
           <div className="font-bold text-gray-700">To enable inter-agent mailbox inspection:</div>
           <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 rounded space-y-1">
             <li>
-              <span className="text-gray-500">1. Install:</span> ./scripts/install.sh
+              <span className="text-gray-300 font-semibold">1. Install:</span> ./scripts/install.sh
             </li>
             <li>
-              <span className="text-gray-500">2. Start:</span> agent-inbox serve{' '}
-              <span className="text-gray-500">(or agent-inbox setup)</span>
+              <span className="text-gray-300 font-semibold">2. Start:</span> agent-inbox serve{' '}
+              <span className="text-gray-400">(or agent-inbox setup)</span>
             </li>
           </ol>
         </div>
