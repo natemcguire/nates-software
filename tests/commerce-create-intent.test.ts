@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import * as createIntentApi from '../functions/api/payments/create-intent';
-import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
+import { bindTestCommerceRelease, createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { hashSessionToken } from '../functions/api/_session';
 
 describe('Durable Commerce /api/payments/create-intent Engine', () => {
@@ -9,6 +9,8 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
   beforeEach(async () => {
     ctx = await createTestD1Database({ foreignKeys: true });
+    await bindTestCommerceRelease(ctx.d1, 'dronehunter');
+    await bindTestCommerceRelease(ctx.d1, 'certified-mailer');
     vi.restoreAllMocks();
   });
 
@@ -331,7 +333,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         sequence: 1,
         role: 'seller',
         recipientUserId: 'usr_nate',
-        sourceRepositoryId: null,
+        sourceRepositoryId: 'repo_test_release_certified_mailer',
         lineageDepth: 0,
         basisPoints: null,
         amountCents: 2250
@@ -412,6 +414,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status)
         VALUES ('wallart-custom-3d', 'repo_fork', 'usr_forker', 3000, 'usd', 'active')
       `).run();
+      await bindTestCommerceRelease(ctx.d1, 'wallart-custom-3d', { repositoryId: 'repo_fork' });
 
       await createSession('usr_nate', 'test_token_buyer');
 

@@ -207,7 +207,7 @@ export async function processStripeInboxEvent(
   }
 
   const order: any = await db.prepare(`
-    SELECT id, idempotency_key, buyer_user_id, app_id, repository_id,
+    SELECT id, idempotency_key, buyer_user_id, app_id, repository_id, release_id,
            seller_user_id, app_version, price_version, gross_cents,
            currency, lineage_policy, lineage_snapshot_json,
            stripe_payment_intent_id, status, state_version,
@@ -361,15 +361,16 @@ export async function processStripeInboxEvent(
   statements.push(
     db.prepare(`
       INSERT INTO commerce_licenses (
-        id, order_id, app_id, owner_user_id,
+        id, order_id, app_id, owner_user_id, release_id,
         license_key_hash, license_key_last4,
         status, issued_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', datetime('now'))
     `).bind(
       licenseId,
       order.id,
       order.app_id,
       order.buyer_user_id,
+      order.release_id,
       licenseKeyHash,
       licenseKeyLast4
     )

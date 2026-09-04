@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
+import { bindTestCommerceRelease, createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as createIntentApi from '../functions/api/payments/create-intent';
 import * as shelfApi from '../functions/api/shelf';
 import { processStripeInboxEvent } from '../src/lib/commerce/eventProcessor';
@@ -80,6 +80,7 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
       INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
       VALUES (?, ?, ?, ?, 'usd', 'active', ?)
     `).bind(opts.appId, opts.repoId, opts.sellerId, opts.priceCents, opts.royaltyBps ?? 0).run();
+    await bindTestCommerceRelease(ctx.d1, opts.appId, { repositoryId: opts.repoId });
   }
 
   async function seedFork(opts: {
@@ -249,19 +250,20 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(result.outboxCount).toBe(1);
 
     const fulfilled: any = await ctx.d1.prepare(`
-      SELECT status, fulfilled_at FROM commerce_orders WHERE id = ?
+      SELECT status, fulfilled_at, release_id FROM commerce_orders WHERE id = ?
     `).bind(order.orderId).first();
     expect(fulfilled.status).toBe('fulfilled');
     expect(fulfilled.fulfilled_at).toBeTruthy();
 
     const licenses: any = await ctx.d1.prepare(`
-      SELECT id, app_id, owner_user_id, license_key_hash, license_key_last4, status
+      SELECT id, app_id, owner_user_id, release_id, license_key_hash, license_key_last4, status
       FROM commerce_licenses WHERE order_id = ?
     `).bind(order.orderId).all();
     expect(licenses.results).toHaveLength(1);
     const license = licenses.results![0];
     expect(license.app_id).toBe('acc-root');
     expect(license.owner_user_id).toBe('usr_buyer_a');
+    expect(license.release_id).toBe(fulfilled.release_id);
     expect(license.license_key_hash).toHaveLength(64);
     expect(license.status).toBe('active');
 

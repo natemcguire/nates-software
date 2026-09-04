@@ -45,6 +45,7 @@ export async function handleGetOrder(context: { request: Request; env: any; para
              app_version AS appVersion, price_version AS priceVersion, gross_cents AS grossCents,
              currency, lineage_policy AS lineagePolicy, lineage_snapshot_json AS lineageSnapshotJson,
              stripe_payment_intent_id AS stripePaymentIntentId, status, failure_code AS failureCode,
+             release_id AS releaseId,
              created_at AS createdAt, updated_at AS updatedAt, paid_at AS paidAt, fulfilled_at AS fulfilledAt
       FROM commerce_orders
       WHERE id = ?
@@ -57,11 +58,26 @@ export async function handleGetOrder(context: { request: Request; env: any; para
     const appListing: any = await env.DB.prepare(`
       SELECT a.id, a.name, a.version, a.tagline, a.storage, a.binaries, a.repository_id AS repositoryId,
              cp.app_id AS sourceProductAppId, cp.repository_id AS sourceProductRepositoryId,
-             cp.forking_enabled AS forkingEnabled, 1 AS sourceCommerceEvidenceCount
+             cp.forking_enabled AS forkingEnabled, cp.resale_enabled AS resaleEnabled,
+             r.visibility, 1 AS sourceCommerceEvidenceCount
       FROM app_listings a
       LEFT JOIN commerce_products cp ON cp.app_id = a.id
+      LEFT JOIN repositories r ON r.id = a.repository_id
       WHERE a.id = ?
     `).bind(order.appId).first();
+
+    const release: any = order.releaseId
+      ? await env.DB.prepare(`
+          SELECT id, app_id AS appId, repository_id AS repositoryId,
+                 commit_oid AS commitOid, deployment_revision_id AS deploymentRevisionId,
+                 build_run_id AS buildRunId, version, binaries_json AS binariesJson,
+                 artifact_manifest_json AS artifactManifestJson,
+                 resale_enabled AS resaleEnabled, forking_enabled AS forkingEnabled,
+                 visibility, published_at AS publishedAt
+          FROM commerce_releases
+          WHERE id = ? AND app_id = ?
+        `).bind(order.releaseId, order.appId).first()
+      : null;
 
     const seller: any = await env.DB.prepare(`
       SELECT id, username, display_name AS displayName, avatar_url AS avatar
@@ -112,10 +128,11 @@ export async function handleGetOrder(context: { request: Request; env: any; para
       } catch {}
     }
 
-    const binaries = safePublishedArtifacts(parseObject(appListing?.binaries));
-    if (listingSourceIsPrivate(appListing)) {
+    const binaries = safePublishedArtifacts(parseObject(release ? release.binariesJson : appListing?.binaries));
+    if (release ? Number(release.forkingEnabled) !== 1 : listingSourceIsPrivate(appListing)) {
       delete binaries.source;
     }
+    const artifactManifest = release ? parseObject(release.artifactManifestJson) : null;
 
     return Response.json({
       success: true,
@@ -123,7 +140,7 @@ export async function handleGetOrder(context: { request: Request; env: any; para
         id: order.id,
         appId: order.appId,
         appName: appListing?.name || order.appId,
-        appVersion: order.appVersion,
+        appVersion: release?.version || order.appVersion,
         tagline: appListing?.tagline || '',
         status: order.status,
         failureCode: order.failureCode || null,
@@ -142,6 +159,18 @@ export async function handleGetOrder(context: { request: Request; env: any; para
         lineageSnapshot,
         storage: appListing?.storage || '',
         binaries,
+        release: release ? {
+          id: release.id,
+          commitOid: release.commitOid,
+          deploymentRevisionId: release.deploymentRevisionId,
+          buildRunId: release.buildRunId,
+          version: release.version,
+          resaleEnabled: Boolean(release.resaleEnabled),
+          forkingEnabled: Boolean(release.forkingEnabled),
+          visibility: release.visibility,
+          artifactManifest,
+          publishedAt: release.publishedAt
+        } : null,
         license: licensePayload
       }
     });

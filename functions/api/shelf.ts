@@ -27,25 +27,36 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
              a.tagline, a.storage, a.binaries, u.avatar_url AS creatorAvatar,
              u.username AS creatorUsername, a.repository_id AS repositoryId,
              cp.app_id AS sourceProductAppId, cp.repository_id AS sourceProductRepositoryId,
-             cp.forking_enabled AS forkingEnabled, 1 AS sourceCommerceEvidenceCount
+             cp.forking_enabled AS forkingEnabled, cp.resale_enabled AS resaleEnabled,
+             1 AS sourceCommerceEvidenceCount,
+             cr.id AS releaseId, cr.commit_oid AS releaseCommitOid,
+             cr.deployment_revision_id AS releaseDeploymentRevisionId,
+             cr.build_run_id AS releaseBuildRunId, cr.version AS releaseVersion,
+             cr.binaries_json AS releaseBinariesJson,
+             cr.artifact_manifest_json AS releaseArtifactManifestJson,
+             cr.resale_enabled AS releaseResaleEnabled,
+             cr.forking_enabled AS releaseForkingEnabled,
+             cr.visibility AS releaseVisibility, cr.published_at AS releasePublishedAt
       FROM commerce_licenses cl
+      JOIN commerce_orders co ON co.id = cl.order_id
       JOIN app_listings a ON a.id = cl.app_id
       JOIN users u ON u.id = a.creator_id
       LEFT JOIN commerce_products cp ON cp.app_id = a.id
+      LEFT JOIN commerce_releases cr ON cr.id = COALESCE(cl.release_id, co.release_id)
       WHERE cl.owner_user_id = ? AND cl.status = 'active'
       ORDER BY cl.issued_at DESC, cl.id ASC
     `).bind(auth.user!.id).all();
 
     const shelf = (results || []).map((row: any) => {
-      const binaries = safePublishedArtifacts(parseObject(row.binaries));
-      if (listingSourceIsPrivate(row)) {
+      const binaries = safePublishedArtifacts(parseObject(row.releaseId ? row.releaseBinariesJson : row.binaries));
+      if (row.releaseId ? Number(row.releaseForkingEnabled) !== 1 : listingSourceIsPrivate(row)) {
         delete binaries.source;
       }
       return {
         id: row.id,
         appId: row.appId,
         name: row.name,
-        version: row.version,
+        version: row.releaseVersion || row.version,
         tagline: row.tagline,
         storage: row.storage,
         licenseKeyLast4: row.licenseKeyLast4,
@@ -54,6 +65,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         creatorAvatar: row.creatorAvatar,
         creatorUsername: row.creatorUsername,
         binaries,
+        release: row.releaseId ? {
+          id: row.releaseId,
+          commitOid: row.releaseCommitOid,
+          deploymentRevisionId: row.releaseDeploymentRevisionId,
+          buildRunId: row.releaseBuildRunId,
+          version: row.releaseVersion,
+          resaleEnabled: Boolean(row.releaseResaleEnabled),
+          forkingEnabled: Boolean(row.releaseForkingEnabled),
+          visibility: row.releaseVisibility,
+          artifactManifest: parseObject(row.releaseArtifactManifestJson),
+          publishedAt: row.releasePublishedAt
+        } : null,
         status: row.status,
         source: 'commerce'
       };

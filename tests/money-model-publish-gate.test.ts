@@ -262,7 +262,7 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
       expect((product as any).status).toBe('active');
     });
 
-    it('a repo with a commit AND an existing app_listings.deployment_state of "deployable" publishes as commerce_products.status = "active"', async () => {
+    it('an existing deployable listing without exact healthy revision evidence remains draft', async () => {
       const dropId = 'nsw50-existing-deployable-listing';
       const repositoryId = 'repo_nsw50_deployable';
       await seedRepoWithCommit(repositoryId, dropId);
@@ -287,12 +287,12 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.success).toBe(true);
-      expect(data.productStatus).toBe('active');
+      expect(data.productStatus).toBe('draft');
 
       const product = await ctx.d1.prepare(
         'SELECT status FROM commerce_products WHERE app_id = ?'
       ).bind(dropId).first();
-      expect((product as any).status).toBe('active');
+      expect((product as any).status).toBe('draft');
     });
   });
 });
