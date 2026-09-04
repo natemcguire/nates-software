@@ -36,7 +36,7 @@ export const AccountWidget: React.FC<AccountWidgetProps> = ({
             {`@${user.displayName || user.username}`}
           </span>
           {isSuperAdmin && (
-            <span className="bg-amber-100 text-amber-900 border border-amber-400 px-1 py-0.2 rounded text-[9px] font-bold">
+            <span className="bg-amber-100 text-amber-900 border border-amber-400 px-1.5 py-0.5 text-[10px] font-bold font-mono">
               ADMIN
             </span>
           )}

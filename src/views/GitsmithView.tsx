@@ -968,7 +968,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                       <span className="text-base">{repo.avatar}</span>
                       <span className={isSelected ? 'text-white' : 'text-blue-900'}>{repo.owner}/{repo.name}</span>
                       {isOwner && (
-                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border font-bold ${
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 border font-bold ${
                           isSelected ? 'bg-emerald-900 text-emerald-100 border-emerald-400' : 'bg-emerald-100 text-emerald-800 border-emerald-600'
                         }`}>
                           you
@@ -1164,7 +1164,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                 </span>
                 <span className="text-blue-900 font-bold">{selectedRepo.lastCommit.sha}</span>
                 <span className="text-black">"{selectedRepo.lastCommit.message}"</span>
-                <span className="bg-[#ece9d8] text-gray-700 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-[#808080]">
+                <span className="bg-[#ece9d8] text-gray-700 font-mono text-[10px] px-1.5 py-0.5 font-bold border border-[#808080]">
                   {selectedRepo.source === 'canonical'
                     ? (selectedRepo.lastCommit.sha === 'No projected ref' ? 'NO REF PROJECTED' : 'D1 PROJECTION')
                     : 'DEMO ONLY'}

@@ -251,7 +251,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
         <span className="flex items-center gap-1">
           <Cpu size={13} /> Agent Inboxes
         </span>
-        <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1 py-0.2 rounded font-mono font-bold">
+        <span className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 border border-emerald-400 font-mono font-bold">
           {version ? `v${version}` : 'LIVE'}
         </span>
       </div>
@@ -357,7 +357,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
                   {t.subject}
                 </span>
                 {t.unread_count > 0 && (
-                  <span className="bg-w95-blue text-white text-[9px] px-1 py-0.2 rounded font-mono font-bold shrink-0 ml-1">
+                  <span className="bg-w95-blue text-white text-[10px] px-1.5 py-0.5 font-mono font-bold shrink-0 ml-1">
                     {t.unread_count}
                   </span>
                 )}
@@ -572,12 +572,12 @@ export const LocalAgentMailbox: React.FC = () => {
           <Server size={13} className={health.running ? 'text-emerald-600' : 'text-gray-400'} />
           Local Agent Mailbox
           <span
-            className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${
+            className={`text-[10px] px-1.5 py-0.5 font-mono font-bold border ${
               probing
-                ? 'bg-blue-100 text-blue-800'
+                ? 'bg-blue-100 text-blue-800 border-blue-400'
                 : health.running
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-red-100 text-red-800'
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-400'
+                : 'bg-red-100 text-red-800 border-red-400'
             }`}
           >
             {probing ? 'PROBING' : health.running ? 'CONNECTED' : 'OFFLINE'}

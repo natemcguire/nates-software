@@ -1144,7 +1144,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </span>
         <span className="flex items-center gap-1 font-mono text-[11px]">
           <i
-            className="bg-[#000080] text-white px-1.5 py-0.2 font-normal not-italic font-mono"
+            className="bg-[#000080] text-white px-1.5 py-0.5 font-normal not-italic font-mono"
             style={{ fontStyle: 'normal' }}
           >
             10%

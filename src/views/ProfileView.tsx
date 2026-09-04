@@ -1052,7 +1052,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <span className="font-bold font-mono text-[11px]">
                         {profileData.stripeAccountId ? `Connected (${profileData.stripeAccountId.slice(0, 12)}...)` : 'Connected'}
                       </span>
-                      <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.2 rounded font-mono">
+                      <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.5 font-mono">
                         Active
                       </span>
                     </div>

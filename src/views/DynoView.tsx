@@ -571,7 +571,7 @@ export const DynoView: React.FC = () => {
                         <span className="font-mono text-gray-400 mr-1.5">{(idx + 1).toString().padStart(2, '0')}.</span>
                         <span>{task.title}</span>
                       </div>
-                      <span className="bg-gray-200 text-gray-700 px-1 py-0.2 rounded text-[9px] font-mono shrink-0 ml-1">
+                      <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 text-[10px] font-mono shrink-0 ml-1 border border-gray-400">
                         {task.category}
                       </span>
                     </button>
@@ -958,7 +958,7 @@ export const DynoView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Inspecting Run</span>
                         <span className="font-mono text-xs font-bold text-blue-900">{selectedRun.run?.id || selectedRun.id}</span>
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase font-mono ${
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase font-mono ${
                           (selectedRun.run?.verification_status || selectedRun.verification_status) === 'reproducible'
                             ? 'bg-blue-100 text-blue-900 border border-blue-400'
                             : 'bg-yellow-100 text-yellow-900 border border-yellow-400'
@@ -1089,7 +1089,7 @@ export const DynoView: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-gray-400 font-bold w-5">{(idx + 1).toString().padStart(2, '0')}</span>
                               <span className="font-bold text-gray-900 font-mono">{att.task_id}</span>
-                              <span className="bg-gray-200 text-gray-700 px-1 py-0.2 rounded text-[9px] font-mono">
+                              <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 text-[10px] font-mono border border-gray-400">
                                 Execution #{att.attempt_number}
                               </span>
                             </div>
