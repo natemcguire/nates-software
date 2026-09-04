@@ -3,6 +3,8 @@ import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
 import { AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
+import { CheckoutModal } from '../components/CheckoutModal';
+import { ForkWithAiModal } from '../components/ForkWithAiModal';
 import { Win95Scroll } from '../components/Win95Scroll';
 import {
   Flame,
@@ -490,12 +492,17 @@ interface InspectorPaneProps {
 }
 
 const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspectTab, onOpenPostEditor, isAuthoritativeLive }) => {
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
+
   const price = getPrice(app);
   const platformFee = Math.floor(price * PLATFORM_RATE * 100) / 100;
   const makerKeeps = price - platformFee;
   const royaltyBps = getRoyaltyBps(app);
   const royaltyPct = royaltyBps / 100;
-  const canFork = Boolean(app.hasCanonicalRepo && app.repoSlug) && !app.isDemo && isAuthoritativeLive;
+  const hasPurchasableForgeSource = Boolean(app.hasCanonicalRepo && app.isRepoActive !== false && (app.repositoryId || app.repoSlug || app.repoName));
+  const canBuy = hasPurchasableForgeSource && !app.isDemo && isAuthoritativeLive;
+  const canFork = Boolean(app.hasCanonicalRepo && (app.repoSlug || app.repositoryId || app.repoName)) && !app.isDemo && isAuthoritativeLive;
   const frozenDate = new Date().toISOString().slice(0, 10);
   const lienId = `${(app.name || 'APP').slice(0, 2).toUpperCase()}-${(app.id || '0000').slice(-4).toUpperCase()}`;
 
@@ -590,17 +597,23 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
             <div className="font-bold text-[26px] text-[#0a5a0a] leading-none">{money(price)}</div>
             <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source forever</div>
             <button
-              disabled={!canFork}
-              onClick={() => playClickSound()}
-              className={`win95-btn w-full mt-2.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#0a7d2a] text-white hover:brightness-110' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
-              title={canFork ? 'Buy the source and license key' : 'Source not published to the forge yet'}
+              disabled={!canBuy}
+              onClick={() => {
+                playClickSound();
+                if (canBuy) setShowCheckoutModal(true);
+              }}
+              className={`win95-btn w-full mt-2.5 py-1.5 font-bold flex flex-col items-center ${canBuy ? 'bg-[#0a7d2a] text-white hover:brightness-110' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
+              title={canBuy ? 'Buy the source and license key' : 'Source not published to the forge yet'}
             >
               <span>Buy source</span>
               <span className="text-[11px] font-normal">get the repo + license key</span>
             </button>
             <button
               disabled={!canFork}
-              onClick={() => playClickSound()}
+              onClick={() => {
+                playClickSound();
+                if (canFork) setShowForkModal(true);
+              }}
               className={`win95-btn w-full mt-1.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#dfdfdf] text-black hover:bg-white' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
               title={canFork ? 'Fork it, remix, and sell your version' : 'Source not published to the forge yet'}
             >
@@ -656,6 +669,18 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
           </div>
         </div>
       </div>
+
+      <ForkWithAiModal
+        isOpen={showForkModal}
+        onClose={() => setShowForkModal(false)}
+        app={app}
+      />
+
+      <CheckoutModal
+        isOpen={showCheckoutModal}
+        onClose={() => setShowCheckoutModal(false)}
+        app={app}
+      />
     </div>
   );
 };
