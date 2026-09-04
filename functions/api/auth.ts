@@ -2,6 +2,7 @@
 
 import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
 import { requireAuth } from './_auth';
+import { checkAuthRateLimit, recordAuthFailure, clearAuthRateLimit, rateLimitedResponse } from './_throttle';
 
 const MAX_USERNAME_LEN = 64;
 const MAX_PASSWORD_LEN = 256;
@@ -189,10 +190,18 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return Response.json({ success: false, error: 'Bootstrap token is required' }, { status: 403 });
       }
 
+      const claimLimit = await checkAuthRateLimit(env?.DB, 'claim', cleanUser);
+      if (!claimLimit.allowed) {
+        return rateLimitedResponse(claimLimit.retryAfterSeconds);
+      }
+
       const isTokenValid = await timingSafeEqual(providedToken, expectedToken);
       if (!isTokenValid) {
+        const rec = await recordAuthFailure(env?.DB, 'claim', cleanUser);
+        if (!rec.allowed) return rateLimitedResponse(rec.retryAfterSeconds);
         return Response.json({ success: false, error: 'Invalid bootstrap token' }, { status: 403 });
       }
+      await clearAuthRateLimit(env?.DB, 'claim', cleanUser);
 
       if (!env || !env.DB) {
         return Response.json({ success: false, error: 'Authentication database unavailable' }, { status: 503 });
@@ -339,11 +348,18 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       if (env && env.DB) {
+        const limit = await checkAuthRateLimit(env.DB, 'login', cleanUser);
+        if (!limit.allowed) {
+          return rateLimitedResponse(limit.retryAfterSeconds);
+        }
+
         const user = await env.DB.prepare(`
           SELECT * FROM users WHERE username = ?
         `).bind(cleanUser).first();
 
         if (!user) {
+          const rec = await recordAuthFailure(env.DB, 'login', cleanUser);
+          if (!rec.allowed) return rateLimitedResponse(rec.retryAfterSeconds);
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
         }
 
@@ -362,8 +378,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         
         const testHash = await hashPassword(password, user.salt);
         if (testHash !== user.password_hash) {
+          const rec = await recordAuthFailure(env.DB, 'login', cleanUser);
+          if (!rec.allowed) return rateLimitedResponse(rec.retryAfterSeconds);
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
         }
+
+        await clearAuthRateLimit(env.DB, 'login', cleanUser);
 
         const token = generateSessionToken();
         const expiresAt = Date.now() + 30 * 24 * 3600 * 1000;
