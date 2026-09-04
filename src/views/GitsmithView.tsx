@@ -1334,11 +1334,11 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
             <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] p-3 space-y-3 shadow-sm">
               <div className="flex items-center justify-between border-b border-[#808080] pb-2 text-black">
                 <div>
-                  <h3 className="font-bold text-sm text-black">Platform Fee / Frozen Ancestor Royalty Settlement</h3>
-                  <p className="text-xs text-gray-600">Mathematical splits automatically credited upon license purchase or fork fee.</p>
+                  <h3 className="font-bold text-sm text-black">Royalty Lineage</h3>
+                  <p className="text-xs text-gray-600">When this app sells, the platform takes a flat 10% and every maker up the chain earns the royalty they locked in — settled to the cent, automatically.</p>
                 </div>
                 <span className="bg-[#ece9d8] text-gray-800 border border-[#808080] px-2 py-0.5 text-xs font-mono font-bold">
-                  Immutable Protocol Rule
+                  Can't be changed
                 </span>
               </div>
 
