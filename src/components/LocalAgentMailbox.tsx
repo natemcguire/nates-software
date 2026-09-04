@@ -117,52 +117,97 @@ interface OfflinePaneProps {
   onReconnect?: () => void;
 }
 
-export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }) => (
-  <div className="flex-1 flex flex-col items-center justify-center p-6 font-tahoma text-xs">
-    <div className="w-full max-w-md border-2 border-gray-800 bg-white shadow-md">
-      <div className="bg-w95-blue text-white px-2 py-1 font-bold flex items-center gap-1.5">
-        <AlertTriangle size={13} /> Local Agent Mailbox Offline
-      </div>
-      <div className="p-4 space-y-3 text-gray-800">
-        <p className="leading-relaxed">
-          Could not reach the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
-          <span className="font-mono bg-gray-100 border border-gray-300 px-1 rounded">
-            http://127.0.0.1:8791
-          </span>
-          . Either it is not running, or your browser is blocking local-network
-          access from this site (grant it when prompted, then Reconnect).
-        </p>
-        <div className="space-y-1">
-          <div className="font-bold text-gray-700">To enable inter-agent mailbox inspection:</div>
-          <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 rounded space-y-1">
-            <li>
-              <span className="text-gray-500">1. Install:</span> ./scripts/install.sh
-            </li>
-            <li>
-              <span className="text-gray-500">2. Start:</span> agent-inbox serve{' '}
-              <span className="text-gray-500">(or agent-inbox setup)</span>
-            </li>
-          </ol>
+export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }) => {
+  const [showGuide, setShowGuide] = useState(false);
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-6 font-tahoma text-xs">
+      <div className="w-full max-w-md border-2 border-gray-800 bg-white shadow-md">
+        <div className="bg-w95-blue text-white px-2 py-1 font-bold flex items-center gap-1.5">
+          <AlertTriangle size={13} /> Local Agent Mailbox Offline
         </div>
-        <div className="pt-1 border-t border-gray-200 flex items-center justify-between">
-          <span className="text-[10px] text-gray-500">
-            No mock data is shown — this pane reflects the real service state.
-          </span>
-          {onReconnect && (
+        <div className="p-4 space-y-3 text-gray-800">
+          <p className="leading-relaxed">
+            Could not reach the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
+            <span className="font-mono bg-gray-100 border border-gray-300 px-1 rounded">
+              http://127.0.0.1:8791
+            </span>
+            . Either it is not running, or your browser is blocking local-network
+            access from this site (grant it when prompted, then Reconnect).
+          </p>
+
+          <div className="space-y-1">
+            <div className="font-bold text-gray-700">To enable inter-agent mailbox inspection:</div>
+            <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 rounded space-y-1">
+              <li>
+                <span className="text-gray-300 font-semibold">1. Install:</span> ./scripts/install.sh
+              </li>
+              <li>
+                <span className="text-gray-300 font-semibold">2. Start:</span> agent-inbox serve{' '}
+                <span className="text-gray-400">(or agent-inbox setup)</span>
+              </li>
+            </ol>
+          </div>
+
+          <div>
             <button
-              onClick={onReconnect}
-              disabled={probing}
-              className="btn-w95 btn-w95-primary px-2.5 py-1 text-xs flex items-center gap-1 font-bold disabled:opacity-50"
+              onClick={() => setShowGuide(prev => !prev)}
+              className="btn-w95 px-2.5 py-1 text-xs flex items-center gap-1 font-bold bg-[#dfdfdf] hover:bg-white text-gray-800"
             >
-              <RefreshCw size={11} className={probing ? 'animate-spin' : ''} />
-              {probing ? 'Probing…' : 'Reconnect'}
+              <span>{showGuide ? '▼' : '►'}</span> How to install INBOX
             </button>
-          )}
+
+            {showGuide && (
+              <div className="mt-2 bg-[#fbfbf8] border border-gray-400 p-2.5 text-[11px] text-gray-800 space-y-2 rounded shadow-inner">
+                <div className="font-bold text-blue-900 border-b border-gray-300 pb-1">Quickstart Installation Guide</div>
+                <div className="space-y-1">
+                  <p><b>Step 1: Install the CLI</b></p>
+                  <p className="text-gray-600">Run the installer script in your project root to set up the agent-inbox binary:</p>
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                    ./scripts/install.sh
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p><b>Step 2: Start the background service</b></p>
+                  <p className="text-gray-600">Launch the local daemon listening on port 8791:</p>
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                    agent-inbox serve
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p><b>Step 3: Register an agent mailbox</b></p>
+                  <p className="text-gray-600">From any project directory with an active AI coding session:</p>
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                    agent-inbox whoami
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-500 pt-1 border-t border-gray-300">
+                  Once running, click <b>Reconnect</b> below. Ensure your browser permits requests to 127.0.0.1.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-1 border-t border-gray-200 flex items-center justify-between">
+            <span className="text-[10px] text-gray-500">
+              No mock data is shown — this pane reflects the real service state.
+            </span>
+            {onReconnect && (
+              <button
+                onClick={onReconnect}
+                disabled={probing}
+                className="btn-w95 btn-w95-primary px-2.5 py-1 text-xs flex items-center gap-1 font-bold disabled:opacity-50"
+              >
+                <RefreshCw size={11} className={probing ? 'animate-spin' : ''} />
+                {probing ? 'Probing…' : 'Reconnect'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface RunningPaneProps {
   version?: string;

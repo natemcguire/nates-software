@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Key, HardDrive, Check, Sparkles,
   DollarSign, RefreshCw, AlertTriangle, ExternalLink, Download,
-  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
+  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch, Edit3
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
@@ -20,12 +20,14 @@ interface ProfileViewProps {
   initialUsername?: string;
   onOpenHotwire?: () => void;
   onOpenGitsmith?: (repoSlug?: string) => void;
+  onOpenPostEditor?: (app?: any) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   initialUsername,
   onOpenHotwire,
-  onOpenGitsmith
+  onOpenGitsmith,
+  onOpenPostEditor
 }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
   const { showToast } = useAlert();
@@ -143,7 +145,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isGeneratingCliToken, setIsGeneratingCliToken] = useState(false);
   const [cliTokenError, setCliTokenError] = useState<string | null>(null);
   const [cliTokenCopied, setCliTokenCopied] = useState(false);
-
   const handleGenerateCliToken = async () => {
     setCliTokenError(null);
     setIsGeneratingCliToken(true);
@@ -164,6 +165,33 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setCliTokenError(err.message || 'Failed to generate CLI token');
     } finally {
       setIsGeneratingCliToken(false);
+    }
+  };
+
+  const [isConnectingStripe, setIsConnectingStripe] = useState(false);
+
+  const handleConnectStripe = async () => {
+    playClickSound();
+    setIsConnectingStripe(true);
+    try {
+      const res = await fetch('/api/payments/connect', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+      } else if (res.ok && data?.success) {
+        showToast('Stripe Connect onboarding initiated.');
+        await loadProfileAndShelf();
+      } else {
+        showToast('Stripe Connect payout onboarding is not configured on this server instance.');
+      }
+    } catch {
+      showToast('Stripe Connect payout onboarding is not configured on this server instance.');
+    } finally {
+      setIsConnectingStripe(false);
     }
   };
 
@@ -487,12 +515,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-4">
         {!isLoading && isOwner && !profileData.payoutsEnabled && (
-          <div className="bg-amber-50 border-2 border-amber-500 p-3 mb-4 text-amber-950 flex items-start gap-2">
-            <AlertTriangle size={16} className="shrink-0" />
-            <div>
-              <div className="font-bold text-sm">Connect Stripe</div>
-              <div className="text-xs">Enable Stripe payouts before publishing paid software. Until then, paid listings remain drafts and cannot be purchased.</div>
+          <div className="bg-amber-50 border-2 border-amber-500 p-3 mb-4 text-amber-950 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="shrink-0 text-amber-700 mt-0.5" />
+              <div>
+                <div className="font-bold text-sm">Connect Stripe Payouts</div>
+                <div className="text-xs text-amber-900">Enable Stripe payouts before publishing paid software. Until then, paid listings remain drafts and cannot be purchased.</div>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={handleConnectStripe}
+              disabled={isConnectingStripe}
+              className="btn-w95 btn-w95-primary px-3 py-1 text-xs font-bold flex items-center gap-1 shrink-0"
+            >
+              <DollarSign size={13} />
+              <span>{isConnectingStripe ? 'Connecting...' : 'Connect Stripe'}</span>
+            </button>
           </div>
         )}
         {errorMessage && (
@@ -625,25 +664,79 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             ) : (
               <div className="space-y-2.5">
-                {publishedApps.map((app) => (
-                  <div key={app.id} className="border-2 border-gray-700 bg-blue-50/60 p-3 rounded flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl bg-white p-1 rounded border border-gray-400">{profileData.avatar}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-w95-blue">{app.name}</span>
-                          <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300 font-mono">
-                            {app.version}
-                          </span>
+                {publishedApps.map((app) => {
+                  const repoSlug = app.repoSlug || app.repoSlugName || (app.repoName ? `${app.creator || app.author || profileData.username}/${app.repoName}` : null);
+                  const hasRepo = Boolean(app.hasCanonicalRepo || app.repositoryId || repoSlug);
+                  const liveUrl = app.liveUrl || app.liveAppUrl || app.binaries?.web || null;
+
+                  return (
+                    <div key={app.id} className="border-2 border-gray-700 bg-blue-50/60 p-3 rounded flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-2xl bg-white p-1 rounded border border-gray-400 shrink-0">{profileData.avatar}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-w95-blue">{app.name}</span>
+                            <span className="bg-green-100 text-green-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-green-300 font-mono">
+                              {app.version}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-600 mt-0.5">{app.upvotes || 0} upvotes &middot; {app.forks || 0} downstream forks</div>
+                          <div className="text-[11px] text-gray-500 font-mono mt-1">App ID: {app.id}</div>
                         </div>
-                        <div className="text-xs text-gray-600 mt-0.5">{app.upvotes || 0} upvotes &middot; {app.forks || 0} downstream forks</div>
-                        <div className="text-[11px] text-gray-500 font-mono mt-1">App ID: {app.id}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {onOpenPostEditor && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              onOpenPostEditor(app);
+                            }}
+                            className="btn-w95 px-2.5 py-1 text-xs font-bold flex items-center gap-1 text-purple-900 hover:bg-white"
+                            title="Open Post Editor for this app"
+                          >
+                            <Edit3 size={12} />
+                            <span>View &amp; Edit</span>
+                          </button>
+                        )}
+
+                        {hasRepo ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              onOpenGitsmith?.(repoSlug || app.repositoryId || app.id);
+                            }}
+                            className="btn-w95 px-2.5 py-1 text-xs font-bold flex items-center gap-1 text-blue-900 hover:bg-white"
+                            title="Open canonical repository in GITSMITH"
+                          >
+                            <Terminal size={12} />
+                            <span>GITFORGE source</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-gray-400 font-mono">No forge repo</span>
+                        )}
+
+                        {liveUrl ? (
+                          <a
+                            href={liveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => playClickSound()}
+                            className="btn-w95 px-2.5 py-1 text-xs font-bold flex items-center gap-1 text-green-800 hover:bg-white inline-flex"
+                            title="View built live application"
+                          >
+                            <ExternalLink size={12} />
+                            <span>View live</span>
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-gray-400 font-mono">No live URL</span>
+                        )}
                       </div>
                     </div>
-
-                    <span className="text-[11px] text-gray-500">Release links are shown only after verified publication.</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -954,18 +1047,33 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               <div>
                 <label className="font-bold text-gray-800 block mb-1 text-xs">Get paid via Stripe:</label>
-                <div className="bg-green-50 border border-green-300 p-1.5 rounded flex items-center justify-between text-xs text-green-900">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold font-mono text-[11px]">
-                      {profileData.stripeAccountId ? `Connected (${profileData.stripeAccountId.slice(0, 12)}...)` : 'Not Connected'}
-                    </span>
-                    <span className={`text-white text-[10px] px-1.5 py-0.2 rounded font-mono ${
-                      profileData.payoutsEnabled ? 'bg-green-600' : 'bg-amber-600'
-                    }`}>
-                      {profileData.payoutsEnabled ? 'Active' : profileData.stripeAccountId ? 'Pending' : 'Unset'}
+                {profileData.payoutsEnabled ? (
+                  <div className="bg-green-50 border border-green-300 p-1.5 rounded flex items-center justify-between text-xs text-green-900">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold font-mono text-[11px]">
+                        {profileData.stripeAccountId ? `Connected (${profileData.stripeAccountId.slice(0, 12)}...)` : 'Connected'}
+                      </span>
+                      <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.2 rounded font-mono">
+                        Active
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleConnectStripe}
+                      disabled={isConnectingStripe}
+                      className="btn-w95 btn-w95-primary px-3 py-1 text-xs font-bold flex items-center gap-1"
+                    >
+                      <DollarSign size={13} />
+                      <span>{isConnectingStripe ? 'Connecting...' : 'Connect Stripe'}</span>
+                    </button>
+                    <span className="text-[11px] text-gray-600 font-mono">
+                      {profileData.stripeAccountId ? 'Pending verification' : 'Not Connected'}
                     </span>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 

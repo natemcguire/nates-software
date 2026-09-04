@@ -785,6 +785,13 @@ export function AppInner() {
             onBrowseDrops={() => {
               openWindow('hotwire');
             }}
+            onOpenHotwire={() => {
+              openWindow('hotwire');
+              closeWindow('setup');
+            }}
+            onClose={() => {
+              closeWindow('setup');
+            }}
           />
         </RetroWindow>
       </ErrorBoundary>
@@ -998,6 +1005,10 @@ export function AppInner() {
             onOpenGitsmith={(repoSlug?: string) => {
               if (repoSlug) setGitsmithInitialRepo(repoSlug);
               openWindow('gitsmith');
+            }}
+            onOpenPostEditor={(app) => {
+              playClickSound();
+              setEditingApp(app || null);
             }}
           />
         </RetroWindow>

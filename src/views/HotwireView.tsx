@@ -3,6 +3,8 @@ import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
 import { AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
+import { CheckoutModal } from '../components/CheckoutModal';
+import { ForkWithAiModal } from '../components/ForkWithAiModal';
 import { Win95Scroll } from '../components/Win95Scroll';
 import {
   Flame,
@@ -30,7 +32,7 @@ interface HotwireViewProps {
   onOpenLeaders?: () => void;
 }
 
-type LibraryTab = 'hot' | 'forked' | 'bought' | 'rising' | 'mine';
+type LibraryTab = 'hot' | 'forked' | 'bought' | 'rising';
 type InspectTab = 'code' | 'readme' | 'preview' | 'lineage';
 
 const PLATFORM_RATE = 0.10;
@@ -155,10 +157,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       );
     }
 
-    if (activeTab === 'mine' && user?.username) {
-      list = list.filter(a => a.author === user.username || a.creator === user.username);
-    }
-
     switch (activeTab) {
       case 'forked':
         return list.sort((a, b) => (b.forkCount || 0) - (a.forkCount || 0));
@@ -167,11 +165,10 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       case 'rising':
         return list.sort((a, b) => ((b.upvotes || 0) + (b.forkCount || 0) * 2) - ((a.upvotes || 0) + (a.forkCount || 0) * 2));
       case 'hot':
-      case 'mine':
       default:
         return list.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
     }
-  }, [apps, searchQuery, activeTab, user]);
+  }, [apps, searchQuery, activeTab]);
 
   const handleOpenNewApp = () => {
     playClickSound();
@@ -223,6 +220,15 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-tahoma text-xs select-none">
       <div className="flex items-center gap-2 px-2 py-1.5 bg-[#c0c0c0] border-b border-gray-400">
+        {selectedApp && (
+          <button
+            onClick={() => { playClickSound(); setSelectedApp(null); }}
+            className="win95-btn px-2 py-0.5 flex items-center gap-1 font-bold bg-[#dfdfdf] hover:bg-white shrink-0"
+            title="Back to HOTWIRE list"
+          >
+            <ArrowLeft size={12} /> Back to HOTWIRE list
+          </button>
+        )}
         <span className="font-bold text-gray-700">Address</span>
         <div className="flex-1 flex items-center gap-1.5 bg-white win95-field px-2 py-0.5 border border-gray-600 font-mono text-[11px] min-w-0">
           <span>📁</span>
@@ -234,15 +240,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             <span className="text-gray-500">{addressVersion}</span>
           </span>
         </div>
-        {selectedApp && (
-          <button
-            onClick={() => { playClickSound(); setSelectedApp(null); }}
-            className="win95-btn px-2 py-0.5 flex items-center gap-1 font-bold bg-[#dfdfdf] hover:bg-white"
-            title="Back to the library index"
-          >
-            <ArrowLeft size={12} /> Library
-          </button>
-        )}
       </div>
 
       {catalogError && (
@@ -270,7 +267,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             tabs={tabs}
             activeTab={activeTab}
             onTabSelect={handleTabSelect}
-            showMine={Boolean(user?.username)}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             onSubmit={handleOpenNewApp}
@@ -280,7 +276,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             isAuthenticated={isAuthenticated}
             isAuthoritativeLive={isAuthoritativeLive}
             isLoading={isLoading}
-            username={user?.username}
             appCount={apps.length}
             leaderboardCount={makerLeaderboard?.length || 0}
             onOpenLeaders={onOpenLeaders}
@@ -295,7 +290,6 @@ interface LibraryIndexProps {
   tabs: { id: LibraryTab; label: string; icon: React.ReactNode }[];
   activeTab: LibraryTab;
   onTabSelect: (tab: LibraryTab) => void;
-  showMine: boolean;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   onSubmit: () => void;
@@ -305,16 +299,15 @@ interface LibraryIndexProps {
   isAuthenticated: boolean;
   isAuthoritativeLive: boolean;
   isLoading: boolean;
-  username?: string;
   appCount: number;
   leaderboardCount: number;
   onOpenLeaders?: () => void;
 }
 
 const LibraryIndex: React.FC<LibraryIndexProps> = ({
-  apps, tabs, activeTab, onTabSelect, showMine, searchQuery, setSearchQuery,
+  apps, tabs, activeTab, onTabSelect, searchQuery, setSearchQuery,
   onSubmit, onOpen, onUpvote, upvotedApps, isAuthenticated, isAuthoritativeLive,
-  isLoading, username, appCount, leaderboardCount, onOpenLeaders
+  isLoading, appCount, leaderboardCount, onOpenLeaders
 }) => {
   return (
     <div className="flex-1 flex flex-col overflow-hidden p-2">
@@ -348,14 +341,6 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
             {tab.icon} {tab.label}
           </button>
         ))}
-        {showMine && (
-          <button
-            onClick={() => onTabSelect('mine')}
-            className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${activeTab === 'mine' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'}`}
-          >
-            <span className="text-emerald-700 font-bold">●</span> Mine
-          </button>
-        )}
         <div className="flex-1 min-w-[180px] win95-field p-1 bg-white flex items-center gap-1.5 border border-gray-600 ml-1">
           <Search size={13} className="text-gray-500 ml-1" />
           <input
@@ -369,9 +354,10 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
       </div>
 
       <Win95Scroll className="flex-1 win95-field bg-white border border-gray-600">
-        <div className="grid grid-cols-[28px_1fr_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
+        <div className="grid grid-cols-[28px_1fr_120px_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
           <span className="text-right">#</span>
-          <span>App · maker · repo</span>
+          <span>App · repo</span>
+          <span>Maker</span>
           <span className="text-right">Votes</span>
         </div>
 
@@ -384,16 +370,14 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
           <div className="p-8 text-center space-y-2">
             <div className="text-2xl">📚</div>
             <div className="font-bold text-xs text-slate-700">
-              {searchQuery.trim() ? 'No apps found' : activeTab === 'mine' ? 'You haven’t published any apps yet' : isAuthoritativeLive ? 'The library is empty' : 'Library unavailable'}
+              {searchQuery.trim() ? 'No apps found' : isAuthoritativeLive ? 'The library is empty' : 'Library unavailable'}
             </div>
             <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
               {searchQuery.trim()
                 ? `Nothing matched "${searchQuery}". Try another maker or tag.`
-                : activeTab === 'mine'
-                  ? 'Submit source to the library and it shows up here.'
-                  : isAuthoritativeLive
-                    ? 'Be the first maker to publish source into the library.'
-                    : 'Could not reach the live library index. This panel never shows invented apps.'}
+                : isAuthoritativeLive
+                  ? 'Be the first maker to publish source into the library.'
+                  : 'Could not reach the live library index. This panel never shows invented apps.'}
             </p>
             {isAuthoritativeLive && !searchQuery.trim() && (
               <button onClick={onSubmit} className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2">
@@ -404,7 +388,6 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
         ) : (
           apps.map((app, index) => {
             const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
-            const isMine = username && (app.author === username || app.creator === username);
             const royaltyBps = getRoyaltyBps(app);
             const listingStatus = deriveListingStatus({
               isDemo: app.isDemo,
@@ -412,11 +395,12 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
               productStatus: app.productStatus,
               isAuthoritativeLive
             });
+            const makerHandle = `@${app.author || app.creator || 'maker'}`;
             return (
               <div
                 key={app.id}
                 onClick={() => onOpen(app)}
-                className="grid grid-cols-[28px_1fr_auto] gap-2 px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-blue-50 items-start"
+                className="grid grid-cols-[28px_1fr_120px_auto] gap-2 px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-blue-50 items-start"
               >
                 <span className="font-bold font-mono text-sm text-[#7a1f00] text-right leading-5">{index + 1}</span>
 
@@ -424,10 +408,6 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-bold text-[13px] text-blue-900">{app.name}</span>
                     <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">{app.version}</span>
-                    <span className="text-gray-500 text-[10px] text-[#2b5fa8]">by @{app.author || app.creator || 'maker'}</span>
-                    {isMine && (
-                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Published by you">MINE</span>
-                    )}
                     <span className={`${listingStatus.className} border font-bold font-mono text-xs px-1.5 rounded`}>
                       {listingStatus.label}
                     </span>
@@ -464,6 +444,15 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                       🌳 lineage →
                     </a>
                   </div>
+                </div>
+
+                <div className="flex flex-col justify-start pt-0.5 min-w-0">
+                  <span className="font-mono text-xs font-bold text-[#2b5fa8] truncate" title={makerHandle}>
+                    {makerHandle}
+                  </span>
+                  {app.authorAvatar && (
+                    <span className="text-[10px] text-gray-500 font-mono">{app.authorAvatar}</span>
+                  )}
                 </div>
 
                 <button
@@ -503,12 +492,17 @@ interface InspectorPaneProps {
 }
 
 const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspectTab, onOpenPostEditor, isAuthoritativeLive }) => {
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
+
   const price = getPrice(app);
   const platformFee = Math.floor(price * PLATFORM_RATE * 100) / 100;
   const makerKeeps = price - platformFee;
   const royaltyBps = getRoyaltyBps(app);
   const royaltyPct = royaltyBps / 100;
-  const canFork = Boolean(app.hasCanonicalRepo && app.repoSlug) && !app.isDemo && isAuthoritativeLive;
+  const hasPurchasableForgeSource = Boolean(app.hasCanonicalRepo && app.isRepoActive !== false && (app.repositoryId || app.repoSlug || app.repoName));
+  const canBuy = hasPurchasableForgeSource && !app.isDemo && isAuthoritativeLive;
+  const canFork = Boolean(app.hasCanonicalRepo && (app.repoSlug || app.repositoryId || app.repoName)) && !app.isDemo && isAuthoritativeLive;
   const frozenDate = new Date().toISOString().slice(0, 10);
   const lienId = `${(app.name || 'APP').slice(0, 2).toUpperCase()}-${(app.id || '0000').slice(-4).toUpperCase()}`;
 
@@ -590,9 +584,11 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
             </Win95Scroll>
           )}
 
-          <div className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border-t border-gray-400 px-2 py-1.5">
-            ▶ <b>See it run</b> is a preview to confirm it works on real data — the product is the source, which you run yourself. It might not run in your setup.
-          </div>
+          {inspectTab === 'preview' && (
+            <div className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border-t border-gray-400 px-2 py-1.5">
+              ▶ <b>See it run</b> is a live preview to confirm it works on real data — the product is the source, which you run yourself.
+            </div>
+          )}
         </div>
       </div>
 
@@ -603,17 +599,23 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
             <div className="font-bold text-[26px] text-[#0a5a0a] leading-none">{money(price)}</div>
             <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source forever</div>
             <button
-              disabled={!canFork}
-              onClick={() => playClickSound()}
-              className={`win95-btn w-full mt-2.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#0a7d2a] text-white hover:brightness-110' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
-              title={canFork ? 'Buy the source and license key' : 'Source not published to the forge yet'}
+              disabled={!canBuy}
+              onClick={() => {
+                playClickSound();
+                if (canBuy) setShowCheckoutModal(true);
+              }}
+              className={`win95-btn w-full mt-2.5 py-1.5 font-bold flex flex-col items-center ${canBuy ? 'bg-[#0a7d2a] text-white hover:brightness-110' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
+              title={canBuy ? 'Buy the source and license key' : 'Source not published to the forge yet'}
             >
               <span>Buy source</span>
               <span className="text-[11px] font-normal">get the repo + license key</span>
             </button>
             <button
               disabled={!canFork}
-              onClick={() => playClickSound()}
+              onClick={() => {
+                playClickSound();
+                if (canFork) setShowForkModal(true);
+              }}
               className={`win95-btn w-full mt-1.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#dfdfdf] text-black hover:bg-white' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
               title={canFork ? 'Fork it, remix, and sell your version' : 'Source not published to the forge yet'}
             >
@@ -669,62 +671,209 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
           </div>
         </div>
       </div>
+
+      <ForkWithAiModal
+        isOpen={showForkModal}
+        onClose={() => setShowForkModal(false)}
+        app={app}
+      />
+
+      <CheckoutModal
+        isOpen={showCheckoutModal}
+        onClose={() => setShowCheckoutModal(false)}
+        app={app}
+      />
     </div>
   );
 };
 
 const CodeInspector: React.FC<{ app: AppListing }> = ({ app }) => {
-  const files = useMemo(() => {
-    const base = ['README.md', 'package.json', 'LICENSE'];
-    const src = ['src/index.ts', 'src/app.ts'];
-    return { src, base };
-  }, [app.id]);
-  const [selectedFile, setSelectedFile] = useState<string>('src/index.ts');
+  const [treeFiles, setTreeFiles] = useState<string[]>([]);
+  const [treeLoading, setTreeLoading] = useState<boolean>(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string>('');
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileLoading, setFileLoading] = useState<boolean>(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const repoQuery = useMemo(() => {
+    if (app.repositoryId) return `repoId=${encodeURIComponent(app.repositoryId)}`;
+    if (app.repoSlug) return `repo=${encodeURIComponent(app.repoSlug)}`;
+    if (app.author && (app.repoName || app.name)) {
+      const slug = (app.repoName || app.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      return `owner=${encodeURIComponent(app.author)}&slug=${encodeURIComponent(slug)}`;
+    }
+    return `id=${encodeURIComponent(app.id)}`;
+  }, [app.repositoryId, app.repoSlug, app.author, app.repoName, app.name, app.id]);
+
+  const hasRepo = Boolean(app.hasCanonicalRepo && (app.repositoryId || app.repoSlug || app.repoName || app.name));
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!hasRepo) {
+      setTreeFiles([]);
+      setTreeError(null);
+      setTreeLoading(false);
+      setSelectedFile('');
+      setFileContent(null);
+      return;
+    }
+
+    setTreeLoading(true);
+    setTreeError(null);
+    setTreeFiles([]);
+
+    fetch(`/api/repo-tree?${repoQuery}`, { credentials: 'same-origin' })
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload?.success && Array.isArray(payload.files)) {
+            const validFiles = (payload.files as string[])
+              .filter((f): f is string => typeof f === 'string' && f.length > 0)
+              .sort();
+            setTreeFiles(validFiles);
+            if (validFiles.length > 0) {
+              const defaultFile = validFiles.find(f => f === 'README.md' || f.endsWith('/README.md')) ||
+                validFiles.find(f => f.includes('index') || f.includes('main') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.js')) ||
+                validFiles[0];
+              setSelectedFile(defaultFile);
+            } else {
+              setSelectedFile('');
+              setTreeError('Repository tree is empty at the current commit.');
+            }
+          } else {
+            setTreeFiles([]);
+            setTreeError('Repository gateway returned an invalid tree payload.');
+          }
+        } else if (res.status === 404) {
+          setTreeFiles([]);
+          setTreeError('Repository files not found on the forge (HTTP 404).');
+        } else {
+          setTreeFiles([]);
+          setTreeError(`Failed to list repository files (HTTP ${res.status}).`);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setTreeFiles([]);
+        setTreeError(err?.message || 'Network error loading repository tree');
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setTreeLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hasRepo, repoQuery]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!hasRepo || !selectedFile) {
+      setFileContent(null);
+      setFileError(null);
+      setFileLoading(false);
+      return;
+    }
+
+    setFileLoading(true);
+    setFileError(null);
+    setFileContent(null);
+
+    fetch(`/api/repo-file?${repoQuery}&path=${encodeURIComponent(selectedFile)}`, { credentials: 'same-origin' })
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const text = await res.text();
+          setFileContent(text);
+          setFileError(null);
+        } else if (res.status === 404) {
+          setFileContent(null);
+          setFileError(`File "${selectedFile}" not found in repository (HTTP 404).`);
+        } else {
+          setFileContent(null);
+          setFileError(`Failed to retrieve "${selectedFile}" (HTTP ${res.status}).`);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setFileContent(null);
+        setFileError(err?.message || 'Network error loading file content');
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setFileLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hasRepo, repoQuery, selectedFile]);
 
   return (
     <div className="flex-1 flex min-h-0">
-      <Win95Scroll className="w-[150px] shrink-0 bg-white border-r border-gray-500 py-1">
-        <div className="px-2 py-0.5 font-bold text-[11px] flex items-center gap-1">📂 src</div>
-        {files.src.map(f => (
-          <div
-            key={f}
-            onClick={() => { playClickSound(); setSelectedFile(f); }}
-            className={`pl-5 pr-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50'}`}
-          >
-            📄 {f.split('/').pop()}
+      <Win95Scroll className="w-[180px] shrink-0 bg-white border-r border-gray-500 py-1">
+        <div className="px-2 py-0.5 font-bold text-[11px] text-gray-700 uppercase border-b border-gray-200 mb-1">
+          Files {treeFiles.length > 0 && `(${treeFiles.length})`}
+        </div>
+        {treeLoading ? (
+          <div className="px-2 py-2 text-[11px] text-gray-500 flex items-center gap-1">
+            <span>⏳</span> Loading tree...
           </div>
-        ))}
-        {files.base.map(f => (
-          <div
-            key={f}
-            onClick={() => { playClickSound(); setSelectedFile(f); }}
-            className={`px-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50'}`}
-          >
-            📄 {f}
+        ) : !hasRepo ? (
+          <div className="px-2 py-2 text-[11px] text-gray-500">
+            No forge repository linked.
           </div>
-        ))}
+        ) : treeFiles.length === 0 ? (
+          <div className="px-2 py-2 text-[11px] text-gray-500">
+            {treeError || 'No files found.'}
+          </div>
+        ) : (
+          treeFiles.map(f => (
+            <div
+              key={f}
+              onClick={() => { playClickSound(); setSelectedFile(f); }}
+              className={`px-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 truncate ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50 text-gray-800'}`}
+              title={f}
+            >
+              <span>{f.endsWith('.md') || f.endsWith('.txt') ? '📄' : f.endsWith('.json') ? '⚙️' : f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.js') ? '📜' : '📄'}</span>
+              <span className="truncate">{f}</span>
+            </div>
+          ))
+        )}
       </Win95Scroll>
 
       <div className="flex-1 flex flex-col min-w-0 bg-white">
         <div className="font-mono text-[10px] text-gray-600 px-2 py-1 bg-[#eef0f2] border-b border-gray-500 flex justify-between">
-          <span>{selectedFile}</span>
-          <span>{app.hasCanonicalRepo ? 'from canonical repo' : 'not on forge'}</span>
+          <span className="truncate">{selectedFile || (hasRepo ? 'Select a file' : 'No file')}</span>
+          <span className="shrink-0">{hasRepo ? (app.repoSlug || 'canonical repo') : 'not on forge'}</span>
         </div>
-        <Win95Scroll className="flex-1 p-3 font-mono text-[11px] leading-relaxed text-gray-800">
-          {app.hasCanonicalRepo && app.repoSlug ? (
-            <pre className="whitespace-pre-wrap">{`${selectedFile}
-${librarySlug(app)} · ${app.version}
-
-The real file tree and source stream from the canonical
-repo (${app.repoSlug}${app.repoHeadCommitOid ? ` @ ${app.repoHeadCommitOid.slice(0, 7)}` : ''}).
-
-Buying gives you this repository plus a license key. You run
-it yourself — this library page is where you read the code
-before you decide to buy or fork.`}</pre>
-          ) : (
+        <Win95Scroll className="flex-1 p-3 font-mono text-[13px] leading-relaxed text-gray-800">
+          {!hasRepo ? (
             <div className="text-gray-500">
               <p className="font-bold mb-2">Source not on the forge yet.</p>
               <p>{app.name} hasn&rsquo;t published its repository to GITSMITH, so there&rsquo;s no code to browse and it can&rsquo;t be bought or forked until it does.</p>
+            </div>
+          ) : fileLoading ? (
+            <div className="text-gray-500 flex items-center gap-1.5">
+              <span>⏳</span> Loading file contents...
+            </div>
+          ) : fileError ? (
+            <div className="text-red-700 bg-red-50 border border-red-200 p-2 text-xs">
+              <p className="font-bold mb-1">Could not load file</p>
+              <p>{fileError}</p>
+            </div>
+          ) : fileContent !== null ? (
+            <pre className="whitespace-pre-wrap font-mono text-[13px]">{fileContent}</pre>
+          ) : (
+            <div className="text-gray-400 text-xs">
+              {treeError || 'Select a file from the repository tree to view its contents.'}
             </div>
           )}
         </Win95Scroll>

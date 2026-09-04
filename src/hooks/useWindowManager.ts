@@ -16,41 +16,59 @@ export interface WindowState {
   zIndex: number;
 }
 
-const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: number) => {
+const getResponsiveWindowConfig = (
+  offset: number,
+  defaultW: number,
+  defaultH: number,
+  mode: 'portrait' | 'landscape' | 'balanced' = 'landscape'
+) => {
   const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
+  const availableH = screenH - 50;
 
   const isHighRes = screenW >= 1600;
   const isUltraWide = screenW >= 2000;
-  
-  const w = isUltraWide 
-    ? Math.min(Math.round(defaultW * 1.2), screenW - 120)
-    : isHighRes 
-    ? Math.min(Math.round(defaultW * 1.1), screenW - 80)
-    : Math.min(defaultW, screenW - 40);
 
-  const h = isHighRes 
-    ? Math.min(Math.round(defaultH * 1.1), screenH - 120)
-    : Math.min(defaultH, screenH - 80);
+  let baseW = defaultW;
+  let baseH = defaultH;
 
-  const posX = Math.max(30, Math.floor((screenW - w) / 2) + offset);
-  const posY = Math.max(25, Math.floor((screenH - h - 40) / 2) + offset);
+  if (mode === 'portrait') {
+    baseH = Math.min(Math.round(availableH * 0.88), Math.max(defaultH, 780));
+    baseW = Math.min(defaultW, Math.round(baseH * 0.8));
+  } else if (mode === 'landscape') {
+    if (isUltraWide) {
+      baseW = Math.min(Math.round(defaultW * 1.2), screenW - 120);
+      baseH = Math.min(Math.round(defaultH * 1.15), availableH - 60);
+    } else if (isHighRes) {
+      baseW = Math.min(Math.round(defaultW * 1.1), screenW - 80);
+      baseH = Math.min(Math.round(defaultH * 1.08), availableH - 60);
+    }
+  }
 
-  return { x: posX, y: posY, width: w, height: h };
+  const w = Math.min(baseW, screenW - 32);
+  const h = Math.min(baseH, availableH - 30);
+
+  const maxX = Math.max(30, screenW - w - 20);
+  const maxY = Math.max(25, availableH - h - 10);
+
+  const posX = Math.min(maxX, Math.max(30, Math.floor((screenW - w) / 2) + offset));
+  const posY = Math.min(maxY, Math.max(25, Math.floor((availableH - h) / 2) + offset));
+
+  return { x: posX, y: posY, width: Math.max(480, w), height: Math.max(380, h) };
 };
 
 export function useWindowManager(user?: AuthUser | null) {
-  const setupConfig = getResponsiveWindowConfig(0, 880, 580);
-  const mktgConfig = getResponsiveWindowConfig(10, 620, 780);
-  const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
-  const slopshopConfig = getResponsiveWindowConfig(45, 1120, 700);
-  const inboxConfig = getResponsiveWindowConfig(35, 1120, 700);
-  const papersConfig = getResponsiveWindowConfig(15, 1140, 720);
-  const dynoConfig = getResponsiveWindowConfig(30, 1000, 600);
-  const profileConfig = getResponsiveWindowConfig(20, 1100, 700);
-  const gitsmithConfig = getResponsiveWindowConfig(35, 1180, 740);
-  const chatConfig = getResponsiveWindowConfig(20, 960, 620);
-  const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
+  const setupConfig = getResponsiveWindowConfig(0, 840, 580, 'balanced');
+  const mktgConfig = getResponsiveWindowConfig(40, 660, 820, 'portrait');
+  const hotwireConfig = getResponsiveWindowConfig(80, 1200, 760, 'landscape');
+  const slopshopConfig = getResponsiveWindowConfig(120, 1140, 720, 'landscape');
+  const inboxConfig = getResponsiveWindowConfig(90, 1140, 720, 'landscape');
+  const papersConfig = getResponsiveWindowConfig(50, 1160, 760, 'landscape');
+  const dynoConfig = getResponsiveWindowConfig(100, 1040, 640, 'landscape');
+  const profileConfig = getResponsiveWindowConfig(60, 1120, 720, 'landscape');
+  const gitsmithConfig = getResponsiveWindowConfig(110, 1200, 760, 'landscape');
+  const chatConfig = getResponsiveWindowConfig(70, 960, 640, 'balanced');
+  const terminalConfig = getResponsiveWindowConfig(130, 920, 580, 'balanced');
 
   const getInboxTitle = (u?: AuthUser | null) =>
     u?.username
@@ -160,7 +178,7 @@ export function useWindowManager(user?: AuthUser | null) {
       y: profileConfig.y,
       width: profileConfig.width,
       height: profileConfig.height,
-      zIndex: 50
+      zIndex: 17
     },
     gitsmith: {
       id: 'gitsmith',
@@ -222,18 +240,21 @@ export function useWindowManager(user?: AuthUser | null) {
 
   const focusWindow = useCallback((id: string) => {
     setActiveWindowId(id);
-    setTopZ(prev => {
-      const next = prev + 1;
-      const nextZ = id === 'profile' ? Math.max(next, 50) : next;
-      setWindows(curr => ({
+    setWindows(curr => {
+      const target = curr[id];
+      if (!target) return curr;
+      const maxZ = Math.max(10, ...Object.values(curr).map(w => w.zIndex || 0));
+      const nextZ = maxZ + 1;
+      setTopZ(nextZ);
+      return {
         ...curr,
-        [id]: { ...curr[id], zIndex: nextZ, isMinimized: false }
-      }));
-      return nextZ;
+        [id]: { ...target, zIndex: nextZ, isMinimized: false }
+      };
     });
   }, []);
 
   const openWindow = useCallback((id: string) => {
+    setActiveWindowId(id);
     setWindows(curr => {
       const target = curr[id];
       if (!target) return curr;
@@ -250,31 +271,36 @@ export function useWindowManager(user?: AuthUser | null) {
         .filter(([wid, ws]) => wid !== id && ws.isOpen && !ws.isMinimized)
         .map(([, ws]) => ({ x: ws.x, y: ws.y }));
 
-      const STEP = 32;
-      const NEAR = 24;
+      const STEP = 52;
+      const NEAR = 36;
       const maxX = Math.max(centerX, screenW - w - 20);
       const maxY = Math.max(centerY, screenH - h - taskbarH - 20);
 
-      let x = centerX;
-      let y = centerY;
-      for (let i = 0; i < occupied.length + 1; i++) {
-        const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
-        if (!collides) break;
-        x += STEP;
-        y += STEP;
-        if (x > maxX || y > maxY) {
-          x = Math.min(maxX, centerX + ((i % 5) + 1) * 16);
-          y = Math.min(maxY, centerY + ((i % 5) + 1) * 16);
+      let x = target.isOpen ? target.x : centerX;
+      let y = target.isOpen ? target.y : centerY;
+      if (!target.isOpen) {
+        for (let i = 0; i < occupied.length + 1; i++) {
+          const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
+          if (!collides) break;
+          x += STEP;
+          y += STEP;
+          if (x > maxX || y > maxY) {
+            x = Math.min(maxX, 30 + ((i % 6) + 1) * 36);
+            y = Math.min(maxY, 25 + ((i % 6) + 1) * 36);
+          }
         }
       }
 
+      const maxZ = Math.max(10, ...Object.values(curr).map(w => w.zIndex || 0));
+      const nextZ = maxZ + 1;
+      setTopZ(nextZ);
+
       return {
         ...curr,
-        [id]: { ...target, isOpen: true, isMinimized: false, x, y }
+        [id]: { ...target, isOpen: true, isMinimized: false, zIndex: nextZ, x, y }
       };
     });
-    focusWindow(id);
-  }, [focusWindow]);
+  }, []);
 
   const closeWindow = useCallback((id: string) => {
     setWindows(curr => ({

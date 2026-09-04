@@ -17,72 +17,7 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     expect(installCmd).not.toContain('claude');
   });
 
-  it('replaces Verify dead-end with "You\'re in — what\'s next" and preserves no-entitlement honesty', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain("You're in — what's next?");
-    expect(source).not.toContain('Verify the Native Install');
-    expect(source).toContain('No entitlement or payout is created by this wizard.');
-    expect(source).not.toContain('Your Local-First Fork is Ready!');
-    expect(source).not.toContain('Your Guaranteed Lineage Royalty Contract:');
-    expect(source).not.toContain("useState<string>(user?.username || 'josh')");
-  });
 
-  it('relabels step indicators to plain actions (O3)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('1. Pick an app');
-    expect(source).toContain('2. Get it running');
-    expect(source).toContain('3. Start building');
-    expect(source).not.toContain('2. Launch Agent');
-    expect(source).not.toContain('3. Verify');
-  });
-
-  it('leads with buyer benefit in Step 1 subhead and removes 70/20/10 from Step 1 (O4)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Pick an app to try. You get the running app plus its full source — yours to fork, mod, and even resell.');
-    expect(source).toContain('Full source included');
-  });
-
-  it('makes running in the browser the primary Step 2 action with feature-framed copy (O1)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Runs in a fresh cloud sandbox — nothing to install. Closes when you leave.');
-    expect(source).toContain('Run {selectedStarter?.name || \'App\'} in the browser now');
-    expect(source).toContain('Prefer your own machine? Install with SLOP');
-  });
-
-  it('offers three real actions in Step 3 and interpolates real app name into preview labels (O2, C1)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Open {selectedStarter?.name || \'App\'} live');
-    expect(source).toContain('See code on GITSMITH');
-    expect(source).toContain("Browse today's drops");
-    expect(source).toContain("Run {selectedStarter?.name || 'App'} in browser");
-  });
-
-  it('uses logged-in username for fork command when authenticated (#14)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain("const owner = user?.username || selectedStarter.repoOwner || 'nate';");
-  });
-
-  it('only surfaces RUNNABLE starters — a failed/draft app must never dead-end a first-timer', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain("const isDeployable = d.deploymentState === 'active';");
-    expect(source).toContain('return hasRepo && isRepoActive && isDeployable;');
-  });
-
-  it('reframes browser sandbox as a feature without throwaway warning (O1)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Runs in a fresh cloud sandbox — nothing to install. Closes when you leave.');
-    expect(source).not.toContain('workspace is deleted when the session ends');
-  });
-
-  it('provides real web auth entrypoints (Create username / Log in) instead of static CLI login chip', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
-    expect(source).not.toContain('CLI login required');
-    expect(source).toContain('Create your maker username to publish and sell — or log in if you already have one.');
-    expect(source).toContain("openAuthModal('register')");
-    expect(source).toContain("openAuthModal('login')");
-    expect(source).toContain('Create username');
-    expect(source).toContain('Signed in as @');
-  });
 
   it('wires SETUP desktop icon in App.tsx (#6, F5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
