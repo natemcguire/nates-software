@@ -584,9 +584,11 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
             </Win95Scroll>
           )}
 
-          <div className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border-t border-gray-400 px-2 py-1.5">
-            ▶ <b>See it run</b> is a preview to confirm it works on real data — the product is the source, which you run yourself. It might not run in your setup.
-          </div>
+          {inspectTab === 'preview' && (
+            <div className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border-t border-gray-400 px-2 py-1.5">
+              ▶ <b>See it run</b> is a live preview to confirm it works on real data — the product is the source, which you run yourself.
+            </div>
+          )}
         </div>
       </div>
 
