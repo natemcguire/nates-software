@@ -197,6 +197,28 @@ function getGroupedIconPosition(group: 'main' | 'refs' | 'soon', indexInGroup: n
   };
 }
 
+// Position + width for the single "Coming Soon" header that sits ABOVE the soon
+// cluster (bottom-right). Derived from the same grid math so it hugs the cluster
+// without moving any icon. The soon block is 2 cols × 2 rows growing upward, so
+// its top row is at (bottomY - rowPitch); the header sits just above that, spanning
+// both columns.
+function getSoonHeaderPosition(): { x: number; y: number; width: number } {
+  const { iconWidth, iconHeight, gapX, gapY } = ICON_GRID;
+  const colPitch = iconWidth + gapX;
+  const rowPitch = iconHeight + gapY;
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+  const bottomY = vh - iconHeight - 104;
+  const clusterRightX = vw - iconWidth - 24;
+  const leftColX = clusterRightX - colPitch;          // left column's x
+  const topRowY = bottomY - rowPitch;                 // y of the soon block's top row
+  return {
+    x: leftColX,
+    y: topRowY - 34,                                   // just above the top row
+    width: colPitch + iconWidth,                        // spans both columns
+  };
+}
+
 
 export function AppInner() {
   const { getApp, submitDrop } = useCatalog();
@@ -442,6 +464,11 @@ export function AppInner() {
   // Per-icon random reveal-start offset (ms), rolled fresh each reveal so icons
   // come in in a different order/timing every load.
   const [revealDelays, setRevealDelays] = useState<Record<string, number>>({});
+  const [showSoonHeader, setShowSoonHeader] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    if (INTRO_EVERY_RELOAD) return false;
+    return Boolean(localStorage.getItem(INTRO_SEEN_KEY));
+  });
   // Called when the visitor clicks WHAT_IS_THIS during the intro: after a beat, the
   // rest voxel-fade in for a dramatic effect. Wait ~2s (they read the popup), then
   // the reveal runs a few seconds with each icon starting at a random offset.
@@ -457,6 +484,8 @@ export function AppInner() {
       mainIds.forEach((id) => { delays[id] = Math.floor(Math.random() * 800); });
       soonIds.forEach((id) => { delays[id] = 1000 + Math.floor(Math.random() * 700); });
       setRevealDelays(delays);
+      setShowSoonHeader(false);
+      setTimeout(() => setShowSoonHeader(true), 3200);
       // hold on 'primed' (still hidden) for 2s, then start the slow reveal.
       setTimeout(() => setIntroPhase('revealing'), 2000);
       // mark done after the reveal has fully played out.
@@ -759,6 +788,26 @@ export function AppInner() {
             />
           );
         });
+      })()}
+
+      {(() => {
+        const h = getSoonHeaderPosition();
+        return (
+          <div
+            className="absolute z-10 pointer-events-none select-none text-center"
+            style={{
+              left: h.x,
+              top: h.y,
+              width: h.width,
+              opacity: showSoonHeader ? 1 : 0,
+              transition: 'opacity 1.4s ease-in',
+            }}
+          >
+            <span className="text-white/70 text-xs font-bold uppercase tracking-widest text-shadow">
+              Coming Soon
+            </span>
+          </div>
+        );
       })()}
 
       {contextMenu && (

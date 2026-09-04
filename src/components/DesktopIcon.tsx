@@ -15,7 +15,8 @@ export interface DesktopIconProps {
   introClassName?: string;
   /** Per-icon stagger delay (ms) for the reveal animation. */
   introDelayMs?: number;
-  /** Dim the icon + show a "SOON" badge (still clickable). */
+  /** Dim the icon (grayscale) to mark it as not-yet-ready (still clickable). The
+   *  shared "Coming Soon" header above the cluster labels the group; no per-icon badge. */
   comingSoon?: boolean;
   /** Play the canvas voxel-assembly reveal on the glyph (intro sequence). */
   voxelReveal?: boolean;
@@ -178,11 +179,9 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
       >
         {label}
       </div>
-      {comingSoon && (
-        <span className="absolute top-0.5 right-1 bg-yellow-300 text-black text-[9px] font-black px-1.5 py-0.5 rounded-sm border border-black/40 shadow tracking-wide">
-          SOON
-        </span>
-      )}
+      {/* Per-icon "SOON" badge removed — the coming-soon cluster now has a single
+          shared "Coming Soon" header rendered above it (see App.tsx). The grayscale
+          dim on the glyph/label still marks these as not-yet-ready. */}
       {badge && (
         <span className="absolute top-1 right-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full border border-white shadow">
           {badge}
