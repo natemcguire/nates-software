@@ -1735,9 +1735,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (!refVal.valid) return failure(refVal.error!, 400);
 
     if (appId) {
-      const appListing = await db.prepare(`SELECT id FROM app_listings WHERE id = ?`).bind(appId).first();
+      const appListing = await db.prepare(`SELECT id, creator_id AS creatorId FROM app_listings WHERE id = ?`).bind(appId).first();
       if (!appListing) {
         return failure(`Unknown appId '${appId}' — publish the listing first or omit appId`, 400);
+      }
+      if ((appListing as any).creatorId && (appListing as any).creatorId !== actor.id) {
+        return failure(`Listing '${appId}' belongs to another maker; you cannot link a repository to it`, 403);
       }
     }
 

@@ -81,6 +81,22 @@ describe('NSW-49: create-repository appId FK misreported as slug-conflict 409', 
     expect((repoRow as any).app_id).toBe('real-app-listing');
   });
 
+  it('refuses (403) linking a repository to a listing owned by another maker (NSW-141)', async () => {
+    await ctx.d1.prepare(`INSERT INTO users (id, username, display_name, role) VALUES ('usr_victim', 'victim', 'Victim', 'maker')`).run();
+    await ctx.d1.prepare(`
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version)
+      VALUES ('victim-app', 'Victim App', 'T', 'D', 'usr_victim', 'v1.0.0')
+    `).run();
+
+    const res = await createRepoRequest({ slug: 'hijack-repo', appId: 'victim-app' });
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.success).toBe(false);
+
+    const repoRow = await ctx.d1.prepare('SELECT id FROM repositories WHERE slug = ?').bind('hijack-repo').first();
+    expect(repoRow).toBeNull();
+  });
+
   it('still returns 409 for a genuine slug/storage-key uniqueness conflict (unrelated to appId)', async () => {
     const first = await createRepoRequest({ slug: 'collide-me' });
     expect(first.status).toBe(201);
