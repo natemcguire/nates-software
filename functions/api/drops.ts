@@ -13,6 +13,7 @@ import {
 } from '../../src/lib/hotwireBackend';
 import { validateDropSubmission, parseAndValidatePrice, RESERVED_APP_IDS } from '../../src/lib/hotwireDomain';
 import { buildRepositoryStorageKey } from '../../src/lib/forgeDomain';
+import { assertListingRoyaltyAllowed } from '../../src/lib/royaltyLiens';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -532,6 +533,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, { status: 422 });
       }
       validatedRoyaltyBps = rawRoyaltyBps;
+    }
+
+    const inheritedRoyaltyRow = linkedRepositoryId
+      ? await env.DB.prepare(`
+          SELECT COALESCE(SUM(bps), 0) AS inheritedRoyaltyBps
+          FROM repository_fork_liens
+          WHERE holder_of_repository_id = ?
+        `).bind(linkedRepositoryId).first()
+      : null;
+    const inheritedRoyaltyBps = Number((inheritedRoyaltyRow as any)?.inheritedRoyaltyBps || 0);
+    try {
+      assertListingRoyaltyAllowed(inheritedRoyaltyBps, validatedRoyaltyBps);
+    } catch (error: any) {
+      return Response.json({ success: false, error: error.message }, { status: 422 });
     }
 
     

@@ -18,6 +18,9 @@ import {
 import { createRigInstance } from '../lib/rigClient';
 import { Win95Scroll } from '../components/Win95Scroll';
 import type { RigSpec } from '../lib/rigDomain';
+import { calculateAllocations } from '../lib/commerceDomain';
+import { formatCentsToUsd } from '../lib/profileDomain';
+import { getListingRoyaltyHeadroomBps } from '../lib/royaltyLiens';
 import '@xterm/xterm/css/xterm.css';
 
 export interface SlopshopViewProps {
@@ -74,6 +77,48 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
 
   const coordinate: RepoCoordinate =
     forgeCoordinates?.find((item) => item.appId === selectedAppId) || getAppCoordinate(selectedAppId);
+  const publishInheritedLiens = coordinate.inheritedLiens || [];
+  const publishInheritedRoyaltyBps = publishInheritedLiens.reduce((sum, lien) => sum + lien.bps, 0);
+  const publishRoyaltyHeadroomBps = getListingRoyaltyHeadroomBps(publishInheritedRoyaltyBps);
+  const publishRoyaltyHeadroomPercent = publishRoyaltyHeadroomBps / 100;
+  const requestedPublishRoyaltyPercent = publishRoyaltyPct.trim() === '' ? 10 : Number(publishRoyaltyPct);
+  const effectivePublishRoyaltyPercent = Math.max(
+    0,
+    Math.min(
+      publishRoyaltyHeadroomPercent,
+      Number.isFinite(requestedPublishRoyaltyPercent) ? requestedPublishRoyaltyPercent : 10
+    )
+  );
+  const effectivePublishRoyaltyBps = Math.round(effectivePublishRoyaltyPercent * 100);
+  const publishGrossCents = Number.isFinite(Number(publishPrice)) && Number(publishPrice) > 0
+    ? Math.round(Number(publishPrice) * 100)
+    : null;
+  let publishForkReceipt = null;
+  if (publishGrossCents) {
+    try {
+      publishForkReceipt = calculateAllocations({
+        grossCents: publishGrossCents,
+        currency: 'usd',
+        sellerUserId: 'descendant',
+        liens: [
+          ...publishInheritedLiens.map((lien, index) => ({
+            ancestorUserId: lien.maker,
+            ancestorRepositoryId: null,
+            bps: lien.bps,
+            depth: publishInheritedLiens.length - index + 1
+          })),
+          {
+            ancestorUserId: 'current-maker',
+            ancestorRepositoryId: null,
+            bps: effectivePublishRoyaltyBps,
+            depth: 1
+          }
+        ]
+      });
+    } catch {
+      publishForkReceipt = null;
+    }
+  }
   const presets: FeaturePreset[] = getFeaturePresets(selectedAppId);
   const [activePreset, setActivePreset] = useState<FeaturePreset>(presets[0]);
   const [customPrompt, setCustomPrompt] = useState<string>(presets[0]?.prompt || '');
@@ -137,21 +182,36 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
         cache: 'no-store',
         credentials: 'same-origin',
         signal: controller.signal
+      }),
+      fetch('/api/drops?sort=alltime', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: controller.signal
       })
     ])
-      .then(async ([readyResponse, reposResponse]) => ({
+      .then(async ([readyResponse, reposResponse, dropsResponse]) => ({
         readyResponse,
         readiness: await readyResponse.json().catch(() => null),
         reposResponse,
-        repositories: await reposResponse.json().catch(() => null)
+        repositories: await reposResponse.json().catch(() => null),
+        dropsResponse,
+        drops: await dropsResponse.json().catch(() => null)
       }))
-      .then(({ readyResponse, readiness, reposResponse, repositories }) => {
+      .then(({ readyResponse, readiness, reposResponse, repositories, dropsResponse, drops }) => {
         const ready = readyResponse.ok && readiness?.ready === true;
         setGitsmithState(ready ? 'ready' : 'unavailable');
         if (ready && reposResponse.ok && Array.isArray(repositories?.repositories)) {
+          const dropsByAppId = new Map<string, any>(
+            dropsResponse.ok && Array.isArray(drops?.drops)
+              ? drops.drops.map((drop: any) => [drop.id, drop] as [string, any])
+              : []
+          );
           const coordinates = repositories.repositories
             .filter((repository: any) => repository?.status === 'active')
-            .map((repository: any) => coordinateFromForgeRepository(repository, readiness.transport));
+            .map((repository: any) => coordinateFromForgeRepository({
+              ...repository,
+              inheritedLiens: dropsByAppId.get(repository.appId)?.inheritedLiens || []
+            }, readiness.transport));
           if (coordinates.length > 0) {
             setForgeCoordinates(coordinates);
           }
@@ -524,8 +584,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
 
   const handleSavePriceAndPublish = async () => {
     playClickSound();
-    const pct = publishRoyaltyPct.trim() === '' ? 10 : Number(publishRoyaltyPct);
-    const royaltyBps = Math.min(10000, Math.max(0, Math.round((Number.isFinite(pct) ? pct : 10) * 100)));
+    const royaltyBps = effectivePublishRoyaltyBps;
     const publishVersion = /^v?\d+\.\d+\.\d+$/.test(coordinate.version) ? coordinate.version : 'v1.0.0';
 
     setIsPublishing(true);
@@ -1422,23 +1481,49 @@ This panel shows the real "slop publish" command and the revenue split it would 
                   <input
                     type="number"
                     min="0"
-                    max="100"
+                    max={publishRoyaltyHeadroomPercent}
                     step="0.01"
-                    placeholder="0"
+                    placeholder="10"
                     value={publishRoyaltyPct}
-                    onChange={(e) => setPublishRoyaltyPct(e.target.value)}
+                    onChange={(e) => setPublishRoyaltyPct(
+                      e.target.value === ''
+                        ? ''
+                        : String(Math.max(0, Math.min(publishRoyaltyHeadroomPercent, Number(e.target.value))))
+                    )}
                     className="w-full bg-white border-2 border-[#808080] border-r-[#ffffff] border-b-[#ffffff] px-2 py-1 font-mono text-sm outline-none"
                   />
                   <span className="text-xs text-[#555]">%</span>
                 </div>
+                <div className="text-[11px] text-blue-800 mt-1 font-mono">
+                  Maximum available rate: {publishRoyaltyHeadroomPercent.toFixed(2)}%
+                </div>
               </div>
-              <div className="text-[11px] text-[#555] bg-white border border-[#808080] p-2">
-                At ${publishPrice}.00:
-                <br />• Platform takes <b>10%</b> (${((Number(publishPrice) || 0) * 0.1).toFixed(2)}).
-                <br />• You keep the rest — up to <b>90%</b> (${((Number(publishPrice) || 0) * 0.9).toFixed(2)}) if this is a root app with no ancestors.
-                <br />• If you forked this from someone, their frozen royalty is paid from that 90% first — you keep what's left.
-                <br />• Your own royalty rate ({publishRoyaltyPct || '10'}%) is what <b>you</b> will earn when someone forks &amp; resells this app later.
-              </div>
+              {publishForkReceipt && publishGrossCents ? (
+                <div className="text-[11px] text-[#555] bg-white border border-[#808080] p-2 font-mono space-y-1">
+                  <div className="flex justify-between font-bold border-b border-dotted border-gray-400 pb-1">
+                    <span>A fork sells at</span>
+                    <span>{formatCentsToUsd(publishGrossCents)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Platform</span>
+                    <span>{formatCentsToUsd(publishForkReceipt.platformCents)}</span>
+                  </div>
+                  {publishForkReceipt.allocations.filter(allocation => allocation.role === 'ancestor').map(allocation => (
+                    <div key={allocation.sequence} className="flex justify-between">
+                      <span>{allocation.recipientUserId === 'current-maker' ? 'You' : `Upstream @${allocation.recipientUserId}`}</span>
+                      <span>{formatCentsToUsd(allocation.amountCents)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold border-t border-gray-500 pt-1">
+                    <span>Fork seller keeps</span>
+                    <span>{formatCentsToUsd(publishForkReceipt.sellerCents)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-800 bg-white border border-[#808080] p-2">
+                  Enter a valid price to see the money consequence.
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={handleSavePriceAndPublish}

@@ -6,6 +6,7 @@ import { useAlert } from '../context/AlertContext';
 import { useAuth } from '../context/AuthContext';
 import { calculateAllocations } from '../lib/commerceDomain';
 import { formatCentsToUsd } from '../lib/profileDomain';
+import { getListingRoyaltyHeadroomBps } from '../lib/royaltyLiens';
 
 export interface DropPersistResult {
   productStatus?: string;
@@ -36,17 +37,20 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
   const initialRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
+  const inheritedLiens = app.inheritedLiens || [];
+  const inheritedRoyaltyBps = inheritedLiens.reduce((sum, lien) => sum + lien.bps, 0);
+  const royaltyHeadroomBps = getListingRoyaltyHeadroomBps(inheritedRoyaltyBps);
+  const royaltyHeadroomPercent = royaltyHeadroomBps / 100;
   const [royaltyPercent, setRoyaltyPercent] = useState<number | ''>(
-    typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10
+    Math.min(royaltyHeadroomPercent, typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10)
   );
   const isFork = typeof app.forkDepth === 'number' && app.forkDepth > 0;
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
   const effectiveRoyaltyPercent = royaltyPercent === ''
-    ? 10
-    : Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
-  const inheritedLiens = app.inheritedLiens || [];
+    ? Math.min(10, royaltyHeadroomPercent)
+    : Math.max(0, Math.min(royaltyHeadroomPercent, Number(royaltyPercent) || 0));
   const previewGrossCents = Number.isFinite(Number(price)) && Number(price) > 0
     ? Math.round(Number(price) * 100)
     : null;
@@ -506,17 +510,20 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   <input
                     type="number"
                     min={0}
-                    max={100}
+                    max={royaltyHeadroomPercent}
                     step={1}
                     value={royaltyPercent}
                     onChange={(e) => setRoyaltyPercent(
-                      e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value)))
+                      e.target.value === '' ? '' : Math.max(0, Math.min(royaltyHeadroomPercent, Number(e.target.value)))
                     )}
                     className="w-full p-2 border-2 border-gray-600 font-bold text-base text-w95-blue bg-blue-50 font-mono"
                   />
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
                   What anyone who forks this app owes you on every sale of their version — frozen the day they fork, forever.
+                </p>
+                <p className="text-[11px] text-blue-800 mt-1 font-mono">
+                  Maximum available rate: {royaltyHeadroomPercent.toFixed(2)}%
                 </p>
                 {isFork ? (
                   <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 px-2 py-1.5 rounded">
@@ -560,6 +567,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   <div className="flex justify-between gap-3 border-t border-blue-300 pt-1 mt-1 text-w95-blue font-bold">
                     <span>What a fork of you would owe you at this price</span>
                     <span>{formatCentsToUsd(descendantOwesMakerCents)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-gray-700">
+                    <span>What that fork's seller would keep</span>
+                    <span>{formatCentsToUsd(descendantPreview?.sellerCents ?? 0)}</span>
                   </div>
                 </div>
               ) : (
