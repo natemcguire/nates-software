@@ -50,6 +50,10 @@ export function formatForkPrompt(tool: ForkPromptTool, repository: string, promp
   return `Target repository: ${repository}\nTool: ${FORK_TOOL_NAMES[tool]}\n\nGoal:\n${prompt.trim()}`;
 }
 
+export function resolveForkAppId(appId: string, repositoryId?: string | null): string | undefined {
+  return repositoryId && appId === repositoryId ? undefined : appId;
+}
+
 const PROMPT_PRESETS: Record<string, string[]> = {
   dronehunter: [
     'Add dual-wield laser shotguns and a new boss wave telemetry table.',
@@ -157,13 +161,14 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
     try {
       const parentIdentifier = app.repositoryId || app.repoSlug || app.id;
+      const resolvedAppId = resolveForkAppId(app.id, app.repositoryId);
       const res = await fetch('/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'fork',
           parentRepositoryId: parentIdentifier,
-          appId: app.id,
+          ...(resolvedAppId ? { appId: resolvedAppId } : {}),
           childSlug: app.repoName || app.id,
           parentRefName: app.repoDefaultRef || 'refs/heads/main'
         })
