@@ -454,7 +454,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                     </div>
 
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-slate-500 text-[10px]">
+                      <span className="text-slate-200 text-[11px] font-medium">
                         {resolvedRepoSlug
                           ? `Target: @${resolvedRepoSlug} · Engine: ${activeTool === 'terminal' ? 'SLOP' : activeTool === 'agy' ? 'AGY' : activeTool === 'claude' ? 'Claude Code' : 'Cursor'}`
                           : `Offline demo target (@${app.author || 'nate'}/${app.id})`}
