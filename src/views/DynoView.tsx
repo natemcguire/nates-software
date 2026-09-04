@@ -795,7 +795,7 @@ export const DynoView: React.FC = () => {
                   className="btn-w95 text-xs py-1 px-3 flex items-center gap-1.5 bg-gray-100 hover:bg-white"
                 >
                   <RefreshCw size={13} className={loadingLeaderboard ? 'animate-spin' : ''} />
-                  <span>{loadingLeaderboard ? 'Querying D1...' : 'Refresh Leaderboard'}</span>
+                  <span>{loadingLeaderboard ? 'Refreshing…' : 'Refresh Leaderboard'}</span>
                 </button>
               </div>
             </div>

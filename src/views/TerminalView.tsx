@@ -152,7 +152,7 @@ export const TerminalView: React.FC = () => {
           { text: "    slop dyno [--bench]  - Benchmark model + harness + tools on dev tasks", type: 'output' },
           { text: "    slop test            - Run Local-First runtime verification test proofs", type: 'output' },
           { text: "    slop status          - Inspect micro-containers & active ports (3001..3010)", type: 'output' },
-          { text: "    slop list            - Query 12:01 AM daily drops on Cloudflare D1", type: 'output' },
+          { text: "    slop list            - Query 12:01 AM daily drops from the live library", type: 'output' },
           { text: "    slop shelf           - Display owned software titles & license keys", type: 'output' },
           { text: "  whoami                 - Print authenticated user handle & permissions", type: 'output' },
           { text: "  ls [/data]             - List files in current volume (emulator canned message)", type: 'output' },

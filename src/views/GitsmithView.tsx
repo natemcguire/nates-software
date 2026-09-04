@@ -795,7 +795,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           </div>
           <span className="text-gray-600 font-mono text-[11px] hidden sm:inline flex items-center gap-1.5">
             <Globe size={13} className="text-blue-700" />
-            <span>Repository control plane · Git transport requires the GITSMITH gateway</span>
+            <span>Git repositories · Push &amp; clone over SSH</span>
           </span>
         </div>
 
@@ -803,7 +803,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <button
             onClick={() => {
               if (!user) return openAuthModal('login');
-              if (!gatewayReady) return showAlert('Repository creation is disabled until the GITSMITH gateway is ready.', 'GITSMITH Gateway Unavailable', 'error');
+              if (!gatewayReady) return showAlert('Repository creation is unavailable while the forge is offline.', 'Forge Unavailable', 'error');
               setShowCreateRepo(true);
             }}
             disabled={Boolean(user) && !gatewayReady}
@@ -848,14 +848,15 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <button type="button" onClick={() => setShowCreateRepo(false)} className="win95-btn p-1 text-black hover:bg-[#dfdfdf]" aria-label="Close repository form">
             <X size={16} />
           </button>
-          <p className="basis-full text-[11px] text-gray-600">The control plane creates a provisioning record first. Git objects and refs become active only after confirmation from the authoritative gateway.</p>
+          <p className="basis-full text-[11px] text-gray-600">Repositories are created immediately. Git objects and refs become active as soon as you push your first commit.</p>
         </form>
       )}
 
       {showingShowcases ? (
-        <div className="bg-[#fff3cd] border-b border-[#ffeeba] px-3 py-1.5 text-[11px] text-[#856404] font-mono flex items-center justify-between">
-          <span>DEMO GALLERY — Bundled showcase snapshots for UI preview only. Not canonical repositories, gateway objects, or live forge state.</span>
+        <div className="bg-[#fff3cd] border-b border-[#ffeeba] text-[#856404] px-3 py-1.5 text-[11px] flex items-center justify-between font-mono">
+          <span>SHOWCASE MODE — Viewing bundled offline repositories. Real push/pull operations require live forge repositories.</span>
           <button
+            type="button"
             onClick={() => {
               setShowBundledExamples(false);
               setSelectedRepo(canonicalRepositories.length > 0 ? canonicalRepositories[0] : null);
@@ -868,10 +869,10 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
       ) : canonicalRepositories.length > 0 ? null : (
         <div className={`${canonicalLoadState === 'error' ? 'bg-[#f8d7da] border-[#f5c6cb] text-[#721c24]' : 'bg-[#ece9d8] border-[#808080] text-gray-700'} border-b px-3 py-1.5 text-[11px] font-mono`}>
           {canonicalLoadState === 'loading'
-            ? 'LOADING CANONICAL FORGE…'
+            ? 'LOADING FORGE…'
             : canonicalLoadState === 'error'
-              ? 'CANONICAL FORGE UNAVAILABLE — No cached or example repository has been substituted.'
-              : 'NO VISIBLE CANONICAL REPOSITORIES — Create your first repository or explicitly open the bundled examples.'}
+              ? "FORGE UNAVAILABLE — Couldn't reach the forge. Retry before creating or forking."
+              : 'NO REPOSITORIES FOUND — Create your first repository or open the demo gallery.'}
         </div>
       )}
       <div className="flex-1 flex overflow-hidden">
@@ -917,8 +918,8 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                   </button>
                 )}
               </div>
-              <span className={showingShowcases ? 'text-amber-800 font-bold' : 'text-emerald-800 font-bold'}>
-                {showingShowcases ? 'Bundled snapshots' : 'Canonical D1'}
+              <span className={showingShowcases ? 'text-amber-800 font-bold' : canonicalLoadState === 'error' ? 'text-red-800 font-bold' : 'text-emerald-800 font-bold'}>
+                {showingShowcases ? 'Demo Gallery' : canonicalLoadState === 'error' ? 'Offline' : 'Live'}
               </span>
             </div>
           </div>
@@ -926,11 +927,11 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <Win95Scroll className="flex-1 divide-y divide-[#d0d0d0] bg-white win95-field">
             {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
               <div className="p-4 space-y-3 text-gray-700">
-                <p className="font-bold text-black">No canonical repositories to show.</p>
+                <p className="font-bold text-black">No repositories to show.</p>
                 <p className="text-[11px] leading-relaxed text-gray-600">
                   {canonicalLoadState === 'error'
-                    ? 'The control plane could not be reached. Retry before creating, cloning, or forking anything.'
-                    : user ? 'Create a repository to provision its authoritative bare Git storage.' : 'Sign in to create a repository, or explore the demo gallery.'}
+                    ? "Couldn't reach the forge — retry before creating or forking."
+                    : user ? 'Create a repository to start hosting your code.' : 'Sign in to create a repository, or explore the demo gallery.'}
                 </p>
                 <button
                   type="button"
@@ -1018,15 +1019,15 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                 {canonicalLoadState === 'loading'
                   ? 'Loading the forge…'
                   : canonicalLoadState === 'error'
-                    ? 'Forge Control Plane Unavailable'
-                    : 'Start with an authoritative repository'}
+                    ? 'Forge Unavailable'
+                    : 'Start with a repository'}
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-gray-700">
                 {canonicalLoadState === 'error'
-                  ? 'GITSMITH could not load the canonical catalog. Nothing from the bundled examples is being presented as live repository state.'
+                  ? "Couldn't reach the forge. Retry before creating, cloning, or forking anything."
                   : canonicalLoadState === 'loading'
-                    ? 'Checking the control plane and Git gateway before enabling repository actions.'
-                    : 'Create a repository to commission bare Git storage, then push the first ref from your local checkout.'}
+                    ? 'Connecting to the forge before enabling repository actions.'
+                    : 'Create a repository to start hosting your code, then push from your local checkout.'}
               </p>
             </div>
           ) : (<>
