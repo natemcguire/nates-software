@@ -2,7 +2,7 @@
 
 import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
 import { requireAuth } from './_auth';
-import { checkAuthRateLimit, recordAuthFailure, clearAuthRateLimit, rateLimitedResponse } from './_throttle';
+import { checkAuthRateLimit, recordAuthFailure, clearAuthRateLimit, rateLimitedResponse, clientIp } from './_throttle';
 
 const MAX_USERNAME_LEN = 64;
 const MAX_PASSWORD_LEN = 256;
@@ -290,6 +290,18 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       if (['admin', 'root', 'superadmin', 'sam'].includes(cleanUser)) {
         return Response.json({ success: false, error: 'Username is reserved by system' }, { status: 400 });
+      }
+
+      // Per-IP registration throttle BEFORE the expensive PBKDF2 hash — bounds bot account
+      // spraying (mass account creation / CPU burn) at public launch. Keyed by client IP.
+      const regIp = clientIp(request);
+      if (env?.DB && regIp) {
+        const regLimit = await checkAuthRateLimit(env.DB, 'register', regIp);
+        if (!regLimit.allowed) {
+          return rateLimitedResponse(regLimit.retryAfterSeconds);
+        }
+        const rec = await recordAuthFailure(env.DB, 'register', regIp);
+        if (!rec.allowed) return rateLimitedResponse(rec.retryAfterSeconds);
       }
 
       const salt = generateSalt();

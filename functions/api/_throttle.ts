@@ -99,6 +99,16 @@ export async function clearAuthRateLimit(
   }
 }
 
+// Best-effort client IP for per-IP scopes. Cloudflare sets CF-Connecting-IP; fall back to
+// the first X-Forwarded-For hop. Returns '' when unknown (throttle then no-ops for this call).
+export function clientIp(request: Request): string {
+  const cf = request.headers.get('CF-Connecting-IP');
+  if (cf && cf.trim()) return cf.trim();
+  const xff = request.headers.get('X-Forwarded-For');
+  if (xff && xff.trim()) return xff.split(',')[0].trim();
+  return '';
+}
+
 export function rateLimitedResponse(retryAfterSeconds: number): Response {
   return Response.json(
     { success: false, error: 'Too many attempts. Please wait a few minutes and try again.' },

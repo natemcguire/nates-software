@@ -55,6 +55,37 @@ describe('Auth rate limiting (NSW-143): D1-backed per-account throttle', () => {
     expect(after.status).toBe(429);
   });
 
+  it('throttles mass registration from one IP before burning PBKDF2 (NSW-143)', async () => {
+    const register = (n: number) =>
+      authApi.onRequestPost({
+        request: new Request('http://localhost/api/auth?action=register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.7' },
+          body: JSON.stringify({ username: `botacct${n}`, password: 'BotPassword12!' })
+        }),
+        env: { DB: ctx.d1 }
+      });
+
+    // 8 registrations from the IP are allowed; the 9th trips the per-IP block.
+    let sawBlock = false;
+    for (let i = 0; i < 12; i++) {
+      const res = await register(i);
+      if (res.status === 429) { sawBlock = true; break; }
+    }
+    expect(sawBlock).toBe(true);
+
+    // A DIFFERENT IP is unaffected (per-IP, not global).
+    const otherIp = await authApi.onRequestPost({
+      request: new Request('http://localhost/api/auth?action=register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '198.51.100.9' },
+        body: JSON.stringify({ username: 'realperson', password: 'RealPassword12!' })
+      }),
+      env: { DB: ctx.d1 }
+    });
+    expect(otherIp.status).toBe(200);
+  });
+
   it('does not throttle a user who logs in correctly, and clears prior failures on success', async () => {
     // A few mistypes, then the right password — should succeed and reset the counter.
     await login('oops1');
