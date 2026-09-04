@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Copy, Check, Sparkles, GitFork, AlertTriangle, Network } from 'lucide-react';
+import { Bot, Copy, Check, Sparkles, GitFork, AlertTriangle, Network, ExternalLink } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
@@ -35,6 +35,7 @@ export interface ForkWithAiModalProps {
   onForkSuccess?: (forkData: any) => void;
   onOpenApp?: (appId: string) => void;
   onOpenSandbox?: (appId: string) => void;
+  onOpenGitsmith?: (repoSlug?: string) => void;
 }
 
 export type ForkPromptTool = 'claude' | 'agy' | 'cursor' | 'terminal';
@@ -84,7 +85,8 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   onLaunchTerminal,
   onForkSuccess,
   onOpenApp,
-  onOpenSandbox
+  onOpenSandbox,
+  onOpenGitsmith
 }) => {
   const { user, openAuthModal } = useAuth();
   const { refreshCatalog } = useCatalog();
@@ -186,12 +188,16 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
       } else {
         const errorMsg = data?.error || `Fork failed (HTTP ${res.status})`;
         setForkError(errorMsg);
-        showAlert(errorMsg, "Fork Failed", "error");
+        if (!errorMsg.toLowerCase().includes('already exists')) {
+          showAlert(errorMsg, "Fork Failed", "error");
+        }
       }
     } catch (err: any) {
       const errorMsg = err?.message || 'Network error during fork creation.';
       setForkError(errorMsg);
-      showAlert(errorMsg, "Fork Error", "error");
+      if (!errorMsg.toLowerCase().includes('already exists')) {
+        showAlert(errorMsg, "Fork Error", "error");
+      }
     } finally {
       setIsForking(false);
     }
@@ -397,9 +403,44 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
               )}
 
               {forkError && (
-                <div className="bg-red-50 border border-red-300 p-2 text-red-800 text-xs font-mono rounded">
-                  ⚠️ Error: {forkError}
-                </div>
+                forkError.toLowerCase().includes('already exists') ? (
+                  <div className="bg-blue-50 border-2 border-blue-400 p-3 text-blue-950 text-xs rounded space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold flex items-center gap-1.5 text-blue-900">
+                        <GitFork size={14} className="text-blue-700" />
+                        <span>You already forked this repository</span>
+                      </span>
+                      <span className="font-mono text-[10px] bg-blue-100 text-blue-800 border border-blue-300 px-1.5 py-0.5 rounded">
+                        @{forkedRepository}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 text-[11px]">
+                      A repository with this slug already exists in your workspace. You can open and inspect your existing fork directly in GITSMITH.
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClickSound();
+                          onClose();
+                          if (onOpenGitsmith) {
+                            onOpenGitsmith(forkedRepository);
+                          } else if (onOpenApp) {
+                            onOpenApp(app.id);
+                          }
+                        }}
+                        className="btn-w95 btn-w95-primary px-3 py-1 text-xs font-bold flex items-center gap-1 shadow"
+                      >
+                        <ExternalLink size={12} />
+                        <span>Open it in GITSMITH</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-red-50 border border-red-300 p-2 text-red-800 text-xs font-mono rounded">
+                    ⚠️ Error: {forkError}
+                  </div>
+                )
               )}
 
               <div>
