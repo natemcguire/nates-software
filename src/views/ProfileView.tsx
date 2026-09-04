@@ -426,7 +426,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     placeholder="e.g. nate, sam, josh"
                     value={searchHandleInput}
                     onChange={(e) => setSearchHandleInput(e.target.value)}
-                    className="flex-1 p-1.5 border border-gray-400 text-xs font-mono"
+                    className="flex-1 win95-field bg-white text-black px-2 py-1 text-xs font-mono placeholder-gray-600 placeholder:text-gray-600 focus:outline-none"
                   />
                   <button type="submit" className="btn-w95 px-3 py-1.5 text-xs font-bold flex items-center gap-1">
                     <Search size={12} />
