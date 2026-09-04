@@ -44,6 +44,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         r.default_ref AS repoDefaultRef,
         r.grantable_bps AS grantable_bps,
         r.grantable_bps AS grantableBps,
+        cp.royalty_bps AS royaltyBps,
+        cp.status AS productStatus,
         ru.username AS repoOwnerUsername,
         rf.commit_oid AS repoHeadCommitOid,
         u.id AS creatorId, u.username AS creator, u.avatar_url AS creatorAvatar,
@@ -61,6 +63,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       )
       LEFT JOIN users ru ON ru.id = r.owner_user_id
       LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
+      LEFT JOIN commerce_products cp ON cp.app_id = a.id
     `;
 
     
@@ -173,6 +176,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     }
 
     
+    const inheritedLiensByRepository = new Map<string, Array<{ maker: string; bps: number }>>();
+    const repositoryIds = Array.from(new Set(
+      results.map((row: any) => row.canonicalRepositoryId || row.repositoryId).filter(Boolean)
+    ));
+    if (env?.DB && repositoryIds.length > 0) {
+      const placeholders = repositoryIds.map(() => '?').join(', ');
+      const lienResult = await env.DB.prepare(`
+        SELECT l.holder_of_repository_id AS holderRepositoryId, l.bps, u.username AS maker
+        FROM repository_fork_liens l
+        JOIN users u ON u.id = l.ancestor_user_id
+        WHERE l.holder_of_repository_id IN (${placeholders})
+        ORDER BY l.holder_of_repository_id, l.depth DESC
+      `).bind(...repositoryIds).all();
+      for (const lien of lienResult.results || []) {
+        const holderRepositoryId = String((lien as any).holderRepositoryId);
+        const rows = inheritedLiensByRepository.get(holderRepositoryId) || [];
+        rows.push({ maker: String((lien as any).maker), bps: Number((lien as any).bps) });
+        inheritedLiensByRepository.set(holderRepositoryId, rows);
+      }
+    }
+
     const parsedDrops: DropRankingInput[] = (results || []).map((r: any) => {
       let screenshots: string[] = [];
       let binaries: Record<string, string> = {};
@@ -196,6 +220,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const repoStatus = r.repoStatus || null;
       const repoDefaultRef = r.repoDefaultRef || null;
       const repositoryId = r.canonicalRepositoryId || r.repositoryId || null;
+      const royaltyBps = typeof r.royaltyBps === 'number' ? r.royaltyBps : 1000;
+      const inheritedLiens = repositoryId ? inheritedLiensByRepository.get(repositoryId) || [] : [];
       const grantable_bps = typeof r.grantable_bps === 'number'
         ? r.grantable_bps
         : (typeof r.grantableBps === 'number' ? r.grantableBps : 0);
@@ -224,6 +250,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return {
         ...r,
         repositoryId,
+        royaltyBps,
+        inheritedLiens,
         hasCanonicalRepo,
         isRepoActive,
         repoSlug,

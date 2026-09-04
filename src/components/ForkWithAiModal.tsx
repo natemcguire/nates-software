@@ -94,6 +94,8 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const resolvedRepoSlug = app.repoSlug || (app.repoName ? `${app.author || app.creator || 'nate'}/${app.repoName}` : null);
   const parentRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
   const parentRoyaltyPercent = typeof parentRoyaltyBps === 'number' ? parentRoyaltyBps / 100 : null;
+  const inheritedLiens = Array.isArray(app.inheritedLiens) ? app.inheritedLiens : [];
+  const totalRoyaltyBps = inheritedLiens.reduce((sum, lien) => sum + lien.bps, 0) + (parentRoyaltyBps || 0);
   const cliForkTarget = resolvedRepoSlug || `${app.author || app.creator || 'nate'}/${app.id}`;
 
   const getCliCommand = () => {
@@ -291,7 +293,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 <div className="text-right font-mono text-[11px]">
                   <div className="text-emerald-800 font-bold">
                     {parentRoyaltyPercent !== null
-                      ? `You'll owe @${app.author || app.creator || 'nate'} ${parentRoyaltyPercent}% forever`
+                      ? `Frozen royalty total: ${(totalRoyaltyBps / 100).toFixed(2)}%`
                       : 'Frozen Maker Royalty'}
                   </div>
                   {resolvedRepoSlug ? (
@@ -304,6 +306,25 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {parentRoyaltyPercent !== null && (
+                <div className="bg-[#e4f0f7] border border-[#7ea6c4] p-2.5 text-[11px] font-mono text-[#1c4a6b] space-y-1">
+                  {inheritedLiens.map((lien, index) => (
+                    <div key={`${lien.maker}-${index}`} className="flex justify-between gap-3">
+                      <span>@{lien.maker}</span>
+                      <span>{(lien.bps / 100).toFixed(2)}%</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-3">
+                    <span>@{app.author || app.creator || 'nate'}</span>
+                    <span>{parentRoyaltyPercent.toFixed(2)}%</span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-[#7ea6c4] pt-1 font-bold">
+                    <span>Total owed forever</span>
+                    <span>{(totalRoyaltyBps / 100).toFixed(2)}%</span>
+                  </div>
+                </div>
+              )}
 
               {!canPerformRealFork ? (
                 <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded text-xs space-y-1 text-amber-900">

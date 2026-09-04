@@ -147,6 +147,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
               repoVisibility: d.repoVisibility || null,
               repoStatus: d.repoStatus || null,
               repoDefaultRef: d.repoDefaultRef || null,
+              royaltyBps: typeof d.royaltyBps === 'number' ? d.royaltyBps : null,
+              inheritedLiens: Array.isArray(d.inheritedLiens) ? d.inheritedLiens : [],
               hasVoted: Boolean(d.hasVoted),
               isDemo: false
             };

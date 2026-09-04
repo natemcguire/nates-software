@@ -67,6 +67,47 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(ids).not.toContain('certified-mailer');
     });
 
+    it('returns product royalty and every inherited lien with maker handles', async () => {
+      await ctx.d1.prepare(`
+        INSERT INTO users (id, username, display_name, role)
+        VALUES ('usr_ancestor', 'ancestor', 'Ancestor', 'user'), ('usr_forkmaker', 'forkmaker', 'Fork Maker', 'user')
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (
+          id, name, tagline, description, creator_id, version, license, price, storage,
+          tags, screenshots, binaries, listing_status, deployment_state, repository_id
+        ) VALUES (
+          'lineage-drop', 'Lineage Drop', 'Lineage totals', '', 'usr_forkmaker', 'v1.0.0', 'MIT', '$20.00', 'SQLite',
+          '[]', '[]', '{}', 'active', 'source_ready', NULL
+        )
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repositories (id, app_id, owner_user_id, slug, storage_key, status)
+        VALUES
+          ('repo_ancestor', NULL, 'usr_ancestor', 'ancestor', 'repositories/ancestor.git', 'active'),
+          ('repo_lineage_drop', 'lineage-drop', 'usr_forkmaker', 'lineage-drop', 'repositories/lineage-drop.git', 'active')
+      `).run();
+      await ctx.d1.prepare(`UPDATE app_listings SET repository_id = 'repo_lineage_drop' WHERE id = 'lineage-drop'`).run();
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
+        VALUES ('lineage-drop', 'repo_lineage_drop', 'usr_forkmaker', 2000, 'usd', 'draft', 1750)
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO repository_fork_liens (
+          id, holder_of_repository_id, ancestor_repository_id, ancestor_user_id, bps, depth
+        ) VALUES ('lien_lineage_drop', 'repo_lineage_drop', 'repo_ancestor', 'usr_ancestor', 1250, 1)
+      `).run();
+
+      const res = await dropsApi.onRequestGet({
+        request: new Request('http://localhost/api/drops?sort=alltime'),
+        env: { DB: ctx.d1 }
+      });
+      const data = await res.json();
+      const drop = data.drops.find((item: any) => item.id === 'lineage-drop');
+      expect(drop.royaltyBps).toBe(1750);
+      expect(drop.inheritedLiens).toEqual([{ maker: 'ancestor', bps: 1250 }]);
+    });
+
     it('should return empty list when live D1 has zero drops, preserving empty authoritative state', async () => {
       await ctx.d1.prepare('DELETE FROM commerce_products').run();
       await ctx.d1.prepare('DELETE FROM app_listings').run();

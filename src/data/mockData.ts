@@ -70,6 +70,7 @@ export interface AppListing {
   grantableBps?: number | null;
   royaltyBps?: number | null;
   royalty_bps?: number | null;
+  inheritedLiens?: Array<{ maker: string; bps: number }>;
   binaries?: {
     web?: string;
     [key: string]: string | undefined;
