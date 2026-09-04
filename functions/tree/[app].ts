@@ -54,7 +54,7 @@ function renderTreePage(tree: LineageTree): string {
   const gens = depths.length;
 
   const ogTitle = `${rootApp} has ${tree.totalForks} fork${tree.totalForks === 1 ? '' : 's'} — see the lineage tree`;
-  const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own forever; when a fork sells, the platform takes a flat 10% and every maker up the tree earns their own frozen royalty.`;
+  const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own the source; when a fork sells, the platform takes a flat 10% and every maker up the tree earns their own frozen royalty.`;
   const ogUrl = `https://nates-software.com/tree/${rootApp}`;
   const ogImage = `https://nates-software.com/tree/${rootApp}.svg`;
 
@@ -131,7 +131,7 @@ function renderTreePage(tree: LineageTree): string {
     </div>
     <div class="canvas"><div class="scroll">${rows}</div></div>
     <div class="foot">
-      <span><span class="mark">Nate's Software</span> · buy once, own forever</span>
+      <span><span class="mark">Nate's Software</span> · buy once, own the source</span>
       <span>lineage earned <b>${esc(dollars(tree.lineageEarnedCents))}</b> · <b>${tree.totalForks}</b> fork${tree.totalForks === 1 ? '' : 's'}</span>
     </div>
   </div>

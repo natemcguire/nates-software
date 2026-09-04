@@ -615,7 +615,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
           <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Own it</div>
           <div className="p-3">
             <div className="font-bold text-[26px] text-[#0a5a0a] leading-none">{money(price)}</div>
-            <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source forever</div>
+            <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source</div>
             <button
               disabled={!canBuy}
               onClick={() => {
@@ -671,7 +671,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
               {royaltyBps > 0 ? (
                 <>
                   <div className="text-[10px] mt-1 leading-snug">
-                    Fork today and @{app.author || app.creator || 'maker'}&rsquo;s royalty locks at the rate below — <b>never raised, never revoked</b>, for the life of your fork.
+                    Fork today and @{app.author || app.creator || 'maker'}&rsquo;s royalty locks at the rate below — <b>guaranteed for sales on Nate's Software</b>, for the life of your fork.
                   </div>
                   <div className="font-mono text-[10px] mt-1.5 bg-white border border-[#7ea6c4] px-1.5 py-1">
                     RATE {royaltyPct.toFixed(1)}% · FROZEN {frozenDate} · lien #{lienId}
@@ -682,7 +682,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
                 </>
               ) : (
                 <div className="text-[10px] mt-1 leading-snug">
-                  This app is <b>free to fork and resell</b> (0% royalty). Platform still takes a flat 10% on any sale; you keep the rest.
+                  This app has a <b>0% author royalty</b> (resale enabled). Platform still takes a flat 10% on any sale; you keep the rest.
                 </div>
               )}
             </div>

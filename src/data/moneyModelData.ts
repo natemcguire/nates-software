@@ -10,7 +10,7 @@ When you publish an app, you pick one of two modes. That's the whole decision.
 
 **Personal.** Anyone can fork it for themselves. They can't resell their fork. Simple.
 
-**Resale, at r%.** Anyone can fork it *and* sell their own version. If they do, they owe you \`r%\` of every sale, forever, automatically. You choose \`r\` — anywhere from 0% to 100%. Setting it to 0% just means "fork me, sell it, keep it all." That's not a third mode. It's Resale with the royalty dialed to nothing.
+**Resale, at r%.** Anyone can fork it *and* sell their own version. If they sell through Nate's Software, they owe you \`r%\` of every sale, automatically and guaranteed. You choose \`r\` — anywhere from 0% to 100%. Setting it to 0% just means "fork me, sell it, keep it all." That's not a third mode. It's Resale with the royalty dialed to nothing.
 
 Every app is one or the other. No hybrid tiers, no "contact sales."
 
@@ -18,7 +18,7 @@ Every app is one or the other. No hybrid tiers, no "contact sales."
 
 Here's the part that makes the whole system trustworthy: the moment somebody forks your app, your rate gets locked onto that fork, permanently. You cannot raise it on them later. You cannot lower it either. It's frozen, full stop.
 
-And it's not just your own rate that gets frozen — whatever *you* owe your upstream makers rides along with the fork too. If Bob forked Ann at 10%, and Carol forks Bob, Carol inherits Bob's 10% lien *and* Ann's 10% lien. Carol can't wipe out Ann's cut by publishing her own fork at 0%. She can only waive her own future royalty, on her own downstream forks. Nobody can zero out the people above them in the chain. That's the whole point of freezing it at the fork edge instead of trusting each generation to pass the money along honestly.
+And it's not just your own rate that gets frozen — whatever *you* owe your upstream makers rides along with the fork too. If Bob forked Ann at 10%, and Carol forks Bob, Carol inherits Bob's 10% lien *and* Ann's 10% lien. Carol can't wipe out Ann's cut by publishing her own fork at 0%. She can only waive her own future royalty, on her own downstream forks. Nobody can zero out the people above them in the chain. Royalties are automatic and guaranteed for sales made through Nate's Software; off-platform we can't control it — the platform leans free, open, and shareware-style and trusts people to honor it.
 
 ## Before you fork, you see the bill
 
@@ -59,5 +59,5 @@ Carol's chain now carries two frozen liens: 10% to Ann, 10% to Bob. Here's how a
 - Bob's frozen 10% lien, same $90 base: **$9**.
 - Carol keeps what's left: **$72**.
 
-$10 + $9 + $9 + $72 = $100. Every cent accounted for, nothing nested, nothing hidden. Ann gets paid on every one of Carol's sales for as long as Carol sells that app, and neither Bob nor Carol can ever take that away from her.
+$10 + $9 + $9 + $72 = $100. Every cent accounted for, nothing nested, nothing hidden. Ann gets paid on every one of Carol's sales on Nate's Software for as long as Carol sells that app, and neither Bob nor Carol can ever take that away from her.
 `;

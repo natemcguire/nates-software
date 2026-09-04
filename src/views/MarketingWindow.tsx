@@ -49,7 +49,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
     },
     {
       name: 'SERVERS & HOSTING',
-      desc: 'Push a repo, get a live URL — no Dockerfile, no servers'
+      desc: 'Free-tier hosting is limited and best-effort; paid tier comes later for heavy traffic. Runs on Cloudflare + AWS — static files on R2, apps in scale-to-zero containers, Postgres on Aurora. Idle apps cost near nothing; heavy traffic is what the paid tier covers. You always own the source to self-host anywhere.'
     },
     {
       name: 'SLOPSHOP',
@@ -74,9 +74,12 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
     <div className="flex flex-col h-full font-tahoma text-sm">
       <div className="pt-3 pb-2.5 px-1 border-b border-gray-300">
         <div className="text-2xl font-black text-w95-blue tracking-tight leading-none">
-          NATE'S SOFTWARE EMPORIUM
+          NATE'S SOFTWARE
         </div>
         <p className="text-gray-800 text-sm font-black mt-1">
+          Marketplace For the Software Enthusiasts
+        </p>
+        <p className="text-gray-600 text-xs font-semibold mt-0.5">
           Other sites let you fork code. We let you fork revenue.
         </p>
         <a
@@ -94,9 +97,8 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       <Win95Scroll className="flex-1">
         <div className="px-1 py-3 space-y-4">
           <p className="text-gray-800 text-sm leading-relaxed font-sans">
-            Buy a web app once and own the source forever — the live app, the full Git repo, and a
-            real license key with your name on it. Fork anything, remix it with an AI agent, and sell
-            your version; the maker you built on earns the royalty they locked the day you forked.
+            Buy a web app once and own the source — the live app, the full Git repo, and a
+            real license key with your name on it. Free-tier hosting is limited and best-effort, and you always own the source to self-host anywhere. Fork anything for yourself and remix it with an AI agent; selling your version requires the author to have enabled resale, with upstream makers earning the royalty they locked the day you forked.
           </p>
 
           <div>
