@@ -165,6 +165,28 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
     const bobForkData = await bobForkReq.json();
     const bobRepoId = bobForkData.repository.id;
 
+    const bobRequestEvent = await ctx.d1.prepare(`
+      SELECT payload FROM forge_outbox_events
+      WHERE id = ? AND event_type = 'repository.fork_requested'
+    `).bind(bobForkData.outboxEventId).first();
+    const bobRequestPayload = JSON.parse((bobRequestEvent as any).payload);
+    expect(bobRequestPayload.royaltyLienSnapshot).toMatchObject({
+      version: 1,
+      liens: [{
+        ancestorUserId: 'usr_ann',
+        bps: 1000,
+        sourceRepositoryId: annRepoId,
+        lineageDepth: 1
+      }],
+      parentRoyalty: {
+        ancestorUserId: 'usr_ann',
+        bps: 1000,
+        sourceRepositoryId: annRepoId
+      },
+      totalBps: 1000
+    });
+    expect(bobRequestPayload.royaltyLienSnapshot.lineageFingerprint).toMatch(/^sha256:[a-f0-9]{64}$/);
+
     const bobConfirmRes = await post({
       action: 'gateway-confirm-fork',
       childRepositoryId: bobRepoId,
@@ -242,6 +264,151 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
     expect(bobLienRows.results).toEqual([
       { holderOfRepositoryId: bobRepoId, ancestorRepositoryId: annRepoId, ancestorUserId: 'usr_ann', bps: 1000, depth: 1 },
     ]);
+  });
+
+  it('confirms the request-time parent rate after the live parent rate changes', async () => {
+    ctx = await createTestD1Database({ foreignKeys: true });
+
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_rate_parent', 'rate-parent', 'Rate Parent', 'maker')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_rate_child', 'rate-child', 'Rate Child', 'maker')
+    `).run();
+    await createSession('usr_rate_parent', 'session_rate_parent');
+    await createSession('usr_rate_child', 'session_rate_child');
+
+    const parentCreateRes = await postAsUser('session_rate_parent', { action: 'create-repository', slug: 'rate-parent-root' });
+    expect(parentCreateRes.status).toBe(201);
+    const parentRepositoryId = (await parentCreateRes.json()).repository.id;
+
+    await post({
+      action: 'gateway-record-ref',
+      repositoryId: parentRepositoryId,
+      refName: 'refs/heads/main',
+      oldOid: null,
+      newOid: OID_1,
+      operation: 'create',
+      idempotencyKey: 'rate_parent_init_ref'
+    });
+
+    await ctx.d1.prepare(`
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
+      VALUES ('app_rate_parent', 'Rate Parent', 'Tagline', 'Desc', 'usr_rate_parent', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
+      VALUES ('app_rate_parent', ?, 'usr_rate_parent', 1000, 'usd', 'active', 1250)
+    `).bind(parentRepositoryId).run();
+
+    const forkRequest = await postAsUser('session_rate_child', {
+      action: 'fork',
+      parentRepositoryId,
+      childSlug: 'rate-child-fork',
+      parentRefName: 'refs/heads/main'
+    });
+    expect(forkRequest.status).toBe(201);
+    const forkData = await forkRequest.json();
+
+    await ctx.d1.prepare(`
+      UPDATE commerce_products SET royalty_bps = 2750 WHERE repository_id = ?
+    `).bind(parentRepositoryId).run();
+
+    const confirmResponse = await post({
+      action: 'gateway-confirm-fork',
+      childRepositoryId: forkData.repository.id,
+      parentRepositoryId,
+      parentRefName: 'refs/heads/main',
+      parentCommitOid: OID_1,
+      childInitialCommitOid: OID_1,
+      idempotencyKey: 'idemp_rate_child_confirm',
+      actorUserId: 'usr_rate_child'
+    });
+    expect(confirmResponse.status).toBe(201);
+
+    const lienRows: any = await ctx.d1.prepare(`
+      SELECT ancestor_repository_id AS sourceRepositoryId, ancestor_user_id AS ancestorUserId, bps, depth AS lineageDepth
+      FROM repository_fork_liens WHERE holder_of_repository_id = ?
+    `).bind(forkData.repository.id).all();
+    expect(lienRows.results).toEqual([{
+      sourceRepositoryId: parentRepositoryId,
+      ancestorUserId: 'usr_rate_parent',
+      bps: 1250,
+      lineageDepth: 1
+    }]);
+  });
+
+  it('fails closed when the pinned snapshot total exceeds 100% and inserts no lien rows', async () => {
+    ctx = await createTestD1Database({ foreignKeys: true });
+
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_invalid_parent', 'invalid-parent', 'Invalid Parent', 'maker')
+    `).run();
+    await ctx.d1.prepare(`
+      INSERT INTO users (id, username, display_name, role) VALUES ('usr_invalid_child', 'invalid-child', 'Invalid Child', 'maker')
+    `).run();
+    await createSession('usr_invalid_parent', 'session_invalid_parent');
+    await createSession('usr_invalid_child', 'session_invalid_child');
+
+    const parentCreateRes = await postAsUser('session_invalid_parent', { action: 'create-repository', slug: 'invalid-parent-root' });
+    expect(parentCreateRes.status).toBe(201);
+    const parentRepositoryId = (await parentCreateRes.json()).repository.id;
+
+    await post({
+      action: 'gateway-record-ref',
+      repositoryId: parentRepositoryId,
+      refName: 'refs/heads/main',
+      oldOid: null,
+      newOid: OID_1,
+      operation: 'create',
+      idempotencyKey: 'invalid_parent_init_ref'
+    });
+
+    const forkRequest = await postAsUser('session_invalid_child', {
+      action: 'fork',
+      parentRepositoryId,
+      childSlug: 'invalid-child-fork',
+      parentRefName: 'refs/heads/main'
+    });
+    expect(forkRequest.status).toBe(201);
+    const forkData = await forkRequest.json();
+
+    const requestEvent = await ctx.d1.prepare(`
+      SELECT payload FROM forge_outbox_events WHERE id = ?
+    `).bind(forkData.outboxEventId).first();
+    const requestPayload = JSON.parse((requestEvent as any).payload);
+    requestPayload.royaltyLienSnapshot.totalBps = 10001;
+    await ctx.d1.prepare(`
+      UPDATE forge_outbox_events SET payload = ? WHERE id = ?
+    `).bind(JSON.stringify(requestPayload), forkData.outboxEventId).run();
+
+    const confirmResponse = await post({
+      action: 'gateway-confirm-fork',
+      childRepositoryId: forkData.repository.id,
+      parentRepositoryId,
+      parentRefName: 'refs/heads/main',
+      parentCommitOid: OID_1,
+      childInitialCommitOid: OID_1,
+      idempotencyKey: 'idemp_invalid_child_confirm',
+      actorUserId: 'usr_invalid_child'
+    });
+    expect(confirmResponse.status).toBe(409);
+    expect((await confirmResponse.json()).error).toContain('would exceed 100%');
+
+    const lienCount = await ctx.d1.prepare(`
+      SELECT COUNT(*) AS count FROM repository_fork_liens WHERE holder_of_repository_id = ?
+    `).bind(forkData.repository.id).first();
+    expect((lienCount as any).count).toBe(0);
+
+    const forkRow = await ctx.d1.prepare(`
+      SELECT child_repository_id FROM repository_forks WHERE child_repository_id = ?
+    `).bind(forkData.repository.id).first();
+    expect(forkRow).toBeNull();
+
+    const child = await ctx.d1.prepare(`
+      SELECT status FROM repositories WHERE id = ?
+    `).bind(forkData.repository.id).first();
+    expect((child as any).status).toBe('provisioning');
   });
 
   it('writes no liens when the parent has no commerce_products row (royalty_bps treated as 0)', async () => {
