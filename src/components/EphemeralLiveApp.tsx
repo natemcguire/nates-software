@@ -1,7 +1,9 @@
+import React, { useState, useEffect } from 'react';
 import { AppListing, AppDeploymentState } from '../data/mockData';
 import { ExternalLink, Shield, AlertTriangle, GitBranch, Cpu, RefreshCw, FileCode, CheckCircle2, XCircle, Info } from 'lucide-react';
 import { playClickSound } from '../lib/soundEngine';
 import { getHonestDeploymentMessage } from '../lib/deploymentLifecycle';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface EphemeralLiveAppProps {
   app: AppListing;
@@ -29,6 +31,53 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const shortError = displayError
     ? (displayError.length > 160 ? `${displayError.slice(0, 160)}…` : displayError)
     : '';
+
+  const hasRunnableDeployment = isVerifiedActive && Boolean(liveUrl);
+  const [owner, repoSlugName] = (app.repoSlug || '').includes('/')
+    ? app.repoSlug!.split('/')
+    : [undefined, undefined];
+  const hasLinkedRepo = Boolean(app.hasCanonicalRepo && owner && repoSlugName);
+
+  const [readmeContent, setReadmeContent] = useState<string | null>(null);
+  const [readmeLoading, setReadmeLoading] = useState(false);
+  const [readmeUnavailable, setReadmeUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (hasRunnableDeployment || !hasLinkedRepo) {
+      setReadmeContent(null);
+      setReadmeLoading(false);
+      setReadmeUnavailable(false);
+      return;
+    }
+
+    let isCancelled = false;
+    setReadmeLoading(true);
+    setReadmeUnavailable(false);
+    setReadmeContent(null);
+
+    const readmeUrl = `/api/repo-file?owner=${encodeURIComponent(owner!)}&slug=${encodeURIComponent(repoSlugName!)}&path=${encodeURIComponent('README.md')}`;
+
+    fetch(readmeUrl)
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const text = await res.text();
+          if (!isCancelled) setReadmeContent(text);
+        } else {
+          if (!isCancelled) setReadmeUnavailable(true);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) setReadmeUnavailable(true);
+      })
+      .finally(() => {
+        if (!isCancelled) setReadmeLoading(false);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [app.id, hasRunnableDeployment, hasLinkedRepo, owner, repoSlugName]);
 
   const getStatusBadge = (state: AppDeploymentState) => {
     switch (state) {
@@ -115,7 +164,27 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
             />
           </div>
         ) : (
-          <div className="flex-1 bg-[#ece9d8] p-6 sm:p-10 flex flex-col items-center justify-center text-center font-tahoma overflow-y-auto" data-testid="honest-deployment-surface">
+          <div className="flex-1 bg-[#ece9d8] p-6 sm:p-10 flex flex-col items-center text-center font-tahoma overflow-y-auto" data-testid="honest-deployment-surface">
+            {hasLinkedRepo && (
+              <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-5 max-w-xl w-full shadow-lg text-left mb-4" data-testid="sandbox-readme-block">
+                <div className="bg-gradient-to-r from-[#000080] to-[#1084d0] text-white px-3 py-1.5 flex items-center justify-between mb-3 select-none font-bold text-xs">
+                  <div className="flex items-center gap-2">
+                    <FileCode size={13} />
+                    <span>README · {app.repoSlug}</span>
+                  </div>
+                </div>
+                {readmeLoading ? (
+                  <p className="text-xs text-gray-500 font-mono animate-pulse" data-testid="readme-loading">Loading README.md from repository...</p>
+                ) : readmeContent ? (
+                  <MarkdownRenderer content={readmeContent} />
+                ) : (
+                  <p className="text-[11px] text-gray-500 font-mono" data-testid="readme-unavailable">
+                    {readmeUnavailable ? 'README unavailable.' : 'No README.md found in this repository.'}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black p-6 max-w-xl w-full shadow-lg text-left">
               <div className="bg-gradient-to-r from-[#000080] to-[#1084d0] text-white px-3 py-1.5 flex items-center justify-between mb-4 select-none font-bold text-xs">
                 <div className="flex items-center gap-2">

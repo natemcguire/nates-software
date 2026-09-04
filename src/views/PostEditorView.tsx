@@ -151,102 +151,117 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
 
       <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
         {activeTab === 'guide' && (
-          <div className="space-y-5 max-w-3xl mx-auto py-2">
-            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-900 text-white p-4 rounded-lg shadow-md border border-blue-700">
-              <h2 className="text-lg font-black tracking-tight mb-1 flex items-center gap-2">
+          <div className="space-y-4 max-w-3xl mx-auto py-2">
+            <div className="bg-w95-blue text-white p-3 border-2 border-gray-800">
+              <h2 className="text-sm font-bold tracking-tight mb-1 flex items-center gap-2">
                 ⚡ The Maker Guide: From Local Repo to 12:01 AM Drop
               </h2>
               <p className="text-xs text-blue-200 leading-relaxed">
-                Follow the standard developer flow to initialize your project, configure optional persistence, run verification proofs, and deploy to HOTWIRE.
+                The real flow: install the CLI, log in, connect a repo, push your code, then publish. Each step below only does what it says.
               </p>
             </div>
 
-            <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
-              <div className="flex items-center justify-between border-b border-gray-300 pb-2">
+            <div className="border-2 border-gray-800 bg-white space-y-2">
+              <div className="flex items-center justify-between border-b-2 border-gray-300 bg-gray-100 px-3 py-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                  <span className="bg-blue-800 text-white px-2 py-0.5 rounded text-xs font-mono">1</span>
-                  🛠️ Install the <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-black">slop</code> CLI Tool
+                  <span className="bg-w95-blue text-white px-2 py-0.5 text-xs font-mono">1</span>
+                  Install the <code className="bg-gray-200 px-1.5 py-0.5 font-mono text-black">slop</code> CLI
                 </h3>
                 <button
-                  onClick={() => handleCopy("npm install -g @nates-software/slop && slop --help", 1)}
+                  onClick={() => handleCopy("npm install -g @nates-software/slop\nslop --help", 1)}
                   className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1 font-mono"
                 >
                   {copiedIndex === 1 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 1 ? 'Copied' : 'Copy Commands'}</span>
                 </button>
               </div>
-              <p className="text-xs text-gray-600">
-                Install the SLOP CLI and confirm it's on your path:
+              <p className="text-xs text-gray-600 px-3">
+                Install the CLI globally and confirm it's on your path:
               </p>
-              <pre className="bg-black text-green-400 p-3 rounded font-mono text-xs overflow-x-auto leading-relaxed">
-$ npm install -g @nates-software/slop
-$ slop --help</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 border border-gray-700 mx-3 mb-3 p-3 font-mono text-xs overflow-x-auto leading-relaxed">{"$ npm install -g @nates-software/slop\n$ slop --help"}</pre>
             </div>
 
-            <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
-              <div className="flex items-center justify-between border-b border-gray-300 pb-2">
+            <div className="border-2 border-gray-800 bg-white space-y-2">
+              <div className="flex items-center justify-between border-b-2 border-gray-300 bg-gray-100 px-3 py-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                  <span className="bg-blue-800 text-white px-2 py-0.5 rounded text-xs font-mono">2</span>
-                  🎮 Create or Link Your Local Project (<code className="font-mono text-xs">~/Projects/{app.id || 'dronehunter'}</code>)
-                </h3>
-              </div>
-              <p className="text-xs text-gray-600">
-                Initialize your application with open source shareware metadata (apps are runtime and storage independent):
-              </p>
-              <ul className="text-xs text-gray-700 space-y-1 pl-4 list-disc font-sans">
-                <li><b>Project Directory:</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">{app.id || 'dronehunter'}</code></li>
-                <li><b>Configuration:</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">slop.config.json</code> (declaring appId, title, and screenshots)</li>
-                <li><b>Database Schema (Optional):</b> <code className="bg-gray-200 px-1 py-0.2 rounded font-mono text-[11px]">migrations/001_initial_scores.sql</code> (for apps utilizing local SQLite)</li>
-              </ul>
-            </div>
-
-            <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
-              <div className="flex items-center justify-between border-b border-gray-300 pb-2">
-                <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                  <span className="bg-blue-800 text-white px-2 py-0.5 rounded text-xs font-mono">3</span>
-                  🚀 Push to HOTWIRE via <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-black">slop push</code>
+                  <span className="bg-w95-blue text-white px-2 py-0.5 text-xs font-mono">2</span>
+                  Log in
                 </h3>
                 <button
-                  onClick={() => handleCopy(`cd ~/Projects/${app.id || 'dronehunter'} && git init && git add -A && git commit -m "feat: initial commit" && slop push`, 3)}
+                  onClick={() => handleCopy("slop login", 2)}
+                  className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1 font-mono"
+                >
+                  {copiedIndex === 2 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
+                  <span>{copiedIndex === 2 ? 'Copied' : 'Copy Commands'}</span>
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 px-3">
+                Generate a CLI token in <b>PROFILE</b>, then authenticate:
+              </p>
+              <pre className="bg-[#0f172a] text-emerald-400 border border-gray-700 mx-3 mb-3 p-3 font-mono text-xs overflow-x-auto leading-relaxed">$ slop login</pre>
+            </div>
+
+            <div className="border-2 border-gray-800 bg-white space-y-2">
+              <div className="flex items-center justify-between border-b-2 border-gray-300 bg-gray-100 px-3 py-2">
+                <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                  <span className="bg-w95-blue text-white px-2 py-0.5 text-xs font-mono">3</span>
+                  Create + connect the repo
+                </h3>
+                <button
+                  onClick={() => handleCopy("slop init <app-id>", 3)}
                   className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1 font-mono"
                 >
                   {copiedIndex === 3 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 3 ? 'Copied' : 'Copy Commands'}</span>
                 </button>
               </div>
-              <p className="text-xs text-gray-600">
-                Run standard Git initialization and dispatch the drop to our remote forge:
+              <p className="text-xs text-gray-600 px-3">
+                Creates the forge repo and configures the <code className="bg-gray-200 px-1 py-0.2 font-mono text-[11px]">slop</code> remote automatically when you're logged in:
               </p>
-              <pre className="bg-black text-green-400 p-3 rounded font-mono text-xs overflow-x-auto leading-relaxed">
-$ cd ~/Projects/{app.id || 'dronehunter'}
-$ git init && git add -A && git commit -m "feat: initial commit for {app.name || 'DroneHunter 95'}"
-$ slop push
-
-Output:
-  ┌────────────────────────────────────────────────────────────┐
-  │ ⚡ SLOP CLI v1.0.0 — fork code, fork revenue                │
-  └────────────────────────────────────────────────────────────┘
-  [GITSMITH] Initiating 'slop push' from local repository...
-    ✔ Checking runtime configuration &amp; storage ({app.sqlitePath || 'runtime independent'})...
-    ✔ Running pre-push verification tests... (100% Green)
-    ✔ Packing CAS commit SHA: 5cdee6f
-    ✔ Pushing drop to HOTWIRE (https://nates-software.pages.dev/api/drops)...
-  🚀 Deployed live to subdomain in 1.18s!</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 border border-gray-700 mx-3 mb-3 p-3 font-mono text-xs overflow-x-auto leading-relaxed">$ slop init &lt;app-id&gt;</pre>
             </div>
 
-            <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
-              <div className="flex items-center justify-between border-b border-gray-300 pb-2">
+            <div className="border-2 border-gray-800 bg-white space-y-2">
+              <div className="flex items-center justify-between border-b-2 border-gray-300 bg-gray-100 px-3 py-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                  <span className="bg-blue-800 text-white px-2 py-0.5 rounded text-xs font-mono">4</span>
-                  🕹️ Live in HOTWIRE &amp; Moddable via <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-black">slop fork</code>
+                  <span className="bg-w95-blue text-white px-2 py-0.5 text-xs font-mono">4</span>
+                  Push your code
                 </h3>
+                <button
+                  onClick={() => handleCopy('git add -A && git commit -m "feat: initial"\nslop push', 4)}
+                  className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1 font-mono"
+                >
+                  {copiedIndex === 4 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
+                  <span>{copiedIndex === 4 ? 'Copied' : 'Copy Commands'}</span>
+                </button>
               </div>
-              <p className="text-xs text-gray-600">
-                Your drop is now indexed on HOTWIRE with live subdomain hosting at <code className="font-mono text-blue-800">https://{app.id || 'dronehunter'}.pages.dev</code>.
+              <p className="text-xs text-gray-600 px-3">
+                <code className="bg-gray-200 px-1 py-0.2 font-mono text-[11px]">slop push</code> pushes the commit and verifies the ref — it does not publish a drop:
               </p>
-              <pre className="bg-black text-green-400 p-3 rounded font-mono text-xs overflow-x-auto leading-relaxed">
-# Clone into isolated worktree, configure runtime/storage, and bind port:
-$ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 border border-gray-700 mx-3 mb-3 p-3 font-mono text-xs overflow-x-auto leading-relaxed">{'$ git add -A && git commit -m "feat: initial"\n$ slop push'}</pre>
+            </div>
+
+            <div className="border-2 border-gray-800 bg-white space-y-2">
+              <div className="flex items-center justify-between border-b-2 border-gray-300 bg-gray-100 px-3 py-2">
+                <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                  <span className="bg-w95-blue text-white px-2 py-0.5 text-xs font-mono">5</span>
+                  Publish the drop
+                </h3>
+                <button
+                  onClick={() => handleCopy("slop drop --price=15", 5)}
+                  className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1 font-mono"
+                >
+                  {copiedIndex === 5 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
+                  <span>{copiedIndex === 5 ? 'Copied' : 'Copy Commands'}</span>
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 px-3">
+                Publish from the CLI, or use the <b>App Info</b> tab of this editor:
+              </p>
+              <pre className="bg-[#0f172a] text-emerald-400 border border-gray-700 mx-3 mb-3 p-3 font-mono text-xs overflow-x-auto leading-relaxed">$ slop drop --price=15</pre>
+              <p className="text-[11px] text-gray-500 px-3 pb-3 leading-relaxed">
+                Your app goes live at <code className="font-mono text-blue-800">https://&lt;app-id&gt;.nates-software.com</code> only after a verified build (deployable) — publishing the drop alone doesn't deploy it.
+              </p>
             </div>
           </div>
         )}

@@ -65,6 +65,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const [newCommentText, setNewCommentText] = useState('');
 
   const [specContent, setSpecContent] = useState<string | null>(null);
+  const [specSourceFile, setSpecSourceFile] = useState<'spec.md' | 'README.md' | null>(null);
   const [specLoading, setSpecLoading] = useState(false);
   const [specError, setSpecError] = useState<string | null>(null);
 
@@ -91,31 +92,48 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     setSpecLoading(true);
     setSpecError(null);
     setSpecContent(null);
+    setSpecSourceFile(null);
 
-    const specUrl = getRepoFileUrl('spec.md');
-
-    fetch(specUrl)
-      .then(async res => {
-        if (isCancelled) return;
+    const tryLoad = async (fileName: 'spec.md' | 'README.md'): Promise<'ok' | 'not_found' | 'error'> => {
+      try {
+        const res = await fetch(getRepoFileUrl(fileName));
+        if (isCancelled) return 'error';
         if (res.ok) {
           const text = await res.text();
+          if (isCancelled) return 'error';
           setSpecContent(text);
-        } else if (res.status === 404) {
+          setSpecSourceFile(fileName);
+          return 'ok';
+        }
+        if (res.status === 404) {
+          return 'not_found';
+        }
+        setSpecError(`Failed to load ${fileName} (HTTP ${res.status})`);
+        return 'error';
+      } catch (err: any) {
+        if (!isCancelled) {
+          setSpecError(err?.message || `Failed to load ${fileName}`);
+        }
+        return 'error';
+      }
+    };
+
+    (async () => {
+      const specResult = await tryLoad('spec.md');
+      if (isCancelled || specResult !== 'not_found') {
+        if (!isCancelled) setSpecLoading(false);
+        return;
+      }
+
+      const readmeResult = await tryLoad('README.md');
+      if (!isCancelled) {
+        if (readmeResult === 'not_found') {
           setSpecContent(null);
-        } else {
-          setSpecError(`Failed to load spec (HTTP ${res.status})`);
+          setSpecSourceFile(null);
         }
-      })
-      .catch(err => {
-        if (!isCancelled) {
-          setSpecError(err?.message || 'Failed to load spec.md');
-        }
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setSpecLoading(false);
-        }
-      });
+        setSpecLoading(false);
+      }
+    })();
 
     return () => {
       isCancelled = true;
@@ -365,7 +383,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                 <div className="mb-3 pb-2 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-mono">
                   <span className="flex items-center gap-1.5 font-bold text-gray-700">
                     <FileText size={14} className="text-blue-700" />
-                    <span>spec.md</span>
+                    <span>{specSourceFile || 'spec.md'}</span>
                   </span>
                   {app.repoSlug && (
                     <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded border border-gray-300">
@@ -386,8 +404,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                     <span className="text-red-700 font-mono text-[11px]">{specError}</span>
                   ) : (
                     <>
-                      This repository does not have a <code>spec.md</code> committed at its root yet.
-                      Commit a <code>spec.md</code> to the main branch to render the idea pitch and specification here.
+                      This repository does not have a <code>spec.md</code> or <code>README.md</code> committed at its root yet.
+                      Commit either file to the main branch to render the idea pitch and specification here.
                     </>
                   )}
                 </p>
@@ -586,7 +604,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             <div className="flex items-center justify-between border-b border-slate-700 pb-3">
               <div className="flex items-center gap-2">
                 <Network size={16} className="text-amber-400" />
-                <span className="font-bold text-sm text-white font-mono">Immutable Lineage DAG · {app.name}</span>
+                <span className="font-bold text-sm text-white font-mono">Fork family tree · {app.name}</span>
               </div>
               <button onClick={() => setShowLineageModal(false)} className="text-slate-400 hover:text-white">
                 <X size={16} />
@@ -595,16 +613,20 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
             <div className="bg-[#0f172a] p-3.5 rounded-lg border border-slate-700 space-y-3 font-mono">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Root Author:</span>
+                <span className="text-slate-400">Original maker:</span>
                 <span className="text-sky-400 font-bold">@{app.author || app.creator}</span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Lineage Ancestry Depth:</span>
-                <span className="text-emerald-400 font-bold">Genesis (Generation 0)</span>
+                <span className="text-slate-400">Ancestry:</span>
+                <span className="text-emerald-400 font-bold">
+                  {typeof app.forkDepth === 'number' && app.forkDepth > 0
+                    ? `Built on ${app.forkDepth} app${app.forkDepth === 1 ? '' : 's'} upstream`
+                    : 'This is an original — nobody upstream'}
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400">Downstream Forks:</span>
-                <span className="text-amber-400 font-bold">{app.forkCount} Registered Forks</span>
+                <span className="text-amber-400 font-bold">Forks so far: {app.forkCount}</span>
               </div>
             </div>
 
@@ -620,7 +642,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                 onClick={() => setShowLineageModal(false)}
                 className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-1.5 rounded font-bold font-mono"
               >
-                Close DAG View
+                Close
               </button>
             </div>
           </div>
