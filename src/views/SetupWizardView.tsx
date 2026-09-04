@@ -165,7 +165,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <span>Step 1: Sign up or Sign in</span>
               </div>
               <p className="text-gray-600 text-xs">
-                Nate's Software is a peer-to-peer shareware marketplace. Create an account to purchase source repos, fork apps, and publish your own software drops.
+                Nate's Software is a peer-to-peer shareware marketplace. Create an account to purchase source repos, fork apps for yourself, and publish your own software drops.
               </p>
             </div>
 
@@ -404,7 +404,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                   <div className="text-2xl mb-1">⚡</div>
                   <div className="font-bold text-xs text-blue-950">2. Fork &amp; Mod with AI</div>
                   <p className="text-gray-600 text-[11px] mt-1 leading-relaxed">
-                    Fork any public project with 1 click. Customize features using AGY, Claude Code, or Cursor, and test in client sandboxes.
+                    Fork any public project with 1 click to run and mod for yourself. Reselling your fork requires the author to have enabled resale. Customize features using AGY, Claude Code, or Cursor.
                   </p>
                 </div>
                 <div className="bg-amber-50 text-amber-900 p-1.5 rounded font-mono text-[10px] border border-amber-200">

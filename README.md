@@ -1,8 +1,8 @@
 # Nate's Software
 
 A marketplace for software you buy once and own — not rent. Every purchase issues a real license
-key tied to your account. The source comes with it: you can fork any app, change it (with an AI
-agent in the loop if you want), and sell your version. When a fork sells, the revenue splits back
+key tied to your account. The source comes with it: you can fork any app, change it for yourself (with an AI
+agent in the loop if you want), or sell your version if resale is enabled. When a resale fork sells, the revenue splits back
 to every upstream maker's frozen royalty share automatically.
 
 The whole thing is presented as a Windows-95-style desktop in the browser. That's a deliberate
@@ -18,8 +18,7 @@ stop paying you have nothing. This flips that:
 
 - **Buy once, own the source.** A purchase mints a cryptographic license (`NSW-…`) on your shelf. The
   key is hashed at rest; the secret is encrypted with AES-256-GCM. You also get the source.
-- **Fork and resell.** Any app with published source can be forked into your own namespace, modified,
-  and relisted. Forking is free.
+- **Fork and resell.** Any app with published source can be forked for yourself; reselling your fork requires the author to have enabled resale.
 - **Frozen-lien royalties.** Every app is Personal (fork it for yourself, no resale) or Resale at a
   maker-set royalty rate `r` (0–100%). When someone forks a Resale app, `r` freezes onto that fork
   edge and rides along with every descendant — a downstream maker can never alter or drop a lien

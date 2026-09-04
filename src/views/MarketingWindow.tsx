@@ -98,8 +98,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         <div className="px-1 py-3 space-y-4">
           <p className="text-gray-800 text-sm leading-relaxed font-sans">
             Buy a web app once and own the source — the live app, the full Git repo, and a
-            real license key with your name on it. Free-tier hosting is limited and best-effort, and you always own the source to self-host anywhere. Fork anything, remix it with an AI agent, and sell
-            your version; the maker you built on earns the royalty they locked the day you forked.
+            real license key with your name on it. Free-tier hosting is limited and best-effort, and you always own the source to self-host anywhere. Fork anything for yourself and remix it with an AI agent; selling your version requires the author to have enabled resale, with upstream makers earning the royalty they locked the day you forked.
           </p>
 
           <div>

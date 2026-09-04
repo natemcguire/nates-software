@@ -682,7 +682,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
                 </>
               ) : (
                 <div className="text-[10px] mt-1 leading-snug">
-                  This app is <b>free to fork and resell</b> (0% royalty). Platform still takes a flat 10% on any sale; you keep the rest.
+                  This app has a <b>0% author royalty</b> (resale enabled). Platform still takes a flat 10% on any sale; you keep the rest.
                 </div>
               )}
             </div>
