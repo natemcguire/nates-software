@@ -93,16 +93,25 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
         }}
       >
         <button
+          type="button"
           onClick={handleToggleSound}
-          className="hover:scale-110 transition-transform"
+          aria-label={soundOn ? "Sound Effects Enabled (Click to Mute)" : "Sound Effects Muted (Click to Unmute)"}
+          aria-pressed={soundOn}
+          className="w-6 h-6 win95-btn flex items-center justify-center p-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-black"
           style={{ color: 'var(--nsw-taskbar-text, #000000)' }}
           title={soundOn ? "Sound Effects Enabled (Click to Mute)" : "Sound Effects Muted (Click to Unmute)"}
         >
-          {soundOn ? <Volume2 size={17} className="text-blue-900" /> : <VolumeX size={17} className="text-gray-500" />}
+          {soundOn ? <Volume2 size={14} className="text-blue-900" /> : <VolumeX size={14} className="text-gray-600" />}
         </button>
 
-        <span title="Portable Software & Storage Freedom" className="flex items-center">
-          <ShieldCheck size={17} className="text-green-700" />
+        <span
+          tabIndex={0}
+          role="status"
+          aria-label="Portable Software &amp; Storage Freedom — System Verified"
+          title="Portable Software &amp; Storage Freedom — System Verified"
+          className="w-6 h-6 flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-black"
+        >
+          <ShieldCheck size={16} className="text-green-700" />
         </span>
 
         <span className="font-mono text-[13px] font-bold" style={{ color: 'var(--nsw-taskbar-text, #000000)' }}>
