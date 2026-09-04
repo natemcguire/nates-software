@@ -515,6 +515,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               )}
 
+              <div className="bg-amber-50 border border-amber-300 px-2.5 py-2 text-[11px] text-amber-950 leading-relaxed">
+                One-time purchase. Includes the listed version, source access, and license. All sales final except where required by law.
+              </div>
+
               <div className="flex items-center justify-between pt-2 border-t border-gray-300">
                 <button
                   type="button"
