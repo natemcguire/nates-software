@@ -161,7 +161,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               </p>
             </div>
 
-            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] space-y-2">
+            <div className="border-2 border-gray-800 bg-[#c0c0c0] space-y-2">
               <div className="flex items-center justify-between border-b border-[#808080] bg-[#dfdfdf] px-3 py-1.5">
                 <h3 className="font-bold text-xs text-black flex items-center gap-2">
                   <span className="bg-[#000080] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold">1</span>
@@ -169,7 +169,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 </h3>
                 <button
                   onClick={() => handleCopy("npm install -g @nates-software/slop\nslop --help", 1)}
-                  className="win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
+                  className="btn-w95 win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
                 >
                   {copiedIndex === 1 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 1 ? 'Copied' : 'Copy Commands'}</span>
@@ -178,10 +178,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               <p className="text-xs text-black px-3">
                 Install the CLI globally and confirm it's on your path:
               </p>
-              <pre className="bg-white win95-field text-black mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed">{"$ npm install -g @nates-software/slop\n$ slop --help"}</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">{"$ npm install -g @nates-software/slop\n$ slop --help"}</pre>
             </div>
 
-            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] space-y-2">
+            <div className="border-2 border-gray-800 bg-[#c0c0c0] space-y-2">
               <div className="flex items-center justify-between border-b border-[#808080] bg-[#dfdfdf] px-3 py-1.5">
                 <h3 className="font-bold text-xs text-black flex items-center gap-2">
                   <span className="bg-[#000080] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold">2</span>
@@ -189,7 +189,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 </h3>
                 <button
                   onClick={() => handleCopy("slop login", 2)}
-                  className="win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
+                  className="btn-w95 win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
                 >
                   {copiedIndex === 2 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 2 ? 'Copied' : 'Copy Commands'}</span>
@@ -198,10 +198,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               <p className="text-xs text-black px-3">
                 Generate a CLI token in <b>PROFILE</b>, then authenticate:
               </p>
-              <pre className="bg-white win95-field text-black mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed">$ slop login</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">$ slop login</pre>
             </div>
 
-            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] space-y-2">
+            <div className="border-2 border-gray-800 bg-[#c0c0c0] space-y-2">
               <div className="flex items-center justify-between border-b border-[#808080] bg-[#dfdfdf] px-3 py-1.5">
                 <h3 className="font-bold text-xs text-black flex items-center gap-2">
                   <span className="bg-[#000080] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold">3</span>
@@ -209,7 +209,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 </h3>
                 <button
                   onClick={() => handleCopy("slop init <app-id>", 3)}
-                  className="win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
+                  className="btn-w95 win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
                 >
                   {copiedIndex === 3 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 3 ? 'Copied' : 'Copy Commands'}</span>
@@ -218,10 +218,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               <p className="text-xs text-black px-3">
                 Creates the forge repo and configures the <code className="win95-field bg-white px-1 py-0.5 font-mono text-[11px]">slop</code> remote automatically when you're logged in:
               </p>
-              <pre className="bg-white win95-field text-black mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed">$ slop init &lt;app-id&gt;</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">$ slop init &lt;app-id&gt;</pre>
             </div>
 
-            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] space-y-2">
+            <div className="border-2 border-gray-800 bg-[#c0c0c0] space-y-2">
               <div className="flex items-center justify-between border-b border-[#808080] bg-[#dfdfdf] px-3 py-1.5">
                 <h3 className="font-bold text-xs text-black flex items-center gap-2">
                   <span className="bg-[#000080] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold">4</span>
@@ -229,7 +229,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 </h3>
                 <button
                   onClick={() => handleCopy('git add -A && git commit -m "feat: initial"\nslop push', 4)}
-                  className="win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
+                  className="btn-w95 win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
                 >
                   {copiedIndex === 4 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 4 ? 'Copied' : 'Copy Commands'}</span>
@@ -238,10 +238,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               <p className="text-xs text-black px-3">
                 <code className="win95-field bg-white px-1 py-0.5 font-mono text-[11px]">slop push</code> pushes the commit and verifies the ref — it does not publish a drop:
               </p>
-              <pre className="bg-white win95-field text-black mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed">{'$ git add -A && git commit -m "feat: initial"\n$ slop push'}</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">{'$ git add -A && git commit -m "feat: initial"\n$ slop push'}</pre>
             </div>
 
-            <div className="border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] bg-[#c0c0c0] space-y-2">
+            <div className="border-2 border-gray-800 bg-[#c0c0c0] space-y-2">
               <div className="flex items-center justify-between border-b border-[#808080] bg-[#dfdfdf] px-3 py-1.5">
                 <h3 className="font-bold text-xs text-black flex items-center gap-2">
                   <span className="bg-[#000080] text-white px-1.5 py-0.5 text-[10px] font-mono font-bold">5</span>
@@ -249,7 +249,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 </h3>
                 <button
                   onClick={() => handleCopy("slop drop --price=15", 5)}
-                  className="win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
+                  className="btn-w95 win95-btn text-xs py-0.5 px-2 flex items-center gap-1 font-mono bg-[#dfdfdf] hover:bg-white text-black"
                 >
                   {copiedIndex === 5 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
                   <span>{copiedIndex === 5 ? 'Copied' : 'Copy Commands'}</span>
@@ -258,7 +258,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               <p className="text-xs text-black px-3">
                 Publish from the CLI, or use the <b>App Info</b> tab of this editor:
               </p>
-              <pre className="bg-white win95-field text-black mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed">$ slop drop --price=15</pre>
+              <pre className="bg-[#0f172a] text-emerald-400 mx-3 mb-3 p-2.5 font-mono text-xs overflow-x-auto leading-relaxed border border-gray-800">$ slop drop --price=15</pre>
               <p className="text-[11px] text-gray-700 px-3 pb-3 leading-relaxed">
                 Your app goes live at <code className="font-mono text-blue-900 font-bold">https://&lt;app-id&gt;.nates-software.com</code> only after a verified build (deployable) — publishing the drop alone doesn't deploy it.
               </p>

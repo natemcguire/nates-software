@@ -164,10 +164,14 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   );
 };
 
+const fallbackAlertContext: AlertContextType = {
+  showAlert: () => {},
+  showToast: () => {},
+  showConfirm: () => Promise.resolve(false)
+};
+
 export const useAlert = (): AlertContextType => {
   const context = useContext(AlertContext);
-  if (!context) {
-    throw new Error('useAlert must be used within an AlertProvider');
-  }
-  return context;
+  return context || fallbackAlertContext;
 };
+

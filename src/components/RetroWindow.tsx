@@ -140,7 +140,7 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
         userSelect: 'none',
         WebkitUserSelect: 'none'
       }}
-      className="nsw-window bg-w95-panel w95-border w95-shadow flex flex-col select-none nsw-popup-enter"
+      className="nsw-window w95-border w95-shadow flex flex-col select-none nsw-popup-enter"
     >
       <div
         draggable={false}
@@ -150,13 +150,15 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
         onDoubleClick={onToggleMaximize}
         style={{
           userSelect: 'none',
-          WebkitUserSelect: 'none'
+          WebkitUserSelect: 'none',
+          background: isActive
+            ? 'linear-gradient(90deg, var(--nsw-titlebar-bg, #000080), var(--nsw-titlebar-bg-end, #1084d0))'
+            : 'linear-gradient(90deg, var(--nsw-titlebar-inactive-bg, #808080), var(--nsw-titlebar-inactive-bg-end, #a0a0a0))',
+          color: isActive
+            ? 'var(--nsw-titlebar-text, #ffffff)'
+            : 'var(--nsw-titlebar-inactive-text, #d4d0c8)'
         }}
-        className={`px-3 py-1.5 flex items-center justify-between font-tahoma text-sm font-bold cursor-move select-none ${
-          isActive
-            ? 'bg-gradient-to-r from-[#000080] via-[#1084d0] to-[#000080] text-white'
-            : 'bg-gradient-to-r from-[#808080] to-[#a0a0a0] text-gray-200'
-        }`}
+        className="px-3 py-1.5 flex items-center justify-between font-tahoma text-sm font-bold cursor-move select-none"
       >
         <div className="flex items-center gap-2 truncate text-[14px] select-none pointer-events-none">
           <span>{windowState.icon}</span>
@@ -168,7 +170,8 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
             type="button"
             draggable={false}
             onClick={(e) => { e.stopPropagation(); onMinimize(); }}
-            className="w-5 h-5 bg-w95-gray w95-border flex items-center justify-center text-black hover:bg-white active:translate-x-0.5 text-xs font-bold select-none outline-none focus:outline-none"
+            style={{ backgroundColor: 'var(--nsw-btn-bg, #c0c0c0)' }}
+            className="w-5 h-5 w95-border flex items-center justify-center text-black hover:bg-white active:translate-x-0.5 text-xs font-bold select-none outline-none focus:outline-none"
             title="Minimize"
           >
             <Minus size={12} />
@@ -177,7 +180,8 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
             type="button"
             draggable={false}
             onClick={(e) => { e.stopPropagation(); onToggleMaximize(); }}
-            className="w-5 h-5 bg-w95-gray w95-border flex items-center justify-center text-black hover:bg-white active:translate-x-0.5 text-xs font-bold select-none outline-none focus:outline-none"
+            style={{ backgroundColor: 'var(--nsw-btn-bg, #c0c0c0)' }}
+            className="w-5 h-5 w95-border flex items-center justify-center text-black hover:bg-white active:translate-x-0.5 text-xs font-bold select-none outline-none focus:outline-none"
             title={windowState.isMaximized ? "Restore" : "Maximize"}
           >
             {windowState.isMaximized ? <Copy size={10} /> : <Square size={10} />}
@@ -186,7 +190,8 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
             type="button"
             draggable={false}
             onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className="w-5 h-5 bg-w95-gray w95-border flex items-center justify-center text-black hover:bg-red-700 hover:text-white active:translate-x-0.5 text-xs font-bold select-none outline-none focus:outline-none"
+            style={{ backgroundColor: 'var(--nsw-btn-bg, #c0c0c0)' }}
+            className="w-5 h-5 w95-border flex items-center justify-center text-black hover:bg-red-700 hover:text-white active:translate-x-0.5 text-xs font-bold select-none outline-none focus:outline-none"
             title="Close"
           >
             <X size={12} />
@@ -195,10 +200,12 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
       </div>
 
       <div
-        className="flex-1 overflow-hidden p-3 flex flex-col bg-[#ece9d8]"
+        className="flex-1 overflow-hidden p-3 flex flex-col"
         style={{
           userSelect: 'none',
-          WebkitUserSelect: 'none'
+          WebkitUserSelect: 'none',
+          backgroundColor: 'var(--nsw-chrome-panel, #ece9d8)',
+          color: 'var(--nsw-chrome-text, #000000)'
         }}
       >
         {children}
