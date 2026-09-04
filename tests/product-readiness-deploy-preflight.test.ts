@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as readinessApi from '../functions/api/product-readiness';
+import { hashSessionToken } from '../functions/api/_session';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 
 describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', () => {
@@ -12,6 +13,17 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
 
   async function seedUser(id: string) {
     await ctx.d1.prepare(`INSERT OR IGNORE INTO users (id, username, display_name) VALUES (?, ?, ?)`).bind(id, id, id).run();
+  }
+
+  async function createSession(userId: string, token: string) {
+    await ctx.d1.prepare(`
+      INSERT INTO user_sessions (token_hash, user_id, expires_at, created_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(await hashSessionToken(token), userId, Date.now() + 3_600_000).run();
+  }
+
+  function authenticatedRequest(url: string, token = 'valid_test_token') {
+    return new Request(url, { headers: { Authorization: `Bearer ${token}` } });
   }
 
   async function seedListing(appId: string, opts: { hostname?: string | null; originKind?: string | null } = {}) {
@@ -45,10 +57,66 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     for (const r of data.readiness) expect(r.deploy).toBeUndefined();
   });
 
+  it('rejects anonymous deploy preflight without changing state or provisioning ECR', async () => {
+    await seedUser('usr_maker');
+    await seedListing('anonymous-preflight', { hostname: 'anonymous-preflight.nates-software.com' });
+    await seedRepository('repo-anonymous-preflight', 'anonymous-preflight', 'active');
+    const before = await ctx.d1.prepare(`
+      SELECT deployment_state, deployment_error, deployment_evidence_json
+      FROM app_listings WHERE id = 'anonymous-preflight'
+    `).first();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unexpected ECR provisioning'));
+
+    const response = await readinessApi.onRequestGet({
+      request: new Request('http://localhost/api/product-readiness?appId=anonymous-preflight&deploy=1'),
+      env: {
+        DB: ctx.d1,
+        STORAGE: {},
+        AWS_ACCESS_KEY_ID: 'AKIA_TEST',
+        AWS_SECRET_ACCESS_KEY: 'secret_test',
+        AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy'
+      }
+    });
+    const after = await ctx.d1.prepare(`
+      SELECT deployment_state, deployment_error, deployment_evidence_json
+      FROM app_listings WHERE id = 'anonymous-preflight'
+    `).first();
+
+    expect(response.status).toBe(401);
+    expect(after).toEqual(before);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects an authenticated non-owner deploy preflight without provisioning ECR', async () => {
+    await seedUser('usr_maker');
+    await seedUser('usr_other_maker');
+    await createSession('usr_other_maker', 'readiness_other_token');
+    await seedListing('non-owner-preflight', { hostname: 'non-owner-preflight.nates-software.com' });
+    await seedRepository('repo-non-owner-preflight', 'non-owner-preflight', 'active');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unexpected ECR provisioning'));
+
+    const response = await readinessApi.onRequestGet({
+      request: authenticatedRequest(
+        'http://localhost/api/product-readiness?appId=non-owner-preflight&deploy=1',
+        'readiness_other_token'
+      ),
+      env: {
+        DB: ctx.d1,
+        STORAGE: {},
+        AWS_ACCESS_KEY_ID: 'AKIA_TEST',
+        AWS_SECRET_ACCESS_KEY: 'secret_test',
+        AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy'
+      }
+    });
+
+    expect(response.status).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('reports not-ready with reasons when the app has no active linked repository', async () => {
     await seedUser('usr_maker');
     await seedListing('no-repo-app', { hostname: 'no-repo-app.nates-software.com' });
-    const req = new Request('http://localhost/api/product-readiness?appId=no-repo-app&deploy=1');
+    const req = authenticatedRequest('http://localhost/api/product-readiness?appId=no-repo-app&deploy=1');
     const res = await readinessApi.onRequestGet({ request: req, env: { DB: ctx.d1, STORAGE: {} } });
     const data: any = await res.json();
 
@@ -61,7 +129,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     await seedUser('usr_maker');
     await seedListing('no-hostname-app', { hostname: null });
     await seedRepository('repo-no-hostname', 'no-hostname-app', 'active');
-    const req = new Request('http://localhost/api/product-readiness?appId=no-hostname-app&deploy=1');
+    const req = authenticatedRequest('http://localhost/api/product-readiness?appId=no-hostname-app&deploy=1');
     const res = await readinessApi.onRequestGet({ request: req, env: { DB: ctx.d1, STORAGE: {} } });
     const data: any = await res.json();
 
@@ -74,7 +142,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     await seedUser('usr_maker');
     await seedListing('no-storage-app', { hostname: 'no-storage-app.nates-software.com' });
     await seedRepository('repo-no-storage', 'no-storage-app', 'active');
-    const req = new Request('http://localhost/api/product-readiness?appId=no-storage-app&deploy=1');
+    const req = authenticatedRequest('http://localhost/api/product-readiness?appId=no-storage-app&deploy=1');
     const res = await readinessApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
     const data: any = await res.json();
 
@@ -86,7 +154,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     await seedUser('usr_maker');
     await seedListing('no-aws-app', { hostname: 'no-aws-app.nates-software.com' });
     await seedRepository('repo-no-aws', 'no-aws-app', 'active');
-    const req = new Request('http://localhost/api/product-readiness?appId=no-aws-app&deploy=1');
+    const req = authenticatedRequest('http://localhost/api/product-readiness?appId=no-aws-app&deploy=1');
     const res = await readinessApi.onRequestGet({
       request: req,
       env: { DB: ctx.d1, STORAGE: {}, AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy' }
@@ -98,8 +166,9 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     expect(data.readiness.deploy.reasons.some((r: string) => r.toLowerCase().includes('ecr'))).toBe(true);
   });
 
-  it('is ready=true when repository, router, storage, build substrate, and ECR are all confirmed', async () => {
+  it('allows the owner to run the ECR preflight when every deploy check is confirmed', async () => {
     await seedUser('usr_maker');
+    await createSession('usr_maker', 'readiness_owner_token');
     await seedListing('all-ready-app', { hostname: 'all-ready-app.nates-software.com', originKind: 'cf_container' });
     await seedRepository('repo-all-ready', 'all-ready-app', 'active');
 
@@ -109,7 +178,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
       { status: 400 }
     )) as any;
     try {
-      const req = new Request('http://localhost/api/product-readiness?appId=all-ready-app&deploy=1');
+      const req = authenticatedRequest('http://localhost/api/product-readiness?appId=all-ready-app&deploy=1', 'readiness_owner_token');
       const res = await readinessApi.onRequestGet({
         request: req,
         env: { DB: ctx.d1, STORAGE: {}, AWS_ACCESS_KEY_ID: 'AKIA_TEST', AWS_SECRET_ACCESS_KEY: 'secret_test', AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy' }
@@ -138,7 +207,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
       { status: 403 }
     )) as any;
     try {
-      const req = new Request('http://localhost/api/product-readiness?appId=ecr-missing-app&deploy=1');
+      const req = authenticatedRequest('http://localhost/api/product-readiness?appId=ecr-missing-app&deploy=1');
       const res = await readinessApi.onRequestGet({
         request: req,
         env: { DB: ctx.d1, STORAGE: {}, AWS_ACCESS_KEY_ID: 'AKIA_TEST', AWS_SECRET_ACCESS_KEY: 'secret_test', AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy' }
