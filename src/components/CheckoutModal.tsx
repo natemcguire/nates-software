@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
 import { publishedArtifactLinks } from '../lib/profileDomain';
 import { Win95Scroll } from './Win95Scroll';
+import { RightsCard } from './RightsCard';
 
 export interface CheckoutModalProps {
   isOpen: boolean;
@@ -20,6 +21,11 @@ export interface CheckoutModalProps {
     authorAvatar?: string;
     price?: string | number;
     forkDepth?: number;
+    resaleEnabled?: boolean;
+    resale_enabled?: boolean;
+    forkingEnabled?: boolean;
+    forking_enabled?: boolean;
+    inheritedLiens?: Array<{ maker: string; bps: number }>;
   };
 }
 
@@ -65,6 +71,9 @@ interface FulfilledOrder {
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, app }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
   const { refreshCatalog, refreshShelf } = useCatalog();
+  const forkingEnabled = app.forkingEnabled ?? app.forking_enabled ?? true;
+  const resaleEnabled = app.resaleEnabled ?? app.resale_enabled ?? true;
+  const upstreamRoyaltyBps = (app.inheritedLiens || []).reduce((total, lien) => total + lien.bps, 0);
 
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => crypto.randomUUID());
 
@@ -356,6 +365,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
         </div>
 
         <Win95Scroll className="p-4 bg-w95-gray space-y-4 flex-1">
+          <RightsCard
+            forkingEnabled={forkingEnabled}
+            resaleEnabled={resaleEnabled}
+            upstreamRoyaltyBps={upstreamRoyaltyBps}
+          />
+
           {status === 'auth_required' && (
             <div className="space-y-4">
               <div className="bg-amber-50 border-2 border-amber-500 p-3 text-amber-950 flex items-start gap-2.5">
@@ -454,7 +469,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                   <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
                   <div>
                     <div className="font-bold text-gray-900 text-sm">{app.name}</div>
-                    <div className="text-gray-500 text-[11px] font-mono">{app.version} · Yours to keep: app, source, and license</div>
+                    <div className="text-gray-500 text-[11px] font-mono">
+                      {app.version} · {forkingEnabled ? 'Yours to keep: app, source, and license' : 'Yours to keep: app and license; source is private'}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -516,7 +533,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
               )}
 
               <div className="bg-amber-50 border border-amber-300 px-2.5 py-2 text-[11px] text-amber-950 leading-relaxed">
-                One-time purchase. Includes the listed version, source access, and license. All sales final except where required by law.
+                One-time purchase. Includes the listed version, {forkingEnabled ? 'source access, and license' : 'running app and license; source access is not included'}. All sales final except where required by law.
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-gray-300">

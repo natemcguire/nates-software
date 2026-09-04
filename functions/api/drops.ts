@@ -46,6 +46,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         r.grantable_bps AS grantable_bps,
         r.grantable_bps AS grantableBps,
         cp.royalty_bps AS royaltyBps,
+        cp.resale_enabled AS resaleEnabled,
+        cp.forking_enabled AS forkingEnabled,
         cp.status AS productStatus,
         ru.username AS repoOwnerUsername,
         rf.commit_oid AS repoHeadCommitOid,
@@ -222,6 +224,15 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const repoDefaultRef = r.repoDefaultRef || null;
       const repositoryId = r.canonicalRepositoryId || r.repositoryId || null;
       const royaltyBps = typeof r.royaltyBps === 'number' ? r.royaltyBps : 1000;
+      const resaleEnabled = r.resaleEnabled === undefined || r.resaleEnabled === null
+        ? true
+        : Boolean(r.resaleEnabled);
+      const forkingEnabled = r.forkingEnabled === undefined || r.forkingEnabled === null
+        ? true
+        : Boolean(r.forkingEnabled);
+      if (!forkingEnabled) {
+        delete binaries.source;
+      }
       const inheritedLiens = repositoryId ? inheritedLiensByRepository.get(repositoryId) || [] : [];
       const grantable_bps = typeof r.grantable_bps === 'number'
         ? r.grantable_bps
@@ -252,6 +263,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         ...r,
         repositoryId,
         royaltyBps,
+        resaleEnabled,
+        forkingEnabled,
         inheritedLiens,
         hasCanonicalRepo,
         isRepoActive,
@@ -594,6 +607,55 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: error.message }, { status: 422 });
     }
 
+    const rawResaleEnabled = body.resaleEnabled !== undefined ? body.resaleEnabled : body.resale_enabled;
+    if (rawResaleEnabled !== undefined && typeof rawResaleEnabled !== 'boolean') {
+      return Response.json({ success: false, error: 'resaleEnabled must be a boolean' }, { status: 422 });
+    }
+    const rawForkingEnabled = body.forkingEnabled !== undefined ? body.forkingEnabled : body.forking_enabled;
+    if (rawForkingEnabled !== undefined && typeof rawForkingEnabled !== 'boolean') {
+      return Response.json({ success: false, error: 'forkingEnabled must be a boolean' }, { status: 422 });
+    }
+    const existingProductRights = ownershipListing
+      ? await env.DB.prepare(`
+          SELECT resale_enabled AS resaleEnabled, forking_enabled AS forkingEnabled
+          FROM commerce_products WHERE app_id = ?
+        `).bind(dropId).first()
+      : null;
+    const resaleEnabled = rawResaleEnabled === undefined
+      ? ((existingProductRights as any)?.resaleEnabled === undefined ? true : Boolean((existingProductRights as any).resaleEnabled))
+      : rawResaleEnabled;
+    const forkingEnabled = rawForkingEnabled === undefined
+      ? ((existingProductRights as any)?.forkingEnabled === undefined ? true : Boolean((existingProductRights as any).forkingEnabled))
+      : rawForkingEnabled;
+
+    if (linkedRepositoryId) {
+      const blockedAncestor = await env.DB.prepare(`
+        WITH RECURSIVE ancestors(repository_id) AS (
+          SELECT parent_repository_id
+          FROM repository_forks
+          WHERE child_repository_id = ?
+          UNION
+          SELECT rf.parent_repository_id
+          FROM repository_forks rf
+          JOIN ancestors a ON rf.child_repository_id = a.repository_id
+        )
+        SELECT cp.app_id AS appId
+        FROM ancestors a
+        JOIN repositories ar ON ar.id = a.repository_id
+        JOIN commerce_products cp
+          ON cp.repository_id = a.repository_id
+          OR (cp.repository_id IS NULL AND cp.app_id = ar.app_id)
+        WHERE cp.resale_enabled = 0
+        LIMIT 1
+      `).bind(linkedRepositoryId).first();
+      if (blockedAncestor) {
+        return Response.json({
+          success: false,
+          error: 'This fork cannot be published for sale because an upstream author disabled fork resale.'
+        }, { status: 403 });
+      }
+    }
+
     
     
     
@@ -682,8 +744,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const payoutsEnabled = Boolean((payoutAccount as any)?.payoutsEnabled);
     const honestProductStatus = repositoryHasProvenBuild && payoutsEnabled ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
-      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
-      SELECT id, ?, creator_id, ?, 'usd', ?, ?
+      INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps, resale_enabled, forking_enabled)
+      SELECT id, ?, creator_id, ?, 'usd', ?, ?, ?, ?
       FROM app_listings
       WHERE id = ? AND creator_id = ?
       ON CONFLICT(app_id) DO UPDATE SET
@@ -691,10 +753,21 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         price_cents = excluded.price_cents,
         status = excluded.status,
         royalty_bps = excluded.royalty_bps,
+        resale_enabled = excluded.resale_enabled,
+        forking_enabled = excluded.forking_enabled,
         updated_at = CURRENT_TIMESTAMP
       WHERE commerce_products.seller_user_id = excluded.seller_user_id
       RETURNING app_id
-    `).bind(linkedRepositoryId, productPriceCents, honestProductStatus, validatedRoyaltyBps, dropId, creatorId);
+    `).bind(
+      linkedRepositoryId,
+      productPriceCents,
+      honestProductStatus,
+      validatedRoyaltyBps,
+      resaleEnabled ? 1 : 0,
+      forkingEnabled ? 1 : 0,
+      dropId,
+      creatorId
+    );
 
     
     

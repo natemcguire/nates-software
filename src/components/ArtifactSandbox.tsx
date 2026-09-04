@@ -42,6 +42,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const { user, openAuthModal } = useAuth();
   const { isOwned, isAuthoritativeLive } = useCatalog();
   const isAppOwned = isOwned(app.id);
+  const forkingEnabled = app.forkingEnabled ?? app.forking_enabled ?? true;
   const hasPurchasableForgeSource = Boolean(
     app.hasCanonicalRepo && app.isRepoActive !== false && (app.repositoryId || app.repoSlug || app.repoName)
   );
@@ -87,6 +88,12 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
   const [specContent, setSpecContent] = useState<string | null>(null);
   const [specSourceFile, setSpecSourceFile] = useState<'spec.md' | 'README.md' | null>(null);
+
+  useEffect(() => {
+    if (!forkingEnabled && activeTab === 'spec') {
+      setActiveTab('preview');
+    }
+  }, [forkingEnabled, activeTab]);
   const [specLoading, setSpecLoading] = useState(false);
   const [specError, setSpecError] = useState<string | null>(null);
 
@@ -114,6 +121,13 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     setSpecError(null);
     setSpecContent(null);
     setSpecSourceFile(null);
+
+    if (!forkingEnabled) {
+      setSpecLoading(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
 
     const tryLoad = async (fileName: 'spec.md' | 'README.md'): Promise<'ok' | 'not_found' | 'error'> => {
       try {
@@ -159,7 +173,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [app.id, app.repositoryId, app.repoSlug]);
+  }, [app.id, app.repositoryId, app.repoSlug, forkingEnabled]);
 
   const processedSpecContent = React.useMemo(() => {
     if (!specContent) return '';
@@ -293,7 +307,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           return (
             <div role="tablist" className="flex flex-wrap items-end gap-0.5 border-b border-gray-500 -mb-px pt-1">
               {tab('preview', <><Play size={13} /> Live App</>)}
-              {tab('spec', <><FileText size={13} /> Spec</>)}
+              {forkingEnabled && tab('spec', <><FileText size={13} /> Spec</>)}
               {tab('screenshots', <><ImageIcon size={13} /> Shots ({app.screenshots?.length || 0})</>)}
               {tab('comments', <><MessageSquare size={13} /> Comments ({comments.length})</>)}
               {hasActiveDeployment && authoritativeLiveUrl ? (
@@ -375,7 +389,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         )}
 
-        {activeTab === 'spec' && (
+        {activeTab === 'spec' && forkingEnabled && (
           <div className="h-full flex flex-col">
             {specLoading ? (
               <div className="flex-1 flex items-center justify-center p-8 text-gray-500 font-mono text-xs">
@@ -517,16 +531,18 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
       <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-gray-400">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <button
-            onClick={() => {
-              playSuccessChime();
-              setShowForkModal(true);
-            }}
-            className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 bg-amber-50 font-bold border border-amber-400 text-amber-950 shadow-sm"
-          >
-            <Bot size={13} className="text-purple-700" />
-            <span>⚡ Fork with AI</span>
-          </button>
+          {forkingEnabled && (
+            <button
+              onClick={() => {
+                playSuccessChime();
+                setShowForkModal(true);
+              }}
+              className="btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 bg-amber-50 font-bold border border-amber-400 text-amber-950 shadow-sm"
+            >
+              <Bot size={13} className="text-purple-700" />
+              <span>⚡ Fork with AI</span>
+            </button>
+          )}
           {grantableBps > 0 && (
             <span
               className="btn-w95 text-xs py-1.5 px-2.5 bg-purple-50 font-bold border border-purple-400 text-purple-950 shadow-sm flex items-center gap-1 font-mono"
@@ -556,7 +572,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             <div className="flex flex-col items-end gap-1">
               <button
                 disabled={!canBuy}
-                title={buyDisabledReason || 'Purchase the listed source and license'}
+                title={buyDisabledReason || (forkingEnabled ? 'Purchase the listed source and license' : 'Purchase the running app and license')}
                 onClick={() => {
                   if (!canBuy) return;
                   playClickSound();
@@ -593,22 +609,24 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               <ExternalLink size={12} /> Not yet published
             </span>
           )}
-          {app.hasCanonicalRepo && (app.repoSlug || app.repoName || app.repositoryId) ? (
-            <a
-              href={`https://gitsmith.nates-software.com?repo=${app.repoSlug || app.repoName || app.repositoryId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
-            >
-              <GitBranch size={12} /> View on GITSMITH
-            </a>
-          ) : (
-            <span
-              className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 text-gray-400 cursor-not-allowed opacity-70 font-medium"
-              title="Repository not yet initialized on forge"
-            >
-              <GitBranch size={12} /> No repo on forge
-            </span>
+          {forkingEnabled && (
+            app.hasCanonicalRepo && (app.repoSlug || app.repoName || app.repositoryId) ? (
+              <a
+                href={`https://gitsmith.nates-software.com?repo=${app.repoSlug || app.repoName || app.repositoryId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 font-bold"
+              >
+                <GitBranch size={12} /> View on GITSMITH
+              </a>
+            ) : (
+              <span
+                className="btn-w95 text-xs py-1.5 px-2.5 flex items-center gap-1 text-gray-400 cursor-not-allowed opacity-70 font-medium"
+                title="Repository not yet initialized on forge"
+              >
+                <GitBranch size={12} /> No repo on forge
+              </span>
+            )
           )}
         </div>
       </div>
@@ -664,11 +682,13 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
       )}
 
-      <ForkWithAiModal
-        isOpen={showForkModal}
-        onClose={() => setShowForkModal(false)}
-        app={app}
-      />
+      {forkingEnabled && (
+        <ForkWithAiModal
+          isOpen={showForkModal}
+          onClose={() => setShowForkModal(false)}
+          app={app}
+        />
+      )}
 
       <CheckoutModal
         isOpen={showCheckoutModal}

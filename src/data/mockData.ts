@@ -70,6 +70,10 @@ export interface AppListing {
   grantableBps?: number | null;
   royaltyBps?: number | null;
   royalty_bps?: number | null;
+  resaleEnabled?: boolean;
+  resale_enabled?: boolean;
+  forkingEnabled?: boolean;
+  forking_enabled?: boolean;
   inheritedLiens?: Array<{ maker: string; bps: number }>;
   productStatus?: 'draft' | 'active' | 'suspended' | 'retired';
   binaries?: {
