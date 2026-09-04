@@ -3,6 +3,7 @@ import {
   validateRepoFilePath,
   getMaxFileSizeBytes
 } from '../../src/lib/forgeDomain';
+import { repositorySourceIsPrivate, repositorySourcePolicyColumns, repositorySourcePolicyJoin } from './_sourcePolicy';
 
 const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -176,10 +177,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     if (repoId) {
       repoRow = await env.DB.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.visibility, r.default_ref AS defaultRef, r.status,
-               COALESCE(cp.forking_enabled, 1) AS forkingEnabled,
+               ${repositorySourcePolicyColumns},
                rf.commit_oid AS refCommitOid
         FROM repositories r
-        LEFT JOIN commerce_products cp ON cp.repository_id = r.id OR (cp.repository_id IS NULL AND cp.app_id = r.app_id)
+        ${repositorySourcePolicyJoin}
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
         WHERE (r.id = ? OR r.app_id = ?)
         LIMIT 1
@@ -187,11 +188,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     } else if (owner && slug) {
       repoRow = await env.DB.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.visibility, r.default_ref AS defaultRef, r.status,
-               COALESCE(cp.forking_enabled, 1) AS forkingEnabled,
+               ${repositorySourcePolicyColumns},
                rf.commit_oid AS refCommitOid
         FROM repositories r
         JOIN users u ON u.id = r.owner_user_id
-        LEFT JOIN commerce_products cp ON cp.repository_id = r.id OR (cp.repository_id IS NULL AND cp.app_id = r.app_id)
+        ${repositorySourcePolicyJoin}
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
         WHERE u.username = ? AND r.slug = ?
         LIMIT 1
@@ -199,10 +200,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     } else if (slug) {
       repoRow = await env.DB.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.visibility, r.default_ref AS defaultRef, r.status,
-               COALESCE(cp.forking_enabled, 1) AS forkingEnabled,
+               ${repositorySourcePolicyColumns},
                rf.commit_oid AS refCommitOid
         FROM repositories r
-        LEFT JOIN commerce_products cp ON cp.repository_id = r.id OR (cp.repository_id IS NULL AND cp.app_id = r.app_id)
+        ${repositorySourcePolicyJoin}
         LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
         WHERE r.slug = ? OR r.app_id = ?
         LIMIT 1
@@ -217,7 +218,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError('Repository not found', 404);
     }
 
-    if (Number(repoRow.forkingEnabled) === 0) {
+    if (repositorySourceIsPrivate(repoRow)) {
       return jsonError('Source is private for this app', 403);
     }
 

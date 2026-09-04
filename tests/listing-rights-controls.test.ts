@@ -89,6 +89,76 @@ describe('NSW-120 listing resale controls', () => {
     expect(await ctx.d1.prepare('SELECT id FROM app_listings WHERE id = ?').bind('blocked-resale-fork').first()).toBeNull();
   });
 
+  it('rejects commercial publication from a parentless repository with the same commit as a resale-disabled app', async () => {
+    await seedForkLineage(false);
+    const parentCommitOid = 'a'.repeat(40);
+    await ctx.d1.prepare(`
+      INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+      VALUES ('repo_resale_parent_off', 'refs/heads/main', ?, 1, 'usr_sam')
+    `).bind(parentCommitOid).run();
+    const clonedRepositoryId = 'repo_parentless_clone';
+    await ctx.d1.prepare(`
+      INSERT INTO repositories (id, owner_user_id, slug, visibility, default_ref, storage_key, status)
+      VALUES (?, 'usr_nate', 'parentless-clone', 'public', 'refs/heads/main', ?, 'active')
+    `).bind(clonedRepositoryId, `repositories/${clonedRepositoryId}`).run();
+    await ctx.d1.prepare(`
+      INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+      VALUES (?, 'refs/heads/main', ?, 1, 'usr_nate')
+    `).bind(clonedRepositoryId, parentCommitOid).run();
+
+    const response = await publishFork('blocked-parentless-clone', clonedRepositoryId);
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.success).toBe(false);
+    expect(await ctx.d1.prepare('SELECT id FROM app_listings WHERE id = ?').bind('blocked-parentless-clone').first()).toBeNull();
+  });
+
+  it('rejects a modified clone when the gateway finds a resale-disabled commit in its object set', async () => {
+    await seedForkLineage(false);
+    const parentCommitOid = 'a'.repeat(40);
+    await ctx.d1.prepare(`
+      INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+      VALUES ('repo_resale_parent_off', 'refs/heads/main', ?, 1, 'usr_sam')
+    `).bind(parentCommitOid).run();
+    const clonedRepositoryId = 'repo_modified_clone';
+    await ctx.d1.prepare(`
+      INSERT INTO repositories (id, owner_user_id, slug, visibility, default_ref, storage_key, status)
+      VALUES (?, 'usr_nate', 'modified-clone', 'public', 'refs/heads/main', ?, 'active')
+    `).bind(clonedRepositoryId, `repositories/${clonedRepositoryId}`).run();
+    await ctx.d1.prepare(`
+      INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+      VALUES (?, 'refs/heads/main', ?, 1, 'usr_nate')
+    `).bind(clonedRepositoryId, 'b'.repeat(40)).run();
+    const gatewayFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      matchedCommitOid: parentCommitOid
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const request = new Request('http://localhost/api/drops', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+      body: JSON.stringify({
+        id: 'blocked-modified-clone',
+        name: 'blocked-modified-clone',
+        version: 'v1.0.0',
+        price: '$20.00',
+        repositoryId: clonedRepositoryId
+      })
+    });
+    const response = await dropsApi.onRequestPost({
+      request,
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_TOKEN: 'gateway-token',
+        GITSMITH_GATEWAY_FETCH: gatewayFetch
+      }
+    });
+
+    expect(response.status).toBe(403);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('allows commercial publication of a fork whose ancestors allow resale', async () => {
     const { childRepositoryId } = await seedForkLineage(true);
     const response = await publishFork('allowed-resale-fork', childRepositoryId);
@@ -100,6 +170,50 @@ describe('NSW-120 listing resale controls', () => {
       'SELECT resale_enabled AS resaleEnabled FROM commerce_products WHERE app_id = ?'
     ).bind('allowed-resale-fork').first();
     expect((product as any).resaleEnabled).toBe(1);
+  });
+
+  it('refuses checkout after an ancestor disables resale', async () => {
+    const { childRepositoryId } = await seedForkLineage(true);
+    const childAppId = 'retroactive-resale-child';
+    await ctx.d1.prepare(`
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, repository_id)
+      VALUES (?, 'Retroactive Child', 'Child', 'Child app', 'usr_nate', 'v1.0.0', NULL)
+    `).bind(childAppId).run();
+    await ctx.d1.prepare('UPDATE repositories SET app_id = ? WHERE id = ?')
+      .bind(childAppId, childRepositoryId).run();
+    await ctx.d1.prepare('UPDATE app_listings SET repository_id = ? WHERE id = ?')
+      .bind(childRepositoryId, childAppId).run();
+    await ctx.d1.prepare(`
+      INSERT INTO commerce_products (
+        app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps, resale_enabled
+      ) VALUES (?, ?, 'usr_nate', 2000, 'usd', 'active', 500, 1)
+    `).bind(childAppId, childRepositoryId).run();
+    await ctx.d1.prepare(`
+      UPDATE commerce_products SET resale_enabled = 0 WHERE app_id = 'resale-parent-on'
+    `).run();
+    const request = new Request('http://localhost/api/payments/create-intent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer valid_test_token',
+        'Idempotency-Key': 'retroactive-resale-block'
+      },
+      body: JSON.stringify({ appId: childAppId })
+    });
+    const response = await createIntentApi.onRequestPost({
+      request,
+      env: {
+        DB: ctx.d1,
+        PAYMENTS_ENABLED: 'true',
+        STRIPE_SECRET_KEY: 'sk_test_resale_block',
+        STRIPE_PUBLISHABLE_KEY: 'pk_test_resale_block'
+      }
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(payload.success).toBe(false);
+    expect(await ctx.d1.prepare('SELECT id FROM commerce_orders WHERE app_id = ?').bind(childAppId).first()).toBeNull();
   });
 });
 
@@ -229,6 +343,149 @@ describe('NSW-127 private-source listing controls', () => {
     expect(response.status).toBe(403);
     expect(payload.success).toBe(false);
     expect(gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when an app-linked repository commerce join is missing', async () => {
+    await ctx.d1.prepare('DELETE FROM commerce_products WHERE app_id = ?').bind(appId).run();
+    await ctx.d1.prepare(`
+      INSERT INTO commerce_orders (
+        id, idempotency_key, buyer_user_id, app_id, repository_id, seller_user_id,
+        app_version, price_version, gross_cents, currency, lineage_snapshot_json, status
+      ) VALUES ('ord_missing_product_evidence', 'missing-product-evidence', 'usr_josh', ?, ?, 'usr_nate',
+        'v1.0.0', 1, 2500, 'usd', '{}', 'fulfilled')
+    `).bind(appId, repositoryId).run();
+    const gatewayFetch = vi.fn();
+    const treeResponse = await repoTreeApi.onRequestGet({
+      request: new Request(`http://localhost/api/repo-tree?repoId=${repositoryId}`),
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_TOKEN: 'test-token',
+        __GITSMITH_GATEWAY_FETCH: gatewayFetch
+      }
+    });
+    const fileResponse = await repoFileApi.onRequestGet({
+      request: new Request(`http://localhost/api/repo-file?repoId=${repositoryId}&path=src/index.ts`),
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_TOKEN: 'test-token',
+        __GITSMITH_GATEWAY_FETCH: gatewayFetch
+      }
+    });
+    const catalogResponse = await dropsApi.onRequestGet({
+      request: new Request('http://localhost/api/drops?sort=alltime'),
+      env: { DB: ctx.d1 }
+    });
+    const catalog = await catalogResponse.json();
+    const listing = catalog.drops.find((drop: any) => drop.id === appId);
+    const forkResponse = await forkApi.onRequestPost({
+      request: new Request('http://localhost/api/fork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+        body: JSON.stringify({ appId, childSlug: 'missing-product-child' })
+      }),
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_FETCH: vi.fn()
+      }
+    });
+
+    expect(treeResponse.status).toBe(403);
+    expect(fileResponse.status).toBe(403);
+    expect(forkResponse.status).toBe(403);
+    expect(gatewayFetch).not.toHaveBeenCalled();
+    expect(listing.forkingEnabled).toBe(false);
+    expect(listing.binaries).not.toHaveProperty('source');
+  });
+
+  it('fails closed when multiple apps claim the same repository', async () => {
+    await ctx.d1.prepare('UPDATE commerce_products SET forking_enabled = 1 WHERE app_id = ?').bind(appId).run();
+    await ctx.d1.prepare(`
+      INSERT INTO app_listings (id, name, tagline, description, creator_id, version, repository_id)
+      VALUES ('ambiguous-source-link', 'Ambiguous Source Link', 'Ambiguous', 'Ambiguous app', 'usr_nate', 'v1.0.0', ?)
+    `).bind(repositoryId).run();
+    const response = await repoTreeApi.onRequestGet({
+      request: new Request(`http://localhost/api/repo-tree?repoId=${repositoryId}`),
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_TOKEN: 'test-token',
+        __GITSMITH_GATEWAY_FETCH: vi.fn()
+      }
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('fails closed when a product points at a different repository', async () => {
+    const otherRepositoryId = 'repo_private_source_mismatch';
+    await ctx.d1.prepare(`
+      INSERT INTO repositories (id, owner_user_id, slug, visibility, default_ref, storage_key, status)
+      VALUES (?, 'usr_nate', 'private-source-mismatch', 'public', 'refs/heads/main', ?, 'active')
+    `).bind(otherRepositoryId, `repositories/${otherRepositoryId}`).run();
+    await ctx.d1.prepare('UPDATE commerce_products SET repository_id = ? WHERE app_id = ?')
+      .bind(otherRepositoryId, appId).run();
+    const response = await repoTreeApi.onRequestGet({
+      request: new Request(`http://localhost/api/repo-tree?repoId=${repositoryId}`),
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_TOKEN: 'test-token',
+        __GITSMITH_GATEWAY_FETCH: vi.fn()
+      }
+    });
+    const catalogResponse = await dropsApi.onRequestGet({
+      request: new Request('http://localhost/api/drops?sort=alltime'),
+      env: { DB: ctx.d1 }
+    });
+    const catalog = await catalogResponse.json();
+    const listing = catalog.drops.find((drop: any) => drop.id === appId);
+
+    expect(response.status).toBe(403);
+    expect(listing.forkingEnabled).toBe(false);
+    expect(listing.binaries).not.toHaveProperty('source');
+  });
+
+  it('refuses direct diff reads for private-source repositories', async () => {
+    const response = await gitApi.onRequestGet({
+      request: new Request(`http://localhost/api/git?action=diff&repositoryId=${repositoryId}&base=${'a'.repeat(40)}&head=${commitOid}`),
+      env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: '/tmp/does-not-need-to-exist' }
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(payload.success).toBe(false);
+  });
+
+  it('keeps a repository with no app or product linkage publicly readable', async () => {
+    const unlinkedRepositoryId = 'repo_unlinked_public';
+    await ctx.d1.prepare(`
+      INSERT INTO repositories (id, owner_user_id, slug, visibility, default_ref, storage_key, status)
+      VALUES (?, 'usr_nate', 'unlinked-public', 'public', 'refs/heads/main', ?, 'active')
+    `).bind(unlinkedRepositoryId, `repositories/${unlinkedRepositoryId}`).run();
+    await ctx.d1.prepare(`
+      INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id)
+      VALUES (?, 'refs/heads/main', ?, 1, 'usr_nate')
+    `).bind(unlinkedRepositoryId, 'd'.repeat(40)).run();
+    const gatewayFetch = vi.fn().mockResolvedValue(Response.json({
+      success: true,
+      exists: true,
+      files: ['README.md']
+    }));
+    const response = await repoTreeApi.onRequestGet({
+      request: new Request(`http://localhost/api/repo-tree?repoId=${unlinkedRepositoryId}`),
+      env: {
+        DB: ctx.d1,
+        GITSMITH_GATEWAY_URL: 'https://gateway.example',
+        GITSMITH_GATEWAY_TOKEN: 'test-token',
+        __GITSMITH_GATEWAY_FETCH: gatewayFetch
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
   it('refuses Git source reads by non-members', async () => {
