@@ -122,14 +122,14 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-6 font-tahoma text-xs">
-      <div className="w-full max-w-md border-2 border-gray-800 bg-white shadow-md">
+      <div className="w-full max-w-md border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0]">
         <div className="bg-w95-blue text-white px-2 py-1 font-bold flex items-center gap-1.5">
           <AlertTriangle size={13} /> Local Agent Mailbox Offline
         </div>
-        <div className="p-4 space-y-3 text-gray-800">
+        <div className="p-4 space-y-3 text-gray-800 bg-white border border-gray-500 m-1">
           <p className="leading-relaxed">
             Could not reach the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
-            <span className="font-mono bg-gray-100 border border-gray-300 px-1 rounded">
+            <span className="font-mono bg-gray-100 border border-gray-300 px-1">
               http://127.0.0.1:8791
             </span>
             . Either it is not running, or your browser is blocking local-network
@@ -138,7 +138,7 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
 
           <div className="space-y-1">
             <div className="font-bold text-gray-700">To enable inter-agent mailbox inspection:</div>
-            <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 rounded space-y-1">
+            <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 space-y-1 border border-gray-700">
               <li>
                 <span className="text-gray-300 font-semibold">1. Install:</span> ./scripts/install.sh
               </li>

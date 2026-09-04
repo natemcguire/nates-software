@@ -377,11 +377,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm select-none">
         <div className="bg-gradient-to-r from-w95-blue via-blue-900 to-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div className="text-3xl bg-white p-1 rounded border border-gray-400 text-black">👤</div>
+            <div className="text-3xl bg-white p-1 border border-gray-400 text-black">👤</div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-base">Guest Session</span>
-                <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">
+                <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 font-mono border border-amber-800">
                   ● NOT SIGNED IN
                 </span>
               </div>
@@ -391,8 +391,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
 
         <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-6 flex flex-col items-center justify-center text-center">
-          <div className="max-w-md w-full bg-gray-50 border-2 border-gray-400 p-6 rounded shadow-sm space-y-5">
-            <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue rounded-full flex items-center justify-center mx-auto text-w95-blue">
+          <div className="max-w-md w-full bg-[#ece9d8] border-2 border-white border-r-gray-800 border-b-gray-800 p-6 space-y-5">
+            <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue flex items-center justify-center mx-auto text-w95-blue">
               <ShieldCheck size={32} />
             </div>
 

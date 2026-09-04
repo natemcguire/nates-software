@@ -56,14 +56,14 @@ export const AccountWidget: React.FC<AccountWidgetProps> = ({
         <div className="flex items-center gap-1">
           <button
             onClick={() => openAuthModal('login')}
-            className="px-2 py-0.5 font-bold text-blue-900 bg-white hover:bg-blue-50 border border-gray-400 rounded flex items-center gap-1 text-[10px]"
+            className="win95-btn px-2 py-0.5 font-bold text-blue-900 flex items-center gap-1 text-[10px]"
           >
             <LogIn size={10} />
             <span>Log In</span>
           </button>
           <button
             onClick={() => openAuthModal('register')}
-            className="px-2 py-0.5 font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-400 rounded text-[10px]"
+            className="win95-btn px-2 py-0.5 font-bold text-black text-[10px]"
           >
             Create account
           </button>

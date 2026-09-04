@@ -21,14 +21,14 @@ export const TldrButton: React.FC = () => {
   };
 
   return (
-    <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm rounded border border-white/20 text-white text-[11px] font-tahoma overflow-hidden">
+    <div className="flex items-center bg-[#c0c0c0] border-2 border-white border-r-gray-800 border-b-gray-800 text-black text-[11px] font-tahoma">
       <button
         data-testid="tldr-copy-prompt"
         onClick={copyPrompt}
-        className="flex items-center gap-1.5 px-2.5 py-1 font-bold cursor-pointer hover:bg-black/40 transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1 font-bold cursor-pointer hover:bg-[#d0d0d0]"
         title="Copy a ready-made prompt to paste into your AI coding agent so it understands this site"
       >
-        {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-amber-300" />}
+        {copied ? <Check size={12} className="text-green-700" /> : <Copy size={12} className="text-blue-900" />}
         <span>{copied ? 'Prompt copied!' : 'TL;DR: Copy prompt for my agent'}</span>
       </button>
       <a
@@ -36,7 +36,7 @@ export const TldrButton: React.FC = () => {
         target="_blank"
         rel="noopener noreferrer"
         onClick={() => playClickSound()}
-        className="px-2 py-1 text-gray-300 hover:text-white hover:bg-black/40 border-l border-white/20 transition-colors"
+        className="px-2 py-1 text-blue-900 hover:text-black hover:bg-[#d0d0d0] border-l border-gray-400 font-bold"
         title="Read the plain-words explainer: what this is, the vision, and every app"
       >
         Read it →

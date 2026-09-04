@@ -319,11 +319,20 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
         </div>
         <div className="flex items-center gap-2">
           {isLoading && appCount === 0 ? (
-            <span className="bg-blue-800 text-blue-200 border border-blue-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold animate-pulse">⏳ CONNECTING...</span>
+            <span className="win95-field bg-white px-2 py-0.5 text-[10px] font-mono font-bold flex items-center gap-1.5 border border-gray-600 text-blue-900 animate-pulse">
+              <span className="inline-block w-2 h-2 bg-blue-600 border border-blue-900" />
+              CONNECTING...
+            </span>
           ) : isAuthoritativeLive ? (
-            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Live library index">● LIVE ({appCount} apps)</span>
+            <span className="win95-field bg-white px-2 py-0.5 text-[10px] font-mono font-bold flex items-center gap-1.5 border border-gray-600 text-emerald-900" title="Live library index">
+              <span className="inline-block w-2 h-2 bg-emerald-600 border border-emerald-900" />
+              LIVE ({appCount} apps)
+            </span>
           ) : (
-            <span className="bg-red-950 text-red-200 border border-red-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Disconnected / offline">● OFFLINE / DISCONNECTED</span>
+            <span className="win95-field bg-white px-2 py-0.5 text-[10px] font-mono font-bold flex items-center gap-1.5 border border-gray-600 text-red-900" title="Disconnected / offline">
+              <span className="inline-block w-2 h-2 bg-red-600 border border-red-900" />
+              OFFLINE / DISCONNECTED
+            </span>
           )}
           <button onClick={onSubmit} className="win95-btn px-2.5 py-1 text-black font-bold flex items-center gap-1 text-[11px] bg-[#dfdfdf] hover:bg-white">
             <Plus size={13} /> Submit app
@@ -407,12 +416,12 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-bold text-[13px] text-blue-900">{app.name}</span>
-                    <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">{app.version}</span>
-                    <span className={`${listingStatus.className} border font-bold font-mono text-xs px-1.5 rounded`}>
+                    <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 border border-green-300">{app.version}</span>
+                    <span className={`${listingStatus.className} border font-bold font-mono text-xs px-1.5`}>
                       {listingStatus.label}
                     </span>
                     {royaltyBps > 0 && (
-                      <span className="bg-[#e4f0f7] text-[#1c4a6b] border border-[#7ea6c4] font-mono text-[11px] px-1.5 rounded flex items-center gap-0.5" title="Resale royalty — frozen onto every fork">
+                      <span className="bg-[#e4f0f7] text-[#1c4a6b] border border-[#7ea6c4] font-mono text-[11px] px-1.5 flex items-center gap-0.5" title="Resale royalty — frozen onto every fork">
                         <Snowflake size={9} /> {(royaltyBps / 100).toFixed(1)}%
                       </span>
                     )}
@@ -523,7 +532,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="font-bold text-base text-blue-900 leading-tight">{app.name}</h2>
-              <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">{app.version}</span>
+              <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 border border-green-300">{app.version}</span>
             </div>
             <div className="text-[11px] text-[#2b5fa8]">by @{app.author || app.creator || 'maker'} · you&rsquo;re buying the source, not a subscription</div>
             <p className="text-[11px] text-gray-700 mt-0.5 line-clamp-2">{app.tagline}</p>
@@ -535,7 +544,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
             <button
               key={t.id}
               onClick={() => { playClickSound(); setInspectTab(t.id); }}
-              className={`px-3 py-1 flex items-center gap-1 text-[11px] border-2 border-b-0 rounded-t ${inspectTab === t.id ? 'bg-[#fbfbf8] font-bold text-black border-gray-500' : 'bg-[#dfe1e5] text-gray-600 border-gray-400'}`}
+              className={`px-3 py-1 flex items-center gap-1 text-[11px] border-2 border-b-0 ${inspectTab === t.id ? 'bg-[#fbfbf8] font-bold text-black border-gray-500' : 'bg-[#dfe1e5] text-gray-600 border-gray-400'}`}
             >
               {t.icon} {t.label}
               {t.meta && <span className="text-gray-500 font-normal text-[10px]">{t.meta}</span>}
@@ -557,7 +566,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
               <p className="font-bold mt-3 mb-1">Tags</p>
               <div className="flex flex-wrap gap-1">
                 {(app.tags || []).map(t => (
-                  <span key={t} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">{t}</span>
+                  <span key={t} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 border border-gray-300 font-mono text-[10px]">{t}</span>
                 ))}
               </div>
               <p className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border border-gray-400 p-2 mt-4">

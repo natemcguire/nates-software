@@ -54,10 +54,10 @@ export const FontSizer: React.FC<{ className?: string }> = ({ className = '' }) 
   return (
     <div
       data-testid="font-sizer"
-      className={`flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma ${className}`}
+      className={`flex items-center gap-1 bg-[#c0c0c0] p-1 border-2 border-white border-r-gray-800 border-b-gray-800 text-black text-[11px] font-tahoma ${className}`}
       title="Text size"
     >
-      <span className="text-gray-300 font-bold mr-1">Text:</span>
+      <span className="text-black font-bold mr-1">Text:</span>
       {STEPS.map((s) => {
         const active = Math.abs(s.scale - scale) < 0.001;
         return (
