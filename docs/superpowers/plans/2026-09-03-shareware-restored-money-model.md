@@ -418,6 +418,15 @@ CREATE TRIGGER repository_fork_liens_immutable_delete BEFORE DELETE ON repositor
 
 ---
 
+### Task C4: Exclude 'platform' from refund/dispute recovery obligations
+
+**Context:** C3's review surfaced that `src/lib/commerce/refundProcessor.ts` (~248) and `src/lib/commerce/disputeProcessor.ts` (~314) only exclude the legacy `'protocol_pool'` role when creating `commerce_recovery_obligations`. Under the new model the house role is `'platform'` (recipient null). So a refund/dispute of an order that has a platform allocation would attempt to create a recovery obligation against the house — wrong (you don't claw back the house's own fee from itself). This is a real money bug.
+
+- [ ] **Step 1** — Write/extend a test: refunding an order with platform+seller+ancestor allocations creates recovery obligations ONLY for seller+ancestor, NOT for platform. (Also dispute path if it has a test harness.)
+- [ ] **Step 2** — Run → RED (a platform obligation is wrongly created, OR it errors on the null recipient).
+- [ ] **Step 3** — In both files, change the role-exclusion to skip BOTH `'protocol_pool'` AND `'platform'` (i.e. only create obligations for payable roles seller/ancestor/legacy maker/contributor; skip house roles). Match each file's existing guard style.
+- [ ] **Step 4** — Run → GREEN. Commit `fix(refund): never claw back the house (exclude platform from recovery obligations)`.
+
 ## Phase F — Docs + full-suite green
 
 ### Task F1: AGENTS.md + README
@@ -433,6 +442,25 @@ CREATE TRIGGER repository_fork_liens_immutable_delete BEFORE DELETE ON repositor
 - [ ] **Step 2: For each failing legacy test** — if it asserts a dropped concept (contributor carve, protocol pool, 20% even split), delete it or rewrite to the new model. Files to sweep: `tests/royalty-lineage.test.ts`, `tests/contributor-revenue-sharing-schema.test.ts`, `tests/commerce-create-intent-contributors.test.ts`, `tests/marketplace-phase3a-grant-recording.test.ts`, `tests/acceptance-buy-own-fork-payout.test.ts`, `tests/commerce-domain.test.ts`.
 - [ ] **Step 3: Run** `npm test` until green. Then `npm run build` (type-check).
 - [ ] **Step 4: Commit** `test: align suite with Shareware, Restored money model`.
+
+---
+
+### Task E4: Sweep ALL remaining 70/20/10 copy across the app
+
+**Context:** E3 (and the ad-hoc MarketingWindow fix) revealed the old 70/20/10 / 90/10 / "protocol pool" / "up the chain" language is scattered across ~14 files, far beyond SlopshopView/ProfileView. This task retires every remaining user-facing instance and any backend user-visible string.
+
+**Files (verify with grep; some matches may be legit non-money e.g. CSS `70%` opacity — justify those):**
+- `src/views/MarketingWindow.tsx` (the "Get paid on every sale" section ~165-172 — the earlier fix only got the top box)
+- `src/components/CheckoutModal.tsx`, `src/components/ForkWithAiModal.tsx`, `src/components/AuthModal.tsx`, `src/components/ArtifactSandbox.tsx`
+- `src/views/PostEditorView.tsx`, `src/views/SetupWizardView.tsx`, `src/views/GitsmithView.tsx`
+- `src/lib/hotwireBackend.ts`, `src/lib/slopshopDomain.ts` (user-visible strings/help text)
+- `src/lib/commerce/transferWorker.ts`, `src/lib/commerce/eventProcessor.ts` (comments/log strings — update if they assert the old split; code role-lists already handled in C2)
+- `functions/tree/[app].ts`, `bin/slop.ts`
+
+- [ ] **Step 1** — For each file, grep `70%|20%|90/10|70 / 20 / 10|70/20/10|protocol pool|protocol liquidity|up the chain|up the fork lineage`, read each match, and classify: money-model copy (rewrite to: platform flat 10%, upstream makers earn their frozen royalty, seller keeps the rest) vs. legit non-money (justify/keep).
+- [ ] **Step 2** — Rewrite all money-model matches. Keep each edit minimal and in the surrounding voice.
+- [ ] **Step 3** — Add/extend a test that greps the built source for banned money phrases and fails if any remain (a repo-wide guard test), excluding justified non-money matches by exact location.
+- [ ] **Step 4** — `npm run build` (type-check) + run affected view tests. Commit `feat(ui): sweep all remaining 70/20/10 copy to the additive model`.
 
 ---
 
