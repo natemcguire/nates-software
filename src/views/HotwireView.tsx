@@ -280,6 +280,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             appCount={apps.length}
             leaderboardCount={makerLeaderboard?.length || 0}
             onOpenLeaders={onOpenLeaders}
+            onRetry={() => { playClickSound(); refreshCatalog(); }}
           />
       }
     </div>
@@ -303,12 +304,13 @@ interface LibraryIndexProps {
   appCount: number;
   leaderboardCount: number;
   onOpenLeaders?: () => void;
+  onRetry?: () => void;
 }
 
 const LibraryIndex: React.FC<LibraryIndexProps> = ({
   apps, tabs, activeTab, onTabSelect, searchQuery, setSearchQuery,
   onSubmit, onOpen, onUpvote, upvotedApps, isAuthenticated, isAuthoritativeLive,
-  isLoading, appCount, leaderboardCount, onOpenLeaders
+  isLoading, appCount, leaderboardCount, onOpenLeaders, onRetry
 }) => {
   return (
     <div className="flex-1 flex flex-col overflow-hidden p-2">
@@ -389,11 +391,15 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                   ? 'Be the first maker to publish source into the library.'
                   : 'Could not reach the live library index. This panel never shows invented apps.'}
             </p>
-            {isAuthoritativeLive && !searchQuery.trim() && (
+            {isAuthoritativeLive && !searchQuery.trim() ? (
               <button onClick={onSubmit} className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2">
                 <Plus size={13} /> Submit an app
               </button>
-            )}
+            ) : !isAuthoritativeLive && !searchQuery.trim() && onRetry ? (
+              <button onClick={onRetry} className="win95-btn btn-w95-primary px-3 py-1 text-xs font-bold flex items-center gap-1 mx-auto mt-2">
+                <RefreshCw size={11} /> Retry Sync
+              </button>
+            ) : null}
           </div>
         ) : (
           apps.map((app, index) => {

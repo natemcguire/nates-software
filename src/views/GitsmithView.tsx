@@ -21,7 +21,8 @@ import {
   GripVertical,
   Globe,
   Plus,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
@@ -1022,6 +1023,33 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                     ? 'Connecting to the forge before enabling repository actions.'
                     : 'Create a repository to start hosting your code, then push from your local checkout.'}
               </p>
+              {canonicalLoadState === 'error' && (
+                <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      void refreshCanonicalRepositories();
+                    }}
+                    className="win95-btn btn-w95-primary px-4 py-1.5 text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Retry</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setShowBundledExamples(true);
+                      setSelectedRepo(GITSMITH_REPOS[0]);
+                      setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
+                    }}
+                    className="win95-btn px-4 py-1.5 text-xs font-bold bg-[#dfdfdf] hover:bg-white text-black"
+                  >
+                    Open Demo Gallery
+                  </button>
+                </div>
+              )}
             </div>
           ) : (<>
           <div className="bg-[#c0c0c0] border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] p-3 shadow-sm">
