@@ -218,6 +218,15 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-tahoma text-xs select-none">
       <div className="flex items-center gap-2 px-2 py-1.5 bg-[#c0c0c0] border-b border-gray-400">
+        {selectedApp && (
+          <button
+            onClick={() => { playClickSound(); setSelectedApp(null); }}
+            className="win95-btn px-2 py-0.5 flex items-center gap-1 font-bold bg-[#dfdfdf] hover:bg-white shrink-0"
+            title="Back to HOTWIRE list"
+          >
+            <ArrowLeft size={12} /> Back to HOTWIRE list
+          </button>
+        )}
         <span className="font-bold text-gray-700">Address</span>
         <div className="flex-1 flex items-center gap-1.5 bg-white win95-field px-2 py-0.5 border border-gray-600 font-mono text-[11px] min-w-0">
           <span>📁</span>
@@ -229,15 +238,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             <span className="text-gray-500">{addressVersion}</span>
           </span>
         </div>
-        {selectedApp && (
-          <button
-            onClick={() => { playClickSound(); setSelectedApp(null); }}
-            className="win95-btn px-2 py-0.5 flex items-center gap-1 font-bold bg-[#dfdfdf] hover:bg-white"
-            title="Back to the library index"
-          >
-            <ArrowLeft size={12} /> Library
-          </button>
-        )}
       </div>
 
       {catalogError && (
