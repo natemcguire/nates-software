@@ -74,9 +74,12 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
     <div className="flex flex-col h-full font-tahoma text-sm">
       <div className="pt-3 pb-2.5 px-1 border-b border-gray-300">
         <div className="text-2xl font-black text-w95-blue tracking-tight leading-none">
-          NATE'S SOFTWARE EMPORIUM
+          NATE'S SOFTWARE
         </div>
         <p className="text-gray-800 text-sm font-black mt-1">
+          Marketplace For the Software Enthusiasts
+        </p>
+        <p className="text-gray-600 text-xs font-semibold mt-0.5">
           Other sites let you fork code. We let you fork revenue.
         </p>
         <a

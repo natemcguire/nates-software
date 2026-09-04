@@ -333,7 +333,7 @@ export function AppInner() {
     switch (route.id) {
       case 'explainer': {
         const goHome = () => { window.location.href = 'https://nates-software.com'; };
-        return renderStandaloneWrapper(route.title || "WELCOME TO NATE'S SOFTWARE EMPORIUM", (
+        return renderStandaloneWrapper(route.title || "NATE'S SOFTWARE", (
           <div className="h-full overflow-auto bg-[#ece9d8] p-3">
             <MarketingWindow
               onOpenSetup={goHome}
