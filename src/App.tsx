@@ -269,21 +269,23 @@ export function AppInner() {
 
   const renderStandaloneWrapper = (title: string, component: React.ReactNode) => (
     <div className="fixed inset-0 bg-[#0f172a] flex flex-col font-sans text-xs overflow-hidden">
-      <div className="bg-[#000080] text-white px-3 py-1.5 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-sm font-mono">{title}</span>
+      <div className="bg-[#000080] text-white px-2 sm:px-3 py-1.5 flex items-center justify-between gap-2 border-b-2 border-gray-800 select-none shadow-md">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-bold text-sm font-mono truncate">{title}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <AccountWidget />
           <a
             href="https://nates-software.com"
-            className="btn-w95 text-xs py-1 px-3 font-bold text-black bg-gray-200 hover:bg-white"
+            title="Return to Nate's Software Web OS"
+            className="btn-w95 text-xs py-1 px-2 sm:px-3 font-bold text-black bg-gray-200 hover:bg-white whitespace-nowrap"
           >
-            ⚡ Return to Nate's Software Web OS
+            <span className="sm:hidden">⚡ Web OS</span>
+            <span className="hidden sm:inline">⚡ Return to Nate's Software Web OS</span>
           </a>
         </div>
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-auto">
         <ErrorBoundary fallbackTitle={title}>
           {component}
         </ErrorBoundary>
