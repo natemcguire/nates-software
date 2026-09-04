@@ -204,18 +204,6 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
   }
 ];
 
-export const SHOWCASE_FILES_BY_SLUG: Record<string, GitsmithRepo['files']> =
-  GITSMITH_REPOS.reduce((acc, repo) => {
-    acc[repo.name] = repo.files;
-    return acc;
-  }, {} as Record<string, GitsmithRepo['files']>);
-
-const SHOWCASE_OWNERS = new Set(['nate', 'usr_nate']);
-export function showcaseFilesForRepo(repo: Pick<GitsmithRepo, 'name' | 'owner'>): GitsmithRepo['files'] | undefined {
-  if (!SHOWCASE_OWNERS.has(repo.owner)) return undefined;
-  return SHOWCASE_FILES_BY_SLUG[repo.name];
-}
-
 export const GitsmithView: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
@@ -243,6 +231,9 @@ export const GitsmithView: React.FC = () => {
   const [newRepoSlug, setNewRepoSlug] = useState('');
   const [newRepoVisibility, setNewRepoVisibility] = useState<'public' | 'unlisted' | 'private'>('public');
   const [isCreatingRepo, setIsCreatingRepo] = useState(false);
+  const [repoTreeFiles, setRepoTreeFiles] = useState<{ name: string; type: 'file' | 'dir'; size?: string; content?: string }[]>([]);
+  const [repoTreeLoading, setRepoTreeLoading] = useState(false);
+  const [repoTreeError, setRepoTreeError] = useState<string | null>(null);
 
   const refreshCanonicalRepositories = async () => {
     try {
@@ -320,24 +311,96 @@ export const GitsmithView: React.FC = () => {
     return matchName || matchDesc || matchTag || matchLang;
   });
 
-  const candidateFiles: { name: string; type: 'file' | 'dir'; size?: string; content?: string }[] = [
-    { name: 'README.md', type: 'file' },
-    { name: 'spec.md', type: 'file' },
-    { name: 'slop.config.json', type: 'file' },
-    { name: 'package.json', type: 'file' }
-  ];
-  const showcaseFilesForSelected = selectedRepo && selectedRepo.source !== 'showcase'
-    ? showcaseFilesForRepo(selectedRepo)
-    : undefined;
   const displayedFiles = selectedRepo
-    ? (selectedRepo.source === 'showcase'
-        ? selectedRepo.files
-        : (selectedRepo.files.length > 0
-            ? selectedRepo.files
-            : (showcaseFilesForSelected && showcaseFilesForSelected.length > 0
-                ? showcaseFilesForSelected
-                : candidateFiles)))
+    ? (selectedRepo.source === 'showcase' ? selectedRepo.files : repoTreeFiles)
     : [];
+
+  // Authoritative file tree for canonical repositories, fetched from /api/repo-tree
+  // (a proxy over the GITSMITH gateway's real `git ls-tree -r` listing). No hardcoded
+  // or synthetic file list is substituted — an empty/loading/error state is shown as-is.
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!selectedRepo || selectedRepo.source === 'showcase') {
+      setRepoTreeFiles([]);
+      setRepoTreeError(null);
+      setRepoTreeLoading(false);
+      return;
+    }
+
+    if (selectedRepo.status === 'provisioning' || !selectedRepo.lastCommit.sha || selectedRepo.lastCommit.sha === 'No projected ref') {
+      setRepoTreeFiles([]);
+      setRepoTreeError(null);
+      setRepoTreeLoading(false);
+      return;
+    }
+
+    if (selectedRepo.visibility === 'private' || selectedRepo.visibility === 'unlisted') {
+      setRepoTreeFiles([]);
+      setRepoTreeError('File tree listing is restricted to public repositories. Use SSH clone to inspect private repository files.');
+      setRepoTreeLoading(false);
+      return;
+    }
+
+    setRepoTreeLoading(true);
+    setRepoTreeError(null);
+    setRepoTreeFiles([]);
+
+    const query = selectedRepo.id
+      ? `repoId=${encodeURIComponent(selectedRepo.id)}`
+      : `owner=${encodeURIComponent(selectedRepo.owner)}&slug=${encodeURIComponent(selectedRepo.name)}`;
+    const url = `/api/repo-tree?${query}`;
+
+    fetch(url, { credentials: 'same-origin' })
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload?.success && Array.isArray(payload.files)) {
+            const mapped = (payload.files as string[])
+              .filter((f): f is string => typeof f === 'string' && f.length > 0)
+              .sort()
+              .map(name => ({ name, type: 'file' as const }));
+            setRepoTreeFiles(mapped);
+            setRepoTreeError(mapped.length === 0 ? 'Repository tree is empty at the current commit.' : null);
+          } else {
+            setRepoTreeFiles([]);
+            setRepoTreeError('Repository gateway returned an invalid tree payload.');
+          }
+        } else if (res.status === 404) {
+          setRepoTreeFiles([]);
+          setRepoTreeError('Repository tree not found at the current commit (HTTP 404).');
+        } else if (res.status === 502) {
+          setRepoTreeFiles([]);
+          setRepoTreeError('Repository gateway unreachable (HTTP 502). File browsing requires an active GITSMITH object gateway.');
+        } else {
+          setRepoTreeFiles([]);
+          setRepoTreeError(`Failed to list repository files (HTTP ${res.status}).`);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setRepoTreeFiles([]);
+        setRepoTreeError(`Transport error: ${err?.message || 'Network request failed'}`);
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setRepoTreeLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    selectedRepo?.id,
+    selectedRepo?.owner,
+    selectedRepo?.name,
+    selectedRepo?.source,
+    selectedRepo?.status,
+    selectedRepo?.visibility,
+    selectedRepo?.lastCommit?.sha
+  ]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -352,17 +415,6 @@ export const GitsmithView: React.FC = () => {
     if (selectedRepo.source === 'showcase') {
       const showcaseFile = activeFile || selectedRepo.files.find(f => f.type === 'file') || selectedRepo.files[0];
       setFileContent(showcaseFile?.content || null);
-      setFileError(null);
-      setFileLoading(false);
-      return;
-    }
-
-    const showcaseFiles = showcaseFilesForRepo(selectedRepo);
-    if (showcaseFiles && showcaseFiles.length > 0) {
-      const target = activeFile
-        ? showcaseFiles.find(f => f.name === activeFile.name)
-        : (showcaseFiles.find(f => f.type === 'file') || showcaseFiles[0]);
-      setFileContent(target?.content ?? null);
       setFileError(null);
       setFileLoading(false);
       return;
@@ -748,10 +800,10 @@ export const GitsmithView: React.FC = () => {
                   onClick={() => {
                     playClickSound();
                     setSelectedRepo(repo);
-                    const seedFiles = repo.files.length > 0
-                      ? repo.files
-                      : (repo.source !== 'showcase' ? showcaseFilesForRepo(repo) : undefined) || repo.files;
-                    setActiveFile(seedFiles.find(f => f.type === 'file') || seedFiles[0] || null);
+                    // Canonical repos have no local file list to seed from; the real
+                    // tree loads asynchronously from /api/repo-tree. Showcase repos
+                    // keep their bundled demo files (explicitly labeled, opt-in only).
+                    setActiveFile(repo.source === 'showcase' ? (repo.files.find(f => f.type === 'file') || repo.files[0] || null) : null);
                   }}
                   className={`p-3.5 cursor-pointer transition-all ${
                     isSelected
@@ -967,7 +1019,7 @@ export const GitsmithView: React.FC = () => {
                   : 'border-transparent text-slate-400 hover:text-white'
               }`}
             >
-              <Sparkles size={14} /> 70/20 Lineage Settlement
+              <Sparkles size={14} /> Royalty Settlement
             </button>
           </div>
 
@@ -1005,6 +1057,12 @@ export const GitsmithView: React.FC = () => {
                   <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 tracking-wider font-mono">
                     Repository Files
                   </div>
+                  {selectedRepo?.source !== 'showcase' && repoTreeLoading && (
+                    <div className="px-2 py-1.5 text-[11px] text-slate-400 font-mono">Loading tree…</div>
+                  )}
+                  {selectedRepo?.source !== 'showcase' && !repoTreeLoading && repoTreeError && (
+                    <div className="px-2 py-1.5 text-[11px] text-rose-300 font-mono leading-relaxed">{repoTreeError}</div>
+                  )}
                   {displayedFiles.map((file, idx) => {
                     const isFileActive = (activeFile?.name || displayedFiles[0]?.name || 'README.md') === file.name;
                     return (

@@ -1,35 +1,32 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { renderToString } from 'react-dom/server';
-import { GitsmithView, mapCanonicalRepository, showcaseFilesForRepo } from '../src/views/GitsmithView';
+import * as GitsmithViewModule from '../src/views/GitsmithView';
+import { GitsmithView, mapCanonicalRepository } from '../src/views/GitsmithView';
 import { AuthProvider } from '../src/context/AuthContext';
 import { AlertProvider } from '../src/context/AlertContext';
 
-describe('GITSMITH showcase-file resolution is owner-scoped (no slug-collision content spoof)', () => {
-  it('serves embedded showcase files for nate/<showcase-slug>', () => {
+describe('GITSMITH synthetic showcase-file fallback for canonical repos is removed (NSW-53)', () => {
+  it('no longer exports a showcase-file resolver that canonical repos could fall back to', () => {
+    // Canonical (real, non-showcase) repositories must only ever source file content
+    // from the real /api/repo-file and /api/repo-tree gateway proxies. The prior
+    // owner-scoped showcase-content substitution engine (showcaseFilesForRepo /
+    // SHOWCASE_FILES_BY_SLUG) has been deleted entirely, not merely tightened.
+    expect((GitsmithViewModule as any).showcaseFilesForRepo).toBeUndefined();
+    expect((GitsmithViewModule as any).SHOWCASE_FILES_BY_SLUG).toBeUndefined();
+  });
+
+  it('demo gallery bundled repos still carry their own embedded files (opt-in only, unaffected)', () => {
+    // The bundled showcase catalog itself (GITSMITH_REPOS, source:'showcase') is
+    // untouched — it's explicitly labeled "DEMO GALLERY" and only shown when a user
+    // opts in via "Open Demo Gallery". What's removed is canonical repos silently
+    // borrowing that content when their own real file list is empty.
+    const demoRepos = (GitsmithViewModule as any).GITSMITH_REPOS as Array<{ name: string; files: unknown[] }>;
+    expect(Array.isArray(demoRepos)).toBe(true);
     for (const slug of ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']) {
-      const files = showcaseFilesForRepo({ name: slug, owner: 'nate' });
-      expect(files, `nate/${slug} should resolve showcase files`).toBeTruthy();
-      expect((files || []).length).toBeGreaterThan(0);
+      const repo = demoRepos.find(r => r.name === slug);
+      expect(repo, `${slug} should still exist in the bundled demo catalog`).toBeTruthy();
+      expect((repo?.files || []).length).toBeGreaterThan(0);
     }
-  });
-
-  it('does NOT serve nate\'s showcase files for another owner\'s colliding slug', () => {
-    for (const slug of ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']) {
-      expect(showcaseFilesForRepo({ name: slug, owner: 'bob' })).toBeUndefined();
-      expect(showcaseFilesForRepo({ name: slug, owner: 'attacker' })).toBeUndefined();
-      expect(showcaseFilesForRepo({ name: slug, owner: 'natefake' })).toBeUndefined();
-      expect(showcaseFilesForRepo({ name: slug, owner: 'nate-evil' })).toBeUndefined();
-    }
-  });
-
-  it('accepts nate\'s userId form (usr_nate) as owner — legit projection fallback', () => {
-    const files = showcaseFilesForRepo({ name: 'dronehunter', owner: 'usr_nate' });
-    expect(files).toBeTruthy();
-    expect((files || []).length).toBeGreaterThan(0);
-  });
-
-  it('returns undefined for a non-showcase slug even when owned by nate', () => {
-    expect(showcaseFilesForRepo({ name: 'some-real-repo', owner: 'nate' })).toBeUndefined();
   });
 });
 

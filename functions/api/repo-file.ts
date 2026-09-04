@@ -240,13 +240,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           }
         });
 
-        if (res.status === 404) {
-          if (res.body && typeof res.body.cancel === 'function') {
-            try { await res.body.cancel(); } catch {}
-          }
-          return jsonError('File not found in repository', 404);
-        }
-
         if (res.status === 413) {
           if (res.body && typeof res.body.cancel === 'function') {
             try { await res.body.cancel(); } catch {}
@@ -262,10 +255,17 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         }
 
         if (!res.ok) {
+          const blobStatus = res.status;
           if (res.body && typeof res.body.cancel === 'function') {
             try { await res.body.cancel(); } catch {}
           }
 
+          // The gateway's single-blob read (/api/gateway/blob -> readCommitFileBase64 ->
+          // git cat-file -s "<oid>:<path>") can 404 even for a file that is genuinely
+          // present in the commit tree, e.g. when that specific plumbing lookup fails.
+          // For the extensions the tree endpoint indexes as "manifest" content, retry via
+          // /api/gateway/tree (git ls-tree -r, a more resilient whole-tree read) before
+          // giving up. This must run for 404s too, not just non-404 gateway errors.
           if (filePath.endsWith('.md') || filePath.endsWith('.json') || filePath.endsWith('.txt')) {
             const gatewayTreeUrl = new URL('/api/gateway/tree', env.GITSMITH_GATEWAY_URL);
             gatewayTreeUrl.searchParams.set('storageKey', storageKey);
@@ -308,6 +308,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           }
 
           if (!fileBytes) {
+            if (blobStatus === 404) {
+              return jsonError('File not found in repository', 404);
+            }
             return jsonError('Failed to retrieve file from repository gateway', 502);
           }
         } else {

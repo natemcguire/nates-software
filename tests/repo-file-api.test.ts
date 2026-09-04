@@ -534,6 +534,173 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         expect(mockGatewayFetch).toHaveBeenCalledTimes(1);
       });
 
+      describe('NSW-53: gateway /api/gateway/blob 404 must retry via /api/gateway/tree for text manifests', () => {
+        it('recovers README.md when the blob endpoint 404s but the tree endpoint has manifestContents for it', async () => {
+          // Reproduces the exact prod contract: /api/gateway/blob (readCommitFileBase64 ->
+          // git cat-file -s "<oid>:<path>") can 404 for a file that is genuinely present
+          // in the commit tree. The gateway also exposes /api/gateway/tree
+          // (inspectCommitTree -> git ls-tree -r + per-file git show via manifestCandidates),
+          // which is more resilient. repo-file.ts must retry through it for .md/.json/.txt
+          // paths even when the blob call's failure was specifically a 404 (not just other
+          // non-2xx statuses) -- previously the 404 branch returned early before the retry
+          // could ever run.
+          const mockGatewayFetch = vi.fn(async (url: string) => {
+            const parsed = new URL(url);
+            if (parsed.pathname === '/api/gateway/blob') {
+              expect(parsed.searchParams.get('storageKey')).toBe(`repositories/${publicRepoId}`);
+              expect(parsed.searchParams.get('commitOid')).toBe(publicCommitOid);
+              expect(parsed.searchParams.get('path')).toBe('README.md');
+              return new Response(JSON.stringify({ success: false, error: "File 'README.md' not found in commit." }), {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            if (parsed.pathname === '/api/gateway/tree') {
+              expect(parsed.searchParams.get('storageKey')).toBe(`repositories/${publicRepoId}`);
+              expect(parsed.searchParams.get('commitOid')).toBe(publicCommitOid);
+              expect(parsed.searchParams.get('manifests')).toBe('README.md');
+              return new Response(JSON.stringify({
+                success: true,
+                exists: true,
+                storageKey: `repositories/${publicRepoId}`,
+                commitOid: publicCommitOid,
+                files: ['README.md'],
+                manifestContents: {
+                  'README.md': '# DroneHunter Idea Spec\n\nRecovered via tree fallback.\n'
+                }
+              }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            throw new Error(`Unexpected gateway path: ${parsed.pathname}`);
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=README.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(200);
+          const text = await res.text();
+          expect(text).toBe('# DroneHunter Idea Spec\n\nRecovered via tree fallback.\n');
+          expect(mockGatewayFetch).toHaveBeenCalledTimes(2);
+        });
+
+        it('still returns a genuine 404 when both the blob AND tree endpoints agree the file is absent', async () => {
+          const mockGatewayFetch = vi.fn(async (url: string) => {
+            const parsed = new URL(url);
+            if (parsed.pathname === '/api/gateway/blob') {
+              return new Response(JSON.stringify({ success: false, error: "File 'ghost.md' not found in commit." }), {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            if (parsed.pathname === '/api/gateway/tree') {
+              return new Response(JSON.stringify({
+                success: true,
+                exists: true,
+                storageKey: `repositories/${publicRepoId}`,
+                commitOid: publicCommitOid,
+                files: ['spec.md', 'business.md'],
+                manifestContents: {}
+              }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            throw new Error(`Unexpected gateway path: ${parsed.pathname}`);
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=ghost.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(404);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toBe('File not found in repository');
+        });
+
+        it('returns a genuine 404 immediately for non-manifest extensions without attempting the tree fallback', async () => {
+          const mockGatewayFetch = vi.fn(async (url: string) => {
+            const parsed = new URL(url);
+            if (parsed.pathname === '/api/gateway/blob') {
+              return new Response(JSON.stringify({ success: false, error: "File 'hero.png' not found in commit." }), {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            throw new Error(`Tree endpoint must not be called for non-manifest extensions, got: ${parsed.pathname}`);
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=missing.png`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(404);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toBe('File not found in repository');
+          expect(mockGatewayFetch).toHaveBeenCalledTimes(1);
+        });
+
+        it('falls through to a 502 (not a false 404) when the blob endpoint has a real non-404 failure and no tree recovery is possible', async () => {
+          const mockGatewayFetch = vi.fn(async (url: string) => {
+            const parsed = new URL(url);
+            if (parsed.pathname === '/api/gateway/blob') {
+              return new Response(JSON.stringify({ success: false, error: 'Endpoint not implemented' }), {
+                status: 501,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            if (parsed.pathname === '/api/gateway/tree') {
+              return new Response(JSON.stringify({ success: false, exists: false, error: 'gateway disk error' }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' }
+              });
+            }
+            throw new Error(`Unexpected gateway path: ${parsed.pathname}`);
+          });
+
+          const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
+          const res = await repoFileApi.onRequestGet({
+            request: req,
+            env: {
+              DB: ctx.d1,
+              GITSMITH_GATEWAY_URL: 'https://gateway.example.com',
+              GITSMITH_GATEWAY_TOKEN: 'test-gateway-token-xyz',
+              __GITSMITH_GATEWAY_FETCH: mockGatewayFetch
+            }
+          });
+
+          expect(res.status).toBe(502);
+          const body = await res.json();
+          expect(body.success).toBe(false);
+          expect(body.error).toBe('Failed to retrieve file from repository gateway');
+        });
+      });
+
       describe('PROXY Bounded Stream Reader & Size Enforcement', () => {
         function createMockStream(chunkSize: number, totalChunks: number) {
           let chunksRead = 0;

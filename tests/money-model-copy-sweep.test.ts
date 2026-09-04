@@ -27,6 +27,7 @@ const sweptFiles = [
 const bannedPhrases = [
   '70 / 20 / 10',
   '70/20/10',
+  '70/20',
   '20% up',
   'protocol pool',
   'protocol liquidity',
