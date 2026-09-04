@@ -43,6 +43,30 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(dataInvalidChars.error).toContain('3-20 characters');
     });
 
+    it('rejects an oversized password before any hashing (NSW-143)', async () => {
+      const req = new Request('http://localhost/api/auth?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'someuser', password: 'x'.repeat(5000) })
+      });
+      const res = await authApi.onRequestPost({ request: req, env: { DB: { prepare: () => { throw new Error('DB must not be reached'); } } } });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+    });
+
+    it('rejects a non-string password with 400, not a 500 crash (NSW-143)', async () => {
+      const req = new Request('http://localhost/api/auth?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'someuser', password: { evil: true } })
+      });
+      const res = await authApi.onRequestPost({ request: req, env: { DB: { prepare: () => { throw new Error('DB must not be reached'); } } } });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+    });
+
     it('should reject registration with reserved usernames (admin, root, sam)', async () => {
       const mockEnv = {};
       for (const reserved of ['admin', 'root', 'superadmin', 'sam']) {

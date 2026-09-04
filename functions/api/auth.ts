@@ -3,6 +3,28 @@
 import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
 import { requireAuth } from './_auth';
 
+const MAX_USERNAME_LEN = 64;
+const MAX_PASSWORD_LEN = 256;
+const MAX_CREDENTIAL_FIELD_LEN = 4096;
+
+function validateCredentialBounds(body: any): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const { username, password, newPassword, displayName, avatar, bio } = body;
+  for (const [name, value, max] of [
+    ['username', username, MAX_USERNAME_LEN],
+    ['password', password, MAX_PASSWORD_LEN],
+    ['newPassword', newPassword, MAX_PASSWORD_LEN],
+    ['displayName', displayName, MAX_CREDENTIAL_FIELD_LEN],
+    ['avatar', avatar, MAX_CREDENTIAL_FIELD_LEN],
+    ['bio', bio, MAX_CREDENTIAL_FIELD_LEN]
+  ] as [string, unknown, number][]) {
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'string') return `${name} must be a string.`;
+    if (value.length > max) return `${name} must be at most ${max} characters.`;
+  }
+  return null;
+}
+
 async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) {
     return false;
@@ -125,6 +147,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     try {
       body = await request.json();
     } catch {}
+
+    const boundsError = validateCredentialBounds(body);
+    if (boundsError) {
+      return Response.json({ success: false, error: boundsError }, { status: 400 });
+    }
 
     if (action === 'claim-credentials' || action === 'set-initial-password') {
       const { username, newPassword, password, token, bootstrapToken } = body;
