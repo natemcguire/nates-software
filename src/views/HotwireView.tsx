@@ -7,6 +7,8 @@ import { CheckoutModal } from '../components/CheckoutModal';
 import { ForkWithAiModal } from '../components/ForkWithAiModal';
 import { RightsCard } from '../components/RightsCard';
 import { Win95Scroll } from '../components/Win95Scroll';
+import { DollarBillReceipt } from '../components/DollarBillReceipt';
+import { calculateAllocations } from '../lib/commerceDomain';
 import {
   Flame,
   GitFork,
@@ -37,8 +39,6 @@ interface HotwireViewProps {
 
 type LibraryTab = 'hot' | 'forked' | 'bought' | 'rising';
 type InspectTab = 'code' | 'readme' | 'preview' | 'lineage';
-
-const PLATFORM_RATE = 0.10;
 
 const getRoyaltyBps = (app: AppListing): number => {
   if (typeof app.royaltyBps === 'number') return app.royaltyBps;
@@ -528,14 +528,31 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showForkModal, setShowForkModal] = useState(false);
 
+  const hasRealPrice = typeof app.price === 'number' && app.price > 0;
   const price = getPrice(app);
-  const platformFee = Math.floor(price * PLATFORM_RATE * 100) / 100;
-  const makerKeeps = price - platformFee;
   const royaltyBps = getRoyaltyBps(app);
   const royaltyPct = royaltyBps / 100;
   const forkingEnabled = app.forkingEnabled ?? app.forking_enabled ?? true;
   const resaleEnabled = app.resaleEnabled ?? app.resale_enabled ?? true;
   const upstreamRoyaltyBps = (app.inheritedLiens || []).reduce((total, lien) => total + lien.bps, 0);
+
+  const buyAuthorHandle = app.author || app.creator || 'maker';
+  let buyReceipt = null;
+  if (upstreamRoyaltyBps <= 10000) {
+    try {
+      buyReceipt = calculateAllocations({
+        grossCents: Math.round(price * 100),
+        currency: 'usd',
+        sellerUserId: buyAuthorHandle,
+        sellerRepositoryId: null,
+        liens: (app.inheritedLiens || [])
+          .filter(l => l.bps > 0)
+          .map((l, i) => ({ ancestorUserId: l.maker, ancestorRepositoryId: null, bps: l.bps, depth: i + 1 }))
+      });
+    } catch {
+      buyReceipt = null;
+    }
+  }
   const hasPurchasableForgeSource = Boolean(app.hasCanonicalRepo && app.isRepoActive !== false && (app.repositoryId || app.repoSlug || app.repoName));
   const canBuy = hasPurchasableForgeSource && !app.isDemo && isAuthoritativeLive;
   const canFork = forkingEnabled && Boolean(app.hasCanonicalRepo && (app.repoSlug || app.repositoryId || app.repoName)) && !app.isDemo && isAuthoritativeLive;
@@ -691,20 +708,22 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
         />
 
         <div className="win95-field bg-white border border-gray-600">
-          <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Where your {money(price)} goes</div>
-          <div className="p-3 text-[11px]">
-            <div className="flex justify-between py-0.5 border-b border-dotted border-gray-300">
-              <span>Maker @{app.author || app.creator || 'maker'}</span>
-              <span className="font-bold text-[#0a5a0a]">{money(makerKeeps)}</span>
-            </div>
-            <div className="flex justify-between py-0.5 border-b border-dotted border-gray-300">
-              <span>Platform fee (flat 10%)</span>
-              <span className="font-bold">{money(platformFee)}</span>
-            </div>
-            <div className="flex justify-between pt-1 mt-1 border-t border-gray-500 font-bold">
-              <span>You pay</span>
-              <span>{money(price)}</span>
-            </div>
+          <div className="p-2.5">
+            {hasRealPrice && buyReceipt ? (
+              <DollarBillReceipt
+                grossCents={buyReceipt.grossCents}
+                result={buyReceipt}
+                makerLabel={`@${buyAuthorHandle}`}
+                resolveUpstreamLabel={(id) => (id ? `@${id}` : 'Upstream maker')}
+                title="Where your money goes"
+                note="The platform's flat 10%, any upstream royalties, and what the maker keeps — the same split you'll see at checkout."
+                compact
+              />
+            ) : (
+              <div className="text-[11px] text-gray-600 p-2 bg-[#f4f4f4] border border-gray-300">
+                This app hasn&rsquo;t set a price yet. You&rsquo;ll see the exact split at checkout.
+              </div>
+            )}
 
             <div className="bg-[#e4f0f7] border border-[#7ea6c4] text-[#1c4a6b] mt-2.5 p-2">
               <div className="font-bold flex items-center gap-1 text-[11px]">

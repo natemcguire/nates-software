@@ -1,4 +1,5 @@
 import { renderToString } from 'react-dom/server';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as dropsApi from '../functions/api/drops';
@@ -222,6 +223,25 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
 
       expect(html).toContain('Comments');
       expect(html).toMatch(/Comments\s*\(/);
+    });
+  });
+
+  describe('pre-purchase money panel uses the real settlement engine (no hand-rolled split)', () => {
+    const source = readFileSync(
+      new URL('../src/views/HotwireView.tsx', import.meta.url),
+      'utf8'
+    );
+
+    it('imports and uses calculateAllocations for the inspector buy split', () => {
+      expect(source).toContain("import { calculateAllocations } from '../lib/commerceDomain'");
+      expect(source).toContain('calculateAllocations({');
+      expect(source).toContain('<DollarBillReceipt');
+    });
+
+    it('does not hand-roll the buy split as price * a platform rate', () => {
+      expect(source).not.toMatch(/price\s*\*\s*PLATFORM_RATE/);
+      expect(source).not.toMatch(/const\s+platformFee\s*=\s*Math\.floor\(price\s*\*/);
+      expect(source).not.toMatch(/const\s+makerKeeps\s*=\s*price\s*-\s*platformFee/);
     });
   });
 });
