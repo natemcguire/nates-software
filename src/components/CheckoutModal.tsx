@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ShieldCheck, Lock, Sparkles, AlertTriangle, Check, Copy, ExternalLink, Download, LogIn, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Lock, AlertTriangle, Check, Copy, ExternalLink, Download, LogIn, RefreshCw } from 'lucide-react';
 import { loadStripe, Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,8 @@ import { useCatalog } from '../context/CatalogContext';
 import { publishedArtifactLinks } from '../lib/profileDomain';
 import { Win95Scroll } from './Win95Scroll';
 import { RightsCard } from './RightsCard';
+import { DollarBillReceipt } from './DollarBillReceipt';
+import type { AllocationCalculationResult } from '../lib/commerceDomain';
 
 export interface CheckoutModalProps {
   isOpen: boolean;
@@ -346,6 +348,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   const poolAlloc = quote?.allocations?.find(a => a.role === 'platform');
   const ancestorAllocs = quote?.allocations?.filter(a => a.role === 'ancestor') || [];
 
+  const receiptResult: AllocationCalculationResult | null = quote
+    ? {
+        isRoot: ancestorAllocs.length === 0,
+        grossCents: quote.amountCents,
+        currency: quote.currency,
+        platformCents: poolAlloc?.amountCents ?? 0,
+        sellerCents: makerAlloc?.amountCents ?? 0,
+        ancestorTotalCents: ancestorAllocs.reduce((sum, a) => sum + a.amountCents, 0),
+        allocations: quote.allocations.map(a => ({
+          sequence: (a as any).sequence ?? 0,
+          role: a.role as any,
+          recipientUserId: a.recipientUserId,
+          sourceRepositoryId: (a as any).sourceRepositoryId ?? null,
+          lineageDepth: a.lineageDepth ?? null,
+          basisPoints: a.basisPoints,
+          amountCents: a.amountCents
+        })),
+        snapshot: quote.lineageSnapshot,
+        snapshotJson: '',
+        conservationVerified: true
+      }
+    : null;
+
+  const sellerHandle = makerAlloc?.recipientUserId
+    ? `@${makerAlloc.recipientUserId}`
+    : (app.creator || app.author || '@maker');
+
   const artifactLinks = fulfilledOrder?.binaries ? publishedArtifactLinks(fulfilledOrder.binaries) : [];
 
   return (
@@ -480,38 +509,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               </div>
 
-              {quote && (
-                <div className="bg-blue-50 border border-blue-300 p-2.5 rounded font-mono text-[11px] space-y-1">
-                  <div className="font-bold text-blue-950 flex items-center gap-1">
-                    <Sparkles size={12} className="text-amber-600" />
-                    <span>Authoritative Lineage Split:</span>
-                  </div>
-
-                  {makerAlloc && (
-                    <div className="flex justify-between text-gray-700">
-                      <span>
-                        ⚡ {(makerAlloc.basisPoints / 100).toFixed(0)}% to seller ({makerAlloc.recipientUserId ? `@${makerAlloc.recipientUserId}` : (app.creator || app.author || '@maker')}):
-                      </span>
-                      <span className="font-bold">${(makerAlloc.amountCents / 100).toFixed(2)}</span>
-                    </div>
-                  )}
-
-                  {ancestorAllocs.map((anc, idx) => (
-                    <div key={idx} className="flex justify-between text-gray-700">
-                      <span>
-                        💎 {(anc.basisPoints / 100).toFixed(0)}% to upstream maker ({anc.recipientUserId ? `@${anc.recipientUserId}` : `Depth ${anc.lineageDepth ?? idx + 1}`}):
-                      </span>
-                      <span className="font-bold">${(anc.amountCents / 100).toFixed(2)}</span>
-                    </div>
-                  ))}
-
-                  {poolAlloc && (
-                    <div className="flex justify-between text-gray-700">
-                      <span>🛡️ {(poolAlloc.basisPoints / 100).toFixed(0)}% to platform:</span>
-                      <span className="font-bold">${(poolAlloc.amountCents / 100).toFixed(2)}</span>
-                    </div>
-                  )}
-                </div>
+              {receiptResult && (
+                <DollarBillReceipt
+                  grossCents={receiptResult.grossCents}
+                  result={receiptResult}
+                  makerLabel={sellerHandle}
+                  resolveUpstreamLabel={(id) => (id ? `@${id}` : 'Upstream maker')}
+                  title="Where your money goes"
+                  note="Server-authoritative split from the Lineage Ledger. This is exactly what each party receives when you buy."
+                />
               )}
 
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 min-h-[160px] relative">

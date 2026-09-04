@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
 import { Win95Scroll } from '../components/Win95Scroll';
+import { DollarBillReceipt } from '../components/DollarBillReceipt';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import {
   validateMakerProfile,
@@ -753,6 +754,39 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   Stripe Express: {profileData.stripeAccountId ? `${profileData.stripeAccountId.slice(0, 16)}... (${profileData.stripeStatus})` : 'Not Connected'}
                 </div>
               </div>
+              {royalties.grossSalesCents > 0 && (
+                <div className="mb-3">
+                  <DollarBillReceipt
+                    grossCents={royalties.grossSalesCents}
+                    result={{
+                      isRoot: royalties.upstreamRoyaltiesPaidCents <= 0,
+                      grossCents: royalties.grossSalesCents,
+                      currency: 'usd',
+                      platformCents: royalties.platformFeesCents,
+                      sellerCents: royalties.netEarningsCents,
+                      ancestorTotalCents: royalties.upstreamRoyaltiesPaidCents,
+                      allocations: royalties.upstreamRoyaltiesPaidCents > 0
+                        ? [{
+                            sequence: 1,
+                            role: 'ancestor',
+                            recipientUserId: null,
+                            sourceRepositoryId: null,
+                            lineageDepth: 1,
+                            basisPoints: null,
+                            amountCents: royalties.upstreamRoyaltiesPaidCents
+                          }]
+                        : [],
+                      snapshot: {} as any,
+                      snapshotJson: '',
+                      conservationVerified: true
+                    }}
+                    makerLabel="You"
+                    resolveUpstreamLabel={() => 'Upstream makers'}
+                    title="Your lifetime earnings"
+                    note="Totals across every completed sale. Net earnings is what you keep after the platform fee and any upstream royalties."
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
                 {[
                   ['Gross sales', royalties.grossSalesCents],

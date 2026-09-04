@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
 import { AppListing } from '../data/mockData';
+import { DollarBillReceipt } from './DollarBillReceipt';
+import { calculateAllocations, type LienInput } from '../lib/commerceDomain';
 
 export interface ForkWithAiModalProps {
   isOpen: boolean;
@@ -117,6 +119,31 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const inheritedLiens = Array.isArray(app.inheritedLiens) ? app.inheritedLiens : [];
   const totalRoyaltyBps = inheritedLiens.reduce((sum, lien) => sum + lien.bps, 0) + (parentRoyaltyBps || 0);
   const cliForkTarget = resolvedRepoSlug || `${app.author || app.creator || 'nate'}/${app.id}`;
+
+  const projectionGrossCents = 1500;
+  const parentHandle = app.author || app.creator || 'nate';
+  const projectionLiens: LienInput[] = totalRoyaltyBps <= 10000
+    ? [
+        ...(parentRoyaltyBps && parentRoyaltyBps > 0
+          ? [{ ancestorUserId: parentHandle, ancestorRepositoryId: null, bps: parentRoyaltyBps, depth: 1 }]
+          : []),
+        ...inheritedLiens
+          .filter(l => l.bps > 0)
+          .map((l, i) => ({ ancestorUserId: l.maker, ancestorRepositoryId: null, bps: l.bps, depth: i + 2 }))
+      ]
+    : [];
+  let forkProjection = null;
+  try {
+    forkProjection = calculateAllocations({
+      grossCents: projectionGrossCents,
+      currency: 'usd',
+      sellerUserId: user ? user.username : 'you',
+      sellerRepositoryId: null,
+      liens: projectionLiens
+    });
+  } catch {
+    forkProjection = null;
+  }
 
   const getCliCommand = () => {
     return `slop fork ${cliForkTarget}`;
@@ -370,6 +397,17 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                     <span>{(totalRoyaltyBps / 100).toFixed(2)}%</span>
                   </div>
                 </div>
+              )}
+
+              {forkProjection && (
+                <DollarBillReceipt
+                  grossCents={projectionGrossCents}
+                  result={forkProjection}
+                  makerLabel="You"
+                  resolveUpstreamLabel={(id) => (id ? `@${id}` : 'Upstream maker')}
+                  title="If you resold this fork for $15"
+                  note="Example only. When you list your fork you set your own price; these frozen royalties ride along on every sale."
+                />
               )}
 
               {!canPerformRealFork ? (
