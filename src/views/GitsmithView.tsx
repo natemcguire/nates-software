@@ -7,7 +7,6 @@ import {
   ExternalLink,
   Code,
   FileCode,
-  ShieldCheck,
   Copy,
   Check,
   Sparkles,
@@ -218,12 +217,10 @@ export const GitsmithView: React.FC = () => {
   const [showForkModal, setShowForkModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'commits' | 'lineage'>('code');
-  const [canonicalRepoCount, setCanonicalRepoCount] = useState<number | null>(null);
   const [canonicalRepositories, setCanonicalRepositories] = useState<GitsmithRepo[]>([]);
   const [canonicalLoadState, setCanonicalLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [showBundledExamples, setShowBundledExamples] = useState(false);
   const [gatewayReady, setGatewayReady] = useState(false);
-  const [gatewayCheckState, setGatewayCheckState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [transportReady, setTransportReady] = useState(false);
   const [transportEndpoint, setTransportEndpoint] = useState<{ host: string; port: number } | null>(null);
   const [filterMine, setFilterMine] = useState(false);
@@ -242,7 +239,6 @@ export const GitsmithView: React.FC = () => {
       if (response.ok && payload.success && Array.isArray(payload.repositories)) {
         const mapped: GitsmithRepo[] = payload.repositories.map((repo: CanonicalRepositoryProjection) => mapCanonicalRepository(repo));
         setCanonicalRepositories(mapped);
-        setCanonicalRepoCount(mapped.length);
         setCanonicalLoadState('loaded');
         if (mapped.length > 0) {
           setSelectedRepo(current => {
@@ -264,14 +260,12 @@ export const GitsmithView: React.FC = () => {
       setCanonicalLoadState('error');
       setSelectedRepo(current => (showBundledExamples && current?.source === 'showcase' ? current : null));
     } catch {
-      setCanonicalRepoCount(null);
       setCanonicalLoadState('error');
       setSelectedRepo(current => (showBundledExamples && current?.source === 'showcase' ? current : null));
     }
   };
 
   const refreshGatewayReadiness = async () => {
-    setGatewayCheckState('checking');
     try {
       const response = await fetch('/api/git?action=gateway-readiness', { credentials: 'same-origin', cache: 'no-store' });
       const payload = await response.json();
@@ -281,12 +275,10 @@ export const GitsmithView: React.FC = () => {
       setTransportEndpoint(payload?.transport?.active === true && payload?.transport?.host
         ? { host: payload.transport.host, port: Number(payload.transport.port || 22) }
         : null);
-      setGatewayCheckState(ready ? 'ready' : 'unavailable');
     } catch {
       setGatewayReady(false);
       setTransportReady(false);
       setTransportEndpoint(null);
-      setGatewayCheckState('unavailable');
     }
   };
 
@@ -620,22 +612,6 @@ export const GitsmithView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5 text-xs font-mono">
-          <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-emerald-400">
-            <ShieldCheck size={14} />
-            <span>{canonicalRepoCount === null ? 'Control plane' : `${canonicalRepoCount} canonical repos`}</span>
-          </div>
-          <div className={`flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 ${gatewayCheckState === 'ready' ? 'text-emerald-400' : gatewayCheckState === 'checking' ? 'text-amber-400' : 'text-red-400'}`}>
-            <CircleDot size={14} />
-            <span>{gatewayCheckState === 'ready' ? 'Storage gateway ready' : gatewayCheckState === 'checking' ? 'Checking gateway' : 'Gateway unavailable'}</span>
-          </div>
-          <div className={`flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 ${transportReady ? 'text-emerald-400' : 'text-amber-400'}`}>
-            <GitBranch size={14} />
-            <span>{transportReady ? 'SSH transport ready' : 'SSH transport pending'}</span>
-          </div>
-          <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-amber-400">
-            <Sparkles size={14} />
-            <span>Frozen Royalty Lineage</span>
-          </div>
           <button
             onClick={() => {
               if (!user) return openAuthModal('login');
