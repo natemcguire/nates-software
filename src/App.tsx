@@ -785,6 +785,13 @@ export function AppInner() {
             onBrowseDrops={() => {
               openWindow('hotwire');
             }}
+            onOpenHotwire={() => {
+              openWindow('hotwire');
+              closeWindow('setup');
+            }}
+            onClose={() => {
+              closeWindow('setup');
+            }}
           />
         </RetroWindow>
       </ErrorBoundary>
