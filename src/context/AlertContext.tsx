@@ -3,12 +3,14 @@ import { playClickSound, playErrorBeep, playSuccessChime } from '../lib/soundEng
 
 interface AlertContextType {
   showAlert: (message: string, title?: string, icon?: 'info' | 'warning' | 'error' | 'question' | 'success', onOk?: () => void) => void;
+  showToast: (message: string, duration?: number) => void;
   showConfirm: (message: string, onConfirm: () => void, title?: string) => void;
 }
 
 const AlertContext = createContext<AlertContextType | undefined>(undefined);
 
 export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [alertState, setAlertState] = useState<{
     isOpen: boolean;
     title: string;
@@ -18,6 +20,14 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     isConfirm?: boolean;
     onConfirm?: () => void;
   } | null>(null);
+
+  const showToast = (message: string, duration = 1500) => {
+    playSuccessChime();
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage(prev => (prev === message ? null : prev));
+    }, duration);
+  };
 
   const showAlert = (
     message: string,
@@ -83,8 +93,15 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   return (
-    <AlertContext.Provider value={{ showAlert, showConfirm }}>
+    <AlertContext.Provider value={{ showAlert, showToast, showConfirm }}>
       {children}
+
+      {toastMessage && (
+        <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[10005] bg-[#c0c0c0] w95-border w95-shadow px-4 py-2 font-tahoma text-xs text-black flex items-center gap-2 select-none shadow-xl pointer-events-none">
+          <span className="text-emerald-700 font-bold">✓</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {alertState && alertState.isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px] select-none p-4">
@@ -147,10 +164,14 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   );
 };
 
+const fallbackAlertContext: AlertContextType = {
+  showAlert: () => {},
+  showToast: () => {},
+  showConfirm: () => Promise.resolve(false)
+};
+
 export const useAlert = (): AlertContextType => {
   const context = useContext(AlertContext);
-  if (!context) {
-    throw new Error('useAlert must be used within an AlertProvider');
-  }
-  return context;
+  return context || fallbackAlertContext;
 };
+

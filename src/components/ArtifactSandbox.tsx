@@ -361,7 +361,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                   className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-0.5 rounded font-bold flex items-center gap-1"
                 >
                   <Network size={11} />
-                  <span>Lineage DAG</span>
+                  <span>Fork family tree</span>
                 </button>
               </div>
             </div>
@@ -558,7 +558,14 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm"
             >
               <CreditCard size={12} />
-              <span>Register License (${typeof app.price === 'number' ? app.price : (parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15)})</span>
+              <span>
+                {(() => {
+                  const numPrice = typeof app.price === 'number'
+                    ? app.price
+                    : (app.price && String(app.price).replace(/[^0-9.]/g, '') ? parseFloat(String(app.price).replace(/[^0-9.]/g, '')) : null);
+                  return numPrice !== null && !isNaN(numPrice) ? `Buy for $${numPrice}` : 'Buy';
+                })()}
+              </span>
             </button>
           )}
           {hasActiveDeployment && authoritativeLiveUrl ? (
@@ -599,8 +606,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
       </div>
 
       {showLineageModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-lg w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-lg w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4 pointer-events-auto">
             <div className="flex items-center justify-between border-b border-slate-700 pb-3">
               <div className="flex items-center gap-2">
                 <Network size={16} className="text-amber-400" />

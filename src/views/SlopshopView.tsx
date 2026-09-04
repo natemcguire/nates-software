@@ -23,7 +23,7 @@ import '@xterm/xterm/css/xterm.css';
 export interface SlopshopViewProps {
   onOpenApp?: (appId: string) => void;
   onOpenTerminal?: () => void;
-  onOpenGitsmith?: () => void;
+  onOpenGitsmith?: (repoSlug?: string) => void;
   onOpenHotwire?: () => void;
   onOpenWhitePapers?: () => void;
 }

@@ -71,7 +71,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 }) => {
   const { user, openAuthModal } = useAuth();
   const { refreshCatalog } = useCatalog();
-  const { showAlert } = useAlert();
+  const { showAlert, showToast } = useAlert();
 
   const [isForking, setIsForking] = useState(false);
   const [forkError, setForkError] = useState<string | null>(null);
@@ -105,7 +105,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
     navigator.clipboard.writeText(getCliCommand());
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
-    showAlert(`CLI command copied: ${getCliCommand()}`, "Command Copied", "success");
+    showToast(`CLI command copied: ${getCliCommand()}`);
   };
 
   const handleRealFork = async () => {
@@ -175,8 +175,8 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4 font-tahoma text-xs">
-      <div className="w-full max-w-xl bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center pointer-events-none select-none p-4 font-tahoma text-xs">
+      <div className="w-full max-w-xl bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1 pointer-events-auto">
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5">
             <Bot size={13} className="text-yellow-300" />

@@ -340,8 +340,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   const artifactLinks = fulfilledOrder?.binaries ? publishedArtifactLinks(fulfilledOrder.binaries) : [];
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4 font-tahoma text-xs">
-      <div className="w-full max-w-lg bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1 max-h-[95vh] flex flex-col">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center pointer-events-none select-none p-4 font-tahoma text-xs">
+      <div className="w-full max-w-lg bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1 max-h-[95vh] flex flex-col pointer-events-auto">
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs shrink-0">
           <div className="flex items-center gap-1.5">
             <Lock size={13} className="text-yellow-300" />

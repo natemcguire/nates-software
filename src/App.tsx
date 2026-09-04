@@ -108,6 +108,7 @@ import { AccountWidget } from './components/AccountWidget';
 import { FontSizer } from './components/FontSizer';
 import { TldrButton } from './components/TldrButton';
 import { RestartOverlay } from './components/RestartOverlay';
+import { ThemeId, THEMES, getThemeStyles } from './lib/themeStyles';
 
 import { SetupWizardView } from './views/SetupWizardView';
 import { MarketingWindow } from './views/MarketingWindow';
@@ -201,6 +202,7 @@ export function AppInner() {
   const { user, isAuthenticated, authLoading, openAuthModal } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
+  const [gitsmithInitialRepo, setGitsmithInitialRepo] = useState<string | null>(null);
 
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
@@ -348,7 +350,7 @@ export function AppInner() {
         ));
       }
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
-      case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
+      case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView initialRepoSlug={urlParams?.get('repo') || gitsmithInitialRepo} />);
       case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView
           onOpenPostEditor={(app) => {
             playClickSound();
@@ -398,7 +400,7 @@ export function AppInner() {
 
   const [startMenuOpen, setStartMenuOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
+  const [theme, setTheme] = useState<ThemeId>('teal');
 
   const INTRO_EVERY_RELOAD = true;
   const INTRO_SEEN_KEY = 'nsw_intro_seen';
@@ -520,13 +522,6 @@ export function AppInner() {
       }
     }));
 
-  const bgStyles = {
-    teal: 'bg-[#008080]',
-    matrix: 'bg-[#0a140a]',
-    sunset: 'bg-[#1a102f]',
-    navy: 'bg-[#000033]'
-  };
-
   const desktopIconOpeners: Record<string, () => void> = {};
 
   return (
@@ -539,8 +534,10 @@ export function AppInner() {
         if (el.closest('.RetroWindow') || el.closest('input') || el.closest('textarea') || el.closest('a')) return;
         if (!el.closest('.desktop-icon')) openContextMenu(e, 'desktop');
       }}
-      className={`fixed inset-0 select-none overflow-hidden pb-10 transition-colors duration-500 ${bgStyles[theme]}`}
+      className="fixed inset-0 select-none overflow-hidden pb-10 transition-colors duration-500"
       style={{
+        ...getThemeStyles(theme),
+        backgroundColor: 'var(--nsw-desktop-bg, #008080)',
         backgroundImage: theme === 'teal' ? `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 1px, transparent 1px)` : undefined,
         backgroundSize: '24px 24px'
       }}
@@ -621,15 +618,10 @@ export function AppInner() {
         <FontSizer />
         <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma">
           <span className="text-gray-300 font-bold mr-1">Theme:</span>
-          {[
-            { id: 'teal', label: 'Teal 95' },
-            { id: 'matrix', label: 'Matrix' },
-            { id: 'sunset', label: 'Sunset' },
-            { id: 'navy', label: 'DOS Navy' }
-          ].map(t => (
+          {Object.values(THEMES).map(t => (
             <button
               key={t.id}
-              onClick={() => { playClickSound(); setTheme(t.id as any); }}
+              onClick={() => { playClickSound(); setTheme(t.id); }}
               className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                 theme === t.id ? 'bg-w95-blue text-white shadow-sm border border-blue-400' : 'text-gray-300 hover:text-white'
               }`}
@@ -786,7 +778,8 @@ export function AppInner() {
             onOpenTerminal={() => {
               openWindow('terminal');
             }}
-            onOpenForge={() => {
+            onOpenForge={(repoId) => {
+              if (repoId) setGitsmithInitialRepo(repoId);
               openWindow('gitsmith');
             }}
             onBrowseDrops={() => {
@@ -816,7 +809,10 @@ export function AppInner() {
             onOpenSetup={() => openWindow('setup')}
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
-            onOpenGitsmith={() => openWindow('gitsmith')}
+            onOpenGitsmith={(repoSlug?: string) => {
+              if (repoSlug) setGitsmithInitialRepo(repoSlug);
+              openWindow('gitsmith');
+            }}
             onOpenInbox={() => openWindow('inbox')}
             onOpenProfile={() => openWindow('profile')}
             onOpenWhitepapers={() => openWindow('papers')}
@@ -912,7 +908,13 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('slopshop', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('slopshop', w, h, x, y)}
         >
-          <SlopshopView onOpenWhitePapers={() => openWindow('papers')} />
+          <SlopshopView
+            onOpenWhitePapers={() => openWindow('papers')}
+            onOpenGitsmith={(repoSlug?: string) => {
+              if (repoSlug) setGitsmithInitialRepo(repoSlug);
+              openWindow('gitsmith');
+            }}
+          />
         </RetroWindow>
       </ErrorBoundary>
 
@@ -992,7 +994,12 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('profile', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('profile', w, h, x, y)}
         >
-          <ProfileView />
+          <ProfileView
+            onOpenGitsmith={(repoSlug?: string) => {
+              if (repoSlug) setGitsmithInitialRepo(repoSlug);
+              openWindow('gitsmith');
+            }}
+          />
         </RetroWindow>
       </ErrorBoundary>
 
@@ -1012,7 +1019,7 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('gitsmith', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('gitsmith', w, h, x, y)}
         >
-          <GitsmithView />
+          <GitsmithView initialRepoSlug={gitsmithInitialRepo} />
         </RetroWindow>
       </ErrorBoundary>
 

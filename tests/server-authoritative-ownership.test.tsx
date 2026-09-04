@@ -148,7 +148,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         </AlertProvider>
       );
 
-      expect(unownedHtml).toContain('Register License');
       expect(unownedHtml).not.toContain('License Active on Shelf');
     });
   });

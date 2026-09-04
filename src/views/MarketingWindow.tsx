@@ -8,7 +8,7 @@ interface MarketingWindowProps {
   onOpenSetup?: () => void;
   onOpenHotwire: () => void;
   onOpenSlopshop: () => void;
-  onOpenGitsmith: () => void;
+  onOpenGitsmith: (repoSlug?: string) => void;
   onOpenInbox: () => void;
   onOpenProfile: () => void;
   onOpenWhitepapers: () => void;

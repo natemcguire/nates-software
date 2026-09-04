@@ -69,7 +69,7 @@ export function useWindowManager(user?: AuthUser | null) {
       y: setupConfig.y,
       width: setupConfig.width,
       height: setupConfig.height,
-      zIndex: 100
+      zIndex: 10
     },
     mktg: {
       id: 'mktg',
@@ -160,7 +160,7 @@ export function useWindowManager(user?: AuthUser | null) {
       y: profileConfig.y,
       width: profileConfig.width,
       height: profileConfig.height,
-      zIndex: 17
+      zIndex: 50
     },
     gitsmith: {
       id: 'gitsmith',
@@ -224,11 +224,12 @@ export function useWindowManager(user?: AuthUser | null) {
     setActiveWindowId(id);
     setTopZ(prev => {
       const next = prev + 1;
+      const nextZ = id === 'profile' ? Math.max(next, 50) : next;
       setWindows(curr => ({
         ...curr,
-        [id]: { ...curr[id], zIndex: next, isMinimized: false }
+        [id]: { ...curr[id], zIndex: nextZ, isMinimized: false }
       }));
-      return next;
+      return nextZ;
     });
   }, []);
 

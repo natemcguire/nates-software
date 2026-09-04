@@ -5,6 +5,7 @@ import {
   LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useAlert } from '../context/AlertContext';
 import { Win95Scroll } from '../components/Win95Scroll';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import {
@@ -18,7 +19,7 @@ import {
 interface ProfileViewProps {
   initialUsername?: string;
   onOpenHotwire?: () => void;
-  onOpenGitsmith?: () => void;
+  onOpenGitsmith?: (repoSlug?: string) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -27,6 +28,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenGitsmith
 }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
+  const { showToast } = useAlert();
 
   const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'published'>('shelf');
   const [viewingUsername, setViewingUsername] = useState<string | null>(initialUsername || null);
@@ -161,9 +163,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleCopyCliToken = () => {
     if (!cliToken) return;
     playSuccessChime();
-    navigator.clipboard.writeText(cliToken);
+    navigator.clipboard.writeText(`slop login ${cliToken}`);
     setCliTokenCopied(true);
     setTimeout(() => setCliTokenCopied(false), 2500);
+    showToast('Copied: slop login <token>');
   };
 
   const loadProfileAndShelf = useCallback(async () => {
