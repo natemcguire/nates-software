@@ -329,7 +329,7 @@ describe('WAVE-UX-B Specification Tests', () => {
 
     it('falls back to generic title when logged out without hardcoding owner handle', () => {
       const html = renderToString(<TestWindowManagerConsumer user={null} />);
-      expect(html).toContain('INBOX — [Agent Mailbox · 3-Pane Async Inbox]');
+      expect(html).toContain('INBOX — [Local Agent Mailbox · 3-Pane Observer]');
       expect(html).not.toContain('nate@natesoftware');
     });
   });

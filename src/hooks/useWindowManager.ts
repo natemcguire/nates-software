@@ -56,7 +56,7 @@ export function useWindowManager(user?: AuthUser | null) {
   const getInboxTitle = (u?: AuthUser | null) =>
     u?.username
       ? `INBOX — [@${u.username}'s inbox · 3-Pane Agent Mailbox]`
-      : "INBOX — [Agent Mailbox · 3-Pane Async Inbox]";
+      : "INBOX — [Local Agent Mailbox · 3-Pane Observer]";
 
   const [windows, setWindows] = useState<Record<string, WindowState>>({
     setup: {
