@@ -408,31 +408,10 @@ export const DynoView: React.FC = () => {
       </div>
 
       <Win95Scroll className="flex-1 p-3 space-y-3">
-        <div className="bg-blue-50 border border-blue-300 p-2.5 rounded text-[11px] text-blue-950 flex items-start gap-2">
-          <ShieldCheck size={16} className="text-blue-700 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <div>
-              <strong>The LLM Dynamometer:</strong> DYNO measures Model + Harness + Tools against common developer work, completely unrelated to marketplace app runtimes.
-            </div>
-            <div className="text-[10px] text-blue-900">
-              Public <strong>Street</strong> measurements run locally via <code>./bin/slop dyno</code> and remain self-reported after upload. Only Nate-run private evaluations can receive <strong>DYNO Certified</strong>; independent replay can mark a Street run <strong>Reproduced</strong>.
-            </div>
-          </div>
+        <div className="bg-blue-50 border border-blue-300 px-2.5 py-1.5 text-[11px] text-blue-950 flex items-center gap-2">
+          <ShieldCheck size={14} className="text-blue-700 shrink-0" />
+          <span><strong>The LLM Dynamometer:</strong> Measures Model + Harness + Tools against developer tasks locally via <code>./bin/slop dyno</code>.</span>
         </div>
-
-        {!loadingVerifierStatus && verifierStatus && (
-          <div className={`border p-2.5 rounded text-[11px] flex items-start gap-2 ${
-            verifierStatus.acceptingJobs
-              ? 'bg-green-50 border-green-300 text-green-950'
-              : 'bg-amber-50 border-amber-300 text-amber-950'
-          }`}>
-            <ShieldCheck size={16} className={`shrink-0 mt-0.5 ${verifierStatus.acceptingJobs ? 'text-green-700' : 'text-amber-700'}`} />
-            <div>
-              <strong>{verifierStatus.acceptingJobs ? 'Independent verification: online.' : 'Independent verification: offline.'}</strong>{' '}
-              {verifierStatus.message}
-            </div>
-          </div>
-        )}
 
         {activeTab === 'setup' && (
           <div className="space-y-3">
@@ -798,6 +777,19 @@ export const DynoView: React.FC = () => {
                     </button>
                   )}
                 </div>
+
+                {!loadingVerifierStatus && verifierStatus && (
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 border ${
+                      verifierStatus.acceptingJobs
+                        ? 'bg-green-100 text-green-900 border-green-400'
+                        : 'bg-amber-100 text-amber-900 border-amber-400'
+                    }`}
+                    title={verifierStatus.message}
+                  >
+                    Verifier: {verifierStatus.acceptingJobs ? 'Online' : 'Offline'}
+                  </span>
+                )}
 
                 <button
                   onClick={fetchLeaderboard}
