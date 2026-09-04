@@ -4,6 +4,8 @@ import { Save, Plus, Trash2, CheckCircle2, Copy, Check, AlertTriangle } from 'lu
 import { playClickSound } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
 import { useAuth } from '../context/AuthContext';
+import { calculateAllocations } from '../lib/commerceDomain';
+import { formatCentsToUsd } from '../lib/profileDomain';
 
 export interface DropPersistResult {
   productStatus?: string;
@@ -41,6 +43,52 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const effectiveRoyaltyPercent = royaltyPercent === ''
+    ? 10
+    : Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
+  const inheritedLiens = app.inheritedLiens || [];
+  const previewGrossCents = Number.isFinite(Number(price)) && Number(price) > 0
+    ? Math.round(Number(price) * 100)
+    : null;
+  const allocationLiens = inheritedLiens.map((lien, index) => ({
+    ancestorUserId: lien.maker,
+    ancestorRepositoryId: null,
+    bps: lien.bps,
+    depth: inheritedLiens.length - index
+  }));
+  let sellerPreview = null;
+  let descendantPreview = null;
+  if (previewGrossCents) {
+    try {
+      sellerPreview = calculateAllocations({
+        grossCents: previewGrossCents,
+        currency: 'usd',
+        sellerUserId: app.author || app.creator || app.id,
+        sellerRepositoryId: app.repositoryId,
+        liens: allocationLiens
+      });
+      descendantPreview = calculateAllocations({
+        grossCents: previewGrossCents,
+        currency: 'usd',
+        sellerUserId: 'descendant',
+        liens: [
+          ...allocationLiens,
+          {
+            ancestorUserId: 'current-maker',
+            ancestorRepositoryId: app.repositoryId || null,
+            bps: Math.round(effectiveRoyaltyPercent * 100),
+            depth: 1
+          }
+        ]
+      });
+    } catch {
+      sellerPreview = null;
+      descendantPreview = null;
+    }
+  }
+  const descendantOwesMakerCents = descendantPreview?.allocations.find(
+    allocation => allocation.role === 'ancestor' && allocation.recipientUserId === 'current-maker'
+  )?.amountCents ?? 0;
 
   const handleCopy = (text: string, index: number) => {
     playClickSound();
@@ -73,10 +121,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
       try {
         setIsSaving(true);
 
-        const clampedRoyaltyPercent = royaltyPercent === ''
-          ? 10
-          : Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
-        const royaltyBps = Math.round(clampedRoyaltyPercent * 100);
+        const royaltyBps = Math.round(effectiveRoyaltyPercent * 100);
 
         const updated: AppListing = {
           ...app,
@@ -490,14 +535,38 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
 
             <div className="bg-blue-50 border-2 border-w95-blue p-3.5 rounded space-y-2 text-xs">
               <div className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
-                <CheckCircle2 size={16} className="text-green-700" /> What you earn:
+                <CheckCircle2 size={16} className="text-green-700" /> Sale receipt preview
               </div>
-              <p className="text-gray-700 leading-relaxed">
-                On a <b>${Math.max(0, Number(price) || 0).toFixed(0)}</b> sale of your own app, you keep{' '}
-                <b className="text-green-800">${(Math.max(0, Number(price) || 0) * 0.9).toFixed(2)}</b> (the platform takes a flat 10%).
-                When someone forks it and sells their version, you earn{' '}
-                <b className="text-w95-blue">{royaltyPercent === '' ? 10 : Math.max(0, Math.min(100, Number(royaltyPercent) || 0))}%</b> of that sale —{' '}
-                and a fork-of-a-fork still pays you, frozen at the rate above. It deposits to your connected Stripe account automatically.
+              {sellerPreview && previewGrossCents ? (
+                <div className="bg-white border border-blue-300 p-2.5 font-mono space-y-1">
+                  <div className="flex justify-between gap-3 border-b border-dotted border-gray-300 pb-1 font-bold">
+                    <span>Listing price</span>
+                    <span>{formatCentsToUsd(previewGrossCents)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Platform</span>
+                    <span>{formatCentsToUsd(sellerPreview.platformCents)}</span>
+                  </div>
+                  {sellerPreview.allocations.filter(allocation => allocation.role === 'ancestor').map(allocation => (
+                    <div key={allocation.sequence} className="flex justify-between gap-3">
+                      <span>Upstream @{allocation.recipientUserId}</span>
+                      <span>{formatCentsToUsd(allocation.amountCents)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-3 border-t border-gray-500 pt-1 font-bold text-green-800">
+                    <span>You</span>
+                    <span>{formatCentsToUsd(sellerPreview.sellerCents)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-blue-300 pt-1 mt-1 text-w95-blue font-bold">
+                    <span>What a fork of you would owe you at this price</span>
+                    <span>{formatCentsToUsd(descendantOwesMakerCents)}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-amber-800">Enter a valid listing price and royalty stack to preview the receipt.</p>
+              )}
+              <p className="text-gray-600 leading-relaxed">
+                The receipt uses the same allocation function as checkout. Every frozen royalty is settled from the after-platform remainder.
               </p>
             </div>
           </div>

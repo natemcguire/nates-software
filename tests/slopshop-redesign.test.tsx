@@ -247,17 +247,11 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
     expect(priceModalBlock).toMatch(/Your royalty when someone forks (&amp;|&) ?resells/i);
   });
 
-  it('source: royalty percent is converted to clamped integer basis points before publishing', () => {
-    const derivationMatch = componentSource.match(
-      /const pct = Number\(publishRoyaltyPct\);\s*\n\s*const royaltyBps = [^\n]+/
-    );
-    expect(derivationMatch, 'royaltyBps derivation from publishRoyaltyPct should be present').toBeTruthy();
-    const derivation = derivationMatch![0];
-
-    expect(derivation).toContain('Math.round(');
-    expect(derivation).toContain('* 100');
-    expect(derivation).toMatch(/Math\.min\(10000/);
-    expect(derivation).toMatch(/Math\.max\(0/);
+  it('source: royalty percent defaults empty input to ten while preserving explicit zero and remaining headroom', () => {
+    expect(componentSource).toContain("publishRoyaltyPct.trim() === '' ? 10 : Number(publishRoyaltyPct)");
+    expect(componentSource).toContain('Math.min(\n      publishRoyaltyHeadroomPercent');
+    expect(componentSource).toContain('Math.max(\n    0');
+    expect(componentSource).toContain('Math.round(effectivePublishRoyaltyPercent * 100)');
   });
 
   it('source: Save/Publish wires a real authenticated POST to /api/drops with royaltyBps and the required publish fields', () => {
@@ -301,16 +295,18 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
     expect(idx2, '/api/drops fetch call should exist in source').toBeGreaterThan(-1);
   });
 
-  it('source: the price-modal split preview uses the additive model (platform 10% + own royalty rate), not fixed 70/20/10', () => {
+  it('source: the price-modal split preview renders the canonical allocation receipt', () => {
     const priceModalMatch = componentSource.match(
       /\{modalType === 'price' &&[\s\S]*?\n {6}\)\}/
     );
     expect(priceModalMatch, 'price modal JSX block should be present').toBeTruthy();
     const priceModalBlock = priceModalMatch![0];
 
-    expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.1\b/);
-    expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.9\b/);
-    expect(priceModalBlock).toMatch(/publishRoyaltyPct/);
+    expect(componentSource).toContain("import { calculateAllocations } from '../lib/commerceDomain'");
+    expect(componentSource).toContain('publishForkReceipt = calculateAllocations({');
+    expect(priceModalBlock).toContain('publishForkReceipt.platformCents');
+    expect(priceModalBlock).toContain('publishForkReceipt.allocations');
+    expect(priceModalBlock).toContain('publishForkReceipt.sellerCents');
 
     expect(priceModalBlock).not.toMatch(/\*\s*0\.7\b/);
     expect(priceModalBlock).not.toMatch(/\*\s*0\.2\b/);
