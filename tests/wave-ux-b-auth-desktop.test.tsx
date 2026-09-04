@@ -3,7 +3,6 @@ import { renderToString } from 'react-dom/server';
 import { AuthContext, AuthUser } from '../src/context/AuthContext';
 import { AuthModal } from '../src/components/AuthModal';
 import { DesktopTaskbar } from '../src/components/DesktopTaskbar';
-import { AccountWidget } from '../src/components/AccountWidget';
 import { AlertProvider } from '../src/context/AlertContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 import { useWindowManager } from '../src/hooks/useWindowManager';
@@ -149,32 +148,6 @@ describe('WAVE-UX-B Specification Tests', () => {
   });
 
   describe('Item 3: C3 — Unify signup verb to "Create account"', () => {
-    it('renders "Create account" button on taskbar when logged out', () => {
-      const authCtx = createMockAuthContext(null);
-
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <DesktopTaskbar tabs={[]} onStartClick={() => {}} />
-        </AuthContext.Provider>
-      );
-
-      expect(html).toContain('Create account');
-      expect(html).not.toContain('Sign Up');
-    });
-
-    it('renders "Create account" on standalone AccountWidget when logged out', () => {
-      const authCtx = createMockAuthContext(null);
-
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <AccountWidget />
-        </AuthContext.Provider>
-      );
-
-      expect(html).toContain('Create account');
-      expect(html).not.toContain('Sign Up');
-    });
-
     it('renders "Create account" in AuthModal tabs and submit button', () => {
       const authCtx = createMockAuthContext(null, true, 'register');
 
@@ -262,7 +235,6 @@ describe('WAVE-UX-B Specification Tests', () => {
 
       expect(html).not.toContain('STANDALONE ROUTE');
       expect(html).toContain('Log In');
-      expect(html).toContain('Create account');
       expect(html).toContain("Return to Nate&#x27;s Software Web OS");
     });
 

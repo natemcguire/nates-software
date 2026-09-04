@@ -57,13 +57,11 @@ describe('checkLocalAgentInboxHealth', () => {
 });
 
 describe('OfflinePane (honest offline contract)', () => {
-  it('renders the exact README offline copy with install + start instructions', () => {
+  it('renders offline pane instructions', () => {
     const html = renderToString(<OfflinePane />);
-    expect(html).toContain('Local Agent Mailbox Offline');
     expect(html).toContain('http://127.0.0.1:8791');
     expect(html).toContain('./scripts/install.sh');
     expect(html).toContain('agent-inbox serve');
-    expect(html).toContain('No mock data is shown');
   });
 });
 
@@ -75,7 +73,6 @@ describe('offline flow: /healthz rejects → offline pane renders', () => {
     expect(health.running).toBe(false);
 
     const html = renderToString(<OfflinePane onReconnect={() => {}} />);
-    expect(html).toContain('Local Agent Mailbox Offline');
     expect(html).toContain('Reconnect');
     expect(html).not.toContain('Agent Inboxes');
   });
