@@ -67,7 +67,17 @@ export const onRequestGet = async ({ params, env }: { params: any; env: any }) =
             headers: {
               'Content-Type': mediaType,
               'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400',
-              'ETag': object.httpEtag || `"${listing.activeDeploymentId}-${assetPath}"`
+              'ETag': object.httpEtag || `"${listing.activeDeploymentId}-${assetPath}"`,
+              // Untrusted maker deployment. It may run its own bundled JS, but it must
+              // not exfiltrate to arbitrary hosts, be reused as a first-party resource,
+              // or share a browsing context with the marketplace shell. The host-only
+              // session cookie already keeps the marketplace token off tenant subdomains.
+              'X-Content-Type-Options': 'nosniff',
+              'Content-Security-Policy':
+                "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+                "connect-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'none'",
+              'Cross-Origin-Resource-Policy': 'same-origin',
+              'Cross-Origin-Opener-Policy': 'same-origin'
             }
           });
         }

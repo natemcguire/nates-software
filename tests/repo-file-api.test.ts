@@ -202,7 +202,10 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       const pubRepo = createCommittedRepo(pubStorageKey, {
         'spec.md': sampleMarkdown,
         'business.md': '# Business Model\n\nUp to 50% revenue share for contributors.',
-        'screenshots/hero.png': samplePngBuffer
+        'screenshots/hero.png': samplePngBuffer,
+        'payload.html': '<script>document.title=document.cookie</script>',
+        'evil.js': 'fetch("/api/profile")',
+        'logo.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
       });
       publicCommitOid = pubRepo.commitOid;
 
@@ -242,6 +245,21 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       expect(res.headers.get('Content-Type')).toContain('text/markdown');
       const text = await res.text();
       expect(text).toBe(sampleMarkdown);
+    });
+
+    it('downgrades executable maker source (html/js/svg) to inert text/plain with a sandbox CSP (NSW-133)', async () => {
+      for (const path of ['payload.html', 'evil.js', 'logo.svg']) {
+        const req = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=${path}`);
+        const res = await repoFileApi.onRequestGet({ request: req, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
+        expect(res.status, path).toBe(200);
+        // Never served with an executable content-type on the marketplace origin.
+        expect(res.headers.get('Content-Type'), path).toContain('text/plain');
+        expect(res.headers.get('Content-Type'), path).not.toContain('text/html');
+        expect(res.headers.get('Content-Type'), path).not.toContain('javascript');
+        expect(res.headers.get('Content-Type'), path).not.toContain('svg');
+        expect(res.headers.get('X-Content-Type-Options'), path).toBe('nosniff');
+        expect(res.headers.get('Content-Security-Policy'), path).toContain('sandbox');
+      }
     });
 
     it('successfully serves screenshots/hero.png with image/png Content-Type from public repo', async () => {

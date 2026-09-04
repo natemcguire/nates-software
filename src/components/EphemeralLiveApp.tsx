@@ -141,7 +141,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
 
         <div className="flex items-center gap-3 font-mono text-[11px]">
           {getStatusBadge(deploymentState)}
-          {isVerifiedActive && liveUrl && (
+          {hasRunnableDeployment && liveUrl && (
             <a
               href={liveUrl}
               target="_blank"
@@ -157,13 +157,15 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
       </div>
 
       <div className="flex-1 bg-white overflow-hidden flex flex-col">
-        {isVerifiedActive && liveUrl ? (
+        {hasRunnableDeployment && liveUrl ? (
           <div className="flex-1 bg-white relative">
             <iframe
               src={liveUrl}
               title={app.name}
               className="w-full h-full border-0 absolute inset-0"
               allow="autoplay; fullscreen"
+              sandbox="allow-scripts allow-forms allow-popups allow-pointer-lock allow-modals"
+              referrerPolicy="no-referrer"
             />
           </div>
         ) : (

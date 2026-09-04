@@ -40,6 +40,22 @@ function getMimeType(filePath: string): string {
   return 'application/octet-stream';
 }
 
+// This endpoint returns UNTRUSTED maker source to the marketplace origin. Content-types
+// a browser would EXECUTE as script/markup (HTML, JS, SVG, XML) must be downgraded to
+// text/plain so the code browser shows them as source and the browser never runs them.
+// Inert text types (markdown, plain, json, css, yaml) and raster images keep their real
+// type — none of them execute script in a browser.
+const EXECUTABLE_MIME = new Set([
+  'text/html', 'application/xhtml+xml', 'text/javascript', 'application/javascript',
+  'application/ecmascript', 'text/ecmascript', 'image/svg+xml', 'application/xml', 'text/xml'
+]);
+
+function renderSafeContentType(mime: string): string {
+  return EXECUTABLE_MIME.has(mime.split(';')[0].trim().toLowerCase())
+    ? 'text/plain; charset=utf-8'
+    : mime;
+}
+
 function jsonError(error: string, status: number): Response {
   return new Response(JSON.stringify({ success: false, error }), {
     status,
@@ -377,18 +393,26 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError('File size exceeds maximum allowed limit', 413);
     }
 
-    const contentType = getMimeType(filePath);
+    const rawMime = getMimeType(filePath);
+    const contentType = renderSafeContentType(rawMime);
+    const wasDowngraded = contentType !== rawMime;
 
-    return new Response(fileBytes, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(fileBytes.length),
-        'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
-        'X-Content-Type-Options': 'nosniff',
-        'X-Gitsmith-Commit-Oid': targetCommitOid
-      }
-    });
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'Content-Length': String(fileBytes.length),
+      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+      'X-Content-Type-Options': 'nosniff',
+      // Defense in depth: untrusted maker source must never execute as the
+      // marketplace origin. Neutralize any script/markup regardless of type.
+      'Content-Security-Policy': "default-src 'none'; sandbox; frame-ancestors 'self'",
+      'X-Gitsmith-Commit-Oid': targetCommitOid
+    };
+    if (wasDowngraded) {
+      // A file that would otherwise execute (html/js/svg/xml) is served as inert text.
+      headers['Content-Disposition'] = 'inline';
+    }
+
+    return new Response(fileBytes, { status: 200, headers });
   } catch (err: any) {
     console.error('Unhandled repo-file proxy error:', sanitizeLogMessage(err, [env?.GITSMITH_GATEWAY_TOKEN]));
     return jsonError('Internal server error', 500);
