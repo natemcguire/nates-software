@@ -1,4 +1,5 @@
 import { getAwsCredentials, createEcrRepository, DEFAULT_AWS_ACCOUNT_ID } from './_aws';
+import { requireAuth } from './_auth';
 
 interface ProductReadiness {
   appId: string;
@@ -183,6 +184,32 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const includeDeploy = ['1', 'true'].includes((url.searchParams.get('deploy') || '').trim().toLowerCase());
 
     if (appId) {
+      if (includeDeploy) {
+        const auth = await requireAuth(request, env);
+        if (auth.errorResponse || !auth.user) {
+          return auth.errorResponse || Response.json(
+            { success: false, error: 'Authentication required' },
+            { status: 401 }
+          );
+        }
+
+        const listing: any = await env.DB.prepare(`
+          SELECT creator_id AS creatorId FROM app_listings WHERE id = ?
+        `).bind(appId).first();
+        if (!listing) {
+          return Response.json(
+            { success: false, error: `Application '${appId}' not found in catalog` },
+            { status: 404 }
+          );
+        }
+        if (listing.creatorId !== auth.user.id && auth.user.role !== 'super_admin') {
+          return Response.json(
+            { success: false, error: 'Forbidden: you do not own this application listing' },
+            { status: 403 }
+          );
+        }
+      }
+
       const readiness = await buildReadiness(env.DB, appId);
       if (includeDeploy) {
         readiness.deploy = await buildDeployReadiness(env.DB, env, appId, readiness.repository.active);

@@ -264,6 +264,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return json({ success: false, error: `Invalid appId '${appId}': must match ^[a-z0-9][a-z0-9-]{0,62}$` }, 400);
     }
 
+    const auth = await requireAuth(request, env);
+    if (auth.errorResponse || !auth.user) {
+      return auth.errorResponse || json({ success: false, error: 'Authentication required' }, 401);
+    }
+
     const listing = await env.DB.prepare(`
       SELECT 
         a.id, a.name, a.version, a.creator_id AS creatorId, a.listing_status AS listingStatus,
@@ -288,6 +293,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     if (!listing) {
       return json({ success: false, error: `Application '${appId}' not found in catalog` }, 404);
+    }
+
+    if (listing.creatorId !== auth.user.id && auth.user.role !== 'super_admin') {
+      return json({ success: false, error: 'Forbidden: you do not own this application listing' }, 403);
     }
 
     const isCurrentlyActive = listing.deploymentState === 'active' && Boolean(listing.activeDeploymentId && listing.revisionStatus === 'healthy');
