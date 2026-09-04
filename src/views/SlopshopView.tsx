@@ -17,6 +17,7 @@ import {
 } from '../lib/slopshopDomain';
 import { createRigInstance } from '../lib/rigClient';
 import { Win95Scroll } from '../components/Win95Scroll';
+import { DollarBillReceipt } from '../components/DollarBillReceipt';
 import type { RigSpec } from '../lib/rigDomain';
 import { calculateAllocations } from '../lib/commerceDomain';
 import { formatCentsToUsd } from '../lib/profileDomain';
@@ -1502,26 +1503,15 @@ This panel shows the real "slop publish" command and the revenue split it would 
                 </div>
               </div>
               {publishForkReceipt && publishGrossCents ? (
-                <div className="text-[11px] text-[#555] bg-white border border-[#808080] p-2 font-mono space-y-1">
-                  <div className="flex justify-between font-bold border-b border-dotted border-gray-400 pb-1">
-                    <span>A fork sells at</span>
-                    <span>{formatCentsToUsd(publishGrossCents)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Platform</span>
-                    <span>{formatCentsToUsd(publishForkReceipt.platformCents)}</span>
-                  </div>
-                  {publishForkReceipt.allocations.filter(allocation => allocation.role === 'ancestor').map(allocation => (
-                    <div key={allocation.sequence} className="flex justify-between">
-                      <span>{allocation.recipientUserId === 'current-maker' ? 'You' : `Upstream @${allocation.recipientUserId}`}</span>
-                      <span>{formatCentsToUsd(allocation.amountCents)}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between font-bold border-t border-gray-500 pt-1">
-                    <span>Fork seller keeps</span>
-                    <span>{formatCentsToUsd(publishForkReceipt.sellerCents)}</span>
-                  </div>
-                </div>
+                <DollarBillReceipt
+                  grossCents={publishGrossCents}
+                  result={publishForkReceipt}
+                  makerLabel="You"
+                  resolveUpstreamLabel={(id) => (id && id !== 'current-maker' ? `@${id}` : 'Upstream maker')}
+                  title={`If your listing sells at ${formatCentsToUsd(publishGrossCents)}`}
+                  note="Live preview from the settlement engine. Adjust the price above to see the split change."
+                  compact
+                />
               ) : (
                 <div className="text-[11px] text-amber-800 bg-white border border-[#808080] p-2">
                   Enter a valid price to see the money consequence.

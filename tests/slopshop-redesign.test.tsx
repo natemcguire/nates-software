@@ -304,9 +304,9 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
 
     expect(componentSource).toContain("import { calculateAllocations } from '../lib/commerceDomain'");
     expect(componentSource).toContain('publishForkReceipt = calculateAllocations({');
-    expect(priceModalBlock).toContain('publishForkReceipt.platformCents');
-    expect(priceModalBlock).toContain('publishForkReceipt.allocations');
-    expect(priceModalBlock).toContain('publishForkReceipt.sellerCents');
+    expect(componentSource).toContain("import { DollarBillReceipt } from '../components/DollarBillReceipt'");
+    expect(priceModalBlock).toContain('<DollarBillReceipt');
+    expect(priceModalBlock).toContain('result={publishForkReceipt}');
 
     expect(priceModalBlock).not.toMatch(/\*\s*0\.7\b/);
     expect(priceModalBlock).not.toMatch(/\*\s*0\.2\b/);
