@@ -867,13 +867,11 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           </button>
         </div>
       ) : canonicalRepositories.length > 0 ? null : (
-        <div className={`${canonicalLoadState === 'error' ? 'bg-[#f8d7da] border-[#f5c6cb] text-[#721c24]' : 'bg-[#ece9d8] border-[#808080] text-gray-700'} border-b px-3 py-1.5 text-[11px] font-mono`}>
-          {canonicalLoadState === 'loading'
-            ? 'LOADING FORGE…'
-            : canonicalLoadState === 'error'
-              ? "FORGE UNAVAILABLE — Couldn't reach the forge. Retry before creating or forking."
-              : 'NO REPOSITORIES FOUND — Create your first repository or open the demo gallery.'}
-        </div>
+        canonicalLoadState === 'loading' ? (
+          <div className="bg-[#ece9d8] border-b border-[#808080] text-gray-700 px-3 py-1 text-[11px] font-mono">
+            LOADING FORGE…
+          </div>
+        ) : null
       )}
       <div className="flex-1 flex overflow-hidden">
         <div 
@@ -927,12 +925,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <Win95Scroll className="flex-1 divide-y divide-[#d0d0d0] bg-white win95-field">
             {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
               <div className="p-4 space-y-3 text-gray-700">
-                <p className="font-bold text-black">No repositories to show.</p>
-                <p className="text-[11px] leading-relaxed text-gray-600">
-                  {canonicalLoadState === 'error'
-                    ? "Couldn't reach the forge — retry before creating or forking."
-                    : user ? 'Create a repository to start hosting your code.' : 'Sign in to create a repository, or explore the demo gallery.'}
-                </p>
+                <p className="font-bold text-black text-xs">No repositories to show.</p>
                 <button
                   type="button"
                   onClick={() => {

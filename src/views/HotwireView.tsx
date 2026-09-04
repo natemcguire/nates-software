@@ -243,7 +243,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         </div>
       </div>
 
-      {catalogError && (
+      {catalogError && apps.length > 0 && (
         <div className="bg-amber-100 border-b-2 border-amber-400 px-3 py-1.5 flex items-center justify-between text-amber-900 font-mono text-[11px]">
           <span className="flex items-center gap-1.5">⚠️ {humanizeCatalogError(catalogError)}</span>
           <button

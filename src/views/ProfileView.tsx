@@ -378,14 +378,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="bg-gradient-to-r from-w95-blue via-blue-900 to-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <div className="text-3xl bg-white p-1 border border-gray-400 text-black">👤</div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base">Guest Session</span>
-                <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 font-mono border border-amber-800">
-                  ● NOT SIGNED IN
-                </span>
-              </div>
-              <p className="text-blue-100 text-xs mt-0.5">Sign in to see your shelf, your SSH keys, and what you've earned.</p>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-base">Guest Session</span>
+              <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 font-mono border border-amber-800">
+                ● NOT SIGNED IN
+              </span>
             </div>
           </div>
         </div>

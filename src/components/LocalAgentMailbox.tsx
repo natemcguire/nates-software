@@ -124,16 +124,15 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
     <div className="flex-1 flex flex-col items-center justify-center p-6 font-tahoma text-xs">
       <div className="w-full max-w-md border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0]">
         <div className="bg-w95-blue text-white px-2 py-1 font-bold flex items-center gap-1.5">
-          <AlertTriangle size={13} /> Local Agent Mailbox Offline
+          <AlertTriangle size={13} /> Local Agent Mailbox
         </div>
         <div className="p-4 space-y-3 text-gray-800 bg-white border border-gray-500 m-1">
           <p className="leading-relaxed">
-            Could not reach the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
+            Start the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
             <span className="font-mono bg-gray-100 border border-gray-300 px-1">
               http://127.0.0.1:8791
-            </span>
-            . Either it is not running, or your browser is blocking local-network
-            access from this site (grant it when prompted, then Reconnect).
+            </span>{' '}
+            to inspect inter-agent mail:
           </p>
 
           <div className="space-y-1">
