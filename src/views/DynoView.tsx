@@ -362,15 +362,9 @@ export const DynoView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
-      <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+      <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
+        <div className="flex items-center gap-2 px-1">
           <Gauge size={18} className="text-yellow-400" />
-          <div>
-            <div className="font-bold text-sm text-yellow-300 font-mono">DYNO — LLM DYNAMOMETER</div>
-            <div className="text-[10px] text-gray-300 font-sans">
-              Model + Harness + Tools measured under real developer load
-            </div>
-          </div>
         </div>
 
         <div className="flex gap-1 font-sans flex-wrap">
