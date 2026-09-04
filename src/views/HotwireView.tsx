@@ -366,20 +366,22 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
       </div>
 
       <Win95Scroll className="flex-1 win95-field bg-white border border-gray-600">
-        <div className="grid grid-cols-[28px_1fr_120px_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
-          <span className="text-right">#</span>
-          <span>App · repo</span>
-          <span>Maker</span>
-          <span className="text-right">Votes</span>
-        </div>
+        {apps.length > 0 && (
+          <div className="grid grid-cols-[28px_1fr_120px_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
+            <span className="text-right">#</span>
+            <span>App · repo</span>
+            <span>Maker</span>
+            <span className="text-right">Votes</span>
+          </div>
+        )}
 
         {isLoading && appCount === 0 ? (
-          <div className="p-8 text-center space-y-2">
+          <div className="min-h-full flex flex-col items-center justify-center p-8 text-center space-y-2">
             <div className="text-2xl animate-spin">⏳</div>
             <div className="font-bold text-xs text-slate-700">Connecting to the live library index...</div>
           </div>
         ) : apps.length === 0 ? (
-          <div className="p-8 text-center space-y-2">
+          <div className="min-h-full flex flex-col items-center justify-center p-8 text-center space-y-2">
             <div className="text-2xl">📚</div>
             <div className="font-bold text-xs text-slate-700">
               {searchQuery.trim() ? 'No apps found' : isAuthoritativeLive ? 'The library is empty' : 'Library unavailable'}
