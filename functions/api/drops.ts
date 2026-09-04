@@ -367,9 +367,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     let linkedRepositoryId: string | null = null;
-    let repositoryHasCommit = false;
     try {
-      
+
       const repoRecord = await env.DB.prepare(`
         SELECT r.id, rf.commit_oid AS defaultCommitOid
         FROM repositories r
@@ -380,7 +379,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         linkedRepositoryId = repoRecord.id;
         if (repoRecord.defaultCommitOid) {
           initialDeploymentState = 'source_ready';
-          repositoryHasCommit = true;
         }
       }
     } catch {}
@@ -389,30 +387,60 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ? `No deployable revision exists for ${name.trim()}. Source has not been imported into GITSMITH and built by RIG.`
       : null;
 
-    
-    
-    
-    
+
+
+
+
+
+
+
+    let repositoryHasProvenBuild = false;
+    try {
+      if (linkedRepositoryId) {
+
+
+        const existingDeploymentStateRow = await env.DB.prepare(
+          `SELECT deployment_state AS deploymentState FROM app_listings WHERE id = ?`
+        ).bind(dropId).first();
+        const hasDeployableListingState = Boolean(
+          existingDeploymentStateRow &&
+          ['deployable', 'active'].includes((existingDeploymentStateRow as any).deploymentState)
+        );
+
+
+        const healthyRevisionRow = hasDeployableListingState
+          ? null
+          : await env.DB.prepare(
+              `SELECT id FROM deployment_revisions WHERE repository_id = ? AND status = 'healthy' LIMIT 1`
+            ).bind(linkedRepositoryId).first();
+
+        repositoryHasProvenBuild = hasDeployableListingState || Boolean(healthyRevisionRow);
+      }
+    } catch {}
+
+
     
     
     let newRepositoryStmt: any = null;
+    let newRepositoryMemberStmt: any = null;
+    let newRepositoryOutboxStmt: any = null;
     let newRepositoryId: string | null = null;
     if (!linkedRepositoryId) {
       newRepositoryId = `repo_${crypto.randomUUID()}`;
-      
-      
-      
+
+
+
       const baseSlug = (dropId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'drop')
         .slice(0, 80) + '-' + newRepositoryId.slice(-8);
       const storageKey = buildRepositoryStorageKey(newRepositoryId);
-      
-      
-      
-      
-      
-      
-      
-      
+
+
+
+
+
+
+
+
       newRepositoryStmt = env.DB.prepare(`
         INSERT INTO repositories (
           id, app_id, owner_user_id, slug, visibility, object_format,
@@ -421,9 +449,38 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         SELECT ?, ?, ?, ?, 'public', 'sha1', 'refs/heads/main', ?, 'provisioning', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         WHERE EXISTS (SELECT 1 FROM app_listings WHERE id = ? AND creator_id = ?)
       `).bind(newRepositoryId, dropId, creatorId, baseSlug, storageKey, dropId, creatorId);
+
+
+
+      newRepositoryMemberStmt = env.DB.prepare(`
+        INSERT INTO repository_members (repository_id, user_id, role, granted_by_user_id, created_at)
+        SELECT ?, ?, 'owner', ?, CURRENT_TIMESTAMP
+        WHERE EXISTS (SELECT 1 FROM app_listings WHERE id = ? AND creator_id = ?)
+      `).bind(newRepositoryId, creatorId, creatorId, dropId, creatorId);
+
+
+
+      const newRepositoryOutboxEventId = `evt_${crypto.randomUUID()}`;
+      const newRepositoryOutboxPayload = JSON.stringify({
+        repositoryId: newRepositoryId,
+        ownerUserId: creatorId,
+        slug: baseSlug,
+        visibility: 'public',
+        objectFormat: 'sha1',
+        defaultRef: 'refs/heads/main',
+        storageKey,
+        status: 'provisioning',
+        appId: dropId
+      });
+      newRepositoryOutboxStmt = env.DB.prepare(`
+        INSERT INTO forge_outbox_events (id, aggregate_type, aggregate_id, event_type, payload, attempts, created_at)
+        SELECT ?, 'repository', ?, 'repository.provisioning_requested', ?, 0, CURRENT_TIMESTAMP
+        WHERE EXISTS (SELECT 1 FROM app_listings WHERE id = ? AND creator_id = ?)
+      `).bind(newRepositoryOutboxEventId, newRepositoryId, newRepositoryOutboxPayload, dropId, creatorId);
+
       linkedRepositoryId = newRepositoryId;
-      
-      
+
+
     }
 
     
@@ -529,7 +586,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     
     const productPriceCents = priceValidation.priceCents;
-    const honestProductStatus = repositoryHasCommit ? 'active' : 'draft';
+    // NSW-50: commerce_products.status may be 'active' only when there is real build+run
+    // evidence for the repository — a bare commit (initialDeploymentState = 'source_ready')
+    // is NOT sufficient proof and must stay 'draft' (visible + forkable, not purchasable).
+    // Evidence signal chosen from the data model (see migrations 0006 + 0022):
+    //   1) app_listings.deployment_state already IN ('deployable', 'active') — the RIG pipeline
+    //      only ever advances a listing to these states after a real build+deploy succeeded, or
+    //   2) a deployment_revisions row for this repository with status = 'healthy' — the terminal
+    //      "queued -> deploying -> healthy" success state in that table's own CHECK constraint;
+    //      there is no separate 'promoted'/'verified' literal in the schema, so 'healthy' is the
+    //      most authoritative "proven to build and run" signal deployment_revisions supports.
+    const honestProductStatus = repositoryHasProvenBuild ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
       INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
       SELECT id, ?, creator_id, ?, 'usd', ?, ?
@@ -552,6 +619,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     const statements: any[] = [listingStmt];
     if (newRepositoryStmt) statements.push(newRepositoryStmt);
+    if (newRepositoryMemberStmt) statements.push(newRepositoryMemberStmt);
+    if (newRepositoryOutboxStmt) statements.push(newRepositoryOutboxStmt);
     if (linkRepositoryToListingStmt) statements.push(linkRepositoryToListingStmt);
     statements.push(productStmt);
 

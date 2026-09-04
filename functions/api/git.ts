@@ -1724,6 +1724,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const refVal = validateGitRef(defaultRef);
     if (!refVal.valid) return failure(refVal.error!, 400);
 
+    if (appId) {
+      const appListing = await db.prepare(`SELECT id FROM app_listings WHERE id = ?`).bind(appId).first();
+      if (!appListing) {
+        return failure(`Unknown appId '${appId}' — publish the listing first or omit appId`, 400);
+      }
+    }
+
     try {
       const existing = await db.prepare(`
         SELECT id, app_id AS appId, owner_user_id AS ownerUserId, slug,
