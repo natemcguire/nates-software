@@ -4,39 +4,76 @@ import { checkAppResalePolicy } from '../_resalePolicy';
 
 type PaymentIntentRecoveryResult =
   | { ok: true; paymentIntentId: string; clientSecret: string }
-  | { ok: false; status: number; error: string; retryAfter?: string };
+  | { ok: false; status: number; error: string; failureCode: string; definitive: boolean; stripeStatus?: number; retryAfter?: string };
 
-async function recoverOrCreatePaymentIntent(params: {
-  env: any;
+type PaymentIntentRequest = {
   orderId: string;
   grossCents: number;
   currency: string;
   appId: string;
+  appName: string;
   buyerUserId: string;
   sellerUserId: string;
-  stripeSecretKey: string;
-}): Promise<PaymentIntentRecoveryResult> {
-  const { env: _env, orderId, grossCents, currency, appId, buyerUserId, sellerUserId, stripeSecretKey } = params;
+  priceVersion: number;
+  lineagePolicy: string;
+  sellerCents?: number;
+  ancestorTotalCents?: number;
+  platformCents?: number;
+};
 
+function buildPaymentIntentParams(params: PaymentIntentRequest): URLSearchParams {
   const stripeParams = new URLSearchParams();
-  stripeParams.append('amount', grossCents.toString());
-  stripeParams.append('currency', currency);
+  stripeParams.append('amount', params.grossCents.toString());
+  stripeParams.append('currency', params.currency);
+  stripeParams.append('description', `Shareware License: ${params.appName || params.appId}`);
   stripeParams.append('automatic_payment_methods[enabled]', 'true');
   stripeParams.append('automatic_payment_methods[allow_redirects]', 'never');
-  stripeParams.append('metadata[orderId]', orderId);
-  stripeParams.append('metadata[appId]', appId);
-  stripeParams.append('metadata[buyerUserId]', buyerUserId);
-  stripeParams.append('metadata[sellerUserId]', sellerUserId);
-  stripeParams.append('metadata[recovered]', 'true');
+  stripeParams.append('metadata[orderId]', params.orderId);
+  stripeParams.append('metadata[appId]', params.appId);
+  stripeParams.append('metadata[buyerUserId]', params.buyerUserId);
+  stripeParams.append('metadata[sellerUserId]', params.sellerUserId);
+  stripeParams.append('metadata[priceVersion]', params.priceVersion.toString());
+  stripeParams.append('metadata[lineagePolicy]', params.lineagePolicy);
+  if (Number.isSafeInteger(params.sellerCents)) stripeParams.append('metadata[sellerCents]', params.sellerCents!.toString());
+  if (Number.isSafeInteger(params.ancestorTotalCents)) stripeParams.append('metadata[ancestorTotalCents]', params.ancestorTotalCents!.toString());
+  if (Number.isSafeInteger(params.platformCents)) stripeParams.append('metadata[platformCents]', params.platformCents!.toString());
+  return stripeParams;
+}
+
+async function stripeFailureResult(stripeRes: Response, action: string): Promise<PaymentIntentRecoveryResult> {
+  const stripeErrData: any = await stripeRes.json().catch(() => ({}));
+  const errorMessage = stripeErrData?.error?.message || `Stripe returned status ${stripeRes.status}`;
+  const failureCode = stripeErrData?.error?.code || 'stripe_error';
+  const errorType = stripeErrData?.error?.type;
+  const definitive = stripeRes.status >= 400 && stripeRes.status < 500 &&
+    (errorType === 'card_error' || failureCode === 'card_declined');
+  return {
+    ok: false,
+    status: 502,
+    error: `Stripe PaymentIntent ${action} failed: ${errorMessage}`,
+    failureCode,
+    definitive,
+    stripeStatus: stripeRes.status,
+    retryAfter: definitive ? undefined : '2'
+  };
+}
+
+async function recoverOrCreatePaymentIntent(params: {
+  fetchImpl: typeof fetch;
+  request: PaymentIntentRequest;
+  stripeSecretKey: string;
+}): Promise<PaymentIntentRecoveryResult> {
+  const { fetchImpl, request, stripeSecretKey } = params;
+  const stripeParams = buildPaymentIntentParams(request);
 
   let stripeRes: Response;
   try {
-    stripeRes = await fetch('https://api.stripe.com/v1/payment_intents', {
+    stripeRes = await fetchImpl('https://api.stripe.com/v1/payment_intents', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${stripeSecretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Idempotency-Key': `pi_${orderId}`
+        'Idempotency-Key': `pi_${request.orderId}`
       },
       body: stripeParams.toString()
     });
@@ -46,21 +83,29 @@ async function recoverOrCreatePaymentIntent(params: {
       ok: false,
       status: 502,
       error: `Failed to connect to Stripe while recovering this order: ${networkErr?.message || 'network error'}. Retry shortly.`,
+      failureCode: 'stripe_network_error',
+      definitive: false,
       retryAfter: '2'
     };
   }
 
   if (!stripeRes.ok) {
-    const stripeErrData: any = await stripeRes.json().catch(() => ({}));
-    const errorMessage = stripeErrData?.error?.message || `Stripe returned status ${stripeRes.status}`;
+    return stripeFailureResult(stripeRes, 'creation');
+  }
+
+  let stripeData: any;
+  try {
+    stripeData = await stripeRes.json();
+  } catch {
     return {
       ok: false,
       status: 502,
-      error: `Stripe PaymentIntent recovery failed: ${errorMessage}`
+      error: 'Stripe returned an unreadable PaymentIntent response. Retry shortly.',
+      failureCode: 'invalid_stripe_payload',
+      definitive: false,
+      retryAfter: '2'
     };
   }
-
-  const stripeData = await stripeRes.json() as any;
   const paymentIntentId = stripeData.id;
   const clientSecret = stripeData.client_secret;
 
@@ -68,14 +113,93 @@ async function recoverOrCreatePaymentIntent(params: {
     return {
       ok: false,
       status: 502,
-      error: 'Stripe did not return a valid PaymentIntent ID or client secret during recovery'
+      error: 'Stripe did not return a valid PaymentIntent ID or client secret during recovery',
+      failureCode: 'invalid_stripe_payload',
+      definitive: false,
+      retryAfter: '2'
     };
   }
 
   return { ok: true, paymentIntentId, clientSecret };
 }
 
-export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
+async function retrievePaymentIntent(params: {
+  fetchImpl: typeof fetch;
+  paymentIntentId: string;
+  stripeSecretKey: string;
+}): Promise<PaymentIntentRecoveryResult> {
+  const { fetchImpl, paymentIntentId, stripeSecretKey } = params;
+  let stripeRes: Response;
+  try {
+    stripeRes = await fetchImpl(`https://api.stripe.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${stripeSecretKey}` }
+    });
+  } catch (networkErr: any) {
+    return {
+      ok: false,
+      status: 502,
+      error: `Failed to connect to Stripe while resuming this order: ${networkErr?.message || 'network error'}. Retry shortly.`,
+      failureCode: 'stripe_network_error',
+      definitive: false,
+      retryAfter: '2'
+    };
+  }
+
+  if (!stripeRes.ok) return stripeFailureResult(stripeRes, 'retrieval');
+
+  let stripeData: any;
+  try {
+    stripeData = await stripeRes.json();
+  } catch {
+    return {
+      ok: false,
+      status: 502,
+      error: 'Stripe returned an unreadable PaymentIntent response. Retry shortly.',
+      failureCode: 'invalid_stripe_payload',
+      definitive: false,
+      retryAfter: '2'
+    };
+  }
+
+  if (stripeData?.id !== paymentIntentId || !stripeData?.client_secret) {
+    return {
+      ok: false,
+      status: 502,
+      error: 'Stripe did not return a valid client secret for the persisted PaymentIntent',
+      failureCode: 'invalid_stripe_payload',
+      definitive: false,
+      retryAfter: '2'
+    };
+  }
+
+  return { ok: true, paymentIntentId, clientSecret: stripeData.client_secret };
+}
+
+async function markDefinitivePaymentFailure(db: any, orderId: string, failureCode: string, error: string, stripeStatus?: number) {
+  await db.batch([
+    db.prepare(`
+      UPDATE commerce_orders SET status = 'payment_failed', failure_code = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(failureCode, orderId),
+    db.prepare(`
+      INSERT INTO commerce_order_events (id, order_id, event_type, source, source_event_id, details_json, created_at)
+      VALUES (?, ?, 'intent_creation_failed', 'checkout', ?, ?, datetime('now'))
+    `).bind(
+      `coe_${crypto.randomUUID().replace(/-/g, '')}`,
+      orderId,
+      `stripe_err_${orderId}`,
+      JSON.stringify({ error, code: failureCode, status: stripeStatus })
+    )
+  ]);
+}
+
+export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
+  request: Request;
+  env: any;
+  stripeFetchOverride?: typeof fetch;
+}) => {
+  const fetchImpl = stripeFetchOverride || globalThis.fetch;
   if (env?.PAYMENTS_ENABLED !== 'true') {
     return Response.json(
       { success: false, error: 'Checkout is temporarily unavailable while durable settlement is being commissioned.' },
@@ -133,11 +257,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     const existingOrder: any = await env.DB.prepare(`
-      SELECT id, idempotency_key, buyer_user_id, app_id, repository_id, seller_user_id,
-             app_version, price_version, gross_cents, currency, lineage_policy,
-             lineage_snapshot_json, stripe_payment_intent_id, status, failure_code
-      FROM commerce_orders
-      WHERE buyer_user_id = ? AND idempotency_key = ?
+      SELECT co.id, co.idempotency_key, co.buyer_user_id, co.app_id, co.repository_id, co.seller_user_id,
+             co.app_version, co.price_version, co.gross_cents, co.currency, co.lineage_policy,
+             co.lineage_snapshot_json, co.stripe_payment_intent_id, co.status, co.failure_code,
+             a.name AS app_name
+      FROM commerce_orders co
+      JOIN app_listings a ON a.id = co.app_id
+      WHERE co.buyer_user_id = ? AND co.idempotency_key = ?
     `).bind(buyer.id, trimmedIdempotencyKey).first();
 
     if (existingOrder) {
@@ -149,22 +275,44 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
 
       if (existingOrder.stripe_payment_intent_id && existingOrder.status !== 'payment_failed') {
+        const stripeSecretKey = env?.STRIPE_SECRET_KEY;
         const publishableKey = env?.STRIPE_PUBLISHABLE_KEY;
+        if (!stripeSecretKey || typeof stripeSecretKey !== 'string' || !stripeSecretKey.trim()) {
+          return Response.json(
+            { success: false, error: 'Stripe secret key is not configured on the server; cannot resume this order' },
+            { status: 500 }
+          );
+        }
         if (!publishableKey) {
           return Response.json(
             { success: false, error: 'Stripe publishable key is not configured' },
             { status: 500 }
           );
         }
+
+        const retrieval = await retrievePaymentIntent({
+          fetchImpl,
+          paymentIntentId: existingOrder.stripe_payment_intent_id,
+          stripeSecretKey
+        });
+        if (!retrieval.ok) {
+          return Response.json(
+            { success: false, error: retrieval.error },
+            { status: retrieval.status, headers: retrieval.retryAfter ? { 'Retry-After': retrieval.retryAfter } : undefined }
+          );
+        }
+
         return Response.json({
           success: true,
           orderId: existingOrder.id,
           paymentIntentId: existingOrder.stripe_payment_intent_id,
+          clientSecret: retrieval.clientSecret,
           amountCents: existingOrder.gross_cents,
           currency: existingOrder.currency,
           publishableKey,
           lineageSnapshot: JSON.parse(existingOrder.lineage_snapshot_json),
-          status: existingOrder.status
+          status: existingOrder.status,
+          resumed: true
         });
       }
 
@@ -192,18 +340,36 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           );
         }
 
+        const lineageSnapshot = JSON.parse(existingOrder.lineage_snapshot_json);
         const recovery = await recoverOrCreatePaymentIntent({
-          env,
-          orderId: existingOrder.id,
-          grossCents: existingOrder.gross_cents,
-          currency: existingOrder.currency,
-          appId: existingOrder.app_id,
-          buyerUserId: existingOrder.buyer_user_id,
-          sellerUserId: existingOrder.seller_user_id,
+          fetchImpl,
+          request: {
+            orderId: existingOrder.id,
+            grossCents: existingOrder.gross_cents,
+            currency: existingOrder.currency,
+            appId: existingOrder.app_id,
+            appName: existingOrder.app_name,
+            buyerUserId: existingOrder.buyer_user_id,
+            sellerUserId: existingOrder.seller_user_id,
+            priceVersion: existingOrder.price_version,
+            lineagePolicy: existingOrder.lineage_policy,
+            sellerCents: lineageSnapshot.sellerCents,
+            ancestorTotalCents: lineageSnapshot.ancestorTotalCents,
+            platformCents: lineageSnapshot.platformCents
+          },
           stripeSecretKey
         });
 
         if (!recovery.ok) {
+          if (recovery.definitive) {
+            await markDefinitivePaymentFailure(
+              env.DB,
+              existingOrder.id,
+              recovery.failureCode,
+              recovery.error,
+              recovery.stripeStatus
+            );
+          }
           return Response.json(
             { success: false, error: recovery.error },
             { status: recovery.status, headers: recovery.retryAfter ? { 'Retry-After': recovery.retryAfter } : undefined }
@@ -243,7 +409,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           amountCents: existingOrder.gross_cents,
           currency: existingOrder.currency,
           publishableKey: stripePublishableKey,
-          lineageSnapshot: JSON.parse(existingOrder.lineage_snapshot_json),
+          lineageSnapshot,
           status: 'requires_payment',
           recovered: true
         });
@@ -437,11 +603,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const stripePublishableKey = env?.STRIPE_PUBLISHABLE_KEY;
 
     if (!stripeSecretKey || typeof stripeSecretKey !== 'string' || !stripeSecretKey.trim()) {
-      await env.DB.prepare(`
-        UPDATE commerce_orders SET status = 'payment_failed', failure_code = 'stripe_secret_missing', updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(orderId).run();
-
       return Response.json(
         { success: false, error: 'Stripe secret key is not configured on the server' },
         { status: 500 }
@@ -449,99 +610,49 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     if (!stripePublishableKey || typeof stripePublishableKey !== 'string' || !stripePublishableKey.trim()) {
-      await env.DB.prepare(`
-        UPDATE commerce_orders SET status = 'payment_failed', failure_code = 'stripe_publishable_missing', updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(orderId).run();
-
       return Response.json(
         { success: false, error: 'Stripe publishable key is not configured on the server' },
         { status: 500 }
       );
     }
 
-    let stripeRes: Response;
-    try {
-      const stripeParams = new URLSearchParams();
-      stripeParams.append('amount', calculation.grossCents.toString());
-      stripeParams.append('currency', calculation.currency);
-      stripeParams.append('description', `Shareware License: ${appListing.name || appId}`);
-      stripeParams.append('automatic_payment_methods[enabled]', 'true');
-      stripeParams.append('automatic_payment_methods[allow_redirects]', 'never');
-      stripeParams.append('metadata[orderId]', orderId);
-      stripeParams.append('metadata[appId]', appId);
-      stripeParams.append('metadata[buyerUserId]', buyer.id);
-      stripeParams.append('metadata[sellerUserId]', product.sellerUserId);
-      stripeParams.append('metadata[priceVersion]', product.priceVersion.toString());
-      stripeParams.append('metadata[lineagePolicy]', 'additive_frozen_liens_house_first');
-      stripeParams.append('metadata[sellerCents]', calculation.sellerCents.toString());
-      stripeParams.append('metadata[ancestorTotalCents]', calculation.ancestorTotalCents.toString());
-      stripeParams.append('metadata[platformCents]', calculation.platformCents.toString());
+    const stripeResult = await recoverOrCreatePaymentIntent({
+      fetchImpl,
+      request: {
+        orderId,
+        grossCents: calculation.grossCents,
+        currency: calculation.currency,
+        appId,
+        appName: appListing.name || appId,
+        buyerUserId: buyer.id,
+        sellerUserId: product.sellerUserId,
+        priceVersion: product.priceVersion,
+        lineagePolicy: 'additive_frozen_liens_house_first',
+        sellerCents: calculation.sellerCents,
+        ancestorTotalCents: calculation.ancestorTotalCents,
+        platformCents: calculation.platformCents
+      },
+      stripeSecretKey
+    });
 
-      stripeRes = await fetch('https://api.stripe.com/v1/payment_intents', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${stripeSecretKey}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Idempotency-Key': `pi_${orderId}`
-        },
-        body: stripeParams.toString()
-      });
-    } catch (networkErr: any) {
-      console.error('[STRIPE NETWORK ERROR]', networkErr);
-      await env.DB.prepare(`
-        UPDATE commerce_orders SET status = 'payment_failed', failure_code = 'stripe_network_error', updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(orderId).run();
-
-      return Response.json(
-        { success: false, error: `Failed to connect to Stripe: ${networkErr?.message || 'network error'}` },
-        { status: 502 }
-      );
-    }
-
-    if (!stripeRes.ok) {
-      const stripeErrData: any = await stripeRes.json().catch(() => ({}));
-      const errorMessage = stripeErrData?.error?.message || `Stripe returned status ${stripeRes.status}`;
-      const errorCode = stripeErrData?.error?.code || 'stripe_error';
-
-      await env.DB.batch([
-        env.DB.prepare(`
-          UPDATE commerce_orders SET status = 'payment_failed', failure_code = ?, updated_at = datetime('now')
-          WHERE id = ?
-        `).bind(errorCode, orderId),
-        env.DB.prepare(`
-          INSERT INTO commerce_order_events (id, order_id, event_type, source, source_event_id, details_json, created_at)
-          VALUES (?, ?, 'intent_creation_failed', 'checkout', ?, ?, datetime('now'))
-        `).bind(
-          `coe_${crypto.randomUUID().replace(/-/g, '')}`,
+    if (!stripeResult.ok) {
+      if (stripeResult.definitive) {
+        await markDefinitivePaymentFailure(
+          env.DB,
           orderId,
-          `stripe_err_${orderId}`,
-          JSON.stringify({ error: errorMessage, code: errorCode, status: stripeRes.status })
-        )
-      ]);
-
+          stripeResult.failureCode,
+          stripeResult.error,
+          stripeResult.stripeStatus
+        );
+      }
       return Response.json(
-        { success: false, error: `Stripe PaymentIntent creation failed: ${errorMessage}` },
-        { status: 502 }
+        { success: false, error: stripeResult.error },
+        { status: stripeResult.status, headers: stripeResult.retryAfter ? { 'Retry-After': stripeResult.retryAfter } : undefined }
       );
     }
 
-    const stripeData = await stripeRes.json() as any;
-    const paymentIntentId = stripeData.id;
-    const clientSecret = stripeData.client_secret;
-
-    if (!paymentIntentId || !clientSecret) {
-      await env.DB.prepare(`
-        UPDATE commerce_orders SET status = 'payment_failed', failure_code = 'invalid_stripe_payload', updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(orderId).run();
-
-      return Response.json(
-        { success: false, error: 'Stripe did not return a valid PaymentIntent ID or client secret' },
-        { status: 502 }
-      );
-    }
+    const paymentIntentId = stripeResult.paymentIntentId;
+    const clientSecret = stripeResult.clientSecret;
 
     try {
       await env.DB.batch([
