@@ -26,6 +26,167 @@ const dbFrom = (env: any): D1Database | null =>
 const failure = (error: string, status = 503) =>
   Response.json({ success: false, error }, { status });
 
+type FrozenForkLien = {
+  ancestorUserId: string;
+  bps: number;
+  sourceRepositoryId: string;
+  lineageDepth: number;
+};
+
+type FrozenParentRoyalty = {
+  ancestorUserId: string;
+  bps: number;
+  sourceRepositoryId: string;
+};
+
+type FrozenForkLienTerms = {
+  version: 1;
+  parentRepositoryId: string;
+  lineageRootRepositoryId: string;
+  forkDepth: number;
+  liens: FrozenForkLien[];
+  parentRoyalty: FrozenParentRoyalty;
+  totalBps: number;
+};
+
+type FrozenForkLienSnapshot = {
+  version: 1;
+  liens: FrozenForkLien[];
+  parentRoyalty: FrozenParentRoyalty;
+  totalBps: number;
+  lineageFingerprint: string;
+};
+
+const compareFrozenForkLiens = (left: FrozenForkLien, right: FrozenForkLien) =>
+  right.lineageDepth - left.lineageDepth ||
+  left.sourceRepositoryId.localeCompare(right.sourceRepositoryId) ||
+  left.ancestorUserId.localeCompare(right.ancestorUserId);
+
+async function fingerprintFrozenForkLienTerms(terms: FrozenForkLienTerms): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(terms));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return `sha256:${hex}`;
+}
+
+async function validateFrozenForkLienSnapshot(
+  raw: unknown,
+  childRepositoryId: string,
+  parentRepositoryId: string,
+  lineageRootRepositoryId: string,
+  forkDepth: number
+): Promise<{ liens: Array<{ holderOfRepositoryId: string; ancestorRepositoryId: string; ancestorUserId: string; bps: number; depth: number }>; totalBps: number } | { error: string }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { error: 'Pinned fork royalty lien snapshot is missing.' };
+  }
+
+  const snapshot = raw as Partial<FrozenForkLienSnapshot>;
+  if (snapshot.version !== 1 || !Array.isArray(snapshot.liens)) {
+    return { error: 'Pinned fork royalty lien snapshot has an unsupported format.' };
+  }
+  if (!Number.isSafeInteger(snapshot.totalBps) || Number(snapshot.totalBps) < 0) {
+    return { error: 'Pinned fork royalty lien snapshot total must be a non-negative integer.' };
+  }
+  try {
+    assertForkAllowed(Number(snapshot.totalBps));
+  } catch (error: any) {
+    return { error: `Pinned fork royalty lien snapshot is invalid: ${error?.message || 'total exceeds 100%.'}` };
+  }
+
+  const parentRoyalty = snapshot.parentRoyalty as Partial<FrozenParentRoyalty> | undefined;
+  if (
+    !parentRoyalty ||
+    typeof parentRoyalty.ancestorUserId !== 'string' || !parentRoyalty.ancestorUserId ||
+    parentRoyalty.sourceRepositoryId !== parentRepositoryId ||
+    !Number.isSafeInteger(parentRoyalty.bps) || Number(parentRoyalty.bps) < 0 || Number(parentRoyalty.bps) > 10000
+  ) {
+    return { error: 'Pinned fork royalty lien snapshot has invalid parent royalty terms.' };
+  }
+
+  const liens: FrozenForkLien[] = [];
+  const seenRepositories = new Set<string>();
+  for (const rawLien of snapshot.liens) {
+    if (!rawLien || typeof rawLien !== 'object' || Array.isArray(rawLien)) {
+      return { error: 'Pinned fork royalty lien snapshot contains an invalid lien row.' };
+    }
+    const lien = rawLien as Partial<FrozenForkLien>;
+    if (
+      typeof lien.ancestorUserId !== 'string' || !lien.ancestorUserId ||
+      typeof lien.sourceRepositoryId !== 'string' || !lien.sourceRepositoryId ||
+      !Number.isSafeInteger(lien.bps) || Number(lien.bps) <= 0 || Number(lien.bps) > 10000 ||
+      !Number.isSafeInteger(lien.lineageDepth) || Number(lien.lineageDepth) <= 0 || Number(lien.lineageDepth) > forkDepth
+    ) {
+      return { error: 'Pinned fork royalty lien snapshot contains an invalid lien row.' };
+    }
+    if (seenRepositories.has(lien.sourceRepositoryId)) {
+      return { error: 'Pinned fork royalty lien snapshot contains duplicate source repositories.' };
+    }
+    seenRepositories.add(lien.sourceRepositoryId);
+    liens.push({
+      ancestorUserId: lien.ancestorUserId,
+      bps: Number(lien.bps),
+      sourceRepositoryId: lien.sourceRepositoryId,
+      lineageDepth: Number(lien.lineageDepth)
+    });
+  }
+
+  for (let index = 1; index < liens.length; index += 1) {
+    if (compareFrozenForkLiens(liens[index - 1], liens[index]) > 0) {
+      return { error: 'Pinned fork royalty lien snapshot rows are not in canonical lineage order.' };
+    }
+  }
+
+  const totalBps = liens.reduce((sum, lien) => sum + lien.bps, 0);
+  if (totalBps !== snapshot.totalBps) {
+    return { error: 'Pinned fork royalty lien snapshot total does not match its lien rows.' };
+  }
+
+  const parentLien = liens.filter(lien => lien.sourceRepositoryId === parentRepositoryId);
+  if (
+    (parentRoyalty.bps === 0 && parentLien.length !== 0) ||
+    (parentRoyalty.bps! > 0 && (
+      parentLien.length !== 1 ||
+      parentLien[0].ancestorUserId !== parentRoyalty.ancestorUserId ||
+      parentLien[0].bps !== parentRoyalty.bps ||
+      parentLien[0].lineageDepth !== 1
+    ))
+  ) {
+    return { error: 'Pinned fork royalty lien snapshot does not match its parent royalty terms.' };
+  }
+
+  if (typeof snapshot.lineageFingerprint !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(snapshot.lineageFingerprint)) {
+    return { error: 'Pinned fork royalty lien snapshot has an invalid lineage fingerprint.' };
+  }
+
+  const expectedFingerprint = await fingerprintFrozenForkLienTerms({
+    version: 1,
+    parentRepositoryId,
+    lineageRootRepositoryId,
+    forkDepth,
+    liens,
+    parentRoyalty: {
+      ancestorUserId: parentRoyalty.ancestorUserId,
+      bps: Number(parentRoyalty.bps),
+      sourceRepositoryId: parentRoyalty.sourceRepositoryId
+    },
+    totalBps
+  });
+  if (snapshot.lineageFingerprint !== expectedFingerprint) {
+    return { error: 'Pinned fork royalty lien snapshot lineage fingerprint does not match its frozen terms.' };
+  }
+
+  return {
+    liens: liens.map(lien => ({
+      holderOfRepositoryId: childRepositoryId,
+      ancestorRepositoryId: lien.sourceRepositoryId,
+      ancestorUserId: lien.ancestorUserId,
+      bps: lien.bps,
+      depth: lien.lineageDepth
+    })),
+    totalBps
+  };
+}
+
 async function gatewayReadiness(env: any) {
   const gatewayUrl = typeof env?.GITSMITH_GATEWAY_URL === 'string' ? env.GITSMITH_GATEWAY_URL.trim() : '';
   if (!gatewayUrl) return { success: false, ready: false, configured: false, active: false, error: 'GITSMITH gateway URL is not configured.' };
@@ -1080,28 +1241,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const forkOutboxEventId = `evt_${crypto.randomUUID()}`;
       const refEventId = `revt_${crypto.randomUUID()}`;
 
-      const parentListingRow = await db.prepare(`
-        SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId
-        FROM commerce_products WHERE repository_id = ?
-      `).bind(parentRepositoryId).first();
-      const parentListingBps = parentListingRow ? Number((parentListingRow as any).royaltyBps) || 0 : 0;
-      const parentOwnerUserId = parentListingRow
-        ? (parentListingRow as any).sellerUserId
-        : ((parent as any).ownerUserId || forkUserId);
-
-      const parentLiensResult: any = await db.prepare(`
-        SELECT ancestor_repository_id AS ancestorRepositoryId, ancestor_user_id AS ancestorUserId, bps, depth
-        FROM repository_fork_liens WHERE holder_of_repository_id = ?
-      `).bind(parentRepositoryId).all();
-      const parentLiens = parentLiensResult?.results ?? [];
-
-      const { liens: newLiens } = buildInheritedLiens(
-        parentLiens,
-        parentListingBps,
+      const frozenLienResult = await validateFrozenForkLienSnapshot(
+        pinnedPayload.royaltyLienSnapshot,
+        childRepositoryId,
         parentRepositoryId,
-        parentOwnerUserId,
-        childRepositoryId
+        derivedLineageRootId,
+        derivedDepth
       );
+      if ('error' in frozenLienResult) {
+        return failure(frozenLienResult.error, 409);
+      }
+      const newLiens = frozenLienResult.liens;
 
       const lienStatements = newLiens.map(lien => db.prepare(`
         INSERT INTO repository_fork_liens (
@@ -1972,10 +2122,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const gateParentLiensResult: any = await db.prepare(`
         SELECT ancestor_repository_id AS ancestorRepositoryId, ancestor_user_id AS ancestorUserId, bps, depth
         FROM repository_fork_liens WHERE holder_of_repository_id = ?
+        ORDER BY depth DESC, ancestor_repository_id ASC, ancestor_user_id ASC
       `).bind(parentRepositoryId).all();
       const gateParentLiens = gateParentLiensResult?.results ?? [];
 
-      const { sumBps: prospectiveSumBps } = buildInheritedLiens(
+      const { liens: prospectiveLiens, sumBps: prospectiveSumBps } = buildInheritedLiens(
         gateParentLiens,
         gateParentListingBps,
         parentRepositoryId,
@@ -2066,6 +2217,26 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const lineageRootRepositoryId = (parentFork as any)?.lineageRootRepositoryId || parentRepositoryId;
       const depth = parentFork ? Number((parentFork as any).depth) + 1 : 1;
       const childRepositoryId = `repo_${crypto.randomUUID()}`;
+      const frozenLiens = prospectiveLiens.map(lien => ({
+        ancestorUserId: lien.ancestorUserId,
+        bps: lien.bps,
+        sourceRepositoryId: lien.ancestorRepositoryId,
+        lineageDepth: lien.depth
+      })).sort(compareFrozenForkLiens);
+      const frozenParentRoyalty = {
+        ancestorUserId: gateParentOwnerUserId,
+        bps: gateParentListingBps,
+        sourceRepositoryId: parentRepositoryId
+      };
+      const lineageFingerprint = await fingerprintFrozenForkLienTerms({
+        version: 1,
+        parentRepositoryId,
+        lineageRootRepositoryId,
+        forkDepth: depth,
+        liens: frozenLiens,
+        parentRoyalty: frozenParentRoyalty,
+        totalBps: prospectiveSumBps
+      });
 
       const errors = validateForkOrigin({
         childRepositoryId,
@@ -2092,7 +2263,14 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         storageKey,
         childSlug,
         defaultRef: parentRefName,
-        visibility
+        visibility,
+        royaltyLienSnapshot: {
+          version: 1,
+          liens: frozenLiens,
+          parentRoyalty: frozenParentRoyalty,
+          totalBps: prospectiveSumBps,
+          lineageFingerprint
+        }
       });
 
       const resolvedParentAppId = (parent as any).appId || null;
