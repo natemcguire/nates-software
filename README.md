@@ -16,7 +16,7 @@ Live at [nates-software.com](https://nates-software.com).
 Most software is rented. You pay monthly, the vendor owns the data and the runtime, and the day you
 stop paying you have nothing. This flips that:
 
-- **Buy once, own forever.** A purchase mints a cryptographic license (`NSW-…`) on your shelf. The
+- **Buy once, own the source.** A purchase mints a cryptographic license (`NSW-…`) on your shelf. The
   key is hashed at rest; the secret is encrypted with AES-256-GCM. You also get the source.
 - **Fork and resell.** Any app with published source can be forked into your own namespace, modified,
   and relisted. Forking is free.

@@ -49,7 +49,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
     },
     {
       name: 'SERVERS & HOSTING',
-      desc: 'Push a repo, get a live URL — no Dockerfile, no servers'
+      desc: 'Free-tier hosting is limited and best-effort; paid tier comes later for heavy traffic. Runs on Cloudflare + AWS — static files on R2, apps in scale-to-zero containers, Postgres on Aurora. Idle apps cost near nothing; heavy traffic is what the paid tier covers. You always own the source to self-host anywhere.'
     },
     {
       name: 'SLOPSHOP',
@@ -97,8 +97,8 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       <Win95Scroll className="flex-1">
         <div className="px-1 py-3 space-y-4">
           <p className="text-gray-800 text-sm leading-relaxed font-sans">
-            Buy a web app once and own the source forever — the live app, the full Git repo, and a
-            real license key with your name on it. Fork anything, remix it with an AI agent, and sell
+            Buy a web app once and own the source — the live app, the full Git repo, and a
+            real license key with your name on it. Free-tier hosting is limited and best-effort, and you always own the source to self-host anywhere. Fork anything, remix it with an AI agent, and sell
             your version; the maker you built on earns the royalty they locked the day you forked.
           </p>
 

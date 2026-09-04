@@ -615,7 +615,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
           <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Own it</div>
           <div className="p-3">
             <div className="font-bold text-[26px] text-[#0a5a0a] leading-none">{money(price)}</div>
-            <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source forever</div>
+            <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source</div>
             <button
               disabled={!canBuy}
               onClick={() => {
