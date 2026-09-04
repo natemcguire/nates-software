@@ -939,9 +939,9 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                     setSelectedRepo(GITSMITH_REPOS[0]);
                     setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
                   }}
-                  className="win95-btn w-full bg-[#dfdfdf] hover:bg-white text-black px-3 py-2 text-[11px] font-bold"
+                  className="win95-btn w-full bg-[#dfdfdf] hover:bg-white text-black px-2 py-2 text-[11px] font-bold whitespace-normal break-words"
                 >
-                  Open Demo Gallery (Bundled Examples)
+                  Open Demo Gallery
                 </button>
               </div>
             )}
