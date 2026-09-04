@@ -201,6 +201,7 @@ export function AppInner() {
   const { user, isAuthenticated, authLoading, openAuthModal } = useAuth();
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
+  const [gitsmithInitialRepo, setGitsmithInitialRepo] = useState<string | null>(null);
 
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
@@ -348,7 +349,7 @@ export function AppInner() {
         ));
       }
       case 'chat': return renderStandaloneWrapper(route.title || "CHAT", <ChatView />);
-      case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView />);
+      case 'gitsmith': return renderStandaloneWrapper(route.title || "GITSMITH", <GitsmithView initialRepoSlug={urlParams?.get('repo') || gitsmithInitialRepo} />);
       case 'hotwire': return renderStandaloneWrapper(route.title || "HOTWIRE", <HotwireView
           onOpenPostEditor={(app) => {
             playClickSound();
@@ -786,7 +787,8 @@ export function AppInner() {
             onOpenTerminal={() => {
               openWindow('terminal');
             }}
-            onOpenForge={() => {
+            onOpenForge={(repoId) => {
+              if (repoId) setGitsmithInitialRepo(repoId);
               openWindow('gitsmith');
             }}
             onBrowseDrops={() => {
@@ -816,7 +818,10 @@ export function AppInner() {
             onOpenSetup={() => openWindow('setup')}
             onOpenHotwire={() => openWindow('hotwire')}
             onOpenSlopshop={() => openWindow('slopshop')}
-            onOpenGitsmith={() => openWindow('gitsmith')}
+            onOpenGitsmith={(repoSlug?: string) => {
+              if (repoSlug) setGitsmithInitialRepo(repoSlug);
+              openWindow('gitsmith');
+            }}
             onOpenInbox={() => openWindow('inbox')}
             onOpenProfile={() => openWindow('profile')}
             onOpenWhitepapers={() => openWindow('papers')}
@@ -912,7 +917,13 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('slopshop', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('slopshop', w, h, x, y)}
         >
-          <SlopshopView onOpenWhitePapers={() => openWindow('papers')} />
+          <SlopshopView
+            onOpenWhitePapers={() => openWindow('papers')}
+            onOpenGitsmith={(repoSlug?: string) => {
+              if (repoSlug) setGitsmithInitialRepo(repoSlug);
+              openWindow('gitsmith');
+            }}
+          />
         </RetroWindow>
       </ErrorBoundary>
 
@@ -992,7 +1003,12 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('profile', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('profile', w, h, x, y)}
         >
-          <ProfileView />
+          <ProfileView
+            onOpenGitsmith={(repoSlug?: string) => {
+              if (repoSlug) setGitsmithInitialRepo(repoSlug);
+              openWindow('gitsmith');
+            }}
+          />
         </RetroWindow>
       </ErrorBoundary>
 
@@ -1012,7 +1028,7 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('gitsmith', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('gitsmith', w, h, x, y)}
         >
-          <GitsmithView />
+          <GitsmithView initialRepoSlug={gitsmithInitialRepo} />
         </RetroWindow>
       </ErrorBoundary>
 

@@ -291,7 +291,11 @@ function findFirstFile(nodes: TreeNode[]): TreeNode | null {
   return null;
 }
 
-export const GitsmithView: React.FC = () => {
+export interface GitsmithViewProps {
+  initialRepoSlug?: string | null;
+}
+
+export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) => {
   const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
 
@@ -331,6 +335,13 @@ export const GitsmithView: React.FC = () => {
         setCanonicalLoadState('loaded');
         if (mapped.length > 0) {
           setSelectedRepo(current => {
+            if (initialRepoSlug) {
+              const targetSlug = initialRepoSlug.toLowerCase();
+              const targetMatch = mapped.find(
+                r => r.name.toLowerCase() === targetSlug || r.id.toLowerCase() === targetSlug || `${r.owner}/${r.name}`.toLowerCase() === targetSlug
+              );
+              if (targetMatch) return targetMatch;
+            }
             if (current?.source === 'canonical') {
               const existing = mapped.find(repo => repo.id === current.id);
               if (existing) return existing;
@@ -353,6 +364,27 @@ export const GitsmithView: React.FC = () => {
       setSelectedRepo(current => (showBundledExamples && current?.source === 'showcase' ? current : null));
     }
   };
+
+  useEffect(() => {
+    if (!initialRepoSlug) return;
+    const targetSlug = initialRepoSlug.toLowerCase();
+    const canonicalMatch = canonicalRepositories.find(
+      r => r.name.toLowerCase() === targetSlug || r.id.toLowerCase() === targetSlug || `${r.owner}/${r.name}`.toLowerCase() === targetSlug
+    );
+    if (canonicalMatch) {
+      setSelectedRepo(canonicalMatch);
+      setActiveFile(null);
+      return;
+    }
+    const showcaseMatch = GITSMITH_REPOS.find(
+      r => r.name.toLowerCase() === targetSlug || r.id.toLowerCase() === targetSlug || `${r.owner}/${r.name}`.toLowerCase() === targetSlug
+    );
+    if (showcaseMatch) {
+      setShowBundledExamples(true);
+      setSelectedRepo(showcaseMatch);
+      setActiveFile(showcaseMatch.files.find(f => f.type === 'file') || showcaseMatch.files[0] || null);
+    }
+  }, [initialRepoSlug, canonicalRepositories]);
 
   const refreshGatewayReadiness = async () => {
     try {

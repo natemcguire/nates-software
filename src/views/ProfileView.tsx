@@ -18,7 +18,7 @@ import {
 interface ProfileViewProps {
   initialUsername?: string;
   onOpenHotwire?: () => void;
-  onOpenGitsmith?: () => void;
+  onOpenGitsmith?: (repoSlug?: string) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
