@@ -84,17 +84,6 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     expect(source).toContain('Signed in as @');
   });
 
-  it('wires MarketingWindow hero to "Try an app now →", outcome CTAs, and user badge (O5)', () => {
-    const source = readFileSync(fileURLToPath(new URL('../src/views/MarketingWindow.tsx', import.meta.url)), 'utf8');
-    expect(source).toContain('Try an app now');
-    expect(source).toContain("Browse today's drops");
-    expect(source).toContain('Mod an app with AI');
-    expect(source).toContain('Browse the code');
-    expect(source).toContain('Open your mailbox');
-    expect(source).toContain('Free to browse and fork. Create a maker account when you\'re ready to publish.');
-    expect(source).toContain("const userBadge = user?.username ? `@${user.username}` : '@guest';");
-  });
-
   it('wires SETUP desktop icon in App.tsx (#6, F5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
     expect(source).toContain("id: 'setup', label: 'SETUP.EXE'");

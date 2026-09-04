@@ -41,7 +41,7 @@ const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: n
 
 export function useWindowManager(user?: AuthUser | null) {
   const setupConfig = getResponsiveWindowConfig(0, 880, 580);
-  const mktgConfig = getResponsiveWindowConfig(10, 1080, 680);
+  const mktgConfig = getResponsiveWindowConfig(10, 620, 780);
   const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
   const slopshopConfig = getResponsiveWindowConfig(45, 1120, 700);
   const inboxConfig = getResponsiveWindowConfig(35, 1120, 700);

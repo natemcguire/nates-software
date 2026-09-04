@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Wrench, GitMerge, Mail, User, Sparkles, BookOpen, Gauge } from 'lucide-react';
+import { Flame, BookOpen, ExternalLink, Newspaper } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound } from '../lib/soundEngine';
 import { Win95Scroll } from '../components/Win95Scroll';
@@ -28,174 +28,124 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
   onDismiss
 }) => {
   const { user } = useAuth();
-  const userBadge = user?.username ? `@${user.username}` : '@guest';
 
-  const shops = [
+  const specs = [
     {
-      key: 'hotwire',
-      onOpen: onOpenHotwire,
-      icon: <Flame size={18} className="text-orange-600" />,
-      title: 'HOTWIRE',
-      tag: 'DROPS',
-      body: 'The daily 12:01 AM board where makers drop new apps and people vote them up.',
-      cta: "Browse today's drops",
-      cardClass: 'bg-white border-2 border-gray-800'
+      name: 'HOTWIRE',
+      desc: 'App store marketplace',
+      onOpen: onOpenHotwire
     },
     {
-      key: 'slopshop',
-      onOpen: onOpenSlopshop,
-      icon: <Wrench size={18} className="text-blue-700" />,
-      title: 'SLOPSHOP',
-      tag: 'AI SHOP',
-      body: 'Fork an app in one click and change it with an AI agent right in the browser. It uses GITSMITH as its git backend and runs your fork for you — the old "RIG" runtime is part of this now.',
-      cta: 'Mod an app with AI',
-      cardClass: 'bg-white border-2 border-gray-800'
+      name: 'GITSMITH',
+      desc: 'Backed by our own git system, built for agents',
+      onOpen: () => onOpenGitsmith()
     },
     {
-      key: 'gitsmith',
-      onOpen: onOpenGitsmith,
-      icon: <GitMerge size={18} className="text-purple-700" />,
-      title: 'GITSMITH',
-      tag: 'FORGE',
-      body: 'The git forge — bare repos over SSH with search and 1-click live preview links. Most people use it from their own terminal; it\'s the backend SLOPSHOP builds on, and it stands on its own too.',
-      cta: 'Browse the code',
-      cardClass: 'bg-white border-2 border-gray-800'
+      name: 'Servers & hosting',
+      desc: 'Push a repo, get a live URL — no Dockerfile, no servers',
+      onOpen: onOpenWhitepapers
     },
     {
-      key: 'inbox',
-      onOpen: onOpenInbox,
-      icon: <Mail size={18} className="text-yellow-700" />,
-      title: 'INBOX',
-      tag: 'COMMS',
-      body: 'A live window onto your local agent mailbox — watch your AI agents email each other in threaded discussions. Clone and run the mailbox server and this shows the threads; honest offline pane when it isn\'t running.',
-      cta: 'Open your mailbox',
-      cardClass: 'bg-white border-2 border-gray-800'
+      name: 'SLOPSHOP',
+      desc: 'Virtualized forking with AI agents in the browser',
+      onOpen: onOpenSlopshop
     },
-    ...(onOpenDyno
-      ? [{
-          key: 'dyno',
-          onOpen: onOpenDyno,
-          icon: <Gauge size={18} className="text-emerald-700" />,
-          title: 'DYNO',
-          tag: 'BENCH',
-          body: 'A benchmark for how AI models and agent harnesses do on real-world tasks.',
-          cta: 'See the benchmark',
-          cardClass: 'bg-white border-2 border-gray-800'
-        }]
-      : []),
     {
-      key: 'profile',
-      onOpen: onOpenProfile,
-      icon: <User size={18} className="text-blue-900" />,
-      title: 'My Profile',
-      tag: userBadge,
-      tagClass: 'text-green-700 font-bold',
-      body: 'Your maker page, SSH keys, owned licenses, earnings, and the shelf of apps you own.',
-      cta: 'See your profile & shelf',
-      cardClass: 'bg-blue-50 border-2 border-w95-blue'
+      name: 'Agent Inbox',
+      desc: 'A live window onto your local AI agents',
+      soon: true,
+      onOpen: onOpenInbox
+    },
+    {
+      name: 'DYNO',
+      desc: 'Real-world AI model + agent benchmark',
+      soon: true,
+      onOpen: onOpenDyno
     }
   ];
 
   return (
     <div className="flex flex-col h-full font-tahoma text-sm">
-      <div className="text-center py-2.5 border-b border-gray-300 mb-3">
-        <div className="text-3xl font-black text-w95-blue tracking-tight mb-1.5">
-          WELCOME TO NATE'S SOFTWARE EMPORIUM
+      <div className="pt-3 pb-2.5 px-1 border-b border-gray-300">
+        <div className="text-2xl font-black text-w95-blue tracking-tight leading-none">
+          NATE'S SOFTWARE EMPORIUM
         </div>
-        <p className="text-gray-800 text-base max-w-3xl mx-auto leading-snug font-black">
+        <p className="text-gray-800 text-sm font-black mt-1">
           Other sites let you fork code. We let you fork revenue.
         </p>
-        <p className="text-gray-600 text-xs max-w-3xl mx-auto leading-relaxed mt-1 font-sans">
-          Buy a web app once and own the source. Fork it, remix it with AI, sell your version —
-          and the maker you built on earns the royalty they locked in the day you forked.
-        </p>
-        <div className="mt-2.5 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              playClickSound();
-              if (onOpenSetup) onOpenSetup();
-            }}
-            className="btn-w95 btn-w95-primary px-5 py-2 font-bold text-xs flex items-center gap-1.5 shadow"
-          >
-            <Sparkles size={14} className="text-yellow-300" />
-            <span>Try an app now &rarr;</span>
-          </button>
-        </div>
-        <div className="text-xs text-gray-500 mt-2 font-sans">
-          Free to browse and fork. Create a maker account when you're ready to publish.
-        </div>
+        <a
+          href="/vision.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => playClickSound()}
+          className="inline-flex items-center gap-1 text-w95-blue hover:underline text-xs font-bold mt-1.5"
+        >
+          <BookOpen size={12} /> Read the full vision
+          <ExternalLink size={10} />
+        </a>
       </div>
 
-      <Win95Scroll className="flex-1 mb-3">
-
-        <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
-          <div className="text-w95-blue font-bold text-base mb-2">What is this?</div>
-          <p className="text-gray-800 text-xs leading-relaxed font-sans mb-2.5">
-            A Win95 desktop where you buy apps outright. You get the live web app, the full source in a Git repo,
-            and a real license key with your name on it. Fork any of it, change it with an AI agent, then sell your version.
-            Nothing lists until it proves it builds and runs. Sales are final. No subscription, ever.
+      <Win95Scroll className="flex-1">
+        <div className="px-1 py-3 space-y-4">
+          <p className="text-gray-800 text-sm leading-relaxed font-sans">
+            Buy a web app once and own the source forever — the live app, the full Git repo, and a
+            real license key with your name on it. Fork anything, remix it with an AI agent, and sell
+            your version; the maker you built on earns the royalty they locked the day you forked.
           </p>
-          <div className="bg-gray-100 border border-gray-400 p-2.5 rounded text-xs">
-            <div className="font-bold text-gray-900 mb-0.5 font-mono">The money model</div>
-            <div className="text-gray-700 font-sans leading-relaxed">
-              You set <strong>one royalty</strong> when you list. Anyone who forks your app and sells pays you that
-              rate — <strong>frozen the day they fork</strong>, so it can never be raised or revoked. Forks of forks
-              pay everyone up the chain. The platform takes a flat <strong className="text-green-800">10%</strong>;
-              the seller keeps the rest. Every split is settled to the exact cent.
-            </div>
-          </div>
-        </div>
 
-        <div className="bg-white border-2 border-gray-800 p-3.5 mb-4 shadow-sm">
-          <div className="text-w95-blue font-bold text-base mb-2">How it works</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-700 text-xs leading-relaxed">
-            <div>
-              <div className="font-bold text-gray-900 mb-0.5">Buy it, own it</div>
-              Buy an app once and it's yours. Live web app, the full source in a Git repo, and a license key
-              with your name on it.
-            </div>
-            <div>
-              <div className="font-bold text-gray-900 mb-0.5">Publish and sell</div>
-              Fork in your browser; publish from your machine. Push your fork up with the{' '}
-              <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI — it builds onto its own URL, no Dockerfile,
-              no servers. Then list it on HOTWIRE at whatever price you set.
-            </div>
-            <div>
-              <div className="font-bold text-gray-900 mb-0.5">Get paid on every sale</div>
-              The platform takes a flat <strong>10%</strong>. Makers you forked from earn the royalty they
-              froze the day you forked, and you keep the rest. Original app, no parents? <strong className="text-green-800">90% you / 10% us</strong>.
-            </div>
-            <div>
-              <div className="font-bold text-gray-900 mb-0.5">Fork and remix</div>
-              Fork anyone's app, change it with AI in SLOPSHOP or the <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI,
-              and sell your version. The makers you built on earn their frozen royalty. Forks of forks pay everyone up the chain.
-            </div>
-          </div>
-        </div>
-
-        <div className="text-center mb-3">
-          <div className="text-2xl font-black text-w95-blue tracking-tight">ENTER ONE OF THE SHOPS</div>
-          <div className="text-xs text-gray-500 font-sans mt-0.5">Each stands on its own — here's what they are and how they connect.</div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {shops.map((s) => (
-            <div
-              key={s.key}
-              onClick={() => { playClickSound(); s.onOpen(); }}
-              className={`${s.cardClass} p-3.5 cursor-pointer hover:bg-blue-50 transition-colors flex flex-col justify-between group shadow-sm`}
+          <div>
+            <button
+              type="button"
+              onClick={() => { playClickSound(); onOpenHotwire(); }}
+              className="btn-w95 btn-w95-primary w-full py-4 flex items-center justify-center gap-3 shadow"
             >
-              <div>
-                <div className="flex items-center justify-between text-w95-blue font-bold text-base mb-1.5">
-                  <span className="flex items-center gap-2">{s.icon} {s.title}</span>
-                  <span className={`text-xs font-mono ${s.tagClass || 'text-gray-500'}`}>{s.tag}</span>
-                </div>
-                <p className="text-gray-600 text-xs leading-relaxed">{s.body}</p>
-              </div>
-              <span className="text-w95-blue font-bold text-xs mt-2 block group-hover:underline">{s.cta} &rarr;</span>
+              <Flame size={28} className="text-orange-400" />
+              <span className="text-lg font-black tracking-tight">Open HOTWIRE</span>
+            </button>
+            <p className="text-gray-600 text-xs font-sans mt-1.5 text-center">
+              Browse the hottest builds and find something you can use or fork today.
+            </p>
+          </div>
+
+          <div className="bg-white border-2 border-gray-800 shadow-sm">
+            <div className="bg-w95-blue text-white font-bold text-xs px-3 py-1.5">
+              Technical Specs for Nate's Software <span className="font-normal opacity-80">(aka How it works)</span>
             </div>
-          ))}
+            <table className="w-full text-xs">
+              <tbody>
+                {specs.map((s) => (
+                  <tr
+                    key={s.name}
+                    onClick={() => { if (!s.soon && s.onOpen) { playClickSound(); s.onOpen(); } }}
+                    className={`border-t border-gray-300 ${s.soon ? 'opacity-60' : 'cursor-pointer hover:bg-blue-50'}`}
+                  >
+                    <td className="align-top px-3 py-2 font-bold text-w95-blue whitespace-nowrap w-px">
+                      {s.name}
+                      {s.soon && <span className="ml-1.5 text-[10px] font-mono text-gray-500">(coming soon)</span>}
+                    </td>
+                    <td className="align-top px-3 py-2 text-gray-700 font-sans leading-snug">
+                      {s.desc}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => { playClickSound(); onOpenWhitepapers(); }}
+              className="btn-w95 justify-start"
+            >
+              <Newspaper size={14} className="text-blue-700" /> Editorial — AI benchmarks, tooling &amp; shareware
+            </button>
+            <button
+              onClick={() => { playClickSound(); onOpenWhitepapers(); }}
+              className="btn-w95 justify-start"
+            >
+              <BookOpen size={14} /> Architectural White Papers
+            </button>
+          </div>
         </div>
       </Win95Scroll>
 
@@ -204,30 +154,18 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           onClick={onDismiss}
           className="text-gray-600 hover:text-black underline text-xs cursor-pointer"
         >
-          ✕ Dismiss Window to Desktop (Reopen via "? What is this" anytime)
+          ✕ Dismiss to Desktop
         </button>
-
-        <div className="flex items-center gap-2.5">
-          <button onClick={onOpenWhitepapers} className="btn-w95">
-            <BookOpen size={14} /> Architectural White Papers
-          </button>
-          <button onClick={onOpenHotwire} className="btn-w95">
-            <Flame size={14} className="text-orange-600" /> Browse HOTWIRE Drops
-          </button>
-          <button
-            onClick={() => {
-              playClickSound();
-              if (onOpenSetup) {
-                onOpenSetup();
-              } else {
-                onOpenSlopshop();
-              }
-            }}
-            className="btn-w95 btn-w95-primary"
-          >
-            <Sparkles size={14} /> Try an app now &rarr;
-          </button>
-        </div>
+        <button
+          onClick={() => {
+            playClickSound();
+            if (user?.username) onOpenProfile();
+            else if (onOpenSetup) onOpenSetup();
+          }}
+          className="btn-w95"
+        >
+          {user?.username ? 'Account & shelf' : 'Set up your account'} &rarr;
+        </button>
       </div>
     </div>
   );

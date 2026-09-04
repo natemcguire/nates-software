@@ -5,18 +5,8 @@ import { AlertProvider } from '../src/context/AlertContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 import { HotwireView } from '../src/views/HotwireView';
 import { SlopshopView } from '../src/views/SlopshopView';
-import { MarketingWindow } from '../src/views/MarketingWindow';
 import { generateFeatureManifest } from '../src/lib/slopshopDomain';
 import * as mockData from '../src/data/mockData';
-
-const mockUser: AuthUser = {
-  id: 'usr_alice123',
-  username: 'alice_maker',
-  displayName: 'Alice Maker',
-  avatar: '👩‍💻',
-  role: 'maker',
-  isSuperAdmin: false
-};
 
 const createMockAuthContext = (user: AuthUser | null) => ({
   user,
@@ -32,7 +22,6 @@ const createMockAuthContext = (user: AuthUser | null) => ({
   requireAuth: vi.fn()
 });
 
-const noop = () => {};
 
 describe('Codex #8: HOTWIRE never ships fabricated "Verified Maker" profiles', () => {
   it('no longer exports a fabricated MAKER_PROFILES fixture from mockData', () => {
@@ -68,44 +57,6 @@ describe('Codex #8: HOTWIRE never ships fabricated "Verified Maker" profiles', (
 });
 
 describe('Codex #9: logged-out UI shows @guest, never impersonates @nate', () => {
-  it('MarketingWindow "My Profile" badge shows @guest when logged out, never @nate', () => {
-    const html = renderToString(
-      <AuthContext.Provider value={createMockAuthContext(null)}>
-        <MarketingWindow
-          onOpenHotwire={noop}
-          onOpenSlopshop={noop}
-          onOpenGitsmith={noop}
-          onOpenInbox={noop}
-          onOpenProfile={noop}
-          onOpenWhitepapers={noop}
-          onDismiss={noop}
-        />
-      </AuthContext.Provider>
-    );
-
-    expect(html).not.toContain('@nate');
-    expect(html).toContain('@guest');
-  });
-
-  it('MarketingWindow shows the real authenticated handle when logged in', () => {
-    const html = renderToString(
-      <AuthContext.Provider value={createMockAuthContext(mockUser)}>
-        <MarketingWindow
-          onOpenHotwire={noop}
-          onOpenSlopshop={noop}
-          onOpenGitsmith={noop}
-          onOpenInbox={noop}
-          onOpenProfile={noop}
-          onOpenWhitepapers={noop}
-          onDismiss={noop}
-        />
-      </AuthContext.Provider>
-    );
-
-    expect(html).toContain('@alice_maker');
-    expect(html).not.toContain('@guest');
-  });
-
   it('SlopshopView draft maker handle defaults to @guest (not @nate) when logged out', () => {
     const html = renderToString(
       <AuthContext.Provider value={createMockAuthContext(null)}>
