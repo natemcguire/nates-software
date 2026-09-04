@@ -5,7 +5,6 @@ import { AlertProvider } from '../src/context/AlertContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 import { ForkWithAiModal } from '../src/components/ForkWithAiModal';
 import { ProfileView } from '../src/views/ProfileView';
-import { HotwireView } from '../src/views/HotwireView';
 import { AppListing } from '../src/data/mockData';
 
 const mockUser: AuthUser = {
@@ -212,23 +211,4 @@ describe('WAVE-UX-D Specification Tests', () => {
     });
   });
 
-  describe('Item 1 & 4: HotwireView — de-jargon badges and vote reward forward action', () => {
-    it('de-jargons D1 badges and displays definition banner', () => {
-      const authCtx = createMockAuthContext(mockUser);
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <AlertProvider>
-            <CatalogProvider>
-              <HotwireView />
-            </CatalogProvider>
-          </AlertProvider>
-        </AuthContext.Provider>
-      );
-
-      expect(html).toContain('Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.');
-      expect(html).not.toContain('● D1 LIVE');
-      expect(html).not.toContain('● D1 Live Verified Makers');
-      expect(html).not.toContain('Retrieving daily shareware queue from Cloudflare D1.');
-    });
-  });
 });

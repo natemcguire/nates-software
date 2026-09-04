@@ -95,10 +95,9 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     expect(source).toContain("const userBadge = user?.username ? `@${user.username}` : '@guest';");
   });
 
-  it('wires SETUP desktop icon with START HERE and gates first-run auto-open in App.tsx (#6, F5)', () => {
+  it('wires SETUP desktop icon in App.tsx (#6, F5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
     expect(source).toContain("id: 'setup', label: 'SETUP.EXE'");
-    expect(source).toContain('nsw_setup_wizard_seen');
     expect(source).toContain('openWindow(\'setup\')');
     expect(source).toContain('authLoading');
     expect(source).toContain('liveSandboxApp');

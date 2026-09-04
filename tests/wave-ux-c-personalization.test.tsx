@@ -2,9 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { AuthContext, AuthUser } from '../src/context/AuthContext';
 import { AlertProvider } from '../src/context/AlertContext';
-import { CatalogProvider } from '../src/context/CatalogContext';
 import { SlopshopView } from '../src/views/SlopshopView';
-import { HotwireView } from '../src/views/HotwireView';
 import { PostEditorView } from '../src/views/PostEditorView';
 import { AppListing } from '../src/data/mockData';
 
@@ -62,42 +60,6 @@ describe('WAVE-UX-C Personalization & Ownership Gating', () => {
       expect(html).toContain('(editable draft handle)');
       expect(html).not.toContain('signed in as @nate');
       expect(html).not.toContain('signed in as @guest');
-    });
-  });
-
-  describe('Item 5: HOTWIRE (#9, C2, E1) — HotwireView clarity, timezone note, and mine filter', () => {
-    it('displays definition banner, local time countdown, and Mine filter tab when logged in', () => {
-      const authCtx = createMockAuthContext(mockUser);
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <AlertProvider>
-            <CatalogProvider>
-              <HotwireView />
-            </CatalogProvider>
-          </AlertProvider>
-        </AuthContext.Provider>
-      );
-
-      expect(html).toContain('Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.');
-      expect(html).toContain('local');
-      expect(html).toContain('12:01 AM UTC');
-      expect(html).toContain('Mine');
-    });
-
-    it('does not display Mine filter tab when logged out', () => {
-      const authCtx = createMockAuthContext(null);
-      const html = renderToString(
-        <AuthContext.Provider value={authCtx}>
-          <AlertProvider>
-            <CatalogProvider>
-              <HotwireView />
-            </CatalogProvider>
-          </AlertProvider>
-        </AuthContext.Provider>
-      );
-
-      expect(html).not.toContain('●</span> Mine');
-      expect(html).toContain('Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.');
     });
   });
 

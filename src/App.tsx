@@ -400,17 +400,6 @@ export function AppInner() {
   const [restarting, setRestarting] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (authLoading) return;
-    const SETUP_SEEN_KEY = 'nsw_setup_wizard_seen';
-    const hasSeenSetup = localStorage.getItem(SETUP_SEEN_KEY);
-    if (!isAuthenticated || !hasSeenSetup) {
-      openWindow('setup');
-      localStorage.setItem(SETUP_SEEN_KEY, 'true');
-    }
-  }, [authLoading, isAuthenticated, openWindow]);
-
   const INTRO_EVERY_RELOAD = true;
   const INTRO_SEEN_KEY = 'nsw_intro_seen';
   const [introPhase, setIntroPhase] = useState<'waiting' | 'primed' | 'revealing' | 'done'>(() => {

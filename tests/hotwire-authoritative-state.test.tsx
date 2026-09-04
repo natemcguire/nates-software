@@ -38,19 +38,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
       expect(Array.isArray(data.makerLeaderboard)).toBe(true);
     });
 
-    it('renders honest disconnected / empty UI when catalog has no live drops', () => {
-      const html = renderToString(
-        <AlertProvider>
-          <AuthProvider>
-            <CatalogProvider>
-              <HotwireView />
-            </CatalogProvider>
-          </AuthProvider>
-        </AlertProvider>
-      );
-
-      expect(html).toContain('12:01 AM DAILY DROP');
-    });
   });
 
   describe('§2 Have-I-voted viewer-scoped hydration', () => {

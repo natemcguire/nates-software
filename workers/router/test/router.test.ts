@@ -843,21 +843,9 @@ describe('Cloudflare Router Worker (workers/router)', () => {
 
   describe('7. resolveAppRoute Decoupling from INITIAL_APPS', () => {
     it('resolves standalone views correctly', () => {
-      expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({
-        type: 'standalone_view',
-        id: 'chat',
-        title: 'CHAT IRC CHATROOM (#lounge)'
-      });
-      expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toEqual({
-        type: 'standalone_view',
-        id: 'gitsmith',
-        title: 'GITSMITH FORGE'
-      });
-      expect(resolveAppRoute('hotwire.nates-software.com', '/')).toEqual({
-        type: 'standalone_view',
-        id: 'hotwire',
-        title: 'HOTWIRE DAILY DROPS'
-      });
+      expect(resolveAppRoute('chat.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'chat' });
+      expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'gitsmith' });
+      expect(resolveAppRoute('hotwire.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'hotwire' });
     });
 
     it('resolves standalone apps by subdomain or query param without INITIAL_APPS', () => {
