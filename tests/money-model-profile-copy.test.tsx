@@ -53,17 +53,6 @@ describe('ProfileView money-model copy (E3): no leftover 70/20/10 split language
     }
   });
 
-  it('source: "Total earned" banner label no longer states a fixed percentage split', () => {
-    expect(componentSource).toContain('Total earned · your sales + royalties from forks');
-    expect(componentSource).not.toContain('Total earned · your 70% + 20% from forks');
-  });
-
-  it('source: sales/lineage breakdown line drops the fixed percentages', () => {
-    expect(componentSource).toMatch(/from your sales · [\s\S]{0,80}from forks of your apps/);
-    expect(componentSource).not.toContain('from your sales (70%)');
-    expect(componentSource).not.toContain('from forks of your apps (20%)');
-  });
-
   it('source: Stripe payout label no longer states a fixed percentage split', () => {
     expect(componentSource).toContain('Get paid via Stripe:');
     expect(componentSource).not.toContain('Get paid via Stripe (your 70% + 20% from forks):');

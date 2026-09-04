@@ -76,7 +76,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     makerBalanceCents: 0,
     makerSalesCents: 0,
     lineageEarnedCents: 0,
-    lineageBreakdown: [] as LineageBreakdownItem[]
+    lineageBreakdown: [] as LineageBreakdownItem[],
+    grossSalesCents: 0,
+    platformFeesCents: 0,
+    upstreamRoyaltiesPaidCents: 0,
+    netEarningsCents: 0,
+    availableForPayoutCents: 0,
+    pendingPayoutCents: 0,
+    paidOutCents: 0
   });
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [isLedgerLoading, setIsLedgerLoading] = useState(false);
@@ -209,7 +216,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           makerBalanceCents: Number(profileJson.royalties.makerBalanceCents) || 0,
           makerSalesCents: Number(profileJson.royalties.makerSalesCents) || 0,
           lineageEarnedCents: Number(profileJson.royalties.lineageEarnedCents) || 0,
-          lineageBreakdown: profileJson.royalties.lineageBreakdown || []
+          lineageBreakdown: profileJson.royalties.lineageBreakdown || [],
+          grossSalesCents: Number(profileJson.royalties.grossSalesCents) || 0,
+          platformFeesCents: Number(profileJson.royalties.platformFeesCents) || 0,
+          upstreamRoyaltiesPaidCents: Number(profileJson.royalties.upstreamRoyaltiesPaidCents) || 0,
+          netEarningsCents: Number(profileJson.royalties.netEarningsCents) || 0,
+          availableForPayoutCents: Number(profileJson.royalties.availableForPayoutCents) || 0,
+          pendingPayoutCents: Number(profileJson.royalties.pendingPayoutCents) || 0,
+          paidOutCents: Number(profileJson.royalties.paidOutCents) || 0
         });
       }
 
@@ -625,24 +639,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         {!isLoading && activeTab === 'royalties' && isOwner && (
           <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
-            <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
+            <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="text-xs text-emerald-300 font-mono flex items-center gap-1.5 uppercase tracking-wider">
                   <Sparkles size={13} className="text-amber-400" />
-                  <span>Total earned · your sales + royalties from forks</span>
+                  <span>Earnings and payout summary</span>
                 </div>
-                <div className="text-3xl font-bold font-mono text-white mt-1">
-                  {formatCentsToUsd(royalties.makerBalanceCents)} <span className="text-xs text-emerald-400 font-normal">USD</span>
-                </div>
-                <div className="text-xs text-slate-300 mt-0.5">
-                  {formatCentsToUsd(royalties.makerSalesCents)} from your sales · {formatCentsToUsd(royalties.lineageEarnedCents)} from forks of your apps
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2 items-end">
-                <div className="text-[10px] font-mono text-emerald-300 text-right">
+                <div className="text-xs font-mono text-emerald-300">
                   Stripe Express: {profileData.stripeAccountId ? `${profileData.stripeAccountId.slice(0, 16)}... (${profileData.stripeStatus})` : 'Not Connected'}
                 </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs font-mono">
+                {[
+                  ['Gross sales', royalties.grossSalesCents],
+                  ['Platform fees', royalties.platformFeesCents],
+                  ['Upstream royalties paid', royalties.upstreamRoyaltiesPaidCents],
+                  ['Net earnings', royalties.netEarningsCents],
+                  ['Available for payout', royalties.availableForPayoutCents],
+                  ['Pending', royalties.pendingPayoutCents],
+                  ['Paid out', royalties.paidOutCents]
+                ].map(([label, cents]) => (
+                  <div key={String(label)} className="flex justify-between gap-4 border-b border-emerald-800 py-1">
+                    <span className="text-slate-200">{label}</span>
+                    <span className="font-bold text-white">{formatCentsToUsd(Number(cents))}</span>
+                  </div>
+                ))}
               </div>
             </div>
 

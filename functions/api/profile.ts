@@ -99,11 +99,18 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     }));
 
     if (isSelf) {
-      let royalties = {
+      let royalties: ReturnType<typeof calculateMakerEconomics> = {
         makerBalanceCents: 0,
         makerSalesCents: 0,
         lineageEarnedCents: 0,
-        lineageBreakdown: []
+        lineageBreakdown: [],
+        grossSalesCents: 0,
+        platformFeesCents: 0,
+        upstreamRoyaltiesPaidCents: 0,
+        netEarningsCents: 0,
+        availableForPayoutCents: 0,
+        pendingPayoutCents: 0,
+        paidOutCents: 0
       };
 
       const { results: allocations } = await env.DB.prepare(`
@@ -114,9 +121,53 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           WHERE a.recipient_user_id = ? AND o.status = 'fulfilled'
         `).bind(user.id).all();
 
-      if (allocations && allocations.length > 0) {
-        royalties = calculateMakerEconomics(allocations as any[]) as any;
-      }
+      const makerEconomics = calculateMakerEconomics((allocations || []) as any[]);
+      const directSalesRow = await env.DB.prepare(`
+        SELECT
+          COALESCE(SUM(grossCents), 0) AS grossSalesCents,
+          COALESCE(SUM(platformFeesCents), 0) AS platformFeesCents,
+          COALESCE(SUM(upstreamRoyaltiesPaidCents), 0) AS upstreamRoyaltiesPaidCents
+        FROM (
+          SELECT
+            o.id,
+            o.gross_cents AS grossCents,
+            COALESCE(SUM(CASE WHEN a.role IN ('platform', 'protocol_pool') THEN a.amount_cents ELSE 0 END), 0) AS platformFeesCents,
+            COALESCE(SUM(CASE WHEN a.role = 'ancestor' THEN a.amount_cents ELSE 0 END), 0) AS upstreamRoyaltiesPaidCents
+          FROM commerce_orders o
+          LEFT JOIN commerce_order_allocations a ON a.order_id = o.id
+          WHERE o.seller_user_id = ? AND o.status = 'fulfilled'
+          GROUP BY o.id, o.gross_cents
+        )
+      `).bind(user.id).first();
+      const payoutRow = await env.DB.prepare(`
+        SELECT
+          COALESCE(SUM(CASE
+            WHEN t.status IN ('pending', 'retryable_failure')
+              AND datetime(COALESCE(t.next_attempt_at, t.available_at)) <= CURRENT_TIMESTAMP
+            THEN a.amount_cents ELSE 0 END), 0) AS availableForPayoutCents,
+          COALESCE(SUM(CASE
+            WHEN t.id IS NULL OR t.status = 'processing'
+              OR (t.status IN ('pending', 'retryable_failure')
+                AND datetime(COALESCE(t.next_attempt_at, t.available_at)) > CURRENT_TIMESTAMP)
+            THEN a.amount_cents ELSE 0 END), 0) AS pendingPayoutCents,
+          COALESCE(SUM(CASE WHEN t.status = 'succeeded' THEN a.amount_cents ELSE 0 END), 0) AS paidOutCents
+        FROM commerce_order_allocations a
+        JOIN commerce_orders o ON o.id = a.order_id
+        LEFT JOIN commerce_transfer_outbox t ON t.allocation_id = a.id
+        WHERE a.recipient_user_id = ?
+          AND a.role IN ('maker', 'seller', 'ancestor')
+          AND o.status = 'fulfilled'
+      `).bind(user.id).first();
+      royalties = {
+        ...makerEconomics,
+        grossSalesCents: Number((directSalesRow as any)?.grossSalesCents || 0),
+        platformFeesCents: Number((directSalesRow as any)?.platformFeesCents || 0),
+        upstreamRoyaltiesPaidCents: Number((directSalesRow as any)?.upstreamRoyaltiesPaidCents || 0),
+        netEarningsCents: makerEconomics.makerBalanceCents,
+        availableForPayoutCents: Number((payoutRow as any)?.availableForPayoutCents || 0),
+        pendingPayoutCents: Number((payoutRow as any)?.pendingPayoutCents || 0),
+        paidOutCents: Number((payoutRow as any)?.paidOutCents || 0)
+      };
 
       let stripeStatus: 'not_connected' | 'pending' | 'active' | 'connected' = 'not_connected';
       let payoutsEnabled = false;
