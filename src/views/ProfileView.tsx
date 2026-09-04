@@ -483,6 +483,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-4">
+        {!isLoading && isOwner && !profileData.payoutsEnabled && (
+          <div className="bg-amber-50 border-2 border-amber-500 p-3 mb-4 text-amber-950 flex items-start gap-2">
+            <AlertTriangle size={16} className="shrink-0" />
+            <div>
+              <div className="font-bold text-sm">Connect Stripe</div>
+              <div className="text-xs">Enable Stripe payouts before publishing paid software. Until then, paid listings remain drafts and cannot be purchased.</div>
+            </div>
+          </div>
+        )}
         {errorMessage && (
           <div className="mb-4 bg-red-50 border-2 border-red-500 p-3 rounded text-red-800 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2">

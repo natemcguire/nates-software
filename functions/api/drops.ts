@@ -629,7 +629,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     
     const productPriceCents = priceValidation.priceCents;
-    const honestProductStatus = repositoryHasProvenBuild ? 'active' : 'draft';
+    const payoutAccount = await env.DB.prepare(`
+      SELECT payouts_enabled AS payoutsEnabled
+      FROM stripe_accounts
+      WHERE user_id = ?
+    `).bind(creatorId).first();
+    const payoutsEnabled = Boolean((payoutAccount as any)?.payoutsEnabled);
+    const honestProductStatus = repositoryHasProvenBuild && payoutsEnabled ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
       INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
       SELECT id, ?, creator_id, ?, 'usd', ?, ?
@@ -677,10 +683,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       repositoryId: linkedRepositoryId,
       repositoryProvisioned: Boolean(newRepositoryStmt),
       productStatus: honestProductStatus,
+      payoutsEnabled,
       batchWindow,
       message: honestProductStatus === 'active'
         ? 'Drop published successfully to Cloudflare D1'
-        : 'Drop published as a draft — link a deployable repository (slop push / GITSMITH build) before it can be sold as active.'
+        : !payoutsEnabled
+          ? 'Drop saved as a draft — connect Stripe and enable payouts before this paid listing can go on sale.'
+          : 'Drop published as a draft — link a deployable repository (slop push / GITSMITH build) before it can be sold as active.'
     });
   } catch (err: any) {
     console.error('HOTWIRE drop publication failed', err);

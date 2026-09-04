@@ -11,6 +11,10 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
 
   beforeEach(async () => {
     ctx = await createTestD1Database({ foreignKeys: true });
+    await ctx.d1.prepare(`
+      INSERT INTO stripe_accounts (user_id, stripe_account_id, charges_enabled, payouts_enabled, onboarding_status)
+      VALUES ('usr_nate', 'acct_test_nate_publish', 1, 1, 'active')
+    `).run();
     vi.restoreAllMocks();
   });
 
@@ -172,8 +176,6 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
 
   describe('NSW-50: prove-it gate requires real build evidence, not just a commit', () => {
     async function seedRepoWithCommit(repositoryId: string, dropId: string) {
-      // repositories.app_id references app_listings(id), so a placeholder listing row
-      // must exist first — the POST /api/drops below then updates it (ON CONFLICT).
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, repository_id)
         VALUES (?, 'placeholder', 'placeholder', 'placeholder', 'usr_nate', 'v0.0.1', NULL)
@@ -212,7 +214,6 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.success).toBe(true);
-      // A commit exists, so the repo is "source_ready" — but that is NOT build evidence.
       expect(data.deploymentState).toBe('source_ready');
       expect(data.productStatus).toBe('draft');
 

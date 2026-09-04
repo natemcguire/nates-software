@@ -21,6 +21,7 @@ import type { RigSpec } from '../lib/rigDomain';
 import { calculateAllocations } from '../lib/commerceDomain';
 import { formatCentsToUsd } from '../lib/profileDomain';
 import { getListingRoyaltyHeadroomBps } from '../lib/royaltyLiens';
+import { usePayoutStatus } from '../hooks/usePayoutStatus';
 import '@xterm/xterm/css/xterm.css';
 
 export interface SlopshopViewProps {
@@ -55,6 +56,7 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
 }) => {
   const { showAlert } = useAlert();
   const { user, isAuthenticated, openAuthModal } = useAuth();
+  const { payoutsEnabled, isChecking: isCheckingPayouts } = usePayoutStatus();
   const terminalGateway = useTerminalGateway();
 
   const [curStage, setCurStage] = useState<number>(0);
@@ -93,6 +95,7 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   const publishGrossCents = Number.isFinite(Number(publishPrice)) && Number(publishPrice) > 0
     ? Math.round(Number(publishPrice) * 100)
     : null;
+  const requiresPayoutSetup = Boolean(isAuthenticated && publishGrossCents && !payoutsEnabled);
   let publishForkReceipt = null;
   if (publishGrossCents) {
     try {
@@ -1524,10 +1527,16 @@ This panel shows the real "slop publish" command and the revenue split it would 
                   Enter a valid price to see the money consequence.
                 </div>
               )}
+              {requiresPayoutSetup && (
+                <div className="bg-amber-50 border-2 border-amber-400 p-2 text-xs text-amber-950">
+                  <div className="font-bold">Connect Stripe before publishing this paid listing</div>
+                  <div>Payouts are not enabled on your Profile, so the listing will remain a draft.</div>
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={handleSavePriceAndPublish}
-                  disabled={isPublishing}
+                  disabled={isPublishing || requiresPayoutSetup || Boolean(isAuthenticated && isCheckingPayouts)}
                   className="btn-w95 px-4 py-1 text-xs font-bold disabled:opacity-60"
                 >
                   {isPublishing ? 'Publishing…' : 'Save Price'}

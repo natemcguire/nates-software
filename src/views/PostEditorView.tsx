@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { calculateAllocations } from '../lib/commerceDomain';
 import { formatCentsToUsd } from '../lib/profileDomain';
 import { getListingRoyaltyHeadroomBps } from '../lib/royaltyLiens';
+import { usePayoutStatus } from '../hooks/usePayoutStatus';
 
 export interface DropPersistResult {
   productStatus?: string;
@@ -25,6 +26,7 @@ interface PostEditorViewProps {
 export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab = 'guide', onSave, onCancel }) => {
   const { showAlert } = useAlert();
   const { user, requireAuth } = useAuth();
+  const { payoutsEnabled, isChecking: isCheckingPayouts } = usePayoutStatus();
   const [activeTab, setActiveTab] = useState<'info' | 'media' | 'guide' | 'pricing'>(initialTab);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -93,6 +95,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const descendantOwesMakerCents = descendantPreview?.allocations.find(
     allocation => allocation.role === 'ancestor' && allocation.recipientUserId === 'current-maker'
   )?.amountCents ?? 0;
+  const requiresPayoutSetup = Boolean(user && Number(price) > 0 && !payoutsEnabled);
 
   const handleCopy = (text: string, index: number) => {
     playClickSound();
@@ -540,6 +543,16 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               </div>
             </div>
 
+            {requiresPayoutSetup && (
+              <div className="bg-amber-50 border-2 border-amber-400 p-3 text-xs text-amber-950 flex items-start gap-2">
+                <AlertTriangle size={15} className="shrink-0" />
+                <div>
+                  <div className="font-bold">Connect Stripe before publishing this paid listing</div>
+                  <div>Payouts are not enabled on your Profile. This listing can be saved only as a draft until Stripe payouts are connected.</div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-blue-50 border-2 border-w95-blue p-3.5 rounded space-y-2 text-xs">
               <div className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
                 <CheckCircle2 size={16} className="text-green-700" /> Sale receipt preview
@@ -594,9 +607,9 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
 
         <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || requiresPayoutSetup || Boolean(user && isCheckingPayouts)}
           className={`btn-w95 btn-w95-primary px-6 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-md ${
-            isSaving ? 'opacity-70 cursor-wait' : ''
+            isSaving || requiresPayoutSetup || Boolean(user && isCheckingPayouts) ? 'opacity-70 cursor-not-allowed' : ''
           }`}
         >
           <Save size={13} />
