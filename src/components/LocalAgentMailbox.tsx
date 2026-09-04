@@ -121,10 +121,16 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
   const [showGuide, setShowGuide] = useState(false);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 font-tahoma text-xs">
-      <div className="w-full max-w-md border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0]">
-        <div className="bg-w95-blue text-white px-2 py-1 font-bold flex items-center gap-1.5">
-          <AlertTriangle size={13} /> Local Agent Mailbox
+    <div className="flex-1 flex flex-col items-center justify-start p-6 pt-8 font-tahoma text-xs overflow-y-auto">
+      <div className="w-full max-w-lg win95-field bg-[#c0c0c0] p-1 border-2 border-gray-600">
+        <div className="bg-[#ece9d8] border-b border-gray-400 px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-gray-800 text-sm">
+            <AlertTriangle size={15} className="text-amber-700" />
+            <span>Local Agent Mailbox Service</span>
+          </div>
+          <span className="bg-amber-100 text-amber-900 border border-amber-400 text-[10px] font-mono font-bold px-1.5 py-0.5">
+            OFFLINE
+          </span>
         </div>
         <div className="p-4 space-y-3 text-gray-800 bg-white border border-gray-500 m-1">
           <p className="leading-relaxed">
@@ -157,26 +163,26 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
             </button>
 
             {showGuide && (
-              <div className="mt-2 bg-[#fbfbf8] border border-gray-400 p-2.5 text-[11px] text-gray-800 space-y-2 rounded shadow-inner">
+              <div className="mt-2 bg-[#fbfbf8] border border-gray-400 p-2.5 text-[11px] text-gray-800 space-y-2">
                 <div className="font-bold text-blue-900 border-b border-gray-300 pb-1">Quickstart Installation Guide</div>
                 <div className="space-y-1">
                   <p><b>Step 1: Install the CLI</b></p>
                   <p className="text-gray-600">Run the installer script in your project root to set up the agent-inbox binary:</p>
-                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 font-mono text-[10px] select-text border border-gray-700">
                     ./scripts/install.sh
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p><b>Step 2: Start the background service</b></p>
                   <p className="text-gray-600">Launch the local daemon listening on port 8791:</p>
-                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 font-mono text-[10px] select-text border border-gray-700">
                     agent-inbox serve
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p><b>Step 3: Register an agent mailbox</b></p>
                   <p className="text-gray-600">From any project directory with an active AI coding session:</p>
-                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 font-mono text-[10px] select-text border border-gray-700">
                     agent-inbox whoami
                   </div>
                 </div>
