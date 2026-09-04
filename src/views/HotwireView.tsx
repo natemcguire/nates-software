@@ -25,6 +25,7 @@ import {
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { deriveListingStatus } from '../lib/listingStatus';
+import { humanizeCatalogError } from '../lib/errorUtils';
 
 interface HotwireViewProps {
   onOpenApp?: (appId: string) => void;
@@ -244,7 +245,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
       {catalogError && (
         <div className="bg-amber-100 border-b-2 border-amber-400 px-3 py-1.5 flex items-center justify-between text-amber-900 font-mono text-[11px]">
-          <span className="flex items-center gap-1.5">⚠️ Live Catalog Error: {catalogError}</span>
+          <span className="flex items-center gap-1.5">⚠️ {humanizeCatalogError(catalogError)}</span>
           <button
             onClick={() => { playClickSound(); refreshCatalog(); }}
             className="win95-btn px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 bg-[#dfdfdf] hover:bg-white text-black"
