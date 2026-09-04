@@ -135,7 +135,11 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         tags: ['Game'],
         screenshots: [],
         comments: [],
-        price: 15
+        price: 15,
+        repositoryId: 'repo_dronehunter',
+        hasCanonicalRepo: true,
+        isRepoActive: true,
+        productStatus: 'active'
       };
 
       const unownedHtml = renderToString(
