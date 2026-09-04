@@ -389,6 +389,7 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(existsSync(forkResult.data.worktreePath)).toBe(false);
   });
 
+
   it('Constraint: Honest empty-repo onboarding from B5 is preserved without fabricating files', async () => {
     const emptyRepoId = 'repo_empty_canonical';
     const emptyBarePath = join(testReposDir, 'repositories', emptyRepoId);

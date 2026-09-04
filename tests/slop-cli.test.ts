@@ -243,6 +243,31 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(existsSync(res.data.worktreePath)).toBe(false);
     });
 
+    it('points an already-forked user to GITSMITH instead of dead-ending on a 409', async () => {
+      const mockFetch = async () => Response.json({ success: false, error: 'A repository with this slug already exists for this user.' }, { status: 409 });
+      const res = await handleFork('nate/american-gardener', {
+        fetchImpl: mockFetch,
+        sessionToken: 'live-token',
+        controlPlaneUrl: 'https://nates-software.com'
+      });
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('GITSMITH');
+      expect(res.message).toContain('already have a fork');
+      expect(existsSync(res.data.worktreePath)).toBe(false);
+    });
+
+    it('tells a rejected CLI session to regenerate its token on a 401', async () => {
+      const mockFetch = async () => Response.json({ success: false, error: 'Unauthorized: Valid authenticated session required' }, { status: 401 });
+      const res = await handleFork('nate/american-gardener', {
+        fetchImpl: mockFetch,
+        sessionToken: 'stale-token',
+        controlPlaneUrl: 'https://nates-software.com'
+      });
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('slop login');
+      expect(res.message.toLowerCase()).toContain('expired or revoked');
+    });
+
     it('should succeed when forking an empty canonical repository without fabricating source files', async () => {
       const emptyCanonicalDir = join(tmpdir(), `test-empty-canonical-${Date.now().toString(36)}`);
       mkdirSync(emptyCanonicalDir, { recursive: true });
