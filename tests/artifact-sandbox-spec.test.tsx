@@ -60,4 +60,42 @@ describe('Marketplace Phase C-render: Markdown & ArtifactSandbox UI', () => {
     expect(html).toContain('Comments');
     expect(html).toContain('btn-w95');
   });
+
+  // The contributor-grant CREATE surface (publish-time grantable_bps input,
+  // grant-recording at merge-approve) was removed when contributors were
+  // dropped from the money model. grantable_bps itself remains a historical
+  // column — apps with a pre-existing nonzero value still render this
+  // read-only badge; new drops never set it, so it never appears for them.
+  describe('legacy grantable_bps badge (read-only historical display)', () => {
+    const badgeBaseApp: AppListing = {
+      id: 'app_test_badge',
+      name: 'Badge Test App',
+      tagline: 'Testing contributor upside badge',
+      description: 'Long description',
+      author: 'nate',
+      authorAvatar: '🎯',
+      version: 'v1.0.0',
+      upvotes: 10,
+      forkCount: 2,
+      tags: ['Utility'],
+      screenshots: ['https://example.com/shot.png'],
+      comments: [],
+      price: 15
+    };
+
+    it('renders the "Up to 90% of every sale available to contributors" badge when grantable_bps is 9000', () => {
+      const html = renderSandbox({ ...badgeBaseApp, grantable_bps: 9000, grantableBps: 8000 });
+      expect(html).toContain('Up to 90% of every sale available to contributors');
+    });
+
+    it('renders the "Up to 50% of every sale available to contributors" badge when grantable_bps is 5000', () => {
+      const html = renderSandbox({ ...badgeBaseApp, grantable_bps: 5000, grantableBps: 5000 });
+      expect(html).toContain('Up to 50% of every sale available to contributors');
+    });
+
+    it('does NOT render the contributor upside badge when grantable_bps is 0 or undefined', () => {
+      const html = renderSandbox({ ...badgeBaseApp, grantable_bps: 0, grantableBps: 0 });
+      expect(html).not.toContain('available to contributors');
+    });
+  });
 });

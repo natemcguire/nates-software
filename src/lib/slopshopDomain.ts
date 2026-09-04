@@ -631,8 +631,8 @@ export function generateFeatureManifest(params: {
       activation: 'verified commerce sale after publication',
       makerHandle: handle,
       royaltySplit: {
-        maker: '70%',
-        ancestor: '20%',
+        maker: 'rest',
+        ancestor: 'frozen royalty rate',
         protocolPool: '10%'
       }
     },

@@ -272,9 +272,9 @@ describe('INBOX.EXE live-mode integrity', () => {
     const first: any = await (await post({ action: 'reply', messageId: 'parent', text: 'Please revise this.' })).json();
     const data: any = await (await get()).json();
     const sent = data.threads.find((thread: any) => thread.id === first.messageId);
-    expect(sent).toMatchObject({ direction: 'sent', from: 'Sam Altman (@sam)', inReplyToId: 'parent', unread: false });
+    expect(sent).toMatchObject({ direction: 'sent', from: 'Sam (demo maker) (@sam)', inReplyToId: 'parent', unread: false });
     expect(first.thread).toMatchObject({
-      id: first.messageId, direction: 'sent', from: 'Sam Altman (@sam)', body: 'Please revise this.',
+      id: first.messageId, direction: 'sent', from: 'Sam (demo maker) (@sam)', body: 'Please revise this.',
       inReplyToId: 'parent', unread: false
     });
 

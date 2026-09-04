@@ -655,13 +655,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div>
                 <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
                   <Sparkles size={13} className="text-amber-400" />
-                  <span>Total earned · your 70% + 20% from forks</span>
+                  <span>Total earned · your sales + royalties from forks</span>
                 </div>
                 <div className="text-3xl font-bold font-mono text-white mt-1">
                   {formatCentsToUsd(royalties.makerBalanceCents)} <span className="text-xs text-emerald-400 font-normal">USD</span>
                 </div>
                 <div className="text-xs text-slate-300 mt-0.5">
-                  {formatCentsToUsd(royalties.makerSalesCents)} from your sales (70%) · {formatCentsToUsd(royalties.lineageEarnedCents)} from forks of your apps (20%)
+                  {formatCentsToUsd(royalties.makerSalesCents)} from your sales · {formatCentsToUsd(royalties.lineageEarnedCents)} from forks of your apps
                 </div>
               </div>
 
@@ -682,7 +682,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               {royalties.lineageBreakdown.length === 0 ? (
                 <div className="p-6 text-center text-gray-500 text-xs space-y-1">
                   <p className="font-bold">Nothing here yet</p>
-                  <p>Sell an app and you keep 70%. When someone sells a fork of your app, you earn 20% of that too. It all shows up here.</p>
+                  <p>Sell an app and keep the sale minus the platform's 10%. When someone sells a fork of your app, you earn your frozen royalty rate too. It all shows up here.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -953,7 +953,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-gray-800 block mb-1 text-xs">Get paid via Stripe (your 70% + 20% from forks):</label>
+                <label className="font-bold text-gray-800 block mb-1 text-xs">Get paid via Stripe:</label>
                 <div className="bg-green-50 border border-green-300 p-1.5 rounded flex items-center justify-between text-xs text-green-900">
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold font-mono text-[11px]">

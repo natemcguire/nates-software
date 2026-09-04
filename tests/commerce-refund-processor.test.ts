@@ -124,6 +124,82 @@ describe('Commerce P4 authoritative refund processor', () => {
     expect(row.status).toBe('terminal_failure');
   });
 
+  // Regression for Task C4: under the "Shareware, Restored" model the house role is
+  // 'platform' (recipient_user_id NULL), not the legacy 'protocol_pool'. Migration 0038's
+  // commerce_recovery_matches_order_allocation trigger only allowlists payable roles
+  // ('maker','ancestor','contributor','seller') — 'platform' is absent. Before the C4 fix,
+  // refundProcessor.ts only excluded 'protocol_pool' when deciding whether to INSERT a
+  // commerce_recovery_obligations row, so a refund of a new-model order (which has a
+  // platform allocation) would try to open a platform obligation and the trigger's
+  // RAISE(ABORT) would throw inside db.batch, hard-failing EVERY refund on a new-model
+  // order. This proves: refunding an order with platform+seller+ancestor allocations
+  // SUCCEEDS and creates recovery obligations ONLY for seller+ancestor, never platform.
+  it('new-model order (platform/seller/ancestor): refund succeeds and never opens a platform recovery obligation', async () => {
+    await ctx.d1.prepare(`INSERT INTO commerce_orders
+      (id,idempotency_key,buyer_user_id,app_id,seller_user_id,app_version,price_version,
+       gross_cents,currency,lineage_snapshot_json,stripe_payment_intent_id,status,state_version,
+       paid_at,fulfilled_at)
+      VALUES ('ord_refund_pm','idem_refund_pm','usr_josh','dronehunter','usr_nate','1.0.0',1,
+              10000,'usd','{}','pi_refund_pm','fulfilled',1,datetime('now'),datetime('now'))`).run();
+    await ctx.d1.prepare(`INSERT INTO commerce_order_allocations
+      (id,order_id,sequence,role,recipient_user_id,basis_points,amount_cents)
+      VALUES ('alloc_platform_pm','ord_refund_pm',0,'platform',NULL,NULL,1000),
+             ('alloc_ancestor_pm','ord_refund_pm',1,'ancestor','usr_sam',1000,900),
+             ('alloc_seller_pm','ord_refund_pm',2,'seller','usr_nate',NULL,8100)`).run();
+    await ctx.d1.prepare(`INSERT INTO commerce_licenses
+      (id,order_id,app_id,owner_user_id,license_key_hash,license_key_last4,status)
+      VALUES ('lic_refund_pm','ord_refund_pm','dronehunter','usr_josh',?, 'EFGH','active')`)
+      .bind('b'.repeat(64)).run();
+    await ctx.d1.prepare(`INSERT INTO commerce_transfer_outbox
+      (id,order_id,allocation_id,destination_user_id,amount_cents,currency,status,
+       stripe_idempotency_key)
+      VALUES ('cto_refund_pm_ancestor','ord_refund_pm','alloc_ancestor_pm','usr_sam',900,'usd','pending','transfer:cto_refund_pm_ancestor'),
+             ('cto_refund_pm_seller','ord_refund_pm','alloc_seller_pm','usr_nate',8100,'usd','pending','transfer:cto_refund_pm_seller')`).run();
+
+    await event('evt_refund_pm', 're_full_pm');
+    const refundFetchPm = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/payment_intents/')) return {
+        ok: true,
+        json: async () => ({
+          id: 'pi_refund_pm', object: 'payment_intent', amount: 10000, currency: 'usd',
+          latest_charge: 'ch_refund_pm', livemode: false
+        })
+      } as Response;
+      return {
+        ok: true,
+        json: async () => ({
+          id: 're_full_pm', object: 'refund', amount: 10000, charge: 'ch_refund_pm',
+          payment_intent: 'pi_refund_pm', currency: 'usd', status: 'succeeded',
+          livemode: false, reason: 'requested_by_customer'
+        })
+      } as Response;
+    });
+    const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_pm', {
+      stripeFetchOverride: refundFetchPm
+    });
+
+    // Before the fix this hard-fails (terminal or retryable) because the platform-role
+    // INSERT into commerce_recovery_obligations trips the 0038 trigger's RAISE(ABORT).
+    expect(result).toMatchObject({ success: true, orderId: 'ord_refund_pm', status: 'refunded' });
+
+    const order: any = await ctx.d1.prepare(`SELECT status,refunded_cents FROM commerce_orders WHERE id='ord_refund_pm'`).first();
+    expect(order).toMatchObject({ status: 'refunded', refunded_cents: 10000 });
+
+    const obligations: any = await ctx.d1.prepare(`
+      SELECT cro.amount_cents, coa.role
+      FROM commerce_recovery_obligations cro
+      JOIN commerce_order_allocations coa ON coa.id = cro.allocation_id
+      WHERE cro.order_id='ord_refund_pm'
+      ORDER BY coa.role
+    `).all();
+    const roles = (obligations.results || []).map((r: any) => r.role);
+    expect(roles.sort()).toEqual(['ancestor', 'seller']);
+    expect(roles).not.toContain('platform');
+
+    const obligationTotal = (obligations.results || []).reduce((sum: number, r: any) => sum + Number(r.amount_cents), 0);
+    expect(obligationTotal).toBe(900 + 8100); // exactly the payable (ancestor+seller) share; platform's 1000 is never clawed back
+  });
+
   // Regression for Codex Critical #2: two DIFFERENT (distinct stripe_refund_id) succeeded
   // refund events racing must NOT both finalize. D1 does not throw on a zero-row
   // conditional UPDATE, so the loser's guarded order CAS must be checked BEFORE any

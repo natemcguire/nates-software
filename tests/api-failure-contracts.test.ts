@@ -478,6 +478,18 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
   // ==========================================================================
   describe('5. Comments Engine Error & Query Contracts (/api/comments)', () => {
     it('should query comments from D1 filtered by appId with user join', async () => {
+      // Migration 0036's honesty pass deletes the fabricated 0001-seeded
+      // testimonial comments (c101-c103), so this test seeds its own real
+      // comments to exercise the appId filter + user join.
+      await ctx.d1.prepare(`
+        INSERT INTO comments (id, app_id, user_id, text, upvotes)
+        VALUES ('c_test_1', 'dronehunter', 'usr_josh', 'The phosphor radar sweep is incredible.', 3)
+      `).run();
+      await ctx.d1.prepare(`
+        INSERT INTO comments (id, app_id, user_id, text, upvotes)
+        VALUES ('c_test_2', 'dronehunter', 'usr_nate', 'Hit wave 12 on my first run.', 1)
+      `).run();
+
       const req = new Request('http://localhost/api/comments?app_id=dronehunter', { method: 'GET' });
       const res = await commentsApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
       const data = await res.json();

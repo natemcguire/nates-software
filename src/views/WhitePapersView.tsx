@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { BookOpen, Cpu, Wrench, GitMerge, Mail, Flame, Download, ShieldCheck, Copy, Check } from 'lucide-react';
+import { BookOpen, Cpu, Wrench, GitMerge, Mail, Flame, Download, ShieldCheck, Copy, Check, Scroll } from 'lucide-react';
 import { WHITEPAPERS_DATA } from '../data/whitepapersData';
+import { MONEY_MODEL_MARKDOWN } from '../data/moneyModelData';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { playClickSound } from '../lib/soundEngine';
 
 export const WhitePapersView: React.FC = () => {
-  const [selectedTab, setSelectedTab] = useState<'rig' | 'slopshop' | 'gitsmith' | 'inbox' | 'hotwire' | 'suite'>('gitsmith');
+  const [selectedTab, setSelectedTab] = useState<'rig' | 'slopshop' | 'gitsmith' | 'inbox' | 'hotwire' | 'suite' | 'moneyModel'>('gitsmith');
   const [copied, setCopied] = useState(false);
 
   const papers = {
@@ -50,6 +51,13 @@ export const WhitePapersView: React.FC = () => {
       subtitle: "Decoupled Local-First Open Source System Invariants",
       icon: <BookOpen size={16} className="text-blue-900" />,
       content: WHITEPAPERS_DATA.suite
+    },
+    moneyModel: {
+      id: 'moneyModel',
+      title: "Shareware, Restored",
+      subtitle: "How Forking, Frozen Royalties & Settlement Actually Work",
+      icon: <Scroll size={16} className="text-emerald-700" />,
+      content: MONEY_MODEL_MARKDOWN
     }
   };
 

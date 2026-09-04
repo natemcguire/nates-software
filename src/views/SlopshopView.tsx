@@ -24,6 +24,7 @@ export interface SlopshopViewProps {
   onOpenTerminal?: () => void;
   onOpenGitsmith?: () => void;
   onOpenHotwire?: () => void;
+  onOpenWhitePapers?: () => void;
 }
 
 interface TerminalLine {
@@ -38,14 +39,15 @@ const STATUS_MESSAGES = [
   'Slop is the work: change the app with an AI agent, right in the terminal.',
   'Run boots your fork in the RIG runtime so you can see the change live.',
   'Push sends your commits back to GITSMITH with a verification proof.',
-  'Publish lists your version. Sales settle 70 / 20 / 10 down the lineage.'
+  'Publish lists your version. On a sale the platform takes 10%, upstream makers earn their royalty, you keep the rest.'
 ];
 
 export const SlopshopView: React.FC<SlopshopViewProps> = ({
   onOpenApp,
   onOpenTerminal,
   onOpenGitsmith,
-  onOpenHotwire: _onOpenHotwire
+  onOpenHotwire: _onOpenHotwire,
+  onOpenWhitePapers
 }) => {
   const { showAlert } = useAlert();
   const { user, isAuthenticated, openAuthModal } = useAuth();
@@ -66,6 +68,10 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
 
   // Price for Publish
   const [publishPrice, setPublishPrice] = useState<string>('15');
+  // Maker-chosen royalty (%) taken when a downstream fork resells this app. Blank means
+  // 0% — never a hidden default; the maker must opt in to a nonzero royalty.
+  const [publishRoyaltyPct, setPublishRoyaltyPct] = useState<string>('');
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
 
   // Backend States
   const [gitsmithState, setGitsmithState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
@@ -538,17 +544,62 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
           type: 'dim'
         },
         {
-          text: 'pending — once published for real, buyers get a license + your source, you keep 70%.',
+          text: 'pending — once published for real, buyers get a license + your source. Platform takes 10%, upstream makers earn their royalty, you keep the rest.',
           type: 'system'
         }
       ]);
       showAlert(
         `"${makerHandle}/${coordinate.appId}" is not published yet.
 
-This panel shows the real "slop publish" command and the revenue split it would create — it does not create a listing itself. Run the command above (or use the gateway) to actually publish. When a published fork sells, revenue settles 70% to you, 20% up the fork lineage, and 10% to the protocol pool.`,
+This panel shows the real "slop publish" command and the revenue split it would create — it does not create a listing itself. Run the command above (or use the gateway) to actually publish. When a published fork sells: the platform takes 10% off the top, each upstream maker in the fork lineage earns their frozen royalty rate, and you keep the rest.`,
         'Not Published — Honest Status',
         'info'
       );
+    }
+  };
+
+  // Set-Listing-Price modal "Save Price" -> a REAL, authenticated POST to /api/drops.
+  // This is the only place in SLOPSHOP that actually creates/updates a marketplace
+  // listing. It must never claim success without a genuinely successful response —
+  // on any non-ok response, the real server error is surfaced instead.
+  const handleSavePriceAndPublish = async () => {
+    playClickSound();
+    const pct = Number(publishRoyaltyPct);
+    const royaltyBps = Math.min(10000, Math.max(0, Math.round((Number.isFinite(pct) ? pct : 0) * 100)));
+    // coordinateFromForgeRepository can leave version as the literal placeholder
+    // 'Forge repository' when no known catalog entry exists — /api/drops requires real
+    // semver, so fall back to v1.0.0 rather than sending a value the server will reject.
+    const publishVersion = /^v?\d+\.\d+\.\d+$/.test(coordinate.version) ? coordinate.version : 'v1.0.0';
+
+    setIsPublishing(true);
+    try {
+      const res = await fetch('/api/drops', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: coordinate.appId,
+          name: coordinate.name,
+          tagline: coordinate.tagline,
+          version: publishVersion,
+          price: `$${publishPrice}.00`,
+          royaltyBps
+        })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to publish listing (${res.status})`);
+      }
+      setModalType(null);
+      showAlert(
+        `"${makerHandle}/${coordinate.appId}" published at $${publishPrice}.00 with a ${(royaltyBps / 100).toFixed(2)}% fork royalty.`,
+        'Published',
+        'success'
+      );
+    } catch (err: any) {
+      showAlert(err?.message || 'Failed to publish listing', 'Publish Failed', 'error');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -610,7 +661,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
           { text: '  slop mod <feature>   - Splice feature changes with local agent', type: 'output' },
           { text: '  slop run             - Boot fork inside RIG micro-dyno runtime', type: 'output' },
           { text: '  slop push            - Send verified CAS ref to GITSMITH forge', type: 'output' },
-          { text: '  slop publish         - List your version for sale (70/20/10 split)', type: 'output' },
+          { text: '  slop publish         - List your version for sale (you keep the sale minus 10% platform + any upstream royalties)', type: 'output' },
           { text: '  gateway              - Connect to real PTY gateway container', type: 'output' },
           { text: '  whoami               - Print authenticated user handle', type: 'output' },
           { text: '  clear                - Clear console buffer', type: 'output' }
@@ -786,7 +837,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
           onClick={() => {
             playClickSound();
             showAlert(
-              "SLOPSHOP is the one-loop dev environment for Nate's Software Suite.\n\n1. Fork an app via GITSMITH forge (real — /api/git)\n2. Slop it with an AI agent in the terminal\n3. Run your fork live in the RIG runtime (real — /api/rig, when the gateway is configured)\n4. Push verified commits back to GITSMITH\n5. Publish for sale (you keep 70%)\n\nFork and Run call real backends and fail closed honestly if they can't confirm success. Slop, Push, and Publish happen on your machine or the gateway — this panel shows you the exact command and an honest pending/offline status, it never fakes '✓ pushed' or '✓ live'.",
+              "SLOPSHOP is the one-loop dev environment for Nate's Software Suite.\n\n1. Fork an app via GITSMITH forge (real — /api/git)\n2. Slop it with an AI agent in the terminal\n3. Run your fork live in the RIG runtime (real — /api/rig, when the gateway is configured)\n4. Push verified commits back to GITSMITH\n5. Publish for sale (platform takes 10%, upstream makers earn their royalty, you keep the rest)\n\nFork and Run call real backends and fail closed honestly if they can't confirm success. Slop, Push, and Publish happen on your machine or the gateway — this panel shows you the exact command and an honest pending/offline status, it never fakes '✓ pushed' or '✓ live'.",
               'SLOPSHOP Help',
               'info'
             );
@@ -835,7 +886,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
             'this is the work',
             'RIG runtime',
             'to GITSMITH',
-            'you keep 70%'
+            'platform takes 10%'
           ];
 
           return (
@@ -1104,31 +1155,28 @@ This panel shows the real "slop publish" command and the revenue split it would 
             className="bg-[#000080] text-white px-1.5 py-0.2 font-normal not-italic font-mono"
             style={{ fontStyle: 'normal' }}
           >
-            70%
-          </i>{' '}
-          you
-        </span>
-        <span className="flex items-center gap-1 font-mono text-[11px]">
-          <i
-            className="bg-[#000080] text-white px-1.5 py-0.2 font-normal not-italic font-mono"
-            style={{ fontStyle: 'normal' }}
-          >
-            20%
-          </i>{' '}
-          up the fork lineage
-        </span>
-        <span className="flex items-center gap-1 font-mono text-[11px]">
-          <i
-            className="bg-[#000080] text-white px-1.5 py-0.2 font-normal not-italic font-mono"
-            style={{ fontStyle: 'normal' }}
-          >
             10%
           </i>{' '}
-          protocol
+          platform
+        </span>
+        <span className="flex items-center gap-1 font-mono text-[11px]">
+          each upstream maker earns their frozen royalty
+        </span>
+        <span className="flex items-center gap-1 font-mono text-[11px]">
+          you keep the rest
         </span>
         <span className="text-[#555] text-[11px] ml-auto">
-          A root app with no ancestors is 90 / 10.
+          A root app with no ancestors: 10% platform, 90% you.
         </span>
+        <button
+          onClick={() => {
+            playClickSound();
+            onOpenWhitePapers?.();
+          }}
+          className="text-[11px] text-[#000080] hover:underline cursor-pointer bg-transparent border-0 p-0 font-bold"
+        >
+          📜 How the money works
+        </button>
       </div>
 
       {/* PRIMARY ACTIONS (Dynamic Per Stage) */}
@@ -1442,18 +1490,38 @@ This panel shows the real "slop publish" command and the revenue split it would 
                   <span className="text-xs text-[#555]">.00</span>
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-bold mb-1">
+                  Your royalty when someone forks &amp; resells (%):
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="0"
+                    value={publishRoyaltyPct}
+                    onChange={(e) => setPublishRoyaltyPct(e.target.value)}
+                    className="w-full bg-white border-2 border-[#808080] border-r-[#ffffff] border-b-[#ffffff] px-2 py-1 font-mono text-sm outline-none"
+                  />
+                  <span className="text-xs text-[#555]">%</span>
+                </div>
+              </div>
               <div className="text-[11px] text-[#555] bg-white border border-[#808080] p-2">
                 At ${publishPrice}.00:
-                <br />• <b>70%</b> (${((Number(publishPrice) || 0) * 0.7).toFixed(2)}) goes directly to you.
-                <br />• <b>20%</b> (${((Number(publishPrice) || 0) * 0.2).toFixed(2)}) goes to upstream lineage.
-                <br />• <b>10%</b> (${((Number(publishPrice) || 0) * 0.1).toFixed(2)}) goes to protocol liquidity.
+                <br />• Platform takes <b>10%</b> (${((Number(publishPrice) || 0) * 0.1).toFixed(2)}).
+                <br />• You keep the rest — up to <b>90%</b> (${((Number(publishPrice) || 0) * 0.9).toFixed(2)}) if this is a root app with no ancestors.
+                <br />• If you forked this from someone, their frozen royalty is paid from that 90% first — you keep what's left.
+                <br />• Your own royalty rate ({publishRoyaltyPct || '0'}%) is what <b>you</b> will earn when someone forks &amp; resells this app later.
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
-                  onClick={() => setModalType(null)}
-                  className="btn-w95 px-4 py-1 text-xs font-bold"
+                  onClick={handleSavePriceAndPublish}
+                  disabled={isPublishing}
+                  className="btn-w95 px-4 py-1 text-xs font-bold disabled:opacity-60"
                 >
-                  Save Price
+                  {isPublishing ? 'Publishing…' : 'Save Price'}
                 </button>
               </div>
             </div>

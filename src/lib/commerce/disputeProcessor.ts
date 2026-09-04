@@ -311,7 +311,11 @@ export async function processDisputeInboxEvent(
     // double-opens obligations for the same dispute).
     const lostStatements: any[] = [];
     for (const delta of deltas) {
-      if (delta.role === 'protocol_pool' || delta.deltaAmountCents <= 0) continue;
+      // House roles ('platform' under the new model, legacy 'protocol_pool') are never
+      // paid out via Connect, so they must never get a recovery obligation — migration
+      // 0038's commerce_recovery_matches_order_allocation trigger only allowlists payable
+      // roles ('maker','ancestor','contributor','seller') and RAISE(ABORT)s otherwise.
+      if (delta.role === 'protocol_pool' || delta.role === 'platform' || delta.deltaAmountCents <= 0) continue;
       const outboxRow: any = await db.prepare(`
         SELECT id FROM commerce_transfer_outbox WHERE allocation_id = ?
       `).bind(delta.id).first();

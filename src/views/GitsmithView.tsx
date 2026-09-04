@@ -606,7 +606,7 @@ export const GitsmithView: React.FC = () => {
           </div>
           <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-amber-400">
             <Sparkles size={14} />
-            <span>70/20/10 Lineage Pool</span>
+            <span>Frozen Royalty Lineage</span>
           </div>
           <button
             onClick={() => {
@@ -1166,7 +1166,7 @@ export const GitsmithView: React.FC = () => {
             <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-4 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-700 pb-3">
                 <div>
-                  <h3 className="font-bold text-sm text-white">70% Maker / 20% Lineage Ancestor Settlement</h3>
+                  <h3 className="font-bold text-sm text-white">Platform Fee / Frozen Ancestor Royalty Settlement</h3>
                   <p className="text-xs text-slate-400">Mathematical splits automatically credited upon license purchase or fork fee.</p>
                 </div>
                 <span className="bg-amber-950 text-amber-300 border border-amber-700 px-2.5 py-1 rounded text-xs font-mono font-bold">
@@ -1178,12 +1178,12 @@ export const GitsmithView: React.FC = () => {
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
                   <div className="text-slate-400 mb-1 font-bold">Root Release</div>
                   <div className="text-2xl font-black text-emerald-400">90% / 10%</div>
-                  <div className="text-[11px] text-slate-400 mt-1">No ancestor claim: unused lineage allocation returns to the maker.</div>
+                  <div className="text-[11px] text-slate-400 mt-1">No ancestor claim: maker keeps 90%, platform takes 10%.</div>
                 </div>
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
                   <div className="text-slate-400 mb-1 font-bold">Downstream Release</div>
-                  <div className="text-2xl font-black text-sky-400">70% / 20% / 10%</div>
-                  <div className="text-[11px] text-slate-400 mt-1">Immediate maker / upstream ancestors / protocol pool.</div>
+                  <div className="text-2xl font-black text-sky-400">10% + royalty + rest</div>
+                  <div className="text-[11px] text-slate-400 mt-1">Platform's flat 10% / each upstream maker's frozen royalty / seller keeps the rest.</div>
                 </div>
                 <div className="bg-[#0f172a] p-3 rounded-lg border border-slate-700">
                   <div className="text-slate-400 mb-1 font-bold">Selected Repository</div>

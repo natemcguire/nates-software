@@ -640,16 +640,16 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 <span>When you publish and sell your fork:</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>⚡ You (the maker/seller):</span>
-                <span className="font-bold text-emerald-400">70% of every sale</span>
+                <span>🛡️ Platform:</span>
+                <span className="font-bold text-purple-300">10% flat</span>
               </div>
               <div className="flex justify-between border-b border-blue-900 pb-1 text-gray-300">
-                <span>💎 Upstream creator chain:</span>
-                <span className="font-bold text-blue-300">20%</span>
+                <span>💎 Upstream makers you forked from:</span>
+                <span className="font-bold text-blue-300">their frozen royalty rate</span>
               </div>
               <div className="flex justify-between text-gray-300">
-                <span>🛡️ Platform liquidity pool:</span>
-                <span className="font-bold text-purple-300">10%</span>
+                <span>⚡ You (the maker/seller):</span>
+                <span className="font-bold text-emerald-400">the rest</span>
               </div>
               <div className="text-[10px] text-blue-300 pt-0.5">
                 Root apps with no ancestors earn 90% maker / 10% platform. No entitlement or payout is created by this wizard.

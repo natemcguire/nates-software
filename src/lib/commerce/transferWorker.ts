@@ -399,7 +399,7 @@ export async function processTransferOutboxItem(
   // 5. Destination User Validation
   const destinationUserId = outbox.destination_user_id;
   if (!destinationUserId || typeof destinationUserId !== 'string' || !destinationUserId.trim()) {
-    const errorMsg = `Transfer outbox row '${outboxId}' has no valid destination_user_id (protocol pool transfers not supported)`;
+    const errorMsg = `Transfer outbox row '${outboxId}' has no valid destination_user_id (platform allocations are not transferred out)`;
     await markTransferTerminalFailure(db, outboxId, claimToken, errorMsg);
     return {
       success: false,

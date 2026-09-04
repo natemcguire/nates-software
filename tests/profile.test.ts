@@ -121,8 +121,10 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
     });
 
     it('should calculate maker economics accurately', () => {
+      // 'seller' is the direct-sale role the current engine writes; a legacy 'maker'
+      // row must still count (historical back-compat). Both feed makerSalesCents.
       const allocations = [
-        { role: 'maker', amount_cents: 1050, app_id: 'dronehunter', name: 'DroneHunter 95' },
+        { role: 'seller', amount_cents: 1050, app_id: 'dronehunter', name: 'DroneHunter 95' },
         { role: 'ancestor', amount_cents: 300, app_id: 'dronehunter', name: 'DroneHunter 95' },
         { role: 'maker', amount_cents: 1750, app_id: 'certified-mailer', name: 'Certified Mailer' }
       ];

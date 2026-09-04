@@ -10,8 +10,10 @@ import * as dropsApi from '../functions/api/drops';
 //      .nates-software.com (shared across apex + app subdomains) on real hosts,
 //      host-only on localhost/previews; cross-subdomain cookie mutations within
 //      the ecosystem are same-site, cross-site is still blocked.
-// (The root grantable-cap seam (root <= 8000) is covered in
-//  marketplace-phaseA-grantable.test.tsx.)
+// (Contributor-grant CRUD — including the grantable_bps write these tests
+// used to exercise — was removed when contributors were dropped from the
+// money model; see royalty_bps below for the equivalent per-listing economic
+// write still owned/guarded by drops.ts.)
 
 describe('Seam regression: PUBLISH cross-user repository link', () => {
   let ctx: TestD1Context;
@@ -47,8 +49,8 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
     `).run();
   });
 
-  it("refuses to link (and write grantable_bps onto) a repository the caller does not own", async () => {
-    // Mallory tries to publish a listing that links Alice's repo + sets a grant pool on it.
+  it("refuses to link a repository the caller does not own", async () => {
+    // Mallory tries to publish a listing that links Alice's repo.
     const req = new Request('http://localhost/api/drops', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer session_mallory', 'Origin': 'http://localhost' },
@@ -58,17 +60,16 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
         version: '1.0.0',
         price: '$20',
         repositoryId: 'repo_alice',
-        grantableBps: 5000
+        royaltyBps: 5000
       })
     });
     await dropsApi.onRequestPost({ request: req, env: env() });
 
     // Whatever the exact response, the invariant is: Mallory's publish must NOT
-    // have linked Alice's repo nor written grantable_bps onto it.
-    const repoRow = await ctx.d1.prepare('SELECT owner_user_id, grantable_bps FROM repositories WHERE id = ?')
-      .bind('repo_alice').first<{ owner_user_id: string; grantable_bps: number }>();
+    // have linked Alice's repo (ownership untouched).
+    const repoRow = await ctx.d1.prepare('SELECT owner_user_id FROM repositories WHERE id = ?')
+      .bind('repo_alice').first<{ owner_user_id: string }>();
     expect(repoRow?.owner_user_id).toBe('usr_alice');
-    expect(repoRow?.grantable_bps).toBe(0); // never written by a non-owner
 
     // And no listing/product may have bound Alice's repo to Mallory as seller.
     const prod = await ctx.d1.prepare(
@@ -87,14 +88,14 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
         version: '1.0.0',
         price: '$20',
         repositoryId: 'repo_alice',
-        grantableBps: 3000
+        royaltyBps: 3000
       })
     });
     const res = await dropsApi.onRequestPost({ request: req, env: env() });
     expect(res.status).toBe(200);
-    const repoRow = await ctx.d1.prepare('SELECT grantable_bps FROM repositories WHERE id = ?')
-      .bind('repo_alice').first<{ grantable_bps: number }>();
-    expect(repoRow?.grantable_bps).toBe(3000);
+    const productRow = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE repository_id = ?')
+      .bind('repo_alice').first<{ royalty_bps: number }>();
+    expect(productRow?.royalty_bps).toBe(3000);
   });
 });
 

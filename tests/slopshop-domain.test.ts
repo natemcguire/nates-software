@@ -146,8 +146,8 @@ describe('SLOPSHOP Local-First Domain & Agent Workflow Engine', () => {
       expect(manifest.lineageContract.makerHandle).toBe('@josh');
       expect(manifest.lineageContract.status).toBe('proposal_only');
       expect(manifest.lineageContract.activation).toBe('verified commerce sale after publication');
-      expect(manifest.lineageContract.royaltySplit.maker).toBe('70%');
-      expect(manifest.lineageContract.royaltySplit.ancestor).toBe('20%');
+      expect(manifest.lineageContract.royaltySplit.maker).toBe('rest');
+      expect(manifest.lineageContract.royaltySplit.ancestor).toBe('frozen royalty rate');
       expect(manifest.evidenceRequirements.typecheckRequired).toBe(true);
       expect(manifest.evidenceRequirements.testsRequired).toBe(true);
       expect(manifest.evidenceRequirements.sha256DigestRequired).toBe(true);

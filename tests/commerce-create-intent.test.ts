@@ -287,8 +287,8 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(sentBody.get('amount')).toBe('1500');
       expect(sentBody.get('currency')).toBe('usd');
       expect(sentBody.get('metadata[buyerUserId]')).toBe('usr_nate');
-      expect(sentBody.get('metadata[makerCents]')).toBe('1350');
-      expect(sentBody.get('metadata[protocolPoolCents]')).toBe('150');
+      expect(sentBody.get('metadata[sellerCents]')).toBe('1350');
+      expect(sentBody.get('metadata[platformCents]')).toBe('150');
     });
   });
 
@@ -296,7 +296,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
   // 5. ROOT AND FORK ALLOCATIONS D1 PERSISTENCE
   // ==========================================================================
   describe('5. Root & Fork Allocations D1 Atomic Persistence', () => {
-    it('atomically persists root app allocations (9000 bps / 1000 bps) and order event', async () => {
+    it('atomically persists root app allocations (platform 10% / seller 90%, no liens) and order event', async () => {
       await createSession('usr_nate', 'test_token_buyer');
 
       globalThis.fetch = vi.fn().mockResolvedValue({
@@ -343,25 +343,32 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
       expect(allocs.results).toHaveLength(2);
 
-      // Maker: 90% of 2500 = 2250 cents (9000 bps)
-      expect(allocs.results![0]).toEqual({
-        sequence: 0,
-        role: 'maker',
+      // House-first conservation: platform + seller == gross exactly.
+      const total = allocs.results!.reduce((s: number, a: any) => s + a.amountCents, 0);
+      expect(total).toBe(2500);
+      expect(allocs.results!.some((a: any) => a.role === 'ancestor')).toBe(false);
+
+      // Seller: floored remainder of R (no liens, so 90% of 2500 = 2250 cents)
+      const seller = allocs.results!.find((a: any) => a.role === 'seller');
+      expect(seller).toEqual({
+        sequence: 1,
+        role: 'seller',
         recipientUserId: 'usr_nate',
         sourceRepositoryId: null,
         lineageDepth: 0,
-        basisPoints: 9000,
+        basisPoints: null,
         amountCents: 2250
       });
 
-      // Protocol Pool: 10% of 2500 = 250 cents (1000 bps)
-      expect(allocs.results![1]).toEqual({
-        sequence: 1,
-        role: 'protocol_pool',
+      // Platform (house): flat 10% base + any rounding dust = 250 cents
+      const platform = allocs.results!.find((a: any) => a.role === 'platform');
+      expect(platform).toEqual({
+        sequence: 2,
+        role: 'platform',
         recipientUserId: null,
         sourceRepositoryId: null,
         lineageDepth: null,
-        basisPoints: 1000,
+        basisPoints: null,
         amountCents: 250
       });
 
@@ -375,7 +382,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(events.results!.map((e: any) => e.eventType)).toContain('intent_created');
     });
 
-    it('atomically persists fork app allocations (7000 maker / 2000 lineage / 1000 pool)', async () => {
+    it('atomically persists fork app allocations from frozen liens (platform 10%, two 10% ancestor liens, seller remainder)', async () => {
       // 1. Setup user hierarchy: Root (usr_root) -> Parent (usr_parent) -> Maker (usr_forker)
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name)
@@ -411,6 +418,17 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
           parent_ref_name, parent_commit_oid, child_initial_commit_oid,
           lineage_root_repository_id, depth
         ) VALUES ('repo_fork', 'repo_parent', 'usr_forker', 'refs/heads/main', 'oid_2', 'oid_2', 'repo_root', 2)
+      `).run();
+
+      // 3b. Frozen liens captured at fork-confirm time (Task B2, not this task):
+      // repo_fork owes 10% to usr_parent (depth 1, immediate parent's listing rate)
+      // and 10% to usr_root (depth 2, inherited from the parent's own liens).
+      await ctx.d1.prepare(`
+        INSERT INTO repository_fork_liens (
+          id, holder_of_repository_id, ancestor_repository_id, ancestor_user_id, bps, depth
+        ) VALUES
+          ('rfl_1', 'repo_fork', 'repo_parent', 'usr_parent', 1000, 1),
+          ('rfl_2', 'repo_fork', 'repo_root', 'usr_root', 1000, 2)
       `).run();
 
       // 4. Setup app_listings & commerce_products for the fork
@@ -463,11 +481,11 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.success).toBe(true);
       expect(data.amountCents).toBe(3000);
 
-      // Verify allocations in D1:
-      // Gross = 3000 cents.
-      // Maker (70%): 2100 cents (7000 bps)
-      // Lineage (20%): 600 cents total (2000 bps) -> 2 ancestors = 300 cents each (1000 bps each)
-      // Protocol Pool (10%): 300 cents (1000 bps)
+      // Verify allocations in D1 via the additive frozen-lien model:
+      // Gross = 3000 cents. Platform base = floor(0.10 * 3000) = 300. R = 2700.
+      // Each 10%-bps ancestor lien pays floor(0.10 * 2700) = 270 (additive, not nested).
+      // Seller keeps the floored remainder of R: 2700 - 270 - 270 = 2160.
+      // Conservation: 300 (platform) + 270 + 270 (ancestors) + 2160 (seller) == 3000.
       const allocs = await ctx.d1.prepare(`
         SELECT sequence, role, recipient_user_id AS recipientUserId,
                source_repository_id AS sourceRepositoryId, lineage_depth AS lineageDepth,
@@ -479,49 +497,54 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
       expect(allocs.results).toHaveLength(4);
 
-      // Sequence 0: Maker
+      const total = allocs.results!.reduce((s: number, a: any) => s + a.amountCents, 0);
+      expect(total).toBe(3000);
+
+      // Sequence 1: Ancestor (root: repo_root / usr_root, depth 2, sorted root-first)
       expect(allocs.results![0]).toEqual({
-        sequence: 0,
-        role: 'maker',
-        recipientUserId: 'usr_forker',
-        sourceRepositoryId: 'repo_fork',
-        lineageDepth: 0,
-        basisPoints: 7000,
-        amountCents: 2100
-      });
-
-      // Sequence 1: Ancestor 1 (parent: repo_parent / usr_parent)
-      expect(allocs.results![1]).toEqual({
         sequence: 1,
-        role: 'ancestor',
-        recipientUserId: 'usr_parent',
-        sourceRepositoryId: 'repo_parent',
-        lineageDepth: 1,
-        basisPoints: 1000,
-        amountCents: 300
-      });
-
-      // Sequence 2: Ancestor 2 (root: repo_root / usr_root)
-      expect(allocs.results![2]).toEqual({
-        sequence: 2,
         role: 'ancestor',
         recipientUserId: 'usr_root',
         sourceRepositoryId: 'repo_root',
         lineageDepth: 2,
         basisPoints: 1000,
-        amountCents: 300
+        amountCents: 270
       });
 
-      // Sequence 3: Protocol Pool
-      expect(allocs.results![3]).toEqual({
+      // Sequence 2: Ancestor (parent: repo_parent / usr_parent, depth 1)
+      expect(allocs.results![1]).toEqual({
+        sequence: 2,
+        role: 'ancestor',
+        recipientUserId: 'usr_parent',
+        sourceRepositoryId: 'repo_parent',
+        lineageDepth: 1,
+        basisPoints: 1000,
+        amountCents: 270
+      });
+
+      // Sequence 3: Seller — floored remainder of R after all ancestor liens
+      expect(allocs.results![2]).toEqual({
         sequence: 3,
-        role: 'protocol_pool',
+        role: 'seller',
+        recipientUserId: 'usr_forker',
+        sourceRepositoryId: 'repo_fork',
+        lineageDepth: 0,
+        basisPoints: null,
+        amountCents: 2160
+      });
+
+      // Sequence 4: Platform (house) — flat 10% base + any rounding dust
+      expect(allocs.results![3]).toEqual({
+        sequence: 4,
+        role: 'platform',
         recipientUserId: null,
         sourceRepositoryId: null,
         lineageDepth: null,
-        basisPoints: 1000,
+        basisPoints: null,
         amountCents: 300
       });
+
+      expect(allocs.results!.some((a: any) => a.role === 'maker' || a.role === 'protocol_pool' || a.role === 'contributor')).toBe(false);
     });
   });
 

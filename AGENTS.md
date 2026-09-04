@@ -21,12 +21,14 @@
    - Applications are modular feature packages (canonical refs `refs/features/<name>/<version>`).
    - Users can fork any application into an isolated local worktree using `slop fork`, weld new capabilities via AST transformers in `SLOPSHOP`, test in `RIG.EXE`, and merge upstream.
 
-4. **Lineage Ledger Economics (70 / 20 / 10 Split):**
-   - When a downstream fork sells a copy, revenue is settled atomically via the Lineage Ledger:
-     - **70%** directly to the immediate Maker.
-     - **20%** distributed evenly across the upstream Ancestor chain.
-     - **10%** deposited into the Protocol Liquidity Pool.
-   - A root app has no ancestor claim. Its unused 20% lineage allocation returns to its maker, producing an explicit **90% maker / 10% protocol** root split.
+4. **Frozen-Lien Royalty Economics ("Shareware, Restored"):**
+   - Every app ships under one of two license modes, chosen by its maker at publish: **Personal** (fork it for yourself; no resale) or **Resale** at a maker-set royalty rate `r` (0–100%, integer basis points; `r = 0%` is simply "free to fork and resell").
+   - `r` is **frozen onto the fork edge** the moment someone forks a Resale app, and that lien runs with every descendant of that fork forever. A forker may set their own rate on their own new listing, but can never alter or drop a lien they inherited — an ancestor's cut can't be zeroed out by anyone downstream.
+   - Before forking, a maker sees `Σr` — the sum of every inherited lien — as their cost-of-goods on each future sale. A fork whose inherited `Σr` plus the parent's own rate would exceed 100% is blocked.
+   - **Settlement on a sale of gross `G`:** the platform takes a flat `floor(10% × G)` off the top; each upstream lien-holder is then paid `floor(r_i × R)` out of the remainder `R`, additively and oldest (root) first — never nested off another maker's cut — and the seller keeps what's left. Every maker allocation is `floor`ed; the rounding dust always accrues to the platform, so `platform + Σ liens + seller == G` exactly.
+   - A root app has no inherited liens, so its maker keeps everything above the flat 10% platform fee.
+   - **All sales are final.** Only the owner (`super_admin`) can issue a refund, at their own discretion, through a server-authorized admin path — there is no buyer- or maker-initiated refund flow.
+   - A Resale listing can't go live for paid sale until its repo has a proven build+health run in `RIG.EXE`; Personal (free) listings are unrestricted.
    - Purchase-time allocation rows are immutable. Stripe webhooks never transfer money directly; they create durable, retryable outbox work.
 
 ---
@@ -200,7 +202,7 @@ npm run deploy
 │   │   ├── comments.ts     # Maker feedback stream
 │   │   ├── drops.ts        # HOTWIRE 12:01 AM batch drops
 │   │   ├── dyno.ts         # DYNO benchmark sink
-│   │   ├── git.ts          # CAS merge & 70/20/10 royalty settlement
+│   │   ├── git.ts          # CAS merge & frozen-lien royalty settlement
 │   │   ├── inbox.ts        # 3-Pane inbox & proposals API
 │   │   ├── profile.ts      # Maker identity API
 │   │   ├── shelf.ts        # License claiming API

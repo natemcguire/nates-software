@@ -92,7 +92,7 @@ describe('WAVE-UX-B Specification Tests', () => {
       );
 
       expect(html).not.toContain('Sign in to null');
-      expect(html).toContain('Create an account to keep your forks, vote on drops, and earn 70% when you sell.');
+      expect(html).toContain('Create an account to keep your forks, vote on drops, and get paid when you sell.');
     });
   });
 
@@ -144,7 +144,7 @@ describe('WAVE-UX-B Specification Tests', () => {
         </AuthContext.Provider>
       );
 
-      expect(html).toContain('Create an account to keep your forks, vote on drops, and earn 70% when you sell.');
+      expect(html).toContain('Create an account to keep your forks, vote on drops, and get paid when you sell.');
     });
   });
 

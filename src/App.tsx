@@ -389,7 +389,9 @@ export function AppInner() {
             setEditingApp(app || null);
           }}
         />);
-      case 'slopshop': return renderStandaloneWrapper(route.title || "SLOPSHOP", <SlopshopView />);
+      case 'slopshop': return renderStandaloneWrapper(route.title || "SLOPSHOP", (
+        <SlopshopView onOpenWhitePapers={() => { window.location.href = 'https://nates-software.com/white-papers?view=papers'; }} />
+      ));
       case 'rig': return renderStandaloneWrapper(route.title || "RIG — INFRASTRUCTURE", (
         <div className="h-full overflow-auto bg-[#ece9d8] p-6 flex items-center justify-center">
           <div className="max-w-md bg-white border-2 border-t-white border-l-white border-b-gray-700 border-r-gray-700 p-5 text-black font-tahoma text-sm leading-relaxed shadow-lg">
@@ -1014,7 +1016,7 @@ export function AppInner() {
           onMove={(x, y) => updateWindowPosition('slopshop', x, y)}
           onResize={(w, h, x, y) => updateWindowSize('slopshop', w, h, x, y)}
         >
-          <SlopshopView />
+          <SlopshopView onOpenWhitePapers={() => openWindow('papers')} />
         </RetroWindow>
       </ErrorBoundary>
 

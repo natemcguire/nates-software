@@ -31,8 +31,8 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
   // Helper to create a root order (dronehunter, $15.00)
   async function seedRootOrder(orderId = 'ord_root_test_1', status = 'requires_payment') {
     const grossCents = 1500;
-    const makerCents = 1350; // 90%
-    const poolCents = 150;   // 10%
+    const sellerCents = 1350; // 90%
+    const platformCents = 150; // 10% (house, never paid out)
     const piId = `pi_${orderId}`;
 
     await ctx.d1.prepare(`
@@ -44,23 +44,23 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       ) VALUES (?, ?, 'usr_nate', 'dronehunter', 'usr_nate', 'v1.0.0', 1, ?, 'usd', 'maker_70_lineage_20_pool_10', '{}', ?, ?, 1, datetime('now'), datetime('now'))
     `).bind(orderId, `idempotency_${orderId}`, grossCents, piId, status).run();
 
-    // Allocation 0: Maker
+    // Allocation 0: Seller
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
         lineage_depth, basis_points, amount_cents
-      ) VALUES (?, ?, 0, 'maker', 'usr_nate', 0, 9000, ?)
-    `).bind(`coa_maker_${orderId}`, orderId, makerCents).run();
+      ) VALUES (?, ?, 0, 'seller', 'usr_nate', 0, NULL, ?)
+    `).bind(`coa_seller_${orderId}`, orderId, sellerCents).run();
 
-    // Allocation 1: Protocol Pool
+    // Allocation 1: Platform (house, never paid out)
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
         lineage_depth, basis_points, amount_cents
-      ) VALUES (?, ?, 1, 'protocol_pool', NULL, NULL, 1000, ?)
-    `).bind(`coa_pool_${orderId}`, orderId, poolCents).run();
+      ) VALUES (?, ?, 1, 'platform', NULL, NULL, NULL, ?)
+    `).bind(`coa_platform_${orderId}`, orderId, platformCents).run();
 
-    return { orderId, piId, grossCents, makerCents, poolCents };
+    return { orderId, piId, grossCents, sellerCents, platformCents };
   }
 
   // Helper to record an event in stripe_event_inbox
@@ -265,8 +265,8 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
   // 4. MONOTONIC STATE TRANSITIONS & ATOMIC FULFILLMENT (ROOT APP)
   // ==========================================================================
   describe('4. Atomic Fulfillment & Economic Conservation (Root App)', () => {
-    it('atomically fulfills root order: updates order state_version, mints license + AES-GCM secret, and creates 1 maker outbox row (never pool)', async () => {
-      const { orderId, piId, grossCents, makerCents } = await seedRootOrder('ord_root_fulfill_1');
+    it('atomically fulfills root order: updates order state_version, mints license + AES-GCM secret, and creates 1 seller outbox row (never platform)', async () => {
+      const { orderId, piId, grossCents, sellerCents } = await seedRootOrder('ord_root_fulfill_1');
       const eventId = 'evt_root_fulfill_1';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
 
@@ -288,7 +288,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(result.success).toBe(true);
       expect(result.orderId).toBe(orderId);
       expect(result.status).toBe('fulfilled');
-      expect(result.outboxCount).toBe(1); // Only maker; protocol pool has NO outbox row
+      expect(result.outboxCount).toBe(1); // Only seller; platform has NO outbox row
 
       // 1. Verify commerce_orders updated to 'fulfilled' with state_version = 2
       const order: any = await ctx.d1.prepare(`
@@ -334,7 +334,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(secretEvents.results![0].event_type).toBe('created');
       expect(secretEvents.results![0].to_key_version).toBe(1);
 
-      // 5. Verify exactly ONE outbox row for Maker (never protocol pool)
+      // 5. Verify exactly ONE outbox row for Seller (never platform)
       const outbox: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_transfer_outbox WHERE order_id = ?
       `).bind(orderId).all();
@@ -342,7 +342,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(outbox.results).toHaveLength(1);
       const outboxRow = outbox.results![0];
       expect(outboxRow.destination_user_id).toBe('usr_nate');
-      expect(outboxRow.amount_cents).toBe(makerCents); // 1350 cents ($13.50 = 90%)
+      expect(outboxRow.amount_cents).toBe(sellerCents); // 1350 cents ($13.50 = 90%)
       expect(outboxRow.currency).toBe('usd');
       expect(outboxRow.status).toBe('pending');
 
@@ -364,10 +364,10 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
   });
 
   // ==========================================================================
-  // 5. FORK ALLOCATION OUTBOX BATCHING (70% MAKER / 20% ANCESTORS / 10% POOL)
+  // 5. FORK ALLOCATION OUTBOX BATCHING (PLATFORM 10% HOUSE / ADDITIVE ANCESTOR LIENS / SELLER REMAINDER)
   // ==========================================================================
   describe('5. Fork Order Fulfillment & Lineage Outbox Batching', () => {
-    it('creates outbox rows for Maker and each Ancestor in the chain (never protocol pool)', async () => {
+    it('creates outbox rows for Seller and each Ancestor in the chain (never platform)', async () => {
       // 1. Create users
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name)
@@ -380,10 +380,10 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       const orderId = 'ord_fork_fulfill_1';
       const piId = `pi_${orderId}`;
       const grossCents = 3000; // $30.00
-      const makerCents = 2100; // 70%
-      const anc1Cents = 300;   // 10%
-      const anc2Cents = 300;   // 10%
-      const poolCents = 300;   // 10%
+      const platformCents = 300; // 10% house
+      const anc1Cents = 300;   // additive lien off remainder
+      const anc2Cents = 300;   // additive lien off remainder
+      const sellerCents = 2100; // seller keeps the rest
 
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
@@ -395,11 +395,11 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       `).bind(orderId, grossCents, piId).run();
 
       // Allocations:
-      // Seq 0: Maker ($21.00)
+      // Seq 0: Platform ($3.00, house — never paid out)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (id, order_id, sequence, role, recipient_user_id, lineage_depth, basis_points, amount_cents)
-        VALUES ('coa_f_0', ?, 0, 'maker', 'usr_fork_dev', 0, 7000, ?)
-      `).bind(orderId, makerCents).run();
+        VALUES ('coa_f_0', ?, 0, 'platform', NULL, NULL, NULL, ?)
+      `).bind(orderId, platformCents).run();
 
       // Seq 1: Ancestor 1 ($3.00)
       await ctx.d1.prepare(`
@@ -413,11 +413,11 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
         VALUES ('coa_f_2', ?, 2, 'ancestor', 'usr_root_dev', 2, 1000, ?)
       `).bind(orderId, anc2Cents).run();
 
-      // Seq 3: Protocol Pool ($3.00)
+      // Seq 3: Seller ($21.00, the fork's own remainder)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (id, order_id, sequence, role, recipient_user_id, lineage_depth, basis_points, amount_cents)
-        VALUES ('coa_f_3', ?, 3, 'protocol_pool', NULL, NULL, 1000, ?)
-      `).bind(orderId, poolCents).run();
+        VALUES ('coa_f_3', ?, 3, 'seller', 'usr_fork_dev', 0, NULL, ?)
+      `).bind(orderId, sellerCents).run();
 
       const eventId = 'evt_fork_fulfill_1';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
@@ -438,7 +438,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       const result = await processStripeInboxEvent(ctx.d1, defaultEnv(), eventId);
 
       expect(result.success).toBe(true);
-      expect(result.outboxCount).toBe(3); // Maker + Ancestor 1 + Ancestor 2 (never protocol pool)
+      expect(result.outboxCount).toBe(3); // Seller + Ancestor 1 + Ancestor 2 (never platform)
 
       const outboxRows: any = await ctx.d1.prepare(`
         SELECT destination_user_id, amount_cents FROM commerce_transfer_outbox
@@ -449,6 +449,12 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(outboxRows.results![0]).toEqual({ destination_user_id: 'usr_fork_dev', amount_cents: 2100 });
       expect(outboxRows.results![1]).toEqual({ destination_user_id: 'usr_parent_dev', amount_cents: 300 });
       expect(outboxRows.results![2]).toEqual({ destination_user_id: 'usr_root_dev', amount_cents: 300 });
+
+      // No outbox row exists for the platform allocation (house, never paid via Connect)
+      const platformOutbox: any = await ctx.d1.prepare(`
+        SELECT * FROM commerce_transfer_outbox WHERE order_id = ? AND destination_user_id IS NULL
+      `).bind(orderId).all();
+      expect(platformOutbox.results).toHaveLength(0);
     });
   });
 

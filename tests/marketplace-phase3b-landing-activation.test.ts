@@ -49,7 +49,18 @@ function createRealGitCommit(repoPath: string, message: string, parentOid?: stri
   return commitOid;
 }
 
-describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale Revocation', () => {
+// This suite exercises functions/api/git.ts's `gateway-complete-merge` CAS
+// merge-landing action: merge_attempts / merge_jobs / inbox_messages state
+// transitions, idempotent replay, and 409-on-abort behavior. It originally
+// also asserted contributor_shares activation/revocation at the same
+// landing/staling transitions ("Phase 3b — Contributor Share Landing
+// Activation"), but that write was removed from git.ts when contributors
+// were dropped from the money model (grants can never be created, so there
+// is never a pending contributor_shares row to activate/revoke). The CAS
+// landing mechanics below are independent of that removed feature and are
+// not covered elsewhere, so this suite stays — slimmed to drop all
+// contributor_shares seeding/assertions.
+describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
   let tempRoot: string;
   let d1Ctx: TestD1Context;
 
@@ -77,7 +88,7 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
   });
 
   // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
-  // (Fix 1, RIG spec) can be satisfied by this pre-existing landing-activation suite.
+  // (Fix 1, RIG spec) can be satisfied by this pre-existing landing suite.
   const storage = {
     store: new Map<string, Uint8Array>(),
     async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
@@ -144,7 +155,7 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
   };
 
-  it('merge lands → pending contributor share becomes active with activated_at set', async () => {
+  it('merge lands → merge_attempts/merge_jobs/inbox_messages transition to landed', async () => {
     const repoId = 'repo-p3b-land-1';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -158,8 +169,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-land','private','refs/heads/main',?,'active',3000)`).bind(repoId, storageKey).run();
+      (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'usr_nate','p3b-land','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, resultOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -174,11 +185,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-land','usr_nate','usr_sam','PR','Preview','Content',0,'proposal','attempt-p3b-land',0)`).run();
-
-    // Insert pending contributor share (1000 bps = 10%)
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_land',?,'usr_sam','usr_nate','job-p3b-land','attempt-p3b-land','approval-p3b-land',1000,'pending')`).bind(repoId).run();
 
     const payload = {
       mergeJobId: 'job-p3b-land',
@@ -210,27 +216,13 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     expect(data.success).toBe(true);
     expect(data.status).toBe('landed');
 
-    // Verify contributor_shares row transitioned to active
-    const share: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE id = 'cs_p3b_land'
-    `).first();
-
-    expect(share).not.toBeNull();
-    expect(share.status).toBe('active');
-    expect(share.activated_at).not.toBeNull();
-    expect(typeof share.activated_at).toBe('string');
-    expect(share.revoked_at).toBeNull();
-    expect(share.basis_points).toBe(1000);
-    expect(share.contributor_user_id).toBe('usr_sam');
-    expect(share.granted_by_user_id).toBe('usr_nate');
-
     // Verify merge attempts, merge jobs, and inbox messages
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-land').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-land').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('msg-p3b-land').first('is_merged')).toBe(1);
   });
 
-  it('merge goes stale → pending share becomes revoked with revoked_at set and releases cap headroom', async () => {
+  it('merge goes stale → merge_attempts/merge_jobs/inbox_messages transition to stale', async () => {
     const repoId = 'repo-p3b-stale-1';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -245,8 +237,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-stale','private','refs/heads/main',?,'active',2000)`).bind(repoId, storageKey).run();
+      (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'usr_nate','p3b-stale','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, divergedOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -261,17 +253,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-stale','usr_nate','usr_sam','PR','Preview','Content',0,'proposal','attempt-p3b-stale',0)`).run();
-
-    // Insert pending contributor share taking up full 2000 bps pool
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_stale',?,'usr_sam','usr_nate','job-p3b-stale','attempt-p3b-stale','approval-p3b-stale',2000,'pending')`).bind(repoId).run();
-
-    // Verify DB trigger prevents inserting any more shares right now while pending
-    await expect(d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_overflow',?,'usr_josh','usr_nate','job-overflow','attempt-overflow','approval-overflow',500,'pending')`).bind(repoId).run()
-    ).rejects.toThrow(/contributor share exceeds available repository grantable pool/);
 
     const payload = {
       mergeJobId: 'job-p3b-stale',
@@ -303,104 +284,13 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     expect(data.success).toBe(true);
     expect(data.status).toBe('stale');
 
-    // Verify contributor_shares row transitioned to revoked
-    const share: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE id = 'cs_p3b_stale'
-    `).first();
-
-    expect(share).not.toBeNull();
-    expect(share.status).toBe('revoked');
-    expect(share.revoked_at).not.toBeNull();
-    expect(typeof share.revoked_at).toBe('string');
-    expect(share.activated_at).toBeNull();
-    expect(share.basis_points).toBe(2000);
-
     // Verify merge attempts, merge jobs, and inbox messages
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('msg-p3b-stale').first('is_merged')).toBe(0);
-
-    // Cap headroom is freed: inserting a new 2000 bps grant now succeeds without triggering cap guard!
-    await expect(d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_regrant',?,'usr_josh','usr_nate','job-regrant','attempt-regrant','approval-regrant',2000,'pending')`).bind(repoId).run()
-    ).resolves.toBeDefined();
-
-    const regrantShare: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE id = 'cs_p3b_regrant'
-    `).first();
-    expect(regrantShare).not.toBeNull();
-    expect(regrantShare.status).toBe('pending');
-    expect(regrantShare.basis_points).toBe(2000);
   });
 
-  it('no share for the attempt (grant of 0 / declined) → landing and stale succeed unaffected', async () => {
-    const repoId = 'repo-p3b-noshares';
-    const storageKey = `repositories/${repoId}`;
-    const init = initBareRepo(tempRoot, { storageKey });
-    const oldOid = createRealGitCommit(init.repoPath, 'Merge base');
-    const resultOid = createRealGitCommit(init.repoPath, 'Approved result', oldOid);
-
-    updateAuthoritativeRefCas(tempRoot, {
-      storageKey, refName: 'refs/heads/main', expectedOldOid: null,
-      newOid: resultOid, operation: 'create', idempotencyKey: 'seed-noshare'
-    });
-
-    await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-noshare','private','refs/heads/main',?,'active',1000)`).bind(repoId, storageKey).run();
-    await d1Ctx.d1.prepare(`INSERT INTO repository_refs
-      (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, resultOid).run();
-    await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
-      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
-      VALUES ('job-p3b-noshare',?,'refs/heads/main','usr_sam','landing','p3b-noshare')`).bind(repoId).run();
-    await d1Ctx.d1.prepare(`INSERT INTO merge_attempts
-      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
-      VALUES ('attempt-p3b-noshare','job-p3b-noshare',1,?,?,'tool','policy','approved')`).bind(oldOid, resultOid).run();
-    await d1Ctx.d1.prepare(`INSERT INTO merge_approvals
-      (id,merge_attempt_id,approver_user_id,result_commit_oid,decision)
-      VALUES ('approval-p3b-noshare','attempt-p3b-noshare','usr_nate',?,'approved')`).bind(resultOid).run();
-    await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
-      (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
-      VALUES ('msg-p3b-noshare','usr_nate','usr_sam','PR','Preview','Content',0,'proposal','attempt-p3b-noshare',0)`).run();
-
-    // No contributor_shares row created for this attempt
-
-    const payload = {
-      mergeJobId: 'job-p3b-noshare',
-      mergeAttemptId: 'attempt-p3b-noshare',
-      repositoryId: repoId,
-      storageKey,
-      targetRef: 'refs/heads/main',
-      expectedTargetOid: oldOid,
-      resultCommitOid: resultOid,
-      approverUserId: 'usr_nate'
-    };
-    await d1Ctx.d1.prepare(`INSERT INTO forge_outbox_events
-      (id,aggregate_type,aggregate_id,event_type,payload,attempts)
-      VALUES ('evt-p3b-noshare','merge','attempt-p3b-noshare','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
-
-    const res = await postGit({
-      action: 'gateway-complete-merge',
-      mergeJobId: 'job-p3b-noshare',
-      mergeAttemptId: 'attempt-p3b-noshare',
-      outboxEventId: 'evt-p3b-noshare',
-      status: 'landed',
-      actualTargetOid: resultOid,
-      idempotencyKey: 'idemp-p3b-noshare'
-    });
-
-    expect(res.status).toBe(200);
-    const data: any = await res.json();
-    expect(data.success).toBe(true);
-    expect(data.status).toBe('landed');
-
-    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-noshare').first('status')).toBe('landed');
-    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-noshare').first('status')).toBe('landed');
-    expect(await d1Ctx.d1.prepare('SELECT COUNT(*) AS count FROM contributor_shares WHERE repository_id=?').bind(repoId).first('count')).toBe(0);
-  });
-
-  it('idempotent replay of gateway-complete-merge does not double-activate or error', async () => {
+  it('idempotent replay of gateway-complete-merge (landed) does not error or change state', async () => {
     const repoId = 'repo-p3b-replay';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -413,8 +303,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-replay','private','refs/heads/main',?,'active',2500)`).bind(repoId, storageKey).run();
+      (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'usr_nate','p3b-replay','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, resultOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -429,10 +319,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-replay','usr_nate','usr_sam','PR','Preview','Content',0,'proposal','attempt-p3b-replay',0)`).run();
-
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_replay',?,'usr_sam','usr_nate','job-p3b-replay','attempt-p3b-replay','approval-p3b-replay',500,'pending')`).bind(repoId).run();
 
     const payload = {
       mergeJobId: 'job-p3b-replay',
@@ -462,13 +348,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     const data1: any = await res1.json();
     expect(data1.success).toBe(true);
 
-    const share1: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE id = 'cs_p3b_replay'
-    `).first();
-    expect(share1.status).toBe('active');
-    expect(share1.activated_at).not.toBeNull();
-    const activatedAt = share1.activated_at;
-
     // Second completion (idempotent replay)
     const res2 = await postGit({
       action: 'gateway-complete-merge',
@@ -484,15 +363,11 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     expect(data2.success).toBe(true);
     expect(data2.idempotent).toBe(true);
 
-    const share2: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE id = 'cs_p3b_replay'
-    `).first();
-    expect(share2.status).toBe('active');
-    expect(share2.activated_at).toBe(activatedAt);
-    expect(share2.revoked_at).toBeNull();
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-replay').first('status')).toBe('landed');
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-replay').first('status')).toBe('landed');
   });
 
-  it('end-to-end: inbox approve with 15% grant -> outbox dispatcher landing -> active share', async () => {
+  it('end-to-end: inbox approve -> outbox dispatcher processes merge.approved -> lands via CAS', async () => {
     const repoId = 'repo-p3b-e2e-land';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -506,8 +381,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'dronehunter','usr_nate','p3b-e2e-land','private','refs/heads/main',?,'active',5000)`).bind(repoId, storageKey).run();
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'dronehunter','usr_nate','p3b-e2e-land','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, baseOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -520,25 +395,15 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-e2e','usr_nate','usr_sam','Feature PR','Preview','Body',1,'proposal','attempt-p3b-e2e',0)`).run();
 
-    // 1. Owner approves with 1500 bps (15%) grant via inbox API (Phase 3a)
+    // 1. Owner approves via inbox API
     const approveRes = await postInbox({
       action: 'approve',
       messageId: 'msg-p3b-e2e',
-      comment: 'Approved for landing with 15% revenue share',
-      grantBps: 1500
+      comment: 'Approved for landing'
     });
     expect(approveRes.status).toBe(200);
 
-    // Verify pending share was created
-    const pendingShare: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE merge_attempt_id = 'attempt-p3b-e2e'
-    `).first();
-    expect(pendingShare).not.toBeNull();
-    expect(pendingShare.status).toBe('pending');
-    expect(pendingShare.basis_points).toBe(1500);
-    expect(pendingShare.activated_at).toBeNull();
-
-    // 2. Outbox dispatcher processes merge.approved event (Phase 3b)
+    // 2. Outbox dispatcher processes merge.approved event
     const apiFetch: typeof fetch = async (url, init) => gitApi.onRequestPost({
       request: new Request(url, init),
       env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
@@ -556,24 +421,14 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     const procRes = await dispatcher.processEvent(event);
     expect(procRes.success).toBe(true);
 
-    // 3. Verify landing and activation
+    // 3. Verify landing
     expect(readAuthoritativeRef(tempRoot, storageKey, 'refs/heads/main')).toBe(resultOid);
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-e2e').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-e2e').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('msg-p3b-e2e').first('is_merged')).toBe(1);
-
-    const activeShare: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE merge_attempt_id = 'attempt-p3b-e2e'
-    `).first();
-    expect(activeShare.status).toBe('active');
-    expect(activeShare.activated_at).not.toBeNull();
-    expect(activeShare.revoked_at).toBeNull();
-    expect(activeShare.basis_points).toBe(1500);
-    expect(activeShare.contributor_user_id).toBe('usr_sam');
-    expect(activeShare.granted_by_user_id).toBe('usr_nate');
   });
 
-  it('end-to-end: inbox approve with 20% grant -> diverged ref -> outbox dispatcher stale -> revoked share -> cap headroom released', async () => {
+  it('end-to-end: inbox approve -> diverged ref -> outbox dispatcher detects CAS stale', async () => {
     const repoId = 'repo-p3b-e2e-stale';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -587,8 +442,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'dronehunter','usr_nate','p3b-e2e-stale','private','refs/heads/main',?,'active',2000)`).bind(repoId, storageKey).run();
+      (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'dronehunter','usr_nate','p3b-e2e-stale','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, baseOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -601,12 +456,11 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-e2e-stale','usr_nate','usr_sam','PR Stale','Preview','Body',1,'proposal','attempt-p3b-e2e-stale',0)`).run();
 
-    // 1. Owner approves with 2000 bps (20% = entire grantable pool)
+    // 1. Owner approves
     const approveRes = await postInbox({
       action: 'approve',
       messageId: 'msg-p3b-e2e-stale',
-      comment: 'Approved with 20% grant',
-      grantBps: 2000
+      comment: 'Approved'
     });
     expect(approveRes.status).toBe(200);
 
@@ -638,41 +492,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-e2e-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-e2e-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('msg-p3b-e2e-stale').first('is_merged')).toBe(0);
-
-    // Contributor share is revoked
-    const revokedShare: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE merge_attempt_id = 'attempt-p3b-e2e-stale'
-    `).first();
-    expect(revokedShare.status).toBe('revoked');
-    expect(revokedShare.revoked_at).not.toBeNull();
-    expect(revokedShare.activated_at).toBeNull();
-
-    // 4. Now a new rebased proposal can be granted the freed 2000 bps headroom
-    const rebasedOid = createRealGitCommit(init.repoPath, 'Rebased PR commit', concurrentOid);
-    await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
-      (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
-      VALUES ('job-p3b-rebased',?,'refs/heads/main','usr_sam','preview_ready','p3b-rebased-test')`).bind(repoId).run();
-    await d1Ctx.d1.prepare(`INSERT INTO merge_attempts
-      (id,merge_job_id,attempt_number,input_target_oid,result_commit_oid,toolchain_version,test_policy_version,status)
-      VALUES ('attempt-p3b-rebased','job-p3b-rebased',1,?,?,'tool-v1','policy-v1','preview_ready')`).bind(concurrentOid, rebasedOid).run();
-    await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
-      (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
-      VALUES ('msg-p3b-rebased','usr_nate','usr_sam','Rebased PR','Preview','Body',1,'proposal','attempt-p3b-rebased',0)`).run();
-
-    const approveRebasedRes = await postInbox({
-      action: 'approve',
-      messageId: 'msg-p3b-rebased',
-      comment: 'Approved rebased PR with 2000 bps',
-      grantBps: 2000
-    });
-    expect(approveRebasedRes.status).toBe(200);
-
-    const rebasedShare: any = await d1Ctx.d1.prepare(`
-      SELECT * FROM contributor_shares WHERE merge_attempt_id = 'attempt-p3b-rebased'
-    `).first();
-    expect(rebasedShare).not.toBeNull();
-    expect(rebasedShare.status).toBe('pending');
-    expect(rebasedShare.basis_points).toBe(2000);
   });
 
   it('idempotent replay of gateway-complete-merge with stale status is a clean no-op', async () => {
@@ -689,8 +508,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-replay-stale','private','refs/heads/main',?,'active',3000)`).bind(repoId, storageKey).run();
+      (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'usr_nate','p3b-replay-stale','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, divergedOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -705,10 +524,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-rep-stale','usr_nate','usr_sam','PR','Preview','Content',0,'proposal','attempt-p3b-rep-stale',0)`).run();
-
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_rep_stale',?,'usr_sam','usr_nate','job-p3b-rep-stale','attempt-p3b-rep-stale','approval-p3b-rep-stale',1000,'pending')`).bind(repoId).run();
 
     const payload = {
       mergeJobId: 'job-p3b-rep-stale',
@@ -735,11 +550,7 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
       idempotencyKey: 'idemp-p3b-rep-stale-1'
     });
     expect(res1.status).toBe(200);
-
-    const share1: any = await d1Ctx.d1.prepare('SELECT * FROM contributor_shares WHERE id=?').bind('cs_p3b_rep_stale').first();
-    expect(share1.status).toBe('revoked');
-    expect(share1.revoked_at).not.toBeNull();
-    const revokedAt = share1.revoked_at;
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-rep-stale').first('status')).toBe('stale');
 
     // 2nd complete-merge (replay)
     const res2 = await postGit({
@@ -754,13 +565,10 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     expect(res2.status).toBe(200);
     const data2: any = await res2.json();
     expect(data2.idempotent).toBe(true);
-
-    const share2: any = await d1Ctx.d1.prepare('SELECT * FROM contributor_shares WHERE id=?').bind('cs_p3b_rep_stale').first();
-    expect(share2.status).toBe('revoked');
-    expect(share2.revoked_at).toBe(revokedAt);
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-rep-stale').first('status')).toBe('stale');
   });
 
-  it('multiple attempts on same repo: landing one and staling another properly isolates share states', async () => {
+  it('multiple attempts on same repo: landing one and staling another properly isolates state', async () => {
     const repoId = 'repo-p3b-multi';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -775,12 +583,12 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-multi','private','refs/heads/main',?,'active',5000)`).bind(repoId, storageKey).run();
+      (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'usr_nate','p3b-multi','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, baseOid).run();
 
-    // PR 1 setup (1000 bps)
+    // PR 1 setup
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
       (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
       VALUES ('job-multi-1',?,'refs/heads/main','usr_sam','landing','multi-1')`).bind(repoId).run();
@@ -793,11 +601,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-multi-1','usr_nate','usr_sam','PR 1','P1','C1',0,'proposal','attempt-multi-1',0)`).run();
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_multi_1',?,'usr_sam','usr_nate','job-multi-1','attempt-multi-1','approval-multi-1',1000,'pending')`).bind(repoId).run();
 
-    // PR 2 setup (2000 bps)
+    // PR 2 setup
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
       (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
       VALUES ('job-multi-2',?,'refs/heads/main','usr_josh','landing','multi-2')`).bind(repoId).run();
@@ -810,9 +615,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-multi-2','usr_nate','usr_josh','PR 2','P2','C2',0,'proposal','attempt-multi-2',0)`).run();
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_multi_2',?,'usr_josh','usr_nate','job-multi-2','attempt-multi-2','approval-multi-2',2000,'pending')`).bind(repoId).run();
 
     // Outbox events
     await d1Ctx.d1.prepare(`INSERT INTO forge_outbox_events
@@ -858,27 +660,14 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
     expect(stale2Res.status).toBe(200);
 
-    // Check share statuses
-    const share1: any = await d1Ctx.d1.prepare('SELECT * FROM contributor_shares WHERE id=?').bind('cs_multi_1').first();
-    expect(share1.status).toBe('active');
-    expect(share1.activated_at).not.toBeNull();
-    expect(share1.revoked_at).toBeNull();
-
-    const share2: any = await d1Ctx.d1.prepare('SELECT * FROM contributor_shares WHERE id=?').bind('cs_multi_2').first();
-    expect(share2.status).toBe('revoked');
-    expect(share2.activated_at).toBeNull();
-    expect(share2.revoked_at).not.toBeNull();
-
-    // Pool check: 5000 grantable - 1000 active = 4000 available
-    const activeSum: any = await d1Ctx.d1.prepare(`
-      SELECT COALESCE(SUM(basis_points), 0) AS total
-      FROM contributor_shares
-      WHERE repository_id = ? AND status IN ('active', 'pending')
-    `).bind(repoId).first();
-    expect(activeSum.total).toBe(1000);
+    // Check isolated state per attempt
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-multi-1').first('status')).toBe('landed');
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-multi-2').first('status')).toBe('stale');
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-multi-1').first('status')).toBe('landed');
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-multi-2').first('status')).toBe('stale');
   });
 
-  it('abort / 409 conflict on landing attempt does not modify pending contributor share', async () => {
+  it('abort / 409 conflict on landing attempt does not modify merge_attempts/merge_jobs state', async () => {
     const repoId = 'repo-p3b-abort';
     const storageKey = `repositories/${repoId}`;
     const init = initBareRepo(tempRoot, { storageKey });
@@ -892,8 +681,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     });
 
     await d1Ctx.d1.prepare(`INSERT INTO repositories
-      (id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
-      VALUES (?,'usr_nate','p3b-abort','private','refs/heads/main',?,'active',2500)`).bind(repoId, storageKey).run();
+      (id,owner_user_id,slug,visibility,default_ref,storage_key,status)
+      VALUES (?,'usr_nate','p3b-abort','private','refs/heads/main',?,'active')`).bind(repoId, storageKey).run();
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, oldOid).run();
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
@@ -908,10 +697,6 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
     await d1Ctx.d1.prepare(`INSERT INTO inbox_messages
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-abort','usr_nate','usr_sam','PR','Preview','Content',0,'proposal','attempt-p3b-abort',0)`).run();
-
-    await d1Ctx.d1.prepare(`INSERT INTO contributor_shares
-      (id,repository_id,contributor_user_id,granted_by_user_id,merge_job_id,merge_attempt_id,merge_approval_id,basis_points,status)
-      VALUES ('cs_p3b_abort',?,'usr_sam','usr_nate','job-p3b-abort','attempt-p3b-abort','approval-p3b-abort',800,'pending')`).bind(repoId).run();
 
     const payload = {
       mergeJobId: 'job-p3b-abort',
@@ -940,10 +725,8 @@ describe('Marketplace Phase 3b — Contributor Share Landing Activation & Stale 
 
     expect(res.status).toBe(409);
 
-    // Verify share remains untouched in 'pending' state
-    const share: any = await d1Ctx.d1.prepare('SELECT * FROM contributor_shares WHERE id=?').bind('cs_p3b_abort').first();
-    expect(share.status).toBe('pending');
-    expect(share.activated_at).toBeNull();
-    expect(share.revoked_at).toBeNull();
+    // Verify merge_attempts/merge_jobs remain untouched
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-abort').first('status')).toBe('approved');
+    expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-abort').first('status')).toBe('landing');
   });
 });

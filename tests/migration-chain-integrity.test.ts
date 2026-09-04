@@ -7,7 +7,6 @@ import {
 } from './fixtures/d1Harness';
 import * as fs from 'fs';
 import * as path from 'path';
-import { calculateAllocations } from '../src/lib/commerceDomain';
 
 describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
   let ctx: TestD1Context;
@@ -50,7 +49,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         '0030_contributor_cap_triggers.sql',
         '0033_chat_presence_and_topic.sql',
         '0034_rig_verification_evidence_bundle.sql',
-        '0035_reserved_hostname_guard.sql'
+        '0035_reserved_hostname_guard.sql',
+        '0036_launch_honesty_cleanup.sql',
+        '0037_first_party_sso_tickets.sql',
+        '0038_shareware_restored_money_model.sql'
       ]);
     });
 
@@ -371,14 +373,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(contribRecovery?.allocation_id).toBe('coa_pop_contrib');
       expect(contribRecovery?.amount_cents).toBe(300);
 
-      // Verify DARK invariant: calculateAllocations emits NO contributor rows
-      const allocCalc = calculateAllocations({
-        grossCents: 3000,
-        currency: 'usd',
-        sellerUserId: 'usr_nate',
-        repositoryId: 'repo_pop_test'
-      });
-      expect(allocCalc.allocations.some((a: any) => a.role === 'contributor')).toBe(false);
+      // NOTE: this used to also assert a "DARK invariant" that calculateAllocations
+      // never emits a 'contributor' row. Under the "Shareware, Restored" money
+      // model that's no longer just a runtime invariant — calculateAllocations'
+      // AllocationCalculationInput has no repositoryId/ancestors/contributors
+      // fields and its AllocationRole union is 'platform' | 'ancestor' | 'seller',
+      // so a contributor row is now a compile-time impossibility, not just a
+      // runtime guarantee. See src/lib/commerceDomain.ts and
+      // tests/money-model-additive-liens.test.ts.
 
       // Verify final PRAGMA foreign_key_check is completely clean
       expect(legacy.runForeignKeyCheck()).toEqual([]);
@@ -429,7 +431,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(shelf.results?.length).toBe(3);
     });
 
-    it('should verify seed comments reference valid users and apps', async () => {
+    it('should have no seed comments after the 0036 honesty pass deletes the fabricated testimonials', async () => {
+      // Migration 0001 seeded 3 fabricated "testimonial" comments (c101/c102/c103);
+      // migration 0036's honesty pass deletes them (there are no real users, so no
+      // real comments). Any surviving comment must still reference valid users+apps.
       const comments = await ctx.d1.prepare(`
         SELECT c.id, c.app_id, c.user_id, u.username, a.name
         FROM comments c
@@ -437,7 +442,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         JOIN app_listings a ON c.app_id = a.id
       `).all();
 
-      expect(comments.results?.length).toBe(3);
+      expect(comments.results?.length).toBe(0);
     });
   });
 
@@ -624,9 +629,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('c_cascade', 'dronehunter', ?, 'Testing cascade delete')
       `).bind(testUserId).run();
 
+      // Upvote the test's own comment. (The 0001-seeded 'c101' testimonial was
+      // deleted by migration 0036's honesty pass, so it no longer exists to
+      // reference here.)
       await ctx.d1.prepare(`
         INSERT INTO comment_upvotes (comment_id, user_id)
-        VALUES ('c101', ?)
+        VALUES ('c_cascade', ?)
       `).bind(testUserId).run();
 
       await ctx.d1.prepare(`

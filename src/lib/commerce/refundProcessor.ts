@@ -245,7 +245,11 @@ export async function processRefundInboxEvent(
     statements.push(db.prepare(`INSERT INTO commerce_refund_allocations
       (id, refund_id, allocation_id, sequence, amount_cents) VALUES (?, ?, ?, ?, ?)`)
       .bind(`cra_${refundId}_${delta.sequence}`, canonicalId, delta.id, delta.sequence, delta.deltaAmountCents));
-    if (delta.deltaAmountCents > 0 && delta.role !== 'protocol_pool') {
+    // House roles ('platform' under the new model, legacy 'protocol_pool') are never
+    // paid out via Connect, so they must never get a recovery obligation — migration
+    // 0038's commerce_recovery_matches_order_allocation trigger only allowlists payable
+    // roles ('maker','ancestor','contributor','seller') and RAISE(ABORT)s otherwise.
+    if (delta.deltaAmountCents > 0 && delta.role !== 'protocol_pool' && delta.role !== 'platform') {
       statements.push(db.prepare(`INSERT INTO commerce_recovery_obligations
         (id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
          source_event_id, amount_cents, currency, status)

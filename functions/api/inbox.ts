@@ -448,7 +448,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
           mj.requested_by_user_id AS requestedByUserId,
           r.id AS repositoryId, r.owner_user_id AS repositoryOwnerId,
           r.storage_key AS storageKey,
-          r.grantable_bps AS grantableBps,
           (SELECT build.id FROM build_runs build
             WHERE build.merge_attempt_id = ma.id AND build.purpose = 'verification'
               AND build.status = 'passed' AND build.commit_oid = ma.result_commit_oid
@@ -524,109 +523,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
         }
       }
 
-      // Parse and validate contributor grant inputs
-      const rawBps = body.grantBps ?? body.grant_bps ?? body.basisPoints ?? body.basis_points;
-      const rawPct = body.grantPercent ?? body.grant_percent;
-
-      let parsedBpsFromInput: number | null = null;
-      let parsedBpsFromPct: number | null = null;
-
-      if (rawBps !== undefined && rawBps !== null) {
-        if (typeof rawBps === 'boolean' || (typeof rawBps === 'string' && rawBps.trim() === '')) {
-          return jsonError('Grant basis points must be a valid integer between 0 and 10000', 422);
-        }
-        const num = Number(rawBps);
-        if (!Number.isFinite(num) || !Number.isInteger(num) || num < 0 || num > 10000) {
-          return jsonError('Grant basis points must be a valid integer between 0 and 10000', 422);
-        }
-        parsedBpsFromInput = num;
-      }
-
-      if (rawPct !== undefined && rawPct !== null) {
-        if (typeof rawPct === 'boolean' || (typeof rawPct === 'string' && rawPct.trim() === '')) {
-          return jsonError('grantPercent must be a number', 422);
-        }
-        const num = Number(rawPct);
-        if (!Number.isFinite(num) || Number.isNaN(num)) {
-          return jsonError('grantPercent must be a number', 422);
-        }
-        if (num < 0 || num > 100) {
-          return jsonError('grantPercent must be between 0 and 100', 422);
-        }
-        // Round to nearest basis point (2 decimal places of percent)
-        parsedBpsFromPct = Math.round(num * 100);
-      }
-
-      if (parsedBpsFromInput !== null && parsedBpsFromPct !== null && parsedBpsFromInput !== parsedBpsFromPct) {
-        return jsonError('grantBps and grantPercent conflict', 422);
-      }
-
-      const requestedBps = parsedBpsFromInput ?? parsedBpsFromPct ?? 0;
-
-      if (decision === 'rejected' && requestedBps > 0) {
-        return jsonError('Grants can only be awarded when approving a merge attempt', 422);
-      }
-
-      const contributorUserId = proposal.requestedByUserId || proposal.senderId;
-
-      // State-aware check for existing contributor share
-      const existingShare = await env.DB.prepare(`
-        SELECT id, repository_id AS repositoryId, contributor_user_id AS contributorUserId,
-               granted_by_user_id AS grantedByUserId, basis_points AS basisPoints,
-               status, merge_approval_id AS mergeApprovalId
-        FROM contributor_shares
-        WHERE merge_attempt_id = ?
-      `).bind(proposal.mergeAttemptId).first();
-
-      let persistedBps = 0;
-      let shouldInsertShare = false;
-
-      if (decision === 'approved') {
-        if (existingShare) {
-          // Idempotent exact replay check
-          const isExactReplay =
-            existingShare.contributorUserId === contributorUserId &&
-            existingShare.grantedByUserId === userId &&
-            existingShare.repositoryId === proposal.repositoryId &&
-            Number(existingShare.basisPoints) === requestedBps;
-
-          if (isExactReplay) {
-            persistedBps = Number(existingShare.basisPoints);
-          } else {
-            const currentPctStr = (Number(existingShare.basisPoints) / 100).toFixed(2);
-            return jsonError(
-              `This attempt already has a ${existingShare.basisPoints} bps (${currentPctStr}%) grant; reject and re-submit to change it`,
-              409
-            );
-          }
-        } else if (requestedBps > 0) {
-          if (!contributorUserId) {
-            return jsonError('Contributor user ID could not be resolved for this proposal', 422);
-          }
-          if (contributorUserId === proposal.repositoryOwnerId) {
-            return jsonError('Repository owner cannot grant contributor shares to themselves', 422);
-          }
-
-          // UX-level cap check (friendly 422 error before hitting DB trigger)
-          const grantableBps = Number(proposal.grantableBps || 0);
-          const sharesRes = await env.DB.prepare(`
-            SELECT COALESCE(SUM(basis_points), 0) AS totalGrantedBps
-            FROM contributor_shares
-            WHERE repository_id = ?
-              AND status IN ('active', 'pending')
-          `).bind(proposal.repositoryId).first();
-          const totalGrantedBps = Number(sharesRes?.totalGrantedBps || 0);
-
-          if (totalGrantedBps + requestedBps > grantableBps) {
-            const remaining = Math.max(0, grantableBps - totalGrantedBps);
-            return jsonError(`Grant of ${requestedBps} bps (${(requestedBps / 100).toFixed(2)}%) exceeds available repository grantable pool (${remaining} bps remaining)`, 422);
-          }
-
-          persistedBps = requestedBps;
-          shouldInsertShare = true;
-        }
-      }
-
       const rawComment = typeof body.comment === 'string' ? body.comment.trim() : '';
       if (rawComment.length > 2_000) return jsonError('Review comment must be 2,000 characters or fewer', 400);
       if (decision === 'rejected' && rawComment.length < 3) return jsonError('A meaningful rejection comment is required', 400);
@@ -693,26 +589,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
             approverUserId: userId
           }))
         );
-        if (shouldInsertShare) {
-          const shareId = `cs_${crypto.randomUUID().replace(/-/g, '')}`;
-          statements.push(
-            env.DB.prepare(`
-              INSERT INTO contributor_shares
-                (id, repository_id, contributor_user_id, granted_by_user_id, merge_job_id, merge_attempt_id, merge_approval_id, basis_points, status)
-              VALUES (?, ?, ?, ?, ?, ?, (SELECT id FROM merge_approvals WHERE merge_attempt_id = ? AND approver_user_id = ?), ?, 'pending')
-            `).bind(
-              shareId,
-              proposal.repositoryId,
-              contributorUserId,
-              userId,
-              proposal.mergeJobId,
-              proposal.mergeAttemptId,
-              proposal.mergeAttemptId,
-              userId,
-              requestedBps
-            )
-          );
-        }
       } else {
         statements.push(env.DB.prepare(`
           UPDATE merge_jobs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP,
@@ -724,7 +600,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       return Response.json({
         success: true, approvalStatus: decision, mergeStatus: decision, approvalComment: rawComment,
         outboxEventId,
-        grantBps: persistedBps > 0 ? persistedBps : undefined,
         message: decision === 'approved'
           ? 'Exact merge attempt approved and queued for authoritative GITSMITH CAS landing.'
           : 'Exact merge attempt rejected. No Git ref was changed.'

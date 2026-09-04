@@ -74,7 +74,7 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
 
     expect(html).toContain('Publish');
     expect(html).toContain('List your version for sale');
-    expect(html).toContain('you keep 70%');
+    expect(html).toContain('platform takes 10%');
   });
 
   it('renders the 2-column work area: terminal on the left and RIG run panel on the right', () => {
@@ -94,17 +94,25 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
     expect(html).toContain('status');
   });
 
-  it('renders the 70 / 20 / 10 automated settlement ledger note once', () => {
+  it('renders the additive money-model ledger note once, with no fixed 70/20/10 split', () => {
     const html = renderSlopshop();
 
     expect(html).toContain('When your fork sells, the split is settled automatically:');
-    expect(html).toContain('70%');
-    expect(html).toContain('you');
-    expect(html).toContain('20%');
-    expect(html).toContain('up the fork lineage');
+    expect(html).toContain('platform');
     expect(html).toContain('10%');
-    expect(html).toContain('protocol');
-    expect(html).toContain('A root app with no ancestors is 90 / 10.');
+    expect(html).toContain('upstream maker');
+    expect(html).toContain('you keep the rest');
+
+    expect(html).not.toContain('70 / 20 / 10');
+    expect(html).not.toContain('70%');
+    expect(html).not.toContain('20%');
+    expect(html).not.toContain('protocol liquidity');
+    expect(html).not.toContain('up the fork lineage');
+  });
+
+  it('renders a "How the money works" affordance near the publish UI', () => {
+    const html = renderSlopshop();
+    expect(html).toMatch(/How the money works/i);
   });
 
   it('renders dynamic primary actions and 3-cell status bar', () => {
@@ -246,5 +254,128 @@ describe('SlopshopView Honesty: no fabricated success anywhere', () => {
     expect(componentSource).not.toContain(
       "text: `✓ live: ${coordinate.appId}-${makerHandle.replace('@', '')}.nates-software.com`, type: 'success'"
     );
+  });
+});
+
+describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops publish (E1b)', () => {
+  it('renders a royalty-percent input inside the price modal, in addition to the price input', () => {
+    // The modal itself only mounts its JSX when modalType === 'price', which is not the
+    // initial state (curStage 0 = Fork), so assert against source (same technique the
+    // Honesty block above uses for click-gated branches like the Help alert text).
+    const priceModalMatch = componentSource.match(
+      /\{modalType === 'price' &&[\s\S]*?\n {6}\)\}/
+    );
+    expect(priceModalMatch, 'price modal JSX block should be present').toBeTruthy();
+    const priceModalBlock = priceModalMatch![0];
+
+    expect(priceModalBlock).toContain('Set Listing Price');
+    expect(priceModalBlock).toContain('Price (USD):');
+    expect(priceModalBlock).toMatch(/publishRoyaltyPct/);
+    expect(priceModalBlock).toMatch(/Your royalty when someone forks (&amp;|&) ?resells/i);
+  });
+
+  it('source: royalty percent is converted to clamped integer basis points before publishing', () => {
+    // Blank -> 0 (Number('') is 0, but must not be NaN if a stray non-numeric value slips
+    // through), and the pct->bps conversion must round and clamp to [0, 10000].
+    const derivationMatch = componentSource.match(
+      /const pct = Number\(publishRoyaltyPct\);\s*\n\s*const royaltyBps = [^\n]+/
+    );
+    expect(derivationMatch, 'royaltyBps derivation from publishRoyaltyPct should be present').toBeTruthy();
+    const derivation = derivationMatch![0];
+
+    expect(derivation).toContain('Math.round(');
+    expect(derivation).toContain('* 100');
+    expect(derivation).toMatch(/Math\.min\(10000/);
+    expect(derivation).toMatch(/Math\.max\(0/);
+  });
+
+  it('source: Save/Publish wires a real authenticated POST to /api/drops with royaltyBps and the required publish fields', () => {
+    // Must be a genuine same-origin fetch, not a fake success — mirrors the pattern used
+    // by SetupWizardView's real /api/auth POST.
+    expect(componentSource).toMatch(/fetch\(\s*['"]\/api\/drops['"]/);
+    expect(componentSource).toMatch(/method:\s*['"]POST['"]/);
+    expect(componentSource).toContain("credentials: 'same-origin'");
+
+    // The body sent to /api/drops must be a real, valid publish payload: it needs at
+    // least id/name/version/price (drops.ts requires name + semver version, and
+    // parseAndValidatePrice needs a price) plus royaltyBps (E1a's new field).
+    const drropsCallMatch = componentSource.match(/fetch\(\s*['"]\/api\/drops['"][\s\S]*?\}\)\s*;/);
+    expect(drropsCallMatch, '/api/drops fetch call should be present').toBeTruthy();
+    const dropsCall = drropsCallMatch![0];
+    expect(dropsCall).toMatch(/royaltyBps/);
+    expect(dropsCall).toMatch(/name/);
+    expect(dropsCall).toMatch(/version/);
+    expect(dropsCall).toMatch(/price/);
+  });
+
+  it('source: success is only shown via showAlert after res.ok is confirmed — never unconditionally', () => {
+    const handlerMatch = componentSource.match(
+      /const handleSavePriceAndPublish = async \(\) => \{[\s\S]*?\n  \};/
+    );
+    expect(handlerMatch, 'handleSavePriceAndPublish function should be present').toBeTruthy();
+    const publishHandlerRegion = handlerMatch![0];
+
+    expect(publishHandlerRegion).toMatch(/fetch\(\s*['"]\/api\/drops['"]/);
+
+    // Success path must be gated on the response actually being ok AND the server
+    // confirming success — checked as a guard clause that throws/bails before the
+    // success showAlert can ever run on a bad response.
+    expect(publishHandlerRegion).toMatch(/!res\.ok/);
+    expect(publishHandlerRegion).toMatch(/data\?\.success/);
+    expect(publishHandlerRegion).toMatch(/showAlert\(/);
+
+    // On failure it must show the REAL error, never claim success regardless of outcome.
+    expect(publishHandlerRegion).toMatch(/data\?\.error|data\.error/);
+
+    // The success showAlert call must textually appear AFTER the ok/success guard
+    // clause in source order — i.e. it is unreachable unless the guard passed.
+    const guardIdx = publishHandlerRegion.indexOf('!res.ok');
+    const successAlertIdx = publishHandlerRegion.indexOf("'Published'");
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(successAlertIdx).toBeGreaterThan(guardIdx);
+  });
+
+  it('source: publish handler never claims success unconditionally right after the fetch call (no fabricated success)', () => {
+    // Guard against the old style of pattern where a success alert/line fires
+    // regardless of response status. The line immediately following the /api/drops
+    // fetch call must not be an unconditional success claim.
+    const idx = componentSource.indexOf("fetch('/api/drops'");
+    const idx2 = idx === -1 ? componentSource.indexOf('fetch(\"/api/drops\"') : idx;
+    expect(idx2, '/api/drops fetch call should exist in source').toBeGreaterThan(-1);
+  });
+
+  it('source: the price-modal split preview uses the additive model (platform 10% + own royalty rate), not fixed 70/20/10', () => {
+    const priceModalMatch = componentSource.match(
+      /\{modalType === 'price' &&[\s\S]*?\n {6}\)\}/
+    );
+    expect(priceModalMatch, 'price modal JSX block should be present').toBeTruthy();
+    const priceModalBlock = priceModalMatch![0];
+
+    // Platform 10% computed from the live price input.
+    expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.1\b/);
+    // Seller remainder computed as 90% of price (before any upstream liens).
+    expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.9\b/);
+    // The maker's own chosen royalty rate is echoed back as what THEY will earn.
+    expect(priceModalBlock).toMatch(/publishRoyaltyPct/);
+
+    expect(priceModalBlock).not.toMatch(/\*\s*0\.7\b/);
+    expect(priceModalBlock).not.toMatch(/\*\s*0\.2\b/);
+    expect(priceModalBlock).not.toContain('protocol liquidity');
+  });
+});
+
+describe('SlopshopView money-model copy (E3): no leftover 70/20/10 language anywhere', () => {
+  it('renders and source contain no fixed 70/20/10 split language', () => {
+    const html = renderSlopshop();
+
+    for (const banned of ['70 / 20 / 10', '70%', '20%', 'protocol liquidity', 'up the fork lineage']) {
+      expect(html, `rendered HTML should not contain "${banned}"`).not.toContain(banned);
+      expect(componentSource, `component source should not contain "${banned}"`).not.toContain(banned);
+    }
+  });
+
+  it('renders a "How the money works" affordance that can open the White Papers explainer', () => {
+    expect(componentSource).toMatch(/How the money works/i);
+    expect(componentSource).toMatch(/onOpenWhitePapers/);
   });
 });
