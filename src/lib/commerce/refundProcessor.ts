@@ -26,6 +26,12 @@ async function fetchAuthoritativePaymentIntent(env: any, paymentIntentId: string
   });
 }
 
+async function fetchAuthoritativeCharge(env: any, chargeId: string, fetchImpl: typeof fetch): Promise<Response> {
+  return fetchImpl(`https://api.stripe.com/v1/charges/${encodeURIComponent(chargeId)}`, {
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` }
+  });
+}
+
 export async function processRefundInboxEvent(
   db: any,
   env: any,
@@ -107,12 +113,43 @@ export async function processRefundInboxEvent(
     return failTerminal(db, eventId, claimToken, 'Refund does not match its authoritative PaymentIntent or configured environment');
   }
 
+  let chargeResponse: Response;
+  try {
+    chargeResponse = await fetchAuthoritativeCharge(env, chargeId, fetchImpl);
+  } catch (error: any) {
+    const message = `Network error re-fetching refund Charge: ${error.message}`;
+    await releaseInboxClaim(db, eventId, claimToken, message, 30);
+    return { success: false, retryable: true, error: message };
+  }
+  if (!chargeResponse.ok) {
+    const message = `Authoritative refund Charge fetch failed (${chargeResponse.status})`;
+    if ([401, 403, 404].includes(chargeResponse.status)) return failTerminal(db, eventId, claimToken, message);
+    await releaseInboxClaim(db, eventId, claimToken, message, 60);
+    return { success: false, retryable: true, error: message };
+  }
+  const charge: any = await chargeResponse.json();
+  const chargePaymentIntentId = typeof charge.payment_intent === 'string'
+    ? charge.payment_intent
+    : charge.payment_intent?.id;
+  const cumulativeRefundedCents = Number(charge.amount_refunded);
+  if (charge.id !== chargeId || charge.object !== 'charge'
+      || chargePaymentIntentId !== paymentIntentId
+      || Boolean(charge.livemode) !== Boolean(inboxRow.livemode)
+      || Boolean(charge.livemode) !== configuredLivemode
+      || String(charge.currency || '').toLowerCase() !== currency
+      || !Number.isSafeInteger(cumulativeRefundedCents)
+      || cumulativeRefundedCents < 0
+      || (status === 'succeeded' && cumulativeRefundedCents < amountCents)) {
+    return failTerminal(db, eventId, claimToken, 'Refund does not match its authoritative cumulative Charge state');
+  }
+
   const order: any = await db.prepare(`
     SELECT id, gross_cents, refunded_cents, currency, status, state_version
     FROM commerce_orders WHERE stripe_payment_intent_id = ?
   `).bind(paymentIntentId).first();
   if (!order) return failTerminal(db, eventId, claimToken, `No commerce order matches PaymentIntent '${paymentIntentId}'`);
-  if (currency !== order.currency || amountCents > order.gross_cents) {
+  if (currency !== order.currency || amountCents > order.gross_cents
+      || cumulativeRefundedCents > order.gross_cents) {
     return failTerminal(db, eventId, claimToken, 'Refund economics do not match the immutable commerce order');
   }
 
@@ -161,9 +198,6 @@ export async function processRefundInboxEvent(
     return { success: true, orderId: order.id, status: normalizedStatus };
   }
 
-  if (!['fulfilled', 'disputed'].includes(order.status) || order.refunded_cents + amountCents > order.gross_cents) {
-    return failTerminal(db, eventId, claimToken, `Succeeded refund cannot advance order from state '${order.status}'`);
-  }
   const allocationResult = await db.prepare(`
     SELECT id, sequence, role, amount_cents AS amountCents
     FROM commerce_order_allocations WHERE order_id=? ORDER BY sequence
@@ -176,47 +210,52 @@ export async function processRefundInboxEvent(
     WHERE r.order_id=? AND r.finalized_at IS NOT NULL GROUP BY ra.allocation_id
   `).bind(order.id).all();
   const prior = new Map<string, number>((priorResult.results || []).map((row: any) => [row.allocation_id, Number(row.amount)]));
-  let deltas;
-  try {
-    deltas = calculateRefundAllocationDelta(allocations, order.gross_cents, order.refunded_cents + amountCents, prior);
-  } catch (error: any) {
-    return failTerminal(db, eventId, claimToken, `Refund allocation failed: ${error.message}`);
+  const priorFinalizedRefundedCents = Array.from(prior.values()).reduce((sum, value) => sum + value, 0);
+  const nextRefunded = priorFinalizedRefundedCents + amountCents;
+  if (!Number.isSafeInteger(nextRefunded) || nextRefunded > order.gross_cents
+      || nextRefunded > cumulativeRefundedCents) {
+    return failTerminal(db, eventId, claimToken, 'Authoritative cumulative refund state conflicts with the local refund ledger');
   }
-
-  const nextRefunded = order.refunded_cents + amountCents;
-  const nextStatus = nextRefunded === order.gross_cents ? 'refunded' : order.status;
-
-  try {
-    await baseStatements[0].run();
-  } catch (error: any) {
-    const message = `Refund canonical upsert failed: ${error.message}`;
-    await releaseInboxClaim(db, eventId, claimToken, message, 30);
-    return { success: false, retryable: true, error: message };
-  }
-
-  let orderCasResult: any;
-  try {
-    orderCasResult = await db.prepare(`UPDATE commerce_orders SET refunded_cents=?, status=?, state_version=state_version+1,
-      updated_at=datetime('now') WHERE id=? AND state_version=? AND refunded_cents=? AND status=?`)
-      .bind(nextRefunded, nextStatus, order.id, order.state_version, order.refunded_cents, order.status)
-      .run();
-  } catch (error: any) {
-    const message = `Order refund CAS update failed: ${error.message}`;
-    await releaseInboxClaim(db, eventId, claimToken, message, 30);
-    return { success: false, retryable: true, error: message };
-  }
-  const orderCasChanges = orderCasResult?.meta?.changes ?? 0;
-  if (orderCasChanges !== 1) {
-    const message = `Order refund CAS update affected ${orderCasChanges} rows (expected 1) — concurrent order state change detected`;
+  if (order.refunded_cents > nextRefunded || order.refunded_cents < priorFinalizedRefundedCents) {
+    const message = 'Local refund projection changed while reconciling the authoritative cumulative refund state';
     await releaseInboxClaim(db, eventId, claimToken, message, 5);
     return { success: false, retryable: true, error: message };
   }
-
-  const statements: any[] = [];
+  const mayReconcileAppliedFullRefund = order.status === 'refunded'
+    && order.refunded_cents === nextRefunded
+    && nextRefunded === order.gross_cents;
+  if (!['fulfilled', 'disputed'].includes(order.status) && !mayReconcileAppliedFullRefund) {
+    return failTerminal(db, eventId, claimToken, `Succeeded refund cannot advance order from state '${order.status}'`);
+  }
+  let deltas;
+  try {
+    deltas = calculateRefundAllocationDelta(allocations, order.gross_cents, nextRefunded, prior);
+  } catch (error: any) {
+    return failTerminal(db, eventId, claimToken, `Refund allocation failed: ${error.message}`);
+  }
+  if (deltas.reduce((sum, delta) => sum + delta.deltaAmountCents, 0) !== amountCents) {
+    return failTerminal(db, eventId, claimToken, 'Refund allocation delta does not match the canonical Stripe Refund amount');
+  }
+  const nextStatus = nextRefunded === order.gross_cents ? 'refunded' : order.status;
+  const orderProjectionChanged = order.refunded_cents !== nextRefunded || order.status !== nextStatus;
+  const nextStateVersion = order.state_version + (orderProjectionChanged ? 1 : 0);
+  const statements: any[] = [
+    ...baseStatements,
+    db.prepare(`UPDATE commerce_orders SET refunded_cents=?, status=?, state_version=?,
+      updated_at=datetime('now') WHERE id=? AND state_version=? AND refunded_cents=? AND status=?`)
+      .bind(nextRefunded, nextStatus, nextStateVersion, order.id, order.state_version, order.refunded_cents, order.status)
+  ];
   for (const delta of deltas) {
     statements.push(db.prepare(`INSERT INTO commerce_refund_allocations
-      (id, refund_id, allocation_id, sequence, amount_cents) VALUES (?, ?, ?, ?, ?)`)
-      .bind(`cra_${refundId}_${delta.sequence}`, canonicalId, delta.id, delta.sequence, delta.deltaAmountCents));
+      (id, refund_id, allocation_id, sequence, amount_cents)
+      SELECT ?, ?, ?, ?, CASE WHEN
+        EXISTS (SELECT 1 FROM commerce_orders
+          WHERE id=? AND state_version=? AND refunded_cents=? AND status=?)
+        AND EXISTS (SELECT 1 FROM stripe_event_inbox
+          WHERE event_id=? AND claim_token=? AND status='processing')
+        THEN ? ELSE -1 END`)
+      .bind(`cra_${refundId}_${delta.sequence}`, canonicalId, delta.id, delta.sequence,
+        order.id, nextStateVersion, nextRefunded, nextStatus, eventId, claimToken, delta.deltaAmountCents));
     if (delta.deltaAmountCents > 0 && delta.role !== 'protocol_pool' && delta.role !== 'platform') {
       statements.push(db.prepare(`INSERT INTO commerce_recovery_obligations
         (id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
@@ -245,8 +284,9 @@ export async function processRefundInboxEvent(
   try {
     await db.batch(statements);
   } catch (error: any) {
-    const message = `Refund order CAS committed but dependent reconciliation batch failed (needs manual reconciliation): ${error.message}`;
-    return failTerminal(db, eventId, claimToken, message);
+    const message = `Atomic refund reconciliation failed: ${error.message}`;
+    await releaseInboxClaim(db, eventId, claimToken, message, 30);
+    return { success: false, retryable: true, error: message };
   }
   return { success: true, orderId: order.id, status: nextStatus };
 }

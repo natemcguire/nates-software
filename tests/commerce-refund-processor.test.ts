@@ -51,13 +51,24 @@ describe('Commerce P4 authoritative refund processor', () => {
     } as Response;
   }
 
-  function stripeFetch(refundResponse: Response, piOverrides: Record<string, unknown> = {}) {
+  function stripeFetch(
+    refundResponse: Response,
+    cumulativeRefundedCents: number,
+    piOverrides: Record<string, unknown> = {}
+  ) {
     return vi.fn().mockImplementation(async (url: string) => {
       if (url.includes('/payment_intents/')) return {
         ok: true,
         json: async () => ({
           id: 'pi_refund', object: 'payment_intent', amount: 1500, currency: 'usd',
           latest_charge: 'ch_refund', livemode: false, ...piOverrides
+        })
+      } as Response;
+      if (url.includes('/charges/')) return {
+        ok: true,
+        json: async () => ({
+          id: 'ch_refund', object: 'charge', payment_intent: 'pi_refund', amount: 1500,
+          amount_refunded: cumulativeRefundedCents, currency: 'usd', livemode: false
         })
       } as Response;
       return refundResponse;
@@ -67,7 +78,7 @@ describe('Commerce P4 authoritative refund processor', () => {
   it('persists an exact partial refund and maker recovery obligation atomically', async () => {
     await event('evt_refund_1', 're_partial_1');
     const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_1', {
-      stripeFetchOverride: stripeFetch(stripeRefund('re_partial_1', 500))
+      stripeFetchOverride: stripeFetch(stripeRefund('re_partial_1', 500), 500)
     });
     expect(result).toMatchObject({ success: true, orderId: 'ord_refund', status: 'fulfilled' });
 
@@ -79,14 +90,93 @@ describe('Commerce P4 authoritative refund processor', () => {
     expect(recovery).toMatchObject({ amount_cents: 450, status: 'pending', original_outbox_id: 'cto_refund' });
   });
 
+  it('rolls back the entire refund when a dependent reconciliation write fails', async () => {
+    ctx.rawDb.run(`CREATE TRIGGER fail_refund_recovery
+      BEFORE INSERT ON commerce_recovery_obligations
+      BEGIN SELECT RAISE(ABORT, 'forced refund reconciliation failure'); END;`);
+    await event('evt_refund_atomic_failure', 're_atomic_failure');
+
+    const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_atomic_failure', {
+      stripeFetchOverride: stripeFetch(stripeRefund('re_atomic_failure', 1500), 1500)
+    });
+
+    expect(result).toMatchObject({ success: false, retryable: true });
+    const order: any = await ctx.d1.prepare(`SELECT status,refunded_cents,state_version FROM commerce_orders WHERE id='ord_refund'`).first();
+    expect(order).toMatchObject({ status: 'fulfilled', refunded_cents: 0, state_version: 1 });
+    const license: any = await ctx.d1.prepare(`SELECT status,revoked_at FROM commerce_licenses WHERE order_id='ord_refund'`).first();
+    expect(license).toMatchObject({ status: 'active', revoked_at: null });
+    for (const table of [
+      'commerce_refunds',
+      'commerce_refund_allocations',
+      'commerce_recovery_obligations',
+      'commerce_refund_observations',
+      'commerce_order_events'
+    ]) {
+      const row: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first();
+      expect(row.n).toBe(0);
+    }
+    const inbox: any = await ctx.d1.prepare(`SELECT status,processed_at FROM stripe_event_inbox WHERE event_id='evt_refund_atomic_failure'`).first();
+    expect(inbox).toMatchObject({ status: 'retryable_failure', processed_at: null });
+  });
+
+  it('reprocessing the same refund event applies its economics exactly once', async () => {
+    await event('evt_refund_replay', 're_refund_replay');
+    const fetchImpl = stripeFetch(stripeRefund('re_refund_replay', 500), 500);
+    const first = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_replay', {
+      stripeFetchOverride: fetchImpl
+    });
+    await ctx.d1.prepare(`UPDATE stripe_event_inbox
+      SET status='retryable_failure', processed_at=NULL, next_attempt_at=datetime('now','-1 second')
+      WHERE event_id='evt_refund_replay'`).run();
+    const replay = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_replay', {
+      stripeFetchOverride: fetchImpl
+    });
+
+    expect(first).toMatchObject({ success: true });
+    expect(replay).toMatchObject({ success: true, duplicate: true });
+    const order: any = await ctx.d1.prepare(`SELECT refunded_cents,state_version FROM commerce_orders WHERE id='ord_refund'`).first();
+    expect(order).toMatchObject({ refunded_cents: 500, state_version: 2 });
+    const refundRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_refunds`).first();
+    const allocationRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_refund_allocations`).first();
+    const recoveryRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_recovery_obligations`).first();
+    const orderEventRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_order_events`).first();
+    expect(refundRows.n).toBe(1);
+    expect(allocationRows.n).toBe(2);
+    expect(recoveryRows.n).toBe(1);
+    expect(orderEventRows.n).toBe(1);
+  });
+
+  it('finishes an unfinalized canonical refund from the authoritative cumulative target without incrementing twice', async () => {
+    await event('evt_refund_unfinished', 're_refund_unfinished');
+    await ctx.d1.prepare(`INSERT INTO commerce_refunds
+      (id,stripe_refund_id,order_id,stripe_charge_id,amount_cents,currency,status,
+       authoritative_json,first_event_id,last_event_id)
+      VALUES ('crf_re_refund_unfinished','re_refund_unfinished','ord_refund','ch_refund',500,'usd','succeeded',
+              '{}','evt_refund_unfinished','evt_refund_unfinished')`).run();
+    await ctx.d1.prepare(`UPDATE commerce_orders
+      SET refunded_cents=500,state_version=2 WHERE id='ord_refund'`).run();
+
+    const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_unfinished', {
+      stripeFetchOverride: stripeFetch(stripeRefund('re_refund_unfinished', 500), 500)
+    });
+
+    expect(result).toMatchObject({ success: true });
+    const order: any = await ctx.d1.prepare(`SELECT refunded_cents,state_version FROM commerce_orders WHERE id='ord_refund'`).first();
+    expect(order).toMatchObject({ refunded_cents: 500, state_version: 2 });
+    const refund: any = await ctx.d1.prepare(`SELECT finalized_at FROM commerce_refunds WHERE stripe_refund_id='re_refund_unfinished'`).first();
+    expect(refund.finalized_at).toBeTruthy();
+    const recovery: any = await ctx.d1.prepare(`SELECT amount_cents FROM commerce_recovery_obligations`).first();
+    expect(recovery.amount_cents).toBe(450);
+  });
+
   it('uses cumulative targets across partial refunds and revokes only at full refund', async () => {
     await event('evt_refund_a', 're_partial_a');
     await processStripeInboxEvent(ctx.d1, env, 'evt_refund_a', {
-      stripeFetchOverride: stripeFetch(stripeRefund('re_partial_a', 499))
+      stripeFetchOverride: stripeFetch(stripeRefund('re_partial_a', 499), 499)
     });
     await event('evt_refund_b', 're_partial_b');
     await processStripeInboxEvent(ctx.d1, env, 'evt_refund_b', {
-      stripeFetchOverride: stripeFetch(stripeRefund('re_partial_b', 1001))
+      stripeFetchOverride: stripeFetch(stripeRefund('re_partial_b', 1001), 1500)
     });
 
     const order: any = await ctx.d1.prepare(`SELECT status,refunded_cents FROM commerce_orders WHERE id='ord_refund'`).first();
@@ -105,7 +195,7 @@ describe('Commerce P4 authoritative refund processor', () => {
   it('records non-succeeded authoritative state without changing economics', async () => {
     await event('evt_refund_pending', 're_pending');
     const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_pending', {
-      stripeFetchOverride: stripeFetch(stripeRefund('re_pending', 500, 'pending'))
+      stripeFetchOverride: stripeFetch(stripeRefund('re_pending', 500, 'pending'), 0)
     });
     expect(result).toMatchObject({ success: true, status: 'pending' });
     const order: any = await ctx.d1.prepare(`SELECT refunded_cents FROM commerce_orders WHERE id='ord_refund'`).first();
@@ -117,7 +207,7 @@ describe('Commerce P4 authoritative refund processor', () => {
     const response = stripeRefund('re_live', 500);
     const body = await response.json();
     const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_live', {
-      stripeFetchOverride: stripeFetch({ ok: true, json: async () => body } as Response, { livemode: true })
+      stripeFetchOverride: stripeFetch({ ok: true, json: async () => body } as Response, 500, { livemode: true })
     });
     expect(result).toMatchObject({ success: false, terminal: true });
     const row: any = await ctx.d1.prepare(`SELECT status FROM stripe_event_inbox WHERE event_id='evt_refund_live'`).first();
@@ -153,6 +243,13 @@ describe('Commerce P4 authoritative refund processor', () => {
         json: async () => ({
           id: 'pi_refund_pm', object: 'payment_intent', amount: 10000, currency: 'usd',
           latest_charge: 'ch_refund_pm', livemode: false
+        })
+      } as Response;
+      if (url.includes('/charges/')) return {
+        ok: true,
+        json: async () => ({
+          id: 'ch_refund_pm', object: 'charge', payment_intent: 'pi_refund_pm', amount: 10000,
+          amount_refunded: 10000, currency: 'usd', livemode: false
         })
       } as Response;
       return {
@@ -194,10 +291,10 @@ describe('Commerce P4 authoritative refund processor', () => {
 
     const [resultA, resultB] = await Promise.all([
       processStripeInboxEvent(ctx.d1, env, 'evt_refund_race_a', {
-        stripeFetchOverride: stripeFetch(stripeRefund('re_race_a', 500))
+        stripeFetchOverride: stripeFetch(stripeRefund('re_race_a', 500), 1000)
       }),
       processStripeInboxEvent(ctx.d1, env, 'evt_refund_race_b', {
-        stripeFetchOverride: stripeFetch(stripeRefund('re_race_b', 500))
+        stripeFetchOverride: stripeFetch(stripeRefund('re_race_b', 500), 1000)
       })
     ]);
 
@@ -224,8 +321,7 @@ describe('Commerce P4 authoritative refund processor', () => {
     const loserRow: any = await ctx.d1.prepare(`SELECT status FROM stripe_event_inbox WHERE event_id=?`).bind(loserEventId).first();
     expect(loserRow.status).toBe('retryable_failure');
 
-    const loserRefundId = resultA === losers[0] ? 're_race_a' : 're_race_b';
-    const loserRefund: any = await ctx.d1.prepare(`SELECT finalized_at FROM commerce_refunds WHERE stripe_refund_id=?`).bind(loserRefundId).first();
-    expect(loserRefund.finalized_at).toBeNull();
+    const refundRows: any = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_refunds`).first();
+    expect(refundRows.n).toBe(1);
   });
 });
