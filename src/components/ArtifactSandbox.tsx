@@ -599,8 +599,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
       </div>
 
       {showLineageModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-lg w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-lg w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4 pointer-events-auto">
             <div className="flex items-center justify-between border-b border-slate-700 pb-3">
               <div className="flex items-center gap-2">
                 <Network size={16} className="text-amber-400" />
