@@ -90,6 +90,21 @@ describe('Commerce P4 authoritative refund processor', () => {
     expect(recovery).toMatchObject({ amount_cents: 450, status: 'pending', original_outbox_id: 'cto_refund' });
   });
 
+  it('retries (does not terminal-fail) when Charge amount_refunded lags a succeeded refund, applying no money', async () => {
+    await event('evt_refund_lag', 're_lag');
+    const result = await processStripeInboxEvent(ctx.d1, env, 'evt_refund_lag', {
+      stripeFetchOverride: stripeFetch(stripeRefund('re_lag', 500), 0)
+    });
+    expect(result).toMatchObject({ success: false, retryable: true });
+
+    const order: any = await ctx.d1.prepare(`SELECT status,refunded_cents FROM commerce_orders WHERE id='ord_refund'`).first();
+    expect(order).toMatchObject({ status: 'fulfilled', refunded_cents: 0 });
+    const refundRow: any = await ctx.d1.prepare(`SELECT id FROM commerce_refunds WHERE stripe_refund_id='re_lag'`).first();
+    expect(refundRow).toBeNull();
+    const inbox: any = await ctx.d1.prepare(`SELECT status FROM stripe_event_inbox WHERE event_id='evt_refund_lag'`).first();
+    expect((inbox as any).status).not.toBe('terminal_failure');
+  });
+
   it('rolls back the entire refund when a dependent reconciliation write fails', async () => {
     ctx.rawDb.run(`CREATE TRIGGER fail_refund_recovery
       BEFORE INSERT ON commerce_recovery_obligations

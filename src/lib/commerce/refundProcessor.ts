@@ -138,9 +138,13 @@ export async function processRefundInboxEvent(
       || Boolean(charge.livemode) !== configuredLivemode
       || String(charge.currency || '').toLowerCase() !== currency
       || !Number.isSafeInteger(cumulativeRefundedCents)
-      || cumulativeRefundedCents < 0
-      || (status === 'succeeded' && cumulativeRefundedCents < amountCents)) {
+      || cumulativeRefundedCents < 0) {
     return failTerminal(db, eventId, claimToken, 'Refund does not match its authoritative cumulative Charge state');
+  }
+  if (status === 'succeeded' && cumulativeRefundedCents < amountCents) {
+    const message = 'Charge amount_refunded has not yet caught up to this succeeded refund; retrying';
+    await releaseInboxClaim(db, eventId, claimToken, message, 30);
+    return { success: false, retryable: true, error: message };
   }
 
   const order: any = await db.prepare(`
