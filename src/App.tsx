@@ -45,7 +45,7 @@ export function resolveAppRoute(
   }
 
   if (hostname.startsWith('hotwire.') || pathname.startsWith('/hotwire') || pathname.startsWith('/drops') || viewQuery === 'hotwire') {
-    return { type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' };
+    return { type: 'standalone_view', id: 'hotwire', title: "HOTWIRE — WHAT'S HOT" };
   }
 
   if (hostname.startsWith('slopshop.') || pathname.startsWith('/slopshop') || pathname.startsWith('/speedshop') || viewQuery === 'slopshop') {
@@ -674,9 +674,12 @@ export function AppInner() {
           const introCentered = isWhatis && (introPhase === 'waiting' || introPhase === 'primed');
           const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
           const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
+          const setupAboveAbout = item.id === 'setup' && !iconPositions.setup && windows.mktg.isOpen;
           const pos = introCentered
             ? { x: Math.round(vw / 2 - 64), y: Math.round(vh / 2 - 60) }
-            : (iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup));
+            : setupAboveAbout
+              ? { x: Math.round(windows.mktg.x + windows.mktg.width / 2 - 64), y: Math.max(8, windows.mktg.y - 92) }
+              : (iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup));
           desktopIconOpeners[item.id] = item.onClick;
           const introClass =
             (introPhase === 'waiting' || introPhase === 'primed')

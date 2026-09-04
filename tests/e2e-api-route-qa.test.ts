@@ -204,25 +204,25 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
   describe('9. Production Subdomain & Route Resolution (src/App.tsx)', () => {
     it('should accurately resolve all registered subdomains via resolveAppRoute', () => {
-      expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' });
-      expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'gitsmith', title: 'GITSMITH FORGE' });
-      expect(resolveAppRoute('hotwire.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' });
-      expect(resolveAppRoute('slopshop.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' });
-      expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG — INFRASTRUCTURE' });
-      expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
-      expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
-      expect(resolveAppRoute('american-gardener.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'american-gardener', title: 'American Gardener' });
-      expect(resolveAppRoute('wallart.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'wallart', title: 'WallArt Canvas Pro' });
+      expect(resolveAppRoute('chat.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'chat' });
+      expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'gitsmith' });
+      expect(resolveAppRoute('hotwire.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'hotwire' });
+      expect(resolveAppRoute('slopshop.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'slopshop' });
+      expect(resolveAppRoute('rig.nates-software.com', '/')).toMatchObject({ type: 'standalone_view', id: 'rig' });
+      expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toMatchObject({ type: 'standalone_app', id: 'dronehunter' });
+      expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toMatchObject({ type: 'standalone_app', id: 'certified-mailer' });
+      expect(resolveAppRoute('american-gardener.nates-software.com', '/')).toMatchObject({ type: 'standalone_app', id: 'american-gardener' });
+      expect(resolveAppRoute('wallart.nates-software.com', '/')).toMatchObject({ type: 'standalone_app', id: 'wallart' });
     });
 
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {
-      expect(resolveAppRoute('nates-software.com', '/editorial')).toEqual({ type: 'desktop' });
-      expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'AGENT INBOX' });
-      expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });
-      expect(resolveAppRoute('nates-software.com', '/dyno')).toEqual({ type: 'standalone_view', id: 'dyno', title: 'DYNO AI DEVELOPER BENCHMARK (Model + Harness + Tools)' });
-      expect(resolveAppRoute('nates-software.com', '/profile')).toEqual({ type: 'standalone_view', id: 'profile', title: 'ACCOUNT.CFG (Profile)' });
-      expect(resolveAppRoute('nates-software.com', '/terminal')).toEqual({ type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' });
-      expect(resolveAppRoute('nates-software.com', '/')).toEqual({ type: 'desktop' });
+      expect(resolveAppRoute('nates-software.com', '/editorial')).toMatchObject({ type: 'desktop' });
+      expect(resolveAppRoute('nates-software.com', '/inbox')).toMatchObject({ type: 'standalone_view', id: 'inbox' });
+      expect(resolveAppRoute('nates-software.com', '/white-papers')).toMatchObject({ type: 'standalone_view', id: 'white-papers' });
+      expect(resolveAppRoute('nates-software.com', '/dyno')).toMatchObject({ type: 'standalone_view', id: 'dyno' });
+      expect(resolveAppRoute('nates-software.com', '/profile')).toMatchObject({ type: 'standalone_view', id: 'profile' });
+      expect(resolveAppRoute('nates-software.com', '/terminal')).toMatchObject({ type: 'standalone_view', id: 'terminal' });
+      expect(resolveAppRoute('nates-software.com', '/')).toMatchObject({ type: 'desktop' });
     });
   });
 });

@@ -86,7 +86,7 @@ export function useWindowManager(user?: AuthUser | null) {
     },
   hotwire: {
       id: 'hotwire',
-      title: "HOTWIRE — [Daily Drops & Claude Artifact Sandbox]",
+      title: "HOTWIRE — [What's Hot · Live Code Library]",
       icon: '🔥',
       isOpen: false,
       isMinimized: false,

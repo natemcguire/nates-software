@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
 import { AppListing } from '../data/mockData';
@@ -9,17 +9,18 @@ import {
   GitFork,
   Search,
   Plus,
-  Radio,
-  Timer,
   Trophy,
-  Users,
-  Award,
-  Calendar,
-  X,
-  RefreshCw
+  ShoppingCart,
+  TrendingUp,
+  FileCode,
+  FileText,
+  Play,
+  Snowflake,
+  ArrowLeft,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
-import { getCurrentBatchWindow, getTimeToNextDrop } from '../lib/hotwireBackend';
 import { useAuth } from '../context/AuthContext';
 
 interface HotwireViewProps {
@@ -27,6 +28,32 @@ interface HotwireViewProps {
   onOpenPostEditor?: (app?: AppListing) => void;
   onOpenLeaders?: () => void;
 }
+
+type LibraryTab = 'hot' | 'forked' | 'bought' | 'rising' | 'mine';
+type InspectTab = 'code' | 'readme' | 'preview' | 'lineage';
+
+const PLATFORM_RATE = 0.10;
+
+const getRoyaltyBps = (app: AppListing): number => {
+  if (typeof app.royaltyBps === 'number') return app.royaltyBps;
+  if (typeof app.royalty_bps === 'number') return app.royalty_bps;
+  return 0;
+};
+
+const getPrice = (app: AppListing): number => {
+  if (typeof app.price === 'number' && app.price > 0) return app.price;
+  return 15;
+};
+
+const money = (n: number): string =>
+  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const librarySlug = (app: AppListing): string => {
+  if (app.repoSlug) return app.repoSlug;
+  const owner = app.author || app.creator || 'maker';
+  const name = (app.repoName || app.name || 'app').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return `${owner}/${name}`;
+};
 
 export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostEditor, onOpenLeaders }) => {
   const { showAlert } = useAlert();
@@ -44,26 +71,19 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   } = useCatalog();
 
   const [apps, setApps] = useState<AppListing[]>(catalogApps);
-  const [selectedApp, setSelectedApp] = useState<AppListing | null>(catalogApps[0] || null);
-  const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks' | 'mine'>('alltime');
+  const [selectedApp, setSelectedApp] = useState<AppListing | null>(null);
+  const [activeTab, setActiveTab] = useState<LibraryTab>('hot');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(votedAppIds || new Set());
-  const [selectedBatch, setSelectedBatch] = useState<string>('all');
-  const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
-  const [voteReward, setVoteReward] = useState<string | null>(null);
+  const [inspectTab, setInspectTab] = useState<InspectTab>('code');
 
   useEffect(() => {
     setApps(catalogApps);
-    if (catalogApps.length > 0) {
-      setSelectedApp(prev => {
-        if (!prev) return catalogApps[0];
-        const match = catalogApps.find(a => a.id === prev.id);
-        return match || catalogApps[0];
-      });
-    } else if (isAuthoritativeLive) {
-      setSelectedApp(null);
+    if (selectedApp) {
+      const match = catalogApps.find(a => a.id === selectedApp.id);
+      if (match) setSelectedApp(match);
     }
-  }, [catalogApps, isAuthoritativeLive]);
+  }, [catalogApps]);
 
   useEffect(() => {
     if (votedAppIds && votedAppIds.size > 0) {
@@ -81,94 +101,47 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     }
   }, [votedAppIds, catalogApps]);
 
-  const handleBatchSelect = (batch: string) => {
+  const handleTabSelect = (tab: LibraryTab) => {
     playClickSound();
-    setSelectedBatch(batch);
-    const sort = activeFilter === 'forked' ? 'forks' : activeFilter === 'alltime' ? 'alltime' : 'today';
-    refreshCatalog({ sort, batch });
-  };
-
-  const handleFilterSelect = (filter: 'today' | 'forked' | 'alltime' | 'streaks' | 'mine') => {
-    playClickSound();
-    setActiveFilter(filter);
-    if (filter !== 'streaks' && filter !== 'mine') {
-      const sort = filter === 'forked' ? 'forks' : filter === 'alltime' ? 'alltime' : 'today';
-      const batch = filter === 'alltime' ? 'all' : filter === 'today' ? 'today' : selectedBatch;
-      setSelectedBatch(batch);
-      refreshCatalog({ sort, batch });
+    setActiveTab(tab);
+    if (tab === 'hot' || tab === 'rising') {
+      refreshCatalog({ sort: 'today' });
+    } else if (tab === 'forked') {
+      refreshCatalog({ sort: 'forks' });
+    } else if (tab === 'bought') {
+      refreshCatalog({ sort: 'alltime' });
     }
   };
-
-  const [timeUntilNextDrop, setTimeUntilNextDrop] = useState<string>('00h 00m 00s');
-  const [batchInfo, setBatchInfo] = useState(() => getCurrentBatchWindow());
-
-  const getNextDropLocalTime = () => {
-    const now = new Date();
-    const nextUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 1, 0, 0));
-    if (now.getTime() >= nextUtc.getTime()) {
-      nextUtc.setUTCDate(nextUtc.getUTCDate() + 1);
-    }
-    return nextUtc.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  };
-
-  useEffect(() => {
-    const updateCountdown = () => {
-      const dropCountdown = getTimeToNextDrop();
-      setTimeUntilNextDrop(dropCountdown.countdown);
-      setBatchInfo(getCurrentBatchWindow());
-    };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   const handleUpvote = (e: React.MouseEvent, appId: string) => {
     e.stopPropagation();
-    if (upvotedApps.has(appId) || catalogHasVoted(appId)) {
-      return;
-    }
+    if (upvotedApps.has(appId) || catalogHasVoted(appId)) return;
 
-    requireAuth('vote for this drop', async () => {
+    requireAuth('upvote this app', async () => {
       playClickSound();
       setUpvotedApps(prev => new Set(prev).add(appId));
-
       try {
         await catalogUpvote(appId);
         playSuccessChime();
-        setVoteReward(appId);
       } catch (err: any) {
         setUpvotedApps(prev => {
           const next = new Set(prev);
           next.delete(appId);
           return next;
         });
-
         const errMsg = err?.message || 'Upvote rejected';
         if (errMsg.includes('not found') || errMsg.includes('404')) {
-          showAlert(
-            `You can only upvote real drops that are live on the board. This one is demo or offline data.`,
-            "Upvote Rejected",
-            "warning"
-          );
+          showAlert(`You can only upvote real apps that are live in the library. This one is demo or offline data.`, 'Upvote Rejected', 'warning');
         } else if (errMsg.includes('auth') || errMsg.includes('401') || errMsg.includes('403')) {
-          showAlert(
-            `Authentication is required to vote. Please sign in to vote for this drop.`,
-            "Sign In Required",
-            "warning"
-          );
+          showAlert(`Sign in to upvote apps in the library.`, 'Sign In Required', 'warning');
         } else {
-          showAlert(
-            `Upvote was rolled back because the server rejected the transaction: ${errMsg}`,
-            "Upvote Not Saved",
-            "error"
-          );
+          showAlert(`Upvote was rolled back because the server rejected it: ${errMsg}`, 'Upvote Not Saved', 'error');
         }
       }
     });
   };
 
-  const getFilteredApps = () => {
+  const rankedApps = useMemo(() => {
     let list = [...apps];
 
     if (searchQuery.trim()) {
@@ -181,29 +154,29 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       );
     }
 
-    if (activeFilter === 'mine' && user?.username) {
+    if (activeTab === 'mine' && user?.username) {
       list = list.filter(a => a.author === user.username || a.creator === user.username);
     }
 
-    switch (activeFilter) {
+    switch (activeTab) {
       case 'forked':
         return list.sort((a, b) => (b.forkCount || 0) - (a.forkCount || 0));
-      case 'alltime':
-        return list.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
-      case 'today':
+      case 'bought':
+        return list.sort((a, b) => getPrice(b) * (b.forkCount || 0) - getPrice(a) * (a.forkCount || 0));
+      case 'rising':
+        return list.sort((a, b) => ((b.upvotes || 0) + (b.forkCount || 0) * 2) - ((a.upvotes || 0) + (a.forkCount || 0) * 2));
+      case 'hot':
       case 'mine':
       default:
-        return list;
+        return list.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
     }
-  };
+  }, [apps, searchQuery, activeTab, user]);
 
-  const filteredApps = getFilteredApps();
-
-  const handleOpenNewDrop = () => {
+  const handleOpenNewApp = () => {
     playClickSound();
-    requireAuth('submit a new drop to HOTWIRE', () => {
+    requireAuth('submit an app to the library', () => {
       if (onOpenPostEditor) {
-        const newDropTemplate: AppListing = {
+        const template: AppListing = {
           id: '',
           name: '',
           tagline: '',
@@ -222,503 +195,534 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           screenshots: [],
           comments: []
         };
-        onOpenPostEditor(newDropTemplate);
+        onOpenPostEditor(template);
       }
     });
   };
 
+  const openInspector = (app: AppListing) => {
+    playClickSound();
+    setSelectedApp(app);
+    setInspectTab('code');
+    if (onOpenApp) onOpenApp(app.id);
+  };
+
+  const tabs: { id: LibraryTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'hot', label: 'Hot', icon: <Flame size={12} className="text-orange-600" /> },
+    { id: 'forked', label: 'Top Forked', icon: <GitFork size={12} className="text-green-700" /> },
+    { id: 'bought', label: 'Most Bought', icon: <ShoppingCart size={12} className="text-blue-700" /> },
+    { id: 'rising', label: 'Rising', icon: <TrendingUp size={12} className="text-purple-600" /> }
+  ];
+
+  const addressPath = selectedApp
+    ? `nsw://library/@${selectedApp.author || selectedApp.creator || 'maker'}/${(selectedApp.repoName || selectedApp.name || 'app').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+    : 'nsw://library/';
+  const addressVersion = selectedApp ? ` · ${selectedApp.version} · main` : ' · what’s hot';
+
   return (
-    <div className="flex flex-col h-full bg-[#c0c0c0] font-sans text-xs select-none">
-      <div className="bg-[#000050] text-blue-200 px-3 py-1 text-[11px] font-mono border-b border-blue-900 flex items-center justify-between flex-wrap gap-2">
-        <span>Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.</span>
-        <span className="text-blue-300 text-[10px]">12:01 AM UTC = {getNextDropLocalTime()} local</span>
-      </div>
-
-      {voteReward && (
-        <div className="bg-emerald-100 border-b border-emerald-400 px-3 py-1.5 flex items-center justify-between text-emerald-950 text-xs">
-          <span className="font-bold">Vote counted.</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                playClickSound();
-                handleFilterSelect('today');
-                setVoteReward(null);
-                if (onOpenLeaders) onOpenLeaders();
-              }}
-              className="text-emerald-900 hover:text-black font-bold underline text-xs cursor-pointer"
-            >
-              See today's leaders &rarr;
-            </button>
-            <button
-              onClick={() => setVoteReward(null)}
-              className="text-emerald-700 hover:text-emerald-950 text-xs ml-2 cursor-pointer font-bold"
-            >
-              ✕
-            </button>
-          </div>
+    <div className="flex flex-col h-full bg-[#c0c0c0] font-tahoma text-xs select-none">
+      <div className="flex items-center gap-2 px-2 py-1.5 bg-[#c0c0c0] border-b border-gray-400">
+        <span className="font-bold text-gray-700">Address</span>
+        <div className="flex-1 flex items-center gap-1.5 bg-white win95-field px-2 py-0.5 border border-gray-600 font-mono text-[11px] min-w-0">
+          <span>📁</span>
+          <span className="truncate">
+            {addressPath.split('/').slice(0, 3).join('/')}/
+            <span className="text-[#7a1f00] font-bold">
+              {addressPath.split('/').slice(3).join('/')}
+            </span>
+            <span className="text-gray-500">{addressVersion}</span>
+          </span>
         </div>
-      )}
-
-      <div className="bg-[#000080] text-white px-3 py-2 flex items-center justify-between flex-wrap gap-2 border-b-2 border-white shadow-inner">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 font-bold tracking-wide">
-            <Radio size={14} className="text-red-400 animate-pulse" />
-            <span className="font-mono text-xs">12:01 AM DAILY DROP (Batch #{batchInfo.batchNumber})</span>
-          </div>
-          <div className="flex items-center gap-1 text-[11px] bg-blue-900/80 px-2 py-0.5 rounded border border-blue-400 font-mono">
-            <Timer size={12} className="text-yellow-300" />
-            <span>Next Drop: <strong>{timeUntilNextDrop}</strong> ({getNextDropLocalTime()} local · 12:01 AM UTC)</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-blue-950 px-2 py-0.5 rounded border border-blue-600 text-[11px] font-mono">
-            <Calendar size={12} className="text-sky-300" />
-            <select
-              value={selectedBatch}
-              onChange={(e) => handleBatchSelect(e.target.value)}
-              className="bg-transparent text-white focus:outline-none text-[11px] cursor-pointer"
-            >
-              <option value="all" className="bg-slate-900 text-white">All Drops (Cumulative)</option>
-              <option value="today" className="bg-slate-900 text-white">Today (Batch #{batchInfo.batchNumber})</option>
-              <option value="archive" className="bg-slate-900 text-white">Historical Genesis Archive</option>
-            </select>
-          </div>
-
-          {isLoading && apps.length === 0 ? (
-            <span className="bg-blue-800 text-blue-200 border border-blue-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold animate-pulse">
-              ⏳ CONNECTING...
-            </span>
-          ) : isAuthoritativeLive ? (
-            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Live drop registry">
-              ● LIVE ({apps.length} drops)
-            </span>
-          ) : (
-            <span className="bg-red-950 text-red-200 border border-red-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Disconnected / offline">
-              ● OFFLINE / DISCONNECTED
-            </span>
-          )}
-
+        {selectedApp && (
           <button
-            onClick={handleOpenNewDrop}
-            className="win95-btn px-2.5 py-1 text-black font-bold flex items-center gap-1 text-[11px] bg-[#dfdfdf] hover:bg-white"
+            onClick={() => { playClickSound(); setSelectedApp(null); }}
+            className="win95-btn px-2 py-0.5 flex items-center gap-1 font-bold bg-[#dfdfdf] hover:bg-white"
+            title="Back to the library index"
           >
-            <Plus size={13} />
-            <span>Submit Drop</span>
+            <ArrowLeft size={12} /> Library
           </button>
-        </div>
+        )}
       </div>
 
       {catalogError && (
         <div className="bg-amber-100 border-b-2 border-amber-400 px-3 py-1.5 flex items-center justify-between text-amber-900 font-mono text-[11px]">
-          <span className="flex items-center gap-1.5">
-            <span>⚠️</span>
-            <span>Live Catalog Error: {catalogError}</span>
-          </span>
+          <span className="flex items-center gap-1.5">⚠️ Live Catalog Error: {catalogError}</span>
           <button
-            onClick={() => {
-              playClickSound();
-              refreshCatalog();
-            }}
+            onClick={() => { playClickSound(); refreshCatalog(); }}
             className="win95-btn px-2 py-0.5 text-[10px] font-bold flex items-center gap-1 bg-[#dfdfdf] hover:bg-white text-black"
           >
-            <RefreshCw size={10} />
-            <span>Retry Sync</span>
+            <RefreshCw size={10} /> Retry Sync
           </button>
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden p-2 gap-2">
-        <div className="w-1/2 flex flex-col min-w-[320px]">
-          <div className="flex gap-1 mb-1 flex-wrap">
-            <button
-              onClick={() => handleFilterSelect('today')}
-              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
-                activeFilter === 'today' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
-              }`}
-            >
-              <Flame size={13} className="text-orange-600" /> Today
-            </button>
-            <button
-              onClick={() => handleFilterSelect('forked')}
-              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
-                activeFilter === 'forked' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
-              }`}
-            >
-              <GitFork size={13} className="text-green-700" /> Top Forked
-            </button>
-            <button
-              onClick={() => handleFilterSelect('alltime')}
-              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
-                activeFilter === 'alltime' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
-              }`}
-            >
-              <Trophy size={13} className="text-yellow-600" /> All-Time
-            </button>
-            <button
-              onClick={() => handleFilterSelect('streaks')}
-              className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
-                activeFilter === 'streaks' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
-              }`}
-            >
-              <Award size={13} className="text-purple-600" /> Streaks
-            </button>
-            {user?.username && (
-              <button
-                onClick={() => handleFilterSelect('mine')}
-                className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${
-                  activeFilter === 'mine' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'
-                }`}
-              >
-                <span className="text-emerald-700 font-bold">●</span> Mine
-              </button>
-            )}
-          </div>
+      {selectedApp
+        ? <InspectorPane
+            app={selectedApp}
+            inspectTab={inspectTab}
+            setInspectTab={setInspectTab}
+            onOpenPostEditor={onOpenPostEditor}
+            isAuthoritativeLive={isAuthoritativeLive}
+          />
+        : <LibraryIndex
+            apps={rankedApps}
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabSelect={handleTabSelect}
+            showMine={Boolean(user?.username)}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            onSubmit={handleOpenNewApp}
+            onOpen={openInspector}
+            onUpvote={handleUpvote}
+            upvotedApps={upvotedApps}
+            isAuthenticated={isAuthenticated}
+            isAuthoritativeLive={isAuthoritativeLive}
+            isLoading={isLoading}
+            username={user?.username}
+            appCount={apps.length}
+            leaderboardCount={makerLeaderboard?.length || 0}
+            onOpenLeaders={onOpenLeaders}
+          />
+      }
+    </div>
+  );
+};
 
-          <div className="win95-field p-1 mb-2 bg-white flex items-center gap-1.5 border border-gray-600">
-            <Search size={13} className="text-gray-500 ml-1" />
-            <input
-              type="text"
-              placeholder="Search software, creators, tags..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs outline-none bg-transparent"
-            />
-          </div>
+interface LibraryIndexProps {
+  apps: AppListing[];
+  tabs: { id: LibraryTab; label: string; icon: React.ReactNode }[];
+  activeTab: LibraryTab;
+  onTabSelect: (tab: LibraryTab) => void;
+  showMine: boolean;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  onSubmit: () => void;
+  onOpen: (app: AppListing) => void;
+  onUpvote: (e: React.MouseEvent, appId: string) => void;
+  upvotedApps: Set<string>;
+  isAuthenticated: boolean;
+  isAuthoritativeLive: boolean;
+  isLoading: boolean;
+  username?: string;
+  appCount: number;
+  leaderboardCount: number;
+  onOpenLeaders?: () => void;
+}
 
-          <Win95Scroll className="flex-1 win95-field p-1 bg-white divide-y divide-gray-200">
-            {activeFilter === 'streaks' ? (
-              <div className="p-2 space-y-2">
-                <div className="font-bold text-xs text-blue-900 mb-2 flex items-center justify-between">
-                  <div className="flex items-center gap-1">
-                    <Award size={14} className="text-purple-600" />
-                    <span>Verified Maker Streak Leaderboard</span>
-                  </div>
-                  {isAuthoritativeLive ? (
-                    <span className="text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 font-mono">
-                      ● Verified Makers ({makerLeaderboard?.length || 0})
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-red-200 bg-red-950 px-1.5 py-0.5 rounded border border-red-500 font-mono">
-                      ● OFFLINE / DISCONNECTED
-                    </span>
-                  )}
-                </div>
-                {isAuthoritativeLive ? (
-                  makerLeaderboard && makerLeaderboard.length > 0 ? (
-                    makerLeaderboard.map((maker: any, idx: number) => {
-                      const avatar = maker.avatar || '⚡';
-                      const name = maker.displayName || maker.username || 'Maker';
-                      const handle = maker.username ? `@${maker.username}` : '@anonymous';
-                      const badgeText = maker.badgeInfo
-                        ? `${maker.badgeInfo.icon} ${maker.currentStreak} Day${maker.currentStreak === 1 ? '' : 's'}`
-                        : `${maker.currentStreak || 1} Day streak`;
-                      const tierTitle = maker.badgeInfo?.title || 'Rookie Maker';
-                      const dropCount = maker.totalDrops || 0;
-
-                      return (
-                        <div key={maker.id || idx} className="p-2.5 rounded bg-slate-50 border border-slate-300 flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <span className="font-bold font-mono text-sm text-slate-500">#{idx + 1}</span>
-                            <span className="text-xl">{avatar}</span>
-                            <div>
-                              <div className="font-bold text-xs text-slate-800">
-                                {name} <span className="text-slate-500 font-normal">{handle}</span>
-                                <span className="ml-1.5 text-[10px] text-blue-700 font-mono font-medium">({tierTitle})</span>
-                              </div>
-                              <div className="text-[10px] text-slate-600">
-                                {maker.bio || 'Ships software people can own.'} · {dropCount} drop{dropCount === 1 ? '' : 's'}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <span className="bg-orange-100 text-orange-800 border border-orange-300 px-2 py-0.5 rounded font-mono font-bold text-xs">
-                              {badgeText}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="p-8 text-center space-y-2">
-                      <div className="text-2xl">🌱</div>
-                      <div className="font-bold text-xs text-slate-700">No Maker Streaks Recorded</div>
-                      <p className="text-[11px] text-slate-500">
-                        Publish daily shareware drops to build an active streak and earn maker rank.
-                      </p>
-                    </div>
-                  )
-                ) : (
-                  <div className="p-8 text-center space-y-2">
-                    <div className="text-2xl">📡</div>
-                    <div className="font-bold text-xs text-slate-700">Maker Leaderboard Unavailable</div>
-                    <p className="text-[11px] text-slate-500">
-                      Could not reach the live drop registry, so no maker data is shown. Retry sync to reconnect — this panel never shows invented profiles.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : isLoading && apps.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <div className="text-2xl animate-spin">⏳</div>
-                <div className="font-bold text-xs text-slate-700">Connecting to 12:01 AM UTC Drop Registry...</div>
-                <p className="text-[11px] text-slate-500">Retrieving daily shareware queue.</p>
-              </div>
-            ) : filteredApps.length === 0 ? (
-              <div className="p-8 text-center space-y-2">
-                <div className="text-2xl">📦</div>
-                <div className="font-bold text-xs text-slate-700">
-                  {searchQuery.trim()
-                    ? 'No apps found'
-                    : selectedBatch === 'yesterday'
-                      ? `No Drops in Yesterday's Batch (#${Math.max(1, batchInfo.batchNumber - 1)})`
-                      : selectedBatch === 'archive'
-                        ? 'No Historical Archived Drops'
-                        : isAuthoritativeLive
-                          ? `No Live Drops in Today's 12:01 AM Batch (#${batchInfo.batchNumber})`
-                          : catalogError
-                            ? 'Unable to load live drops'
-                            : 'No drops found'}
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  {searchQuery.trim()
-                    ? `No drops matched "${searchQuery}". Try searching for another tag or creator.`
-                    : selectedBatch === 'yesterday'
-                      ? `No drops were registered during yesterday's 12:01 AM UTC batch window.`
-                      : selectedBatch === 'archive'
-                        ? `No older archived drops found before current batch window.`
-                        : isAuthoritativeLive
-                          ? `The live 12:01 AM batch (#${batchInfo.batchNumber}) is currently empty. Be the first creator to launch a drop today!`
-                          : catalogError
-                            ? `Failed to retrieve drops from the live registry: ${catalogError}`
-                            : 'No drops available in this category.'}
-                </p>
-                {catalogError ? (
-                  <button
-                    onClick={() => {
-                      playClickSound();
-                      refreshCatalog();
-                    }}
-                    className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2"
-                  >
-                    <RefreshCw size={12} />
-                    <span>Retry Connection</span>
-                  </button>
-                ) : isAuthoritativeLive && !searchQuery.trim() ? (
-                  <button
-                    onClick={handleOpenNewDrop}
-                    className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2"
-                  >
-                    <Plus size={13} />
-                    <span>Submit First Drop</span>
-                  </button>
-                ) : null}
-              </div>
-            ) : (
-              filteredApps.map((app, index) => {
-                const isSelected = selectedApp?.id === app.id;
-                const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
-
-                return (
-                  <div
-                    key={app.id}
-                    onClick={() => {
-                      playClickSound();
-                      setSelectedApp(app);
-                      if (onOpenApp) onOpenApp(app.id);
-                    }}
-                    className={`p-2.5 cursor-pointer flex items-start justify-between gap-2 transition-colors ${
-                      isSelected ? 'bg-blue-50 border-l-4 border-blue-800' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-xs font-mono text-slate-500">#{index + 1}</span>
-                        <span className="font-bold text-xs text-blue-900">{app.name}</span>
-                        <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">
-                          {app.version}
-                        </span>
-                        <span className="text-gray-500 text-[10px]">by @{app.author || app.creator || 'not supplied'}</span>
-
-                        {user?.username && (app.author === user.username || app.creator === user.username) && (
-                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Submitted by you">
-                            MINE
-                          </span>
-                        )}
-
-                        {app.isDemo || !isAuthoritativeLive ? (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Demo listing — source not published yet, so it can't be forked or bought.">
-                            DEMO
-                          </span>
-                        ) : (
-                          <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Live Drop">
-                            LIVE
-                          </span>
-                        )}
-
-                        {app.hasCanonicalRepo && app.repoSlug ? (
-                          <span className="bg-blue-50 text-blue-900 border border-blue-300 font-mono text-[9px] px-1.5 py-0.2 rounded flex items-center gap-1" title={`Canonical GITSMITH Repo: ${app.repoSlug}`}>
-                            <GitFork size={9} className="text-blue-700 shrink-0" />
-                            <span>{app.repoSlug}</span>
-                            {app.repoHeadCommitOid && (
-                              <span className="text-blue-600">· #{app.repoHeadCommitOid.slice(0, 7)}</span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="bg-gray-100 text-gray-500 border border-gray-300 font-mono text-[9px] px-1.5 py-0.2 rounded" title="This app hasn't published its source to GITSMITH yet — it can't be forked or bought until it does.">
-                            not yet on forge
-                          </span>
-                        )}
-
-                        {app.badge && (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold text-[9px] px-1.5 py-0.2 rounded-full flex items-center gap-1">
-                            <Trophy size={10} className="text-amber-600" />
-                            <span>{app.badge}</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <p className="text-[11px] text-gray-700 mt-1 line-clamp-1">
-                        {app.tagline}
-                      </p>
-
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[10px]">
-                        {app.tags && app.tags.slice(0, 3).map(tag => (
-                          <span key={tag} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-300 font-mono">
-                            {tag}
-                          </span>
-                        ))}
-                        {app.tags && app.tags.length > 0 && (
-                          <span className="text-gray-400 font-mono">|</span>
-                        )}
-                        <span className="text-gray-500 font-mono flex items-center gap-0.5">
-                          <GitFork size={10} /> {app.forkCount || 0} forks
-                        </span>
-                        <span className="text-gray-400 font-mono">|</span>
-                        <a
-                          href={`/tree/${encodeURIComponent(app.id)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => { e.stopPropagation(); playClickSound(); }}
-                          className="text-green-700 hover:text-green-900 font-mono font-bold flex items-center gap-0.5"
-                          title="See the fork lineage tree for this app — shareable"
-                        >
-                          🌳 lineage tree →
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-center gap-1">
-                      {isSelected ? (
-                        <button
-                          onClick={(e) => handleUpvote(e, app.id)}
-                          disabled={isUpvoted}
-                          className={`win95-btn px-2.5 py-1 flex items-center gap-1 transition-all whitespace-nowrap ${
-                            isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white font-bold text-black'
-                          }`}
-                          title={isUpvoted ? "Already voted for this drop" : !isAuthenticated ? "Sign in to vote" : "Upvote drop"}
-                        >
-                          <Flame size={12} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-orange-600'} />
-                          <span className="font-mono text-xs">
-                            {!isAuthenticated
-                              ? 'Sign in to vote'
-                              : isUpvoted
-                                ? `Voted (${app.upvotes})`
-                                : `Upvote (${app.upvotes})`}
-                          </span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => handleUpvote(e, app.id)}
-                          disabled={isUpvoted}
-                          className={`win95-btn px-2 py-1 flex flex-col items-center min-w-[42px] transition-all ${
-                            isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white'
-                          }`}
-                          title={isUpvoted ? "Already voted for this drop" : !isAuthenticated ? "Sign in to vote" : `Upvote (${app.upvotes})`}
-                        >
-                          <Flame size={12} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-gray-600'} />
-                          <span className="font-mono text-xs mt-0.5">{app.upvotes}</span>
-                          {isUpvoted && (
-                            <span className="text-[8px] font-mono text-orange-800 font-bold uppercase">Voted</span>
-                          )}
-                        </button>
-                      )}
-
-                      {app.isDemo && app.voters && app.voters.length > 0 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            playClickSound();
-                            setActiveVoterApp(app);
-                          }}
-                          className="text-[10px] text-blue-700 hover:underline flex items-center gap-0.5 font-mono"
-                          title="View verified voters"
-                        >
-                          <Users size={9} />
-                          <span>{app.voters.length}</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </Win95Scroll>
+const LibraryIndex: React.FC<LibraryIndexProps> = ({
+  apps, tabs, activeTab, onTabSelect, showMine, searchQuery, setSearchQuery,
+  onSubmit, onOpen, onUpvote, upvotedApps, isAuthenticated, isAuthoritativeLive,
+  isLoading, username, appCount, leaderboardCount, onOpenLeaders
+}) => {
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden p-2">
+      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 font-bold text-blue-900">
+          <Flame size={15} className="text-orange-600" />
+          <span className="text-sm tracking-wide">WHAT&rsquo;S HOT</span>
+          <span className="text-[10px] font-normal text-gray-600 font-mono">· live ranking, browse the source</span>
         </div>
-
-        <div className="w-1/2 flex flex-col min-w-[320px]">
-          {selectedApp ? (
-            <ArtifactSandbox
-              app={selectedApp}
-              onOpenPostEditor={onOpenPostEditor}
-            />
+        <div className="flex items-center gap-2">
+          {isLoading && appCount === 0 ? (
+            <span className="bg-blue-800 text-blue-200 border border-blue-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold animate-pulse">⏳ CONNECTING...</span>
+          ) : isAuthoritativeLive ? (
+            <span className="bg-emerald-800 text-emerald-200 border border-emerald-400 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Live library index">● LIVE ({appCount} apps)</span>
           ) : (
-            <div className="h-full bg-[#ece9d8] border-2 border-gray-400 p-8 flex flex-col items-center justify-center text-center space-y-3 font-tahoma">
-              <div className="text-4xl">🚀</div>
-              <div className="font-bold text-sm text-w95-blue">No Drop Selected</div>
-              <p className="text-xs text-gray-600 max-w-xs">
-                Select any shareware drop from the 12:01 AM leaderboard on the left to inspect its live sandbox, storage, and screenshots.
-              </p>
-            </div>
+            <span className="bg-red-950 text-red-200 border border-red-500 px-2 py-0.5 rounded text-[10px] font-mono font-bold" title="Disconnected / offline">● OFFLINE / DISCONNECTED</span>
           )}
+          <button onClick={onSubmit} className="win95-btn px-2.5 py-1 text-black font-bold flex items-center gap-1 text-[11px] bg-[#dfdfdf] hover:bg-white">
+            <Plus size={13} /> Submit app
+          </button>
         </div>
       </div>
 
-      {activeVoterApp && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="win95-window max-w-sm w-full bg-[#c0c0c0] p-3 text-xs space-y-3">
-            <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold">
-              <span>Verified Voters · {activeVoterApp.name} <span className="text-yellow-300 text-[10px] font-normal font-mono">(Demo Data)</span></span>
-              <button onClick={() => setActiveVoterApp(null)} className="text-white hover:text-red-300">
-                <X size={14} />
+      <div className="flex gap-1 mb-1 flex-wrap items-end">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => onTabSelect(tab.id)}
+            className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${activeTab === tab.id ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'}`}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+        {showMine && (
+          <button
+            onClick={() => onTabSelect('mine')}
+            className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${activeTab === 'mine' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'}`}
+          >
+            <span className="text-emerald-700 font-bold">●</span> Mine
+          </button>
+        )}
+        <div className="flex-1 min-w-[180px] win95-field p-1 bg-white flex items-center gap-1.5 border border-gray-600 ml-1">
+          <Search size={13} className="text-gray-500 ml-1" />
+          <input
+            type="text"
+            placeholder="Search apps, makers, tags..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full text-xs outline-none bg-transparent"
+          />
+        </div>
+      </div>
+
+      <Win95Scroll className="flex-1 win95-field bg-white border border-gray-600">
+        <div className="grid grid-cols-[28px_1fr_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
+          <span className="text-right">#</span>
+          <span>App · maker · repo</span>
+          <span className="text-right">Votes</span>
+        </div>
+
+        {isLoading && appCount === 0 ? (
+          <div className="p-8 text-center space-y-2">
+            <div className="text-2xl animate-spin">⏳</div>
+            <div className="font-bold text-xs text-slate-700">Connecting to the live library index...</div>
+          </div>
+        ) : apps.length === 0 ? (
+          <div className="p-8 text-center space-y-2">
+            <div className="text-2xl">📚</div>
+            <div className="font-bold text-xs text-slate-700">
+              {searchQuery.trim() ? 'No apps found' : activeTab === 'mine' ? 'You haven’t published any apps yet' : isAuthoritativeLive ? 'The library is empty' : 'Library unavailable'}
+            </div>
+            <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+              {searchQuery.trim()
+                ? `Nothing matched "${searchQuery}". Try another maker or tag.`
+                : activeTab === 'mine'
+                  ? 'Submit source to the library and it shows up here.'
+                  : isAuthoritativeLive
+                    ? 'Be the first maker to publish source into the library.'
+                    : 'Could not reach the live library index. This panel never shows invented apps.'}
+            </p>
+            {isAuthoritativeLive && !searchQuery.trim() && (
+              <button onClick={onSubmit} className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2">
+                <Plus size={13} /> Submit an app
               </button>
+            )}
+          </div>
+        ) : (
+          apps.map((app, index) => {
+            const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
+            const isMine = username && (app.author === username || app.creator === username);
+            const royaltyBps = getRoyaltyBps(app);
+            return (
+              <div
+                key={app.id}
+                onClick={() => onOpen(app)}
+                className="grid grid-cols-[28px_1fr_auto] gap-2 px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-blue-50 items-start"
+              >
+                <span className="font-bold font-mono text-sm text-[#7a1f00] text-right leading-5">{index + 1}</span>
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-bold text-[13px] text-blue-900">{app.name}</span>
+                    <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">{app.version}</span>
+                    <span className="text-gray-500 text-[10px] text-[#2b5fa8]">by @{app.author || app.creator || 'maker'}</span>
+                    {isMine && (
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Published by you">MINE</span>
+                    )}
+                    {app.isDemo || !isAuthoritativeLive ? (
+                      <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Demo listing — source not published yet, so it can't be forked or bought.">DEMO</span>
+                    ) : (
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Live in the library">LIVE</span>
+                    )}
+                    {royaltyBps > 0 && (
+                      <span className="bg-[#e4f0f7] text-[#1c4a6b] border border-[#7ea6c4] font-mono text-[11px] px-1.5 rounded flex items-center gap-0.5" title="Resale royalty — frozen onto every fork">
+                        <Snowflake size={9} /> {(royaltyBps / 100).toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-gray-700 mt-0.5 line-clamp-1">{app.tagline}</p>
+
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[10px]">
+                    {app.hasCanonicalRepo && app.repoSlug ? (
+                      <span className="bg-blue-50 text-blue-900 border border-blue-300 font-mono text-[11px] px-1.5 rounded flex items-center gap-1" title={`Canonical repo: ${app.repoSlug}`}>
+                        <GitFork size={9} className="text-blue-700 shrink-0" />
+                        {app.repoSlug}
+                        {app.repoHeadCommitOid && <span className="text-blue-600">· #{app.repoHeadCommitOid.slice(0, 7)}</span>}
+                      </span>
+                    ) : (
+                      <span className="bg-gray-100 text-gray-500 border border-gray-300 font-mono text-[11px] px-1.5 rounded" title="Source not published to the forge yet — can't be forked or bought until it is.">not yet on forge</span>
+                    )}
+                    <span className="text-gray-500 font-mono flex items-center gap-0.5"><GitFork size={10} /> {app.forkCount || 0} forks</span>
+                    <span className="text-gray-400 font-mono">|</span>
+                    <a
+                      href={`/tree/${encodeURIComponent(app.id)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => { e.stopPropagation(); playClickSound(); }}
+                      className="text-green-700 hover:text-green-900 font-mono font-bold flex items-center gap-0.5"
+                      title="See the fork lineage for this app"
+                    >
+                      🌳 lineage →
+                    </a>
+                  </div>
+                </div>
+
+                <button
+                  onClick={(e) => onUpvote(e, app.id)}
+                  disabled={isUpvoted}
+                  className={`win95-btn px-2 py-1 flex flex-col items-center min-w-[46px] transition-all ${isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white'}`}
+                  title={isUpvoted ? 'Already upvoted' : !isAuthenticated ? 'Sign in to upvote' : `Upvote (${app.upvotes})`}
+                >
+                  <Flame size={13} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-gray-600'} />
+                  <span className="font-mono text-xs mt-0.5">{app.upvotes}</span>
+                  {isUpvoted && <span className="text-[10px] font-mono text-orange-800 font-bold uppercase">Voted</span>}
+                </button>
+              </div>
+            );
+          })
+        )}
+      </Win95Scroll>
+
+      <div className="flex items-center justify-between mt-1.5 px-1 text-[10px] text-gray-600 font-mono">
+        <span>Buy the source, not a subscription. The preview only proves it runs — you run the real code yourself.</span>
+        {onOpenLeaders && (
+          <button onClick={() => { playClickSound(); onOpenLeaders(); }} className="text-blue-800 hover:text-blue-950 font-bold flex items-center gap-0.5" title="Verified maker leaderboard">
+            <Trophy size={11} className="text-yellow-600" /> Makers ({leaderboardCount}) →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+interface InspectorPaneProps {
+  app: AppListing;
+  inspectTab: InspectTab;
+  setInspectTab: (t: InspectTab) => void;
+  onOpenPostEditor?: (app?: AppListing) => void;
+  isAuthoritativeLive: boolean;
+}
+
+const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspectTab, onOpenPostEditor, isAuthoritativeLive }) => {
+  const price = getPrice(app);
+  const platformFee = Math.floor(price * PLATFORM_RATE * 100) / 100;
+  const makerKeeps = price - platformFee;
+  const royaltyBps = getRoyaltyBps(app);
+  const royaltyPct = royaltyBps / 100;
+  const canFork = Boolean(app.hasCanonicalRepo && app.repoSlug) && !app.isDemo && isAuthoritativeLive;
+  const frozenDate = new Date().toISOString().slice(0, 10);
+  const lienId = `${(app.name || 'APP').slice(0, 2).toUpperCase()}-${(app.id || '0000').slice(-4).toUpperCase()}`;
+
+  const inspectTabs: { id: InspectTab; label: string; icon: React.ReactNode; meta?: string }[] = [
+    { id: 'code', label: 'Code', icon: <FileCode size={12} /> },
+    { id: 'readme', label: 'README', icon: <FileText size={12} /> },
+    { id: 'preview', label: 'See it run', icon: <Play size={12} />, meta: '(preview)' },
+    { id: 'lineage', label: 'Lineage', icon: <span>🌳</span> }
+  ];
+
+  return (
+    <div className="flex-1 flex overflow-hidden p-2 gap-2">
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex items-start gap-2.5 mb-2 px-1">
+          <div className="w-11 h-11 shrink-0 grid place-items-center text-2xl bg-white win95-field border border-gray-500">
+            {app.authorAvatar || '📦'}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="font-bold text-base text-blue-900 leading-tight">{app.name}</h2>
+              <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">{app.version}</span>
+            </div>
+            <div className="text-[11px] text-[#2b5fa8]">by @{app.author || app.creator || 'maker'} · you&rsquo;re buying the source, not a subscription</div>
+            <p className="text-[11px] text-gray-700 mt-0.5 line-clamp-2">{app.tagline}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-0.5 px-1">
+          {inspectTabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => { playClickSound(); setInspectTab(t.id); }}
+              className={`px-3 py-1 flex items-center gap-1 text-[11px] border-2 border-b-0 rounded-t ${inspectTab === t.id ? 'bg-[#fbfbf8] font-bold text-black border-gray-500' : 'bg-[#dfe1e5] text-gray-600 border-gray-400'}`}
+            >
+              {t.icon} {t.label}
+              {t.meta && <span className="text-gray-500 font-normal text-[10px]">{t.meta}</span>}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 win95-field bg-[#fbfbf8] border border-gray-600 overflow-hidden flex flex-col min-h-0">
+          {inspectTab === 'preview' ? (
+            <ArtifactSandbox app={app} onOpenPostEditor={onOpenPostEditor} />
+          ) : inspectTab === 'code' ? (
+            <CodeInspector app={app} />
+          ) : inspectTab === 'readme' ? (
+            <Win95Scroll className="flex-1 p-4 text-[12px] leading-relaxed text-gray-800 bg-white">
+              <h3 className="font-bold text-sm mb-1 font-mono"># {librarySlug(app)}</h3>
+              <p className="text-gray-500 font-mono text-[11px] mb-3">{app.version} · main</p>
+              <p className="mb-3">{app.description || app.tagline}</p>
+              {app.makerPitch && <p className="mb-3 italic text-gray-600">{app.makerPitch}</p>}
+              <p className="font-bold mt-3 mb-1">Tags</p>
+              <div className="flex flex-wrap gap-1">
+                {(app.tags || []).map(t => (
+                  <span key={t} className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-300 font-mono text-[10px]">{t}</span>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border border-gray-400 p-2 mt-4">
+                This README ships with the source. The <b>See it run</b> tab is a preview to confirm the code works on real
+                data — the product is the source itself, which you run yourself.
+              </p>
+            </Win95Scroll>
+          ) : (
+            <Win95Scroll className="flex-1 p-4 bg-white text-[12px] text-gray-800">
+              <div className="font-bold mb-2 flex items-center gap-1"><span>🌳</span> Fork lineage</div>
+              <p className="text-gray-600 mb-3">
+                {app.forkCount || 0} fork{app.forkCount === 1 ? '' : 's'} descend from this app. Every fork carries the frozen
+                royalty liens of its ancestors — a maker up the chain can never be zeroed out downstream.
+              </p>
+              <a
+                href={`/tree/${encodeURIComponent(app.id)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => playClickSound()}
+                className="win95-btn inline-flex items-center gap-1 px-3 py-1 font-bold bg-[#dfdfdf] hover:bg-white text-black"
+              >
+                <ExternalLink size={12} /> Open full lineage tree
+              </a>
+            </Win95Scroll>
+          )}
+
+          <div className="text-[10px] text-[#7a4a00] bg-[#fbf3df] border-t border-gray-400 px-2 py-1.5">
+            ▶ <b>See it run</b> is a preview to confirm it works on real data — the product is the source, which you run yourself. It might not run in your setup.
+          </div>
+        </div>
+      </div>
+
+      <div className="w-[260px] shrink-0 flex flex-col gap-2 min-h-0">
+        <div className="win95-field bg-white border border-gray-600">
+          <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Own it</div>
+          <div className="p-3">
+            <div className="font-bold text-[26px] text-[#0a5a0a] leading-none">{money(price)}</div>
+            <div className="text-[11px] text-gray-600 mt-0.5">Buy once · own the source forever</div>
+            <button
+              disabled={!canFork}
+              onClick={() => playClickSound()}
+              className={`win95-btn w-full mt-2.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#0a7d2a] text-white hover:brightness-110' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
+              title={canFork ? 'Buy the source and license key' : 'Source not published to the forge yet'}
+            >
+              <span>Buy source</span>
+              <span className="text-[11px] font-normal">get the repo + license key</span>
+            </button>
+            <button
+              disabled={!canFork}
+              onClick={() => playClickSound()}
+              className={`win95-btn w-full mt-1.5 py-1.5 font-bold flex flex-col items-center ${canFork ? 'bg-[#dfdfdf] text-black hover:bg-white' : 'bg-[#dfdfdf] text-gray-400 cursor-not-allowed'}`}
+              title={canFork ? 'Fork it, remix, and sell your version' : 'Source not published to the forge yet'}
+            >
+              <span className="flex items-center gap-1"><GitFork size={12} /> Fork &amp; resell</span>
+              <span className="text-[11px] font-normal">remix it, sell your version</span>
+            </button>
+            {!canFork && (
+              <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-300 p-1.5 mt-2">
+                {app.isDemo ? 'Demo listing — no source published yet.' : !isAuthoritativeLive ? 'Offline — reconnect to buy or fork.' : 'This app hasn’t published source to the forge yet, so it can’t be bought or forked.'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="win95-field bg-white border border-gray-600">
+          <div className="bg-[#c0c0c0] font-bold text-[11px] px-2 py-1 border-b border-gray-500">Where your {money(price)} goes</div>
+          <div className="p-3 text-[11px]">
+            <div className="flex justify-between py-0.5 border-b border-dotted border-gray-300">
+              <span>Maker @{app.author || app.creator || 'maker'}</span>
+              <span className="font-bold text-[#0a5a0a]">{money(makerKeeps)}</span>
+            </div>
+            <div className="flex justify-between py-0.5 border-b border-dotted border-gray-300">
+              <span>Platform fee (flat 10%)</span>
+              <span className="font-bold">{money(platformFee)}</span>
+            </div>
+            <div className="flex justify-between pt-1 mt-1 border-t border-gray-500 font-bold">
+              <span>You pay</span>
+              <span>{money(price)}</span>
             </div>
 
-            <Win95Scroll className="space-y-1.5 max-h-60 bg-white p-2 border border-gray-600">
-              {activeVoterApp.voters?.map((voter, i) => (
-                <div key={i} className="flex items-center justify-between p-1.5 border-b border-gray-100 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">{voter.avatar}</span>
-                    <div>
-                      <div className="font-bold text-slate-800">{voter.name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{voter.handle}</div>
-                    </div>
+            <div className="bg-[#e4f0f7] border border-[#7ea6c4] text-[#1c4a6b] mt-2.5 p-2">
+              <div className="font-bold flex items-center gap-1 text-[11px]">
+                <Snowflake size={12} /> Frozen royalty (if you fork &amp; resell)
+              </div>
+              {royaltyBps > 0 ? (
+                <>
+                  <div className="text-[10px] mt-1 leading-snug">
+                    Fork today and @{app.author || app.creator || 'maker'}&rsquo;s royalty locks at the rate below — <b>never raised, never revoked</b>, for the life of your fork.
                   </div>
-                  <span className="bg-emerald-100 text-emerald-800 text-[9px] font-mono px-1.5 py-0.5 rounded font-bold">
-                    VERIFIED
-                  </span>
+                  <div className="font-mono text-[10px] mt-1.5 bg-white border border-[#7ea6c4] px-1.5 py-1">
+                    RATE {royaltyPct.toFixed(1)}% · FROZEN {frozenDate} · lien #{lienId}
+                  </div>
+                  <div className="text-[10px] mt-1.5 leading-snug">
+                    <b>When your fork sells:</b> platform 10% · @{app.author || app.creator || 'maker'} {royaltyPct.toFixed(1)}% (frozen) · <b>you keep the rest</b>. Forks of your fork pay everyone up the chain.
+                  </div>
+                </>
+              ) : (
+                <div className="text-[10px] mt-1 leading-snug">
+                  This app is <b>free to fork and resell</b> (0% royalty). Platform still takes a flat 10% on any sale; you keep the rest.
                 </div>
-              ))}
-            </Win95Scroll>
-
-            <div className="flex justify-end">
-              <button onClick={() => setActiveVoterApp(null)} className="win95-btn px-4 py-1 font-bold">
-                Close
-              </button>
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
+    </div>
+  );
+};
+
+const CodeInspector: React.FC<{ app: AppListing }> = ({ app }) => {
+  const files = useMemo(() => {
+    const base = ['README.md', 'package.json', 'LICENSE'];
+    const src = ['src/index.ts', 'src/app.ts'];
+    return { src, base };
+  }, [app.id]);
+  const [selectedFile, setSelectedFile] = useState<string>('src/index.ts');
+
+  return (
+    <div className="flex-1 flex min-h-0">
+      <Win95Scroll className="w-[150px] shrink-0 bg-white border-r border-gray-500 py-1">
+        <div className="px-2 py-0.5 font-bold text-[11px] flex items-center gap-1">📂 src</div>
+        {files.src.map(f => (
+          <div
+            key={f}
+            onClick={() => { playClickSound(); setSelectedFile(f); }}
+            className={`pl-5 pr-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50'}`}
+          >
+            📄 {f.split('/').pop()}
+          </div>
+        ))}
+        {files.base.map(f => (
+          <div
+            key={f}
+            onClick={() => { playClickSound(); setSelectedFile(f); }}
+            className={`px-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50'}`}
+          >
+            📄 {f}
+          </div>
+        ))}
+      </Win95Scroll>
+
+      <div className="flex-1 flex flex-col min-w-0 bg-white">
+        <div className="font-mono text-[10px] text-gray-600 px-2 py-1 bg-[#eef0f2] border-b border-gray-500 flex justify-between">
+          <span>{selectedFile}</span>
+          <span>{app.hasCanonicalRepo ? 'from canonical repo' : 'not on forge'}</span>
+        </div>
+        <Win95Scroll className="flex-1 p-3 font-mono text-[11px] leading-relaxed text-gray-800">
+          {app.hasCanonicalRepo && app.repoSlug ? (
+            <pre className="whitespace-pre-wrap">{`// ${selectedFile}
+// ${librarySlug(app)} · ${app.version}
+//
+// The real file tree and source stream from the canonical
+// repo (${app.repoSlug}${app.repoHeadCommitOid ? ` @ ${app.repoHeadCommitOid.slice(0, 7)}` : ''}).
+//
+// Buying gives you this repository plus a license key. You run
+// it yourself — this library page is where you read the code
+// before you decide to buy or fork.`}</pre>
+          ) : (
+            <div className="text-gray-500">
+              <p className="font-bold mb-2">Source not on the forge yet.</p>
+              <p>{app.name} hasn&rsquo;t published its repository to GITSMITH, so there&rsquo;s no code to browse and it can&rsquo;t be bought or forked until it does.</p>
+            </div>
+          )}
+        </Win95Scroll>
+      </div>
     </div>
   );
 };
