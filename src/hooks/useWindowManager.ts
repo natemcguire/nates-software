@@ -164,7 +164,7 @@ export function useWindowManager(user?: AuthUser | null) {
     },
     gitsmith: {
       id: 'gitsmith',
-      title: "GITSMITH — [GitHub-Style Bare Git Forge & Repos]",
+      title: "GITSMITH — [Bare Git Forge & Repos over SSH]",
       icon: '📁',
       isOpen: false,
       isMinimized: false,

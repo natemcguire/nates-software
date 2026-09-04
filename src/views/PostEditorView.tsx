@@ -224,7 +224,7 @@ $ slop push
 
 Output:
   ┌────────────────────────────────────────────────────────────┐
-  │ ⚡ SLOP CLI v1.0.0 (Open Source Shareware &amp; AI Speed Shop)   │
+  │ ⚡ SLOP CLI v1.0.0 — fork code, fork revenue                │
   └────────────────────────────────────────────────────────────┘
   [GITSMITH] Initiating 'slop push' from local repository...
     ✔ Checking runtime configuration &amp; storage ({app.sqlitePath || 'runtime independent'})...

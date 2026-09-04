@@ -34,9 +34,9 @@ Say your fork sells for gross amount \`G\`.
 
 Nobody nests their cut inside somebody else's cut. Everyone's percentage means exactly what it says.
 
-## Rounding dust goes to the house
+## Rounding dust goes to the platform
 
-Cents don't always divide evenly. When they don't, every maker allocation — the platform's base fee, every ancestor's lien, your own take — gets rounded *down*, never up. Whatever fractional cents get dropped by all that rounding get swept into the platform's total. Not yours, not your ancestors'. The house absorbs the dust, every time, in both directions — on a sale and on a refund. You are never shorted by rounding, and you are never overpaid by it either. The one thing rounding can never do is quietly hand out free money to a maker.
+Cents don't always divide evenly. When they don't, every maker allocation — the platform's base fee, every ancestor's lien, your own take — gets rounded *down*, never up. Whatever fractional cents get dropped by all that rounding get swept into the platform's total. Not yours, not your ancestors'. The platform absorbs the dust, every time, in both directions — on a sale and on a refund. You are never shorted by rounding, and you are never overpaid by it either. The one thing rounding can never do is quietly hand out free money to a maker.
 
 ## All sales are final
 

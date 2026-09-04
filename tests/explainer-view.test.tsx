@@ -44,8 +44,8 @@ describe('Consolidated About/Explainer window (Spec M)', () => {
 
   it('renders the flat-10%-platform / frozen-royalty money model with the 90/10 root case', () => {
     const html = renderWindow();
-    expect(html).toContain('The Money Model');
-    expect(html).toContain('frozen the day they forked');
+    expect(html).toContain('The money model');
+    expect(html).toContain('frozen the day they fork');
     expect(html).toContain('10%');
     expect(html).toContain('90% you / 10% us');
   });

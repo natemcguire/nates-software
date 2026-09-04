@@ -102,8 +102,12 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         <div className="text-3xl font-black text-w95-blue tracking-tight mb-1.5">
           WELCOME TO NATE'S SOFTWARE EMPORIUM
         </div>
-        <p className="text-gray-700 text-sm max-w-3xl mx-auto leading-relaxed font-bold">
-          Stop renting software. Own the source.
+        <p className="text-gray-800 text-base max-w-3xl mx-auto leading-snug font-black">
+          Other sites let you fork code. We let you fork revenue.
+        </p>
+        <p className="text-gray-600 text-xs max-w-3xl mx-auto leading-relaxed mt-1 font-sans">
+          Buy a web app once and own the source. Fork it, remix it with AI, sell your version —
+          and the maker you built on earns the royalty they locked in the day you forked.
         </p>
         <div className="mt-2.5 flex items-center justify-center gap-2">
           <button
@@ -133,11 +137,12 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             Nothing lists until it proves it builds and runs. Sales are final. No subscription, ever.
           </p>
           <div className="bg-gray-100 border border-gray-400 p-2.5 rounded text-xs">
-            <div className="font-bold text-gray-900 mb-0.5 font-mono">The Money Model</div>
+            <div className="font-bold text-gray-900 mb-0.5 font-mono">The money model</div>
             <div className="text-gray-700 font-sans leading-relaxed">
               You set <strong>one royalty</strong> when you list. Anyone who forks your app and sells pays you that
-              rate, frozen the day they forked so you can't jack it up later. Forks of forks pay everyone up the chain.
-              The house takes a flat <strong className="text-green-800">10%</strong>. The seller keeps the rest.
+              rate — <strong>frozen the day they fork</strong>, so it can never be raised or revoked. Forks of forks
+              pay everyone up the chain. The platform takes a flat <strong className="text-green-800">10%</strong>;
+              the seller keeps the rest. Every split is settled to the exact cent.
             </div>
           </div>
         </div>

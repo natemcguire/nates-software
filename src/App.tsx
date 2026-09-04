@@ -658,7 +658,7 @@ export function AppInner() {
           { id: 'chat', label: 'CHAT', icon: '💬', group: 'main', onClick: () => { playClickSound(); openWindow('chat'); } },
           { id: 'profile', label: 'ACCOUNT.CFG', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
           { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'refs', onClick: () => { playClickSound(); openWindow('papers'); } },
-          { id: 'github', label: 'Source on GitHub', icon: '🌐', group: 'refs', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
+          { id: 'github', label: 'Source Code', icon: '🌐', group: 'refs', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
           { id: 'slopshop', label: 'SLOPSHOP', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
           { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('inbox'); } },
           { id: 'dyno', label: 'DYNO', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },

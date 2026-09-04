@@ -126,7 +126,7 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
           className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-w95-blue hover:text-white cursor-pointer"
         >
           <HelpCircle size={16} className="text-gray-600" />
-          <span>GitHub Forge &rarr;</span>
+          <span>Source code &rarr;</span>
         </div>
 
         {isAuthenticated ? (
