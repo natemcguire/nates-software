@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   GitBranch,
   GitFork,
@@ -14,6 +14,9 @@ import {
   Clock,
   CircleDot,
   Folder,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
   FileText,
   GripVertical,
   Globe,
@@ -203,6 +206,91 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
   }
 ];
 
+interface FileTreeItem {
+  name: string;
+  type: 'file' | 'dir';
+  size?: string;
+  content?: string;
+}
+
+interface TreeNode {
+  path: string;
+  name: string;
+  type: 'file' | 'dir';
+  size?: string;
+  content?: string;
+  children: TreeNode[];
+}
+
+function buildFileTree(files: FileTreeItem[]): TreeNode[] {
+  const root: TreeNode[] = [];
+
+  for (const item of files) {
+    const parts = item.name.split('/').filter(Boolean);
+    if (parts.length === 0) continue;
+
+    let currentLevel = root;
+    let currentPath = '';
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isLeaf = i === parts.length - 1;
+
+      let existing = currentLevel.find(n => n.name === part);
+      if (!existing) {
+        existing = {
+          path: currentPath,
+          name: part,
+          type: isLeaf ? item.type : 'dir',
+          size: isLeaf ? item.size : undefined,
+          content: isLeaf ? item.content : undefined,
+          children: []
+        };
+        currentLevel.push(existing);
+      } else if (isLeaf) {
+        existing.type = item.type;
+        if (item.size) existing.size = item.size;
+        if (item.content) existing.content = item.content;
+      }
+      currentLevel = existing.children;
+    }
+  }
+
+  function sortNodes(nodes: TreeNode[]) {
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'dir' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        sortNodes(node.children);
+      }
+    }
+  }
+
+  sortNodes(root);
+  return root;
+}
+
+function findFirstFile(nodes: TreeNode[]): TreeNode | null {
+  for (const node of nodes) {
+    if (node.type === 'file') {
+      if (node.name.toLowerCase() === 'readme.md') return node;
+    }
+  }
+  for (const node of nodes) {
+    if (node.type === 'file') return node;
+    if (node.children.length > 0) {
+      const found = findFirstFile(node.children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export const GitsmithView: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const { showAlert } = useAlert();
@@ -231,6 +319,7 @@ export const GitsmithView: React.FC = () => {
   const [repoTreeFiles, setRepoTreeFiles] = useState<{ name: string; type: 'file' | 'dir'; size?: string; content?: string }[]>([]);
   const [repoTreeLoading, setRepoTreeLoading] = useState(false);
   const [repoTreeError, setRepoTreeError] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   const refreshCanonicalRepositories = async () => {
     try {
@@ -306,6 +395,17 @@ export const GitsmithView: React.FC = () => {
   const displayedFiles = selectedRepo
     ? (selectedRepo.source === 'showcase' ? selectedRepo.files : repoTreeFiles)
     : [];
+
+  const fileTree = useMemo(() => buildFileTree(displayedFiles), [displayedFiles]);
+
+  useEffect(() => {
+    if (fileTree.length > 0 && (!activeFile || !displayedFiles.some(f => f.name === activeFile.name))) {
+      const first = findFirstFile(fileTree);
+      if (first) {
+        setActiveFile({ name: first.path, type: 'file', size: first.size, content: first.content });
+      }
+    }
+  }, [fileTree, activeFile, displayedFiles]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -589,6 +689,65 @@ export const GitsmithView: React.FC = () => {
   };
 
   const codeLines = fileContent !== null ? fileContent.split('\n') : [];
+
+  const renderTreeNodes = (nodes: TreeNode[], depth = 0): React.ReactNode => {
+    return nodes.map(node => {
+      if (node.type === 'dir') {
+        const isExpanded = expandedFolders[node.path] !== false;
+        return (
+          <div key={node.path} className="space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                setExpandedFolders(prev => ({
+                  ...prev,
+                  [node.path]: prev[node.path] === undefined ? false : !prev[node.path]
+                }));
+              }}
+              style={{ paddingLeft: `${depth * 12 + 6}px` }}
+              className="w-full text-left py-1 pr-2 flex items-center justify-between text-xs font-mono text-black hover:bg-[#ece9d8] transition-colors"
+            >
+              <span className="flex items-center gap-1.5 truncate">
+                {isExpanded ? <ChevronDown size={12} className="text-gray-600 shrink-0" /> : <ChevronRight size={12} className="text-gray-600 shrink-0" />}
+                {isExpanded ? <FolderOpen size={14} className="text-yellow-600 shrink-0" /> : <Folder size={14} className="text-yellow-600 shrink-0" />}
+                <span className="truncate font-bold">{node.name}</span>
+              </span>
+            </button>
+            {isExpanded && node.children.length > 0 && (
+              <div>
+                {renderTreeNodes(node.children, depth + 1)}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      const isFileActive = activeFile?.name === node.path;
+      return (
+        <button
+          key={node.path}
+          type="button"
+          onClick={() => {
+            playClickSound();
+            setActiveFile({ name: node.path, type: 'file', size: node.size, content: node.content });
+          }}
+          style={{ paddingLeft: `${depth * 12 + 18}px` }}
+          className={`w-full text-left py-1 pr-2 flex items-center justify-between text-xs font-mono transition-colors ${
+            isFileActive
+              ? 'bg-[#000080] text-white font-bold'
+              : 'text-black hover:bg-[#ece9d8]'
+          }`}
+        >
+          <span className="flex items-center gap-1.5 truncate">
+            <FileText size={14} className={isFileActive ? 'text-white shrink-0' : 'text-gray-600 shrink-0'} />
+            <span className="truncate">{node.name}</span>
+          </span>
+          {node.size && <span className="text-[10px] opacity-75 shrink-0 ml-1">{node.size}</span>}
+        </button>
+      );
+    });
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] text-black font-tahoma text-xs overflow-hidden select-none">
@@ -1033,33 +1192,7 @@ export const GitsmithView: React.FC = () => {
                   {selectedRepo?.source !== 'showcase' && !repoTreeLoading && repoTreeError && (
                     <div className="px-2 py-1.5 text-[11px] text-red-700 font-mono leading-relaxed">{repoTreeError}</div>
                   )}
-                  {displayedFiles.map((file, idx) => {
-                    const isFileActive = (activeFile?.name || displayedFiles[0]?.name || 'README.md') === file.name;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          playClickSound();
-                          setActiveFile(file);
-                        }}
-                        className={`w-full text-left px-2 py-1 flex items-center justify-between text-xs font-mono transition-colors ${
-                          isFileActive
-                            ? 'bg-[#000080] text-white font-bold'
-                            : 'text-black hover:bg-[#ece9d8]'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2 truncate">
-                          {file.type === 'dir' ? (
-                            <Folder size={14} className={isFileActive ? 'text-yellow-300 shrink-0' : 'text-yellow-600 shrink-0'} />
-                          ) : (
-                            <FileText size={14} className={isFileActive ? 'text-white shrink-0' : 'text-gray-600 shrink-0'} />
-                          )}
-                          <span className="truncate">{file.name}</span>
-                        </span>
-                        {file.size && <span className="text-[10px] opacity-75 shrink-0">{file.size}</span>}
-                      </button>
-                    );
-                  })}
+                  {renderTreeNodes(fileTree)}
                 </Win95Scroll>
 
                 <div
