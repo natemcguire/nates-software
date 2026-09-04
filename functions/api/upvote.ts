@@ -36,16 +36,28 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       });
     }
 
-    const { results } = await env.DB.prepare(
-      'SELECT app_id, voter_hash FROM drop_upvotes'
+    const activeApps = await env.DB.prepare(
+      `SELECT id FROM app_listings WHERE listing_status = 'active' LIMIT 500`
     ).all();
+    const activeAppIds: string[] = Array.isArray(activeApps?.results)
+      ? activeApps.results.map((r: any) => r.id).filter((id: any) => typeof id === 'string')
+      : [];
 
     const votedAppIds: string[] = [];
-    if (Array.isArray(results)) {
-      for (const row of results) {
-        const expectedHash = await hashVoterKey(authUser.id, row.app_id, secretSalt);
-        if (row.voter_hash === expectedHash) {
-          votedAppIds.push(row.app_id);
+    if (activeAppIds.length > 0) {
+      const hashByApp = new Map<string, string>();
+      for (const id of activeAppIds) {
+        hashByApp.set(await hashVoterKey(authUser.id, id, secretSalt), id);
+      }
+      const hashes = [...hashByApp.keys()];
+      const placeholders = hashes.map(() => '?').join(',');
+      const { results } = await env.DB.prepare(
+        `SELECT voter_hash FROM drop_upvotes WHERE voter_hash IN (${placeholders})`
+      ).bind(...hashes).all();
+      if (Array.isArray(results)) {
+        for (const row of results) {
+          const appId = hashByApp.get(row.voter_hash);
+          if (appId) votedAppIds.push(appId);
         }
       }
     }

@@ -1170,7 +1170,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     
     if (action === 'plan') {
-      let files: string[] = Array.isArray(body.files) ? body.files : [];
+      let files: string[] = Array.isArray(body.files) ? body.files.filter((f: any) => typeof f === 'string') : [];
       let fileContents: Record<string, string> = typeof body.fileContents === 'object' && body.fileContents !== null ? body.fileContents : {};
 
       

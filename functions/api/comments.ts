@@ -24,7 +24,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const { results } = await query.all();
     return json({ success: true, comments: results || [] });
   } catch (error: any) {
-    return json({ success: false, error: `Comment query failed: ${error.message}` }, 503);
+    console.error('[COMMENTS] query error:', error?.message || error);
+    return json({ success: false, error: 'Comment service is temporarily unavailable.' }, 503);
   }
 };
 
@@ -58,6 +59,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (!comment) return json({ success: false, error: 'Stored comment could not be confirmed.' }, 503);
     return json({ success: true, commentId, comment }, 201);
   } catch (error: any) {
-    return json({ success: false, error: `Comment persistence failed: ${error.message}` }, 503);
+    console.error('[COMMENTS] persistence error:', error?.message || error);
+    return json({ success: false, error: 'Comment could not be saved right now.' }, 503);
   }
 };

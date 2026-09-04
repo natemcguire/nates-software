@@ -478,13 +478,20 @@ export function validateFeaturePackage(params: {
     }
   }
 
-  const routeInspection = inspectRoutes(modifications);
+  // Only inspect well-formed mods (string path + string content). Malformed ones already
+  // produced validation errors above; passing them to the inspectors would throw a TypeError
+  // (mod.content.matchAll / mod.path.endsWith) and surface as a 500 instead of a clean 400.
+  const inspectableModifications = modifications.filter(
+    (mod: any) => mod && typeof mod.path === 'string' && typeof mod.content === 'string'
+  );
+
+  const routeInspection = inspectRoutes(inspectableModifications);
   errors.push(...routeInspection.collisions);
 
-  const exportInspection = inspectExports(modifications);
+  const exportInspection = inspectExports(inspectableModifications);
   errors.push(...exportInspection.collisions);
 
-  const schemaInspection = inspectSchemaTables(params.migrationSql, modifications);
+  const schemaInspection = inspectSchemaTables(params.migrationSql, inspectableModifications);
   errors.push(...schemaInspection.collisions);
 
   return {

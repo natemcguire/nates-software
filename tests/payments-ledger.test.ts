@@ -170,6 +170,55 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
       });
     });
 
+    it('redacts buyer identity, gross, and co-recipient payouts from a non-seller ancestor', async () => {
+      await seedTestUsersAndApps();
+      // seller_a sells app_alpha to a buyer; seller_b holds an upstream ancestor lien.
+      await createSession('usr_seller_b', 'token_bob');
+
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_orders (
+          id, idempotency_key, buyer_user_id, app_id, seller_user_id,
+          app_version, price_version, gross_cents, currency, lineage_snapshot_json,
+          status, fulfilled_at
+        ) VALUES (
+          'ord_pii', 'idemp_pii', 'usr_buyer_1', 'app_alpha', 'usr_seller_a',
+          'v1.0.0', 1, 2000, 'usd', '[]',
+          'fulfilled', '2026-08-30 12:00:00'
+        )
+      `).run();
+
+      await ctx.d1.prepare(`
+        INSERT INTO commerce_order_allocations (
+          id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
+        ) VALUES
+          ('alloc_pii_seller', 'ord_pii', 0, 'seller', 'usr_seller_a', 8000, 1600),
+          ('alloc_pii_ancestor', 'ord_pii', 1, 'ancestor', 'usr_seller_b', 1000, 200),
+          ('alloc_pii_pool', 'ord_pii', 2, 'protocol_pool', NULL, 1000, 200)
+      `).run();
+
+      const req = new Request('http://localhost/api/payments/ledger', {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer token_bob' }
+      });
+      const res = await ledgerApi.onRequestGet({ request: req, env: testEnv });
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.orders).toHaveLength(1);
+      const order = data.orders[0];
+
+      // seller_b is an ancestor, not the seller: no buyer identity, no gross leak.
+      expect(order.buyerUserId).toBeNull();
+      expect(order.buyerUsername).toBe('buyer');
+      expect(order.grossCents).toBeNull();
+
+      // Only seller_b's own allocation is visible — not the seller's or the pool's.
+      expect(order.allocations).toHaveLength(1);
+      expect(order.allocations[0].recipientUserId).toBe('usr_seller_b');
+      expect(order.callerEarnedCents).toBe(200);
+      expect(order.allocations.some((a: any) => a.recipientUserId === 'usr_seller_a')).toBe(false);
+    });
+
     it('correctly tracks pending transfer status and non-fulfilled order exclusion', async () => {
       await seedTestUsersAndApps();
       await createSession('usr_seller_a', 'token_alice');

@@ -319,7 +319,9 @@ export function detectRigRuntime(
   files: string[],
   fileContents: Record<string, string> = {}
 ): DeploymentPlanResult {
-  const normalizedFiles = files.map(f => f.replace(/^\/+/, '').trim());
+  const normalizedFiles = (Array.isArray(files) ? files : [])
+    .filter((f): f is string => typeof f === 'string')
+    .map(f => f.replace(/^\/+/, '').trim());
   const fileSet = new Set(normalizedFiles.map(f => f.toLowerCase()));
   const hasStaticEntry = fileSet.has('index.html') || fileSet.has('public/index.html') || fileSet.has('dist/index.html');
   const staticEntry = fileSet.has('index.html') ? 'index.html' : (fileSet.has('dist/index.html') ? 'dist/index.html' : 'public/index.html');

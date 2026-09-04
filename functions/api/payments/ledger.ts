@@ -130,6 +130,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const enrichedOrders = (orders as any[]).map(o => {
       const orderAllocs = allocationsByOrder.get(o.id) || [];
       const callerAlloc = orderAllocs.find(a => a.recipientUserId === seller.id);
+      const isSeller = o.sellerUserId === seller.id;
 
       const earnedCents = callerAlloc ? callerAlloc.amountCents : 0;
       const isSettled = callerAlloc?.transfer?.isSettled || callerAlloc?.transfer?.status === 'succeeded';
@@ -143,16 +144,23 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         pendingCents += earnedCents;
       }
 
+      // A non-seller recipient (e.g. an upstream lineage ancestor) may only see their OWN
+      // allocation and never the buyer's identity or co-recipients' payouts. The seller of
+      // the order sees the full breakdown.
+      const visibleAllocations = isSeller
+        ? orderAllocs
+        : (callerAlloc ? [callerAlloc] : []);
+
       return {
         id: o.id,
-        buyerUserId: o.buyerUserId,
-        buyerUsername: o.buyerUsername || 'anonymous',
+        buyerUserId: isSeller ? o.buyerUserId : null,
+        buyerUsername: isSeller ? (o.buyerUsername || 'anonymous') : 'buyer',
         appId: o.appId,
         appName: o.appName || o.appId,
         appVersion: o.appVersion,
         sellerUserId: o.sellerUserId,
         sellerUsername: o.sellerUsername || 'unknown',
-        grossCents: o.grossCents,
+        grossCents: isSeller ? o.grossCents : null,
         currency: o.currency,
         status: o.status,
         createdAt: o.createdAt,
@@ -160,10 +168,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         fulfilledAt: o.fulfilledAt,
         callerAllocation: callerAlloc || null,
         callerEarnedCents: earnedCents,
-        callerRole: callerAlloc?.role || (o.sellerUserId === seller.id ? 'maker' : null),
+        callerRole: callerAlloc?.role || (isSeller ? 'maker' : null),
         transferStatus,
         isSettled: Boolean(isSettled),
-        allocations: orderAllocs
+        allocations: visibleAllocations
       };
     });
 

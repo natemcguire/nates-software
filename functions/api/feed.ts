@@ -90,8 +90,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       headers: { 'Content-Type': 'application/rss+xml; charset=utf-8', 'Access-Control-Allow-Origin': '*' }
     });
   } catch (error: any) {
+    console.error('[FEED] query error:', error?.message || error);
     return format === 'json'
-      ? Response.json({ success: false, error: `HOTWIRE feed query failed: ${error.message}` }, { status: 503 })
-      : new Response(`HOTWIRE feed query failed: ${error.message}`, { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      ? Response.json({ success: false, error: 'The HOTWIRE feed is temporarily unavailable.' }, { status: 503 })
+      : new Response('The HOTWIRE feed is temporarily unavailable.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   }
 };

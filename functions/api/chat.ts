@@ -83,7 +83,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       transport: 'web'
     });
   } catch (error: any) {
-    return response({ success: false, error: `Chat query failed: ${error.message}` }, 503);
+    console.error('[CHAT] query error:', error?.message || error);
+    return response({ success: false, error: 'Chat service is temporarily unavailable.' }, 503);
   }
 };
 
@@ -123,7 +124,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         user: auth.user.username
       }, 200);
     } catch (error: any) {
-      return response({ success: false, error: `Heartbeat failed: ${error.message}` }, 503);
+      console.error('[CHAT] heartbeat error:', error?.message || error);
+      return response({ success: false, error: 'Chat presence is temporarily unavailable.' }, 503);
     }
   }
 
@@ -161,7 +163,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         setter: auth.user.username
       }, 200);
     } catch (error: any) {
-      return response({ success: false, error: `Topic update failed: ${error.message}` }, 503);
+      console.error('[CHAT] topic update error:', error?.message || error);
+      return response({ success: false, error: 'Chat topic could not be updated right now.' }, 503);
     }
   }
 
@@ -202,6 +205,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (!stored) return response({ success: false, error: 'Stored chat message could not be confirmed.' }, 503);
     return response({ success: true, message: stored }, 201);
   } catch (error: any) {
-    return response({ success: false, error: `Chat persistence failed: ${error.message}` }, 503);
+    console.error('[CHAT] persistence error:', error?.message || error);
+    return response({ success: false, error: 'Message could not be sent right now.' }, 503);
   }
 };
