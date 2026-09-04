@@ -701,11 +701,7 @@ export const GitsmithView: React.FC = () => {
             Close Demo Gallery
           </button>
         </div>
-      ) : canonicalRepositories.length > 0 ? (
-        <div className="bg-emerald-950/80 border-b border-emerald-700 px-4 py-2 text-[11px] text-emerald-200 font-mono">
-          CANONICAL CONTROL-PLANE RECORDS — Repository status, default refs, and fork totals are loaded from D1. Git objects remain authoritative at the gateway.
-        </div>
-      ) : (
+      ) : canonicalRepositories.length > 0 ? null : (
         <div className={`${canonicalLoadState === 'error' ? 'bg-red-950/80 border-red-700 text-red-200' : 'bg-slate-900 border-slate-700 text-slate-300'} border-b px-4 py-2 text-[11px] font-mono`}>
           {canonicalLoadState === 'loading'
             ? 'LOADING CANONICAL FORGE…'
