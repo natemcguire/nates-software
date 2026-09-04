@@ -213,16 +213,16 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
 
       {!windowState.isMaximized && (
         <>
-          <div onPointerDown={(e) => startResize('n', e)} className="absolute top-0 left-2 right-2 h-2 cursor-n-resize select-none" />
-          <div onPointerDown={(e) => startResize('s', e)} className="absolute bottom-0 left-2 right-2 h-2 cursor-s-resize select-none" />
-          <div onPointerDown={(e) => startResize('e', e)} className="absolute top-2 bottom-2 right-0 w-2 cursor-e-resize select-none" />
-          <div onPointerDown={(e) => startResize('w', e)} className="absolute top-2 bottom-2 left-0 w-2 cursor-w-resize select-none" />
-          
-          <div onPointerDown={(e) => startResize('nw', e)} className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize select-none" />
-          <div onPointerDown={(e) => startResize('ne', e)} className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize select-none" />
-          <div onPointerDown={(e) => startResize('sw', e)} className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize select-none" />
-          <div onPointerDown={(e) => startResize('se', e)} className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize flex items-end justify-end p-0.5 select-none">
-            <div className="w-2.5 h-2.5 border-r-2 border-b-2 border-gray-600 opacity-75" />
+          <div onPointerDown={(e) => startResize('n', e)} className="absolute -top-1 left-3 right-3 h-3 cursor-n-resize select-none" />
+          <div onPointerDown={(e) => startResize('s', e)} className="absolute -bottom-1 left-3 right-3 h-3 cursor-s-resize select-none" />
+          <div onPointerDown={(e) => startResize('e', e)} className="absolute top-3 bottom-3 -right-1 w-3 cursor-e-resize select-none" />
+          <div onPointerDown={(e) => startResize('w', e)} className="absolute top-3 bottom-3 -left-1 w-3 cursor-w-resize select-none" />
+
+          <div onPointerDown={(e) => startResize('nw', e)} className="absolute -top-1 -left-1 w-5 h-5 cursor-nw-resize select-none" />
+          <div onPointerDown={(e) => startResize('ne', e)} className="absolute -top-1 -right-1 w-5 h-5 cursor-ne-resize select-none" />
+          <div onPointerDown={(e) => startResize('sw', e)} className="absolute -bottom-1 -left-1 w-5 h-5 cursor-sw-resize select-none" />
+          <div onPointerDown={(e) => startResize('se', e)} className="absolute -bottom-1 -right-1 w-6 h-6 cursor-se-resize flex items-end justify-end p-1 select-none">
+            <div className="w-3 h-3 border-r-2 border-b-2 border-gray-600 opacity-80" />
           </div>
         </>
       )}
