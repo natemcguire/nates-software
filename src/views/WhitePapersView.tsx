@@ -133,7 +133,7 @@ export const WhitePapersView: React.FC = () => {
         </div>
 
         <Win95Scroll className="flex-1 p-6 bg-[#fafafa] border border-gray-300 rounded shadow-inner select-text">
-          <MarkdownRenderer content={current.content} />
+          <MarkdownRenderer content={current.content} trusted />
         </Win95Scroll>
       </div>
     </div>
