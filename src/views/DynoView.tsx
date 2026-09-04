@@ -500,17 +500,22 @@ export const DynoView: React.FC = () => {
 
               <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs border border-gray-700 relative">
                 <div className="text-[10px] text-gray-400 mb-1"># Execute local benchmark via CLI runner:</div>
-                <div className="select-all">
+                <div className="select-all pr-36">
                   {getCliCommand()}
                 </div>
-                <button
-                  onClick={copyCommand}
-                  disabled={!isSubjectConfigured}
-                  className="absolute top-2.5 right-2.5 btn-w95 text-[10px] py-0.5 px-2 bg-gray-800 text-gray-200 hover:bg-gray-700 border-gray-600 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {copiedCommand ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-                  <span>{copiedCommand ? 'Copied' : 'Copy'}</span>
-                </button>
+                {isSubjectConfigured ? (
+                  <button
+                    onClick={copyCommand}
+                    className="absolute top-2 right-2 btn-w95 btn-w95-primary text-[11px] py-1 px-3 font-bold flex items-center gap-1.5 shadow"
+                  >
+                    {copiedCommand ? <Check size={13} className="text-green-300" /> : <Copy size={13} />}
+                    <span>{copiedCommand ? 'Copied!' : 'Copy CLI Command'}</span>
+                  </button>
+                ) : (
+                  <span className="absolute top-2 right-2 text-[10px] font-mono text-gray-400 bg-gray-800 px-2 py-0.5 border border-gray-700 select-none">
+                    Fill fields above to generate
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-1 border-t border-gray-200 flex-wrap gap-2 text-[11px]">
@@ -519,11 +524,12 @@ export const DynoView: React.FC = () => {
                   <span>Output saved to <code>~/.dyno/report.json</code>. Remains strictly local until submitted.</span>
                 </div>
                 <button
+                  type="button"
                   onClick={handleToggleSchemaExample}
-                  className="btn-w95 text-[11px] py-0.5 px-2.5 bg-gray-100 flex items-center gap-1"
+                  className="text-blue-800 hover:text-blue-950 underline flex items-center gap-1 font-mono text-[11px] cursor-pointer"
                 >
                   <Code size={12} />
-                  <span>{showSchemaExample ? 'Hide Schema Example' : 'View Non-Submittable Schema Example'}</span>
+                  <span>{showSchemaExample ? 'Hide schema example' : 'View report schema example'}</span>
                 </button>
               </div>
 
