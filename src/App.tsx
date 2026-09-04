@@ -999,6 +999,10 @@ export function AppInner() {
               if (repoSlug) setGitsmithInitialRepo(repoSlug);
               openWindow('gitsmith');
             }}
+            onOpenPostEditor={(app) => {
+              playClickSound();
+              setEditingApp(app || null);
+            }}
           />
         </RetroWindow>
       </ErrorBoundary>

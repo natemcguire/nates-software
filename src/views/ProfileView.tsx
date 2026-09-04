@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   User, Key, HardDrive, Check, Sparkles,
   DollarSign, RefreshCw, AlertTriangle, ExternalLink, Download,
-  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
+  LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch, Edit3
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
@@ -20,12 +20,14 @@ interface ProfileViewProps {
   initialUsername?: string;
   onOpenHotwire?: () => void;
   onOpenGitsmith?: (repoSlug?: string) => void;
+  onOpenPostEditor?: (app?: any) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   initialUsername,
   onOpenHotwire,
-  onOpenGitsmith
+  onOpenGitsmith,
+  onOpenPostEditor
 }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
   const { showToast } = useAlert();
@@ -684,6 +686,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 flex-wrap">
+                        {onOpenPostEditor && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClickSound();
+                              onOpenPostEditor(app);
+                            }}
+                            className="btn-w95 px-2.5 py-1 text-xs font-bold flex items-center gap-1 text-purple-900 hover:bg-white"
+                            title="Open Post Editor for this app"
+                          >
+                            <Edit3 size={12} />
+                            <span>View &amp; Edit</span>
+                          </button>
+                        )}
+
                         {hasRepo ? (
                           <button
                             type="button"
