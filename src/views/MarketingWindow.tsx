@@ -2,6 +2,7 @@ import React from 'react';
 import { Flame, Wrench, GitMerge, Mail, User, Sparkles, BookOpen, Gauge } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound } from '../lib/soundEngine';
+import { Win95Scroll } from '../components/Win95Scroll';
 
 interface MarketingWindowProps {
   onOpenSetup?: () => void;
@@ -122,7 +123,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto mb-3">
+      <Win95Scroll className="flex-1 mb-3">
 
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
           <div className="text-w95-blue font-bold text-base mb-2">What is this?</div>
@@ -191,7 +192,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             </div>
           ))}
         </div>
-      </div>
+      </Win95Scroll>
 
       <div className="pt-2.5 border-t border-gray-300 flex items-center justify-between flex-wrap gap-2">
         <button
