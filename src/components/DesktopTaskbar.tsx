@@ -29,7 +29,7 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
+    <div className="desktop-taskbar fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
       <button
         onClick={() => { playClickSound(); onStartClick(); }}
         className="h-7 px-3.5 flex items-center gap-1.5 font-bold border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0] active:border-gray-800 hover:bg-gray-100"

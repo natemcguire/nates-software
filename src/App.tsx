@@ -484,11 +484,15 @@ export function AppInner() {
   };
 
   const handleDesktopPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
     if (
-      (e.target as HTMLElement).closest('.RetroWindow') ||
-      (e.target as HTMLElement).closest('.btn-w95') ||
-      (e.target as HTMLElement).closest('.start-menu') ||
-      (e.target as HTMLElement).closest('.desktop-icon')
+      target.closest('.nsw-window') ||
+      target.closest('.RetroWindow') ||
+      target.closest('.btn-w95') ||
+      target.closest('.start-menu') ||
+      target.closest('.desktop-icon') ||
+      target.closest('.desktop-taskbar')
     ) return;
     setStartMenuOpen(false);
     setSelectionBox({
