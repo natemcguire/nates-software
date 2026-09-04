@@ -1,5 +1,3 @@
--- Metadata-only lifecycle ledger. Terminal files, commands, output, and
--- credentials are intentionally never persisted.
 CREATE TABLE IF NOT EXISTS terminal_session_tickets (
   jti TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

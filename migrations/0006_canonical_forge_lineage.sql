@@ -1,7 +1,3 @@
--- Canonical forge, lineage, verification, and editorial model.
--- Git remains authoritative for objects. D1 is authoritative for identity,
--- relationships, workflow state, evidence metadata, and marketplace projections.
-
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS repositories (
@@ -46,8 +42,6 @@ CREATE TABLE IF NOT EXISTS repository_ref_policies (
     PRIMARY KEY (repository_id, ref_pattern)
 );
 
--- Current ref projection. A Git gateway must update this with a transactionally
--- recorded repository_ref_events row after a successful compare-and-swap.
 CREATE TABLE IF NOT EXISTS repository_refs (
     repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     ref_name TEXT NOT NULL,
@@ -75,8 +69,6 @@ CREATE TABLE IF NOT EXISTS repository_ref_events (
 );
 CREATE INDEX IF NOT EXISTS idx_ref_events_ref ON repository_ref_events(repository_id, ref_name, created_at);
 
--- Exactly one immutable origin record per fork. The OIDs snapshot the economic
--- and technical ancestry at fork time even if either repository later moves.
 CREATE TABLE IF NOT EXISTS repository_forks (
     child_repository_id TEXT PRIMARY KEY REFERENCES repositories(id),
     parent_repository_id TEXT NOT NULL REFERENCES repositories(id),
@@ -181,7 +173,6 @@ CREATE TABLE IF NOT EXISTS merge_attempts (
     UNIQUE (merge_job_id, attempt_number)
 );
 
--- Approval is bound to one exact attempt and result OID, never to a mutable job.
 CREATE TABLE IF NOT EXISTS merge_approvals (
     id TEXT PRIMARY KEY,
     merge_attempt_id TEXT NOT NULL REFERENCES merge_attempts(id) ON DELETE CASCADE,
@@ -278,9 +269,6 @@ CREATE TABLE IF NOT EXISTS editorial_measurements (
     CHECK (numeric_value IS NOT NULL OR text_value IS NOT NULL)
 );
 
--- Durable cross-boundary work. Dispatchers claim rows and deliver them at least
--- once; consumers deduplicate by id. This keeps D1 workflow commits from being
--- silently separated from Git/object-store side effects.
 CREATE TABLE IF NOT EXISTS forge_outbox_events (
     id TEXT PRIMARY KEY,
     aggregate_type TEXT NOT NULL CHECK (aggregate_type IN ('repository', 'ref', 'fork', 'merge', 'build', 'deployment')),
@@ -309,7 +297,6 @@ CREATE TABLE IF NOT EXISTS forge_reconciliation_issues (
 );
 CREATE INDEX IF NOT EXISTS idx_forge_reconciliation_open ON forge_reconciliation_issues(status, detected_at);
 
--- Compatibility projections for older UI/API consumers.
 CREATE VIEW IF NOT EXISTS repository_lineage AS
 SELECT
     f.child_repository_id,

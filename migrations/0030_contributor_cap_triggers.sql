@@ -1,12 +1,3 @@
--- Migration 0030: Contributor Cap Triggers
--- Enforces transactional cap constraints at the database write boundary:
--- 1. contributor_shares_cap_guard: BEFORE INSERT on contributor_shares,
---    aborts if the new share would cause total active+pending basis points to exceed
---    the repository's grantable_bps, or if the repository does not exist.
--- 2. repositories_grantable_no_strand: BEFORE UPDATE OF grantable_bps on repositories,
---    aborts if the new grantable_bps is less than the sum of already-committed
---    (active or pending) contributor shares.
-
 CREATE TRIGGER IF NOT EXISTS contributor_shares_cap_guard
 BEFORE INSERT ON contributor_shares
 BEGIN

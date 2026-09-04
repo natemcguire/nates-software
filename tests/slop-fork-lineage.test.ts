@@ -43,7 +43,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       GITSMITH_REPOS_ROOT: testReposDir
     };
 
-    // Seed users
     await ctx.d1.prepare(`
       INSERT OR IGNORE INTO users (id, username, display_name, role)
       VALUES
@@ -53,7 +52,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
         ('usr_alice', 'alice', 'Alice Coder', 'user')
     `).run();
 
-    // Seed sessions with real sha256 token hashes
     const expiresAt = Date.now() + 7 * 86400 * 1000;
     await ctx.d1.batch([
       ctx.d1.prepare(`

@@ -1,6 +1,3 @@
--- Session hardening. Raw bearer/cookie tokens must never be stored in D1.
--- Existing sessions are intentionally invalidated during this migration.
-
 PRAGMA foreign_keys = ON;
 
 DROP TABLE IF EXISTS user_sessions;

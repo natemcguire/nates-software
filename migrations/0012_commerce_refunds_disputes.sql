@@ -1,7 +1,3 @@
--- Authoritative refund/dispute observations and immutable recovery obligations.
--- Original orders, allocations, and transfer amounts remain historical facts;
--- every clawback is represented as a compensating record.
-
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE commerce_orders
@@ -52,8 +48,6 @@ CREATE TABLE IF NOT EXISTS commerce_disputes (
 CREATE INDEX IF NOT EXISTS idx_commerce_disputes_order
     ON commerce_disputes(order_id, status, created_at);
 
--- Every webhook delivery remains evidence even when it observes an object state
--- already seen through an earlier, out-of-order delivery.
 CREATE TABLE IF NOT EXISTS commerce_refund_observations (
     event_id TEXT PRIMARY KEY REFERENCES stripe_event_inbox(event_id) ON DELETE RESTRICT,
     refund_id TEXT NOT NULL REFERENCES commerce_refunds(id) ON DELETE RESTRICT,
@@ -70,8 +64,6 @@ CREATE TABLE IF NOT EXISTS commerce_dispute_observations (
     observed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- A succeeded refund is split across the frozen purchase allocations. These
--- rows include the protocol share so their sum must equal the customer refund.
 CREATE TABLE IF NOT EXISTS commerce_refund_allocations (
     id TEXT PRIMARY KEY,
     refund_id TEXT NOT NULL REFERENCES commerce_refunds(id) ON DELETE RESTRICT,
@@ -111,10 +103,6 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce refund allocations are immutable');
 END;
 
--- Recovery obligations bridge accounting and money movement. They are created
--- for maker/ancestor refund allocations or a lost dispute. Resolution is
--- monotonic: wait for an in-flight transfer, cancel an exact unsent transfer,
--- or enqueue a Stripe reversal after the original transfer succeeds.
 CREATE TABLE IF NOT EXISTS commerce_recovery_obligations (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,

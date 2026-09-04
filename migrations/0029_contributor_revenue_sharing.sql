@@ -1,11 +1,5 @@
--- Migration 0029: Contributor Revenue Sharing (Schema Only, Dark)
--- Introduces contributor_shares table, grantable_bps on repositories,
--- and widens commerce_order_allocations, commerce_outbox_requires_fulfilled_allocation,
--- and commerce_recovery_matches_order_allocation to admit 'contributor' role.
-
 PRAGMA defer_foreign_keys = true;
 
--- 1. New table contributor_shares + indexes + triggers
 CREATE TABLE IF NOT EXISTS contributor_shares (
     id TEXT PRIMARY KEY,
     repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
@@ -71,14 +65,8 @@ BEGIN
     SELECT RAISE(ABORT, 'contributor share status transition is forward-only (pending to active or revoked)');
 END;
 
--- 2. repositories.grantable_bps
 ALTER TABLE repositories ADD COLUMN grantable_bps INTEGER NOT NULL DEFAULT 0 CHECK (grantable_bps >= 0 AND grantable_bps <= 10000);
 
--- 3. Full 4-table rebuild in dependency order to widen role and recipient checks
--- Snapshot 4 tables into plain backup tables. NOTE: D1's statement authorizer
--- rejects CREATE TEMP TABLE (SQLITE_AUTH), so these are regular tables cleaned up
--- at the end. DROP IF EXISTS first for rerun hygiene. CREATE TABLE AS SELECT copies
--- data only (no constraints/FKs), so the baks never interfere with the drops below.
 DROP TABLE IF EXISTS _bak_0029_recovery_obligations;
 DROP TABLE IF EXISTS _bak_0029_refund_allocations;
 DROP TABLE IF EXISTS _bak_0029_transfer_outbox;
@@ -88,15 +76,11 @@ CREATE TABLE _bak_0029_refund_allocations AS SELECT * FROM commerce_refund_alloc
 CREATE TABLE _bak_0029_transfer_outbox AS SELECT * FROM commerce_transfer_outbox;
 CREATE TABLE _bak_0029_order_allocations AS SELECT * FROM commerce_order_allocations;
 
--- Drop 4 tables in dependency order (children first)
 DROP TABLE commerce_recovery_obligations;
 DROP TABLE commerce_refund_allocations;
 DROP TABLE commerce_transfer_outbox;
 DROP TABLE commerce_order_allocations;
 
--- Recreate 4 tables in reverse order (parent first)
-
--- Table 1: commerce_order_allocations (widened role + recipient nullability check)
 CREATE TABLE commerce_order_allocations (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
@@ -130,7 +114,6 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce order allocations are immutable');
 END;
 
--- Table 2: commerce_transfer_outbox (byte-faithful recreation + outbox trigger with contributor)
 CREATE TABLE commerce_transfer_outbox (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
@@ -201,7 +184,6 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce transfer economics are immutable');
 END;
 
--- Table 3: commerce_refund_allocations (byte-faithful recreation)
 CREATE TABLE commerce_refund_allocations (
     id TEXT PRIMARY KEY,
     refund_id TEXT NOT NULL REFERENCES commerce_refunds(id) ON DELETE RESTRICT,
@@ -241,7 +223,6 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce refund allocations are immutable');
 END;
 
--- Table 4: commerce_recovery_obligations (byte-faithful recreation + recovery trigger with contributor)
 CREATE TABLE commerce_recovery_obligations (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
@@ -281,13 +262,11 @@ BEGIN
     SELECT RAISE(ABORT, 'recovery obligation must match a payable frozen allocation');
 END;
 
--- Restore data from backup tables parent-first
 INSERT INTO commerce_order_allocations SELECT * FROM _bak_0029_order_allocations;
 INSERT INTO commerce_transfer_outbox SELECT * FROM _bak_0029_transfer_outbox;
 INSERT INTO commerce_refund_allocations SELECT * FROM _bak_0029_refund_allocations;
 INSERT INTO commerce_recovery_obligations SELECT * FROM _bak_0029_recovery_obligations;
 
--- Drop backup tables
 DROP TABLE _bak_0029_order_allocations;
 DROP TABLE _bak_0029_transfer_outbox;
 DROP TABLE _bak_0029_refund_allocations;

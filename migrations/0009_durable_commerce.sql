@@ -1,7 +1,3 @@
--- Durable marketplace commerce state machine.
--- The legacy orders/transfers_ledger/licenses tables remain readable for
--- migration compatibility, but new payment code must use these tables.
-
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS commerce_products (
@@ -70,9 +66,6 @@ CREATE INDEX IF NOT EXISTS idx_commerce_orders_app
 CREATE INDEX IF NOT EXISTS idx_commerce_orders_status
     ON commerce_orders(status, updated_at);
 
--- One immutable row per economic recipient at purchase time. Root software has
--- no ancestor rows: its unused 20% lineage share is assigned to the maker, so
--- root allocation is explicitly maker=90%, protocol_pool=10%.
 CREATE TABLE IF NOT EXISTS commerce_order_allocations (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,
@@ -130,8 +123,6 @@ BEGIN
     SELECT RAISE(ABORT, 'commerce order allocations are immutable');
 END;
 
--- Stripe delivery is an inbox, not a boolean marker. Raw signed events are
--- durably accepted first and may then be processed or retried independently.
 CREATE TABLE IF NOT EXISTS stripe_event_inbox (
     event_id TEXT PRIMARY KEY,
     event_type TEXT NOT NULL,
@@ -165,8 +156,6 @@ CREATE TABLE IF NOT EXISTS commerce_licenses (
 CREATE INDEX IF NOT EXISTS idx_commerce_licenses_owner
     ON commerce_licenses(owner_user_id, issued_at DESC);
 
--- External transfers are never made inside webhook handling. A worker claims
--- these durable jobs and uses the row id as the Stripe idempotency key.
 CREATE TABLE IF NOT EXISTS commerce_transfer_outbox (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES commerce_orders(id) ON DELETE RESTRICT,

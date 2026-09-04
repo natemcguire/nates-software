@@ -1,4 +1,3 @@
--- Rotate the active showcase without erasing historical licenses or lineage.
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE app_listings ADD COLUMN listing_status TEXT NOT NULL DEFAULT 'active'

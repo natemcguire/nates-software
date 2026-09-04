@@ -1,6 +1,3 @@
--- Processing leases, encrypted license material, and retry metadata for the
--- durable commerce inbox/outbox state machines.
-
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE commerce_orders
@@ -26,9 +23,6 @@ ALTER TABLE commerce_transfer_outbox
 CREATE INDEX IF NOT EXISTS idx_commerce_transfer_retry
     ON commerce_transfer_outbox(status, next_attempt_at, created_at);
 
--- License keys must be viewable by their owner but must not be plaintext at
--- rest. The hash on commerce_licenses supports verification; this table holds
--- AES-256-GCM material that can be rotated independently.
 CREATE TABLE IF NOT EXISTS commerce_license_secrets (
     license_id TEXT PRIMARY KEY REFERENCES commerce_licenses(id) ON DELETE CASCADE,
     ciphertext_base64 TEXT NOT NULL,
@@ -50,9 +44,6 @@ CREATE TABLE IF NOT EXISTS commerce_license_secret_events (
 CREATE INDEX IF NOT EXISTS idx_commerce_license_secret_events
     ON commerce_license_secret_events(license_id, created_at);
 
--- D1 batch statements do not fail when a conditional UPDATE affects zero rows.
--- These insert guards turn a lost order-state CAS into an atomic batch failure,
--- preventing a cancelled/refunded order from receiving a license or payout.
 CREATE TRIGGER IF NOT EXISTS commerce_license_requires_fulfilled_order
 BEFORE INSERT ON commerce_licenses
 WHEN NOT EXISTS (

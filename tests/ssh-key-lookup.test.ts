@@ -2,17 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestD1Database } from './fixtures/d1Harness';
 import { onRequestPost as gitPost } from '../functions/api/git';
 
-// Regression test for the D1 "LIKE or GLOB pattern too complex" bug:
-// gateway-identify-ssh-key / gateway-authorize-ssh previously used
-//   WHERE ssh_public_key = ? OR ssh_public_key LIKE ?
-// with an ~82+ char pattern, which Cloudflare D1 rejects, 500ing the lookup
-// so every SSH key was refused. The fix uses a LIKE-free substr prefix match.
-// These tests exercise the REAL handler + REAL D1 (harness), unlike the
-// transport test which mocks the identify action.
-
 const KEY_TYPE = 'ssh-ed25519';
-// A realistic ed25519 public key base64 (68 chars) — long enough that the old
-// LIKE pattern would have exceeded D1's limit.
 const KEY_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExampleAb';
 
 const GATEWAY_SECRET = 'test-gateway-secret';
@@ -56,7 +46,6 @@ describe('SSH key lookup (D1 LIKE-free prefix match)', () => {
   }
 
   it('identifies a key STORED WITH A TRAILING COMMENT via a base64 that would break the old LIKE query', async () => {
-    // Stored exactly as `ssh-keygen`/profile registration stores it: type base64 comment
     const stored = `${KEY_TYPE} ${KEY_B64} nate.mcguire@gmail.com`;
     await registerKeyWithComment('usr_test', 'testmaker', stored);
 
@@ -83,15 +72,12 @@ describe('SSH key lookup (D1 LIKE-free prefix match)', () => {
   });
 
   it('does NOT match a different key that merely shares a prefix substring', async () => {
-    // A stored key whose base64 starts with our base64 but is a DIFFERENT key
-    // (longer base64) must not be a false-positive prefix match.
     await registerKeyWithComment('usr_other', 'other', `${KEY_TYPE} ${KEY_B64}EXTRA extra@host`);
     const res = await gitPost({
       request: gwRequest({ action: 'gateway-identify-ssh-key', keyType: KEY_TYPE, keyBase64: KEY_B64 }),
       env,
     } as any);
     const data: any = await res.json();
-    // The prefix guard requires a following space, so `${KEY_B64}EXTRA ...` must NOT match `${KEY_B64}`.
     expect(res.status).toBe(401);
     expect(data.success).toBe(false);
   });

@@ -1,5 +1,3 @@
--- Bind inbox proposals and replies to canonical, immutable records.
--- Legacy is_merged remains for compatibility but is not authoritative.
 ALTER TABLE inbox_messages ADD COLUMN message_kind TEXT NOT NULL DEFAULT 'feedback'
     CHECK (message_kind IN ('proposal', 'agent_log', 'royalty', 'feedback'));
 ALTER TABLE inbox_messages ADD COLUMN merge_attempt_id TEXT REFERENCES merge_attempts(id);

@@ -1,11 +1,5 @@
--- Migration 0014: Hotwire Upvotes Schema & Idempotency Registry
--- Stores authoritative anonymous and authenticated drop upvotes with cryptographic voter hashing.
-
 PRAGMA foreign_keys = ON;
 
--- Older production requests created this table lazily without a foreign key.
--- Create that legacy shape on a cold database too, then rebuild it so fresh and
--- already-running installations converge on the same canonical schema.
 CREATE TABLE IF NOT EXISTS drop_upvotes (
     app_id TEXT NOT NULL,
     voter_hash TEXT NOT NULL,

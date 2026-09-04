@@ -1,8 +1,3 @@
--- DYNO is the LLM dynamometer. Public CLI measurements are Street evidence;
--- official Certified evaluations are run and published by Nate's Software.
--- This migration models the sealed double-blind ceremony and durable verifier
--- work without pretending Cloudflare Pages is an enclave or model runner.
-
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE dyno_runs ADD COLUMN evaluation_class TEXT NOT NULL DEFAULT 'street'
@@ -164,7 +159,6 @@ CREATE TABLE IF NOT EXISTS dyno_trace_retention_requests (
     UNIQUE (run_id)
 );
 
--- Evidence records are append-only. Corrections create a new record/job.
 CREATE TRIGGER IF NOT EXISTS dyno_attestations_immutable_update
 BEFORE UPDATE ON dyno_enclave_attestations BEGIN
   SELECT RAISE(ABORT, 'dyno enclave attestations are immutable');

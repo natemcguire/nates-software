@@ -1,6 +1,3 @@
--- Stripe Connect transfer and reversal execution ledger.
--- Outbox identity is the permanent Stripe idempotency identity.
-
 PRAGMA foreign_keys = ON;
 
 ALTER TABLE commerce_transfer_outbox

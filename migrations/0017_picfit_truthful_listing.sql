@@ -1,5 +1,3 @@
--- Replace PicFit's retired simulated AI try-on copy with the shipped local image utility.
--- The stable app id remains picfitai so existing licenses, forks, and links keep working.
 UPDATE app_listings
 SET name = 'PicFit',
     tagline = 'Private in-browser crop, resize, compression, and image export studio',

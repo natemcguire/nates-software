@@ -1,5 +1,3 @@
--- Turn lost order-state CAS operations into atomic refund batch failures.
-
 PRAGMA foreign_keys = ON;
 
 CREATE TRIGGER IF NOT EXISTS commerce_refund_finalization_guard

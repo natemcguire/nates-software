@@ -1,7 +1,3 @@
--- DYNO is an independent real-world AI agent benchmark product.
--- It benchmarks a model + harness + tools + machine against versioned common
--- tasks. It does not benchmark marketplace applications or forge builds.
-
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS dyno_suites (
@@ -137,4 +133,3 @@ CREATE TABLE IF NOT EXISTS dyno_grader_results (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (task_attempt_id, grader_key, grader_version)
 );
-
