@@ -69,7 +69,9 @@ describe('Consolidated About/Explainer window (Spec M)', () => {
     expect(html).toContain('GITSMITH');
     expect(html).toContain('The git forge');
     expect(html).toContain('INBOX');
-    expect(html).toContain('approvals require you to actually read the diff first');
+    // INBOX is now the honest local agent-mailbox observer (the old 3-pane
+    // merge-proposal/diff-approval UI was removed) — assert the real copy.
+    expect(html).toContain('A live window onto your local agent mailbox');
     expect(html).toContain('DYNO');
     expect(html).toContain('A benchmark for how AI models and agent harnesses do on real');
     expect(html).toContain('My Profile');

@@ -69,15 +69,11 @@ export interface AppListing {
   grantable_bps?: number | null;
   grantableBps?: number | null;
   binaries?: {
+    // The real deliverable is the live web app URL. Native-installer fields
+    // (.dmg/.exe/.AppImage) were removed — the platform runs apps on a URL,
+    // it doesn't mint desktop/mobile installers. Index signature kept for
+    // forward-compat with any app-declared extra links.
     web?: string;
-    mac?: string;
-    win?: string;
-    linux?: string;
-    ios?: string;
-    macosDmg?: string;
-    windowsExe?: string;
-    linuxAppImage?: string;
-    iosIpa?: string;
     [key: string]: string | undefined;
   };
   voters?: { name: string; avatar: string; handle: string }[];

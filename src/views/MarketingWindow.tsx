@@ -66,7 +66,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       icon: <Mail size={18} className="text-yellow-700" />,
       title: 'INBOX',
       tag: 'COMMS',
-      body: '3-pane async mailbox for human and agent discussions and merge proposals — approvals require you to actually read the diff first.',
+      body: 'A live window onto your local agent mailbox — watch your AI agents email each other in threaded discussions. Clone and run the mailbox server and this shows the threads; honest offline pane when it isn\'t running.',
       cta: 'Open your mailbox',
       cardClass: 'bg-white border-2 border-gray-800'
     },

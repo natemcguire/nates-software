@@ -273,8 +273,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
                   issuedAt: new Date().toISOString()
                 },
                 binaries: {
-                  mac: 'https://downloads.nates-software.com/mailer-mac.dmg',
-                  win: 'https://downloads.nates-software.com/mailer-win.exe'
+                  web: 'https://certified-mailer.nates-software.com'
                 }
               }
             })
@@ -314,7 +313,8 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
       const data2 = await poll2.json();
       expect(data2.order.status).toBe('fulfilled');
       expect(data2.order.license.licenseKey).toBe('NSW-CE-A1B2-C3D4-E5F6-0011');
-      expect(data2.order.binaries.mac).toContain('.dmg');
+      // The real deliverable is the live web app URL, not a native installer.
+      expect(data2.order.binaries.web).toContain('nates-software.com');
 
       // 3. Shelf refetch returns the newly owned app
       const shelfRes = await fetch('/api/shelf');

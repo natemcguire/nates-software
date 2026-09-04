@@ -14,7 +14,7 @@ export interface DropPersistResult {
 
 interface PostEditorViewProps {
   app: AppListing;
-  initialTab?: 'info' | 'media' | 'binaries' | 'guide' | 'pricing';
+  initialTab?: 'info' | 'media' | 'guide' | 'pricing';
   onSave: (updatedApp: AppListing) => Promise<DropPersistResult | void> | DropPersistResult | void;
   onCancel: () => void;
 }
@@ -22,7 +22,7 @@ interface PostEditorViewProps {
 export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab = 'guide', onSave, onCancel }) => {
   const { showAlert } = useAlert();
   const { user, requireAuth } = useAuth();
-  const [activeTab, setActiveTab] = useState<'info' | 'media' | 'binaries' | 'guide' | 'pricing'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'info' | 'media' | 'guide' | 'pricing'>(initialTab);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [lastResult, setLastResult] = useState<DropPersistResult | null>(null);
@@ -42,11 +42,6 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
-
-  const [macBinary, setMacBinary] = useState(app.binaries?.mac);
-  const [winBinary, setWinBinary] = useState(app.binaries?.win);
-  const [linuxBinary, setLinuxBinary] = useState(app.binaries?.linux);
-  const [iosBinary, setIosBinary] = useState(app.binaries?.ios);
 
   const handleCopy = (text: string, index: number) => {
     playClickSound();
@@ -100,11 +95,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
           screenshots,
           binaries: {
             ...app.binaries,
-            web: liveUrl.trim() || undefined,
-            mac: macBinary,
-            win: winBinary,
-            linux: linuxBinary,
-            ios: iosBinary
+            web: liveUrl.trim() || undefined
           }
         };
         const result = await onSave(updated);
@@ -154,16 +145,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
             2. Screenshots ({screenshots.length})
           </button>
           <button
-            onClick={() => setActiveTab('binaries')}
-            className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'binaries' ? 'btn-w95-primary' : 'text-black'}`}
-          >
-            3. Binaries &amp; Builds
-          </button>
-          <button
             onClick={() => setActiveTab('pricing')}
             className={`btn-w95 text-xs py-1 px-3 ${activeTab === 'pricing' ? 'btn-w95-primary' : 'text-black'}`}
           >
-            4. Pricing &amp; Splits
+            3. Pricing &amp; Splits
           </button>
         </div>
       </div>
@@ -190,7 +175,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   🛠️ Install the <code className="bg-gray-200 px-1.5 py-0.5 rounded font-mono text-black">slop</code> CLI Tool
                 </h3>
                 <button
-                  onClick={() => handleCopy("mkdir -p ~/.local/bin && ln -sf /Volumes/MacMiniExtra/Projects/nates_software/bin/slop ~/.local/bin/slop && slop --help", 1)}
+                  onClick={() => handleCopy("npm install -g @nates-software/slop && slop --help", 1)}
                   className="btn-w95 text-xs py-0.5 px-2 flex items-center gap-1 font-mono"
                 >
                   {copiedIndex === 1 ? <Check size={11} className="text-green-700" /> : <Copy size={11} />}
@@ -198,11 +183,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 </button>
               </div>
               <p className="text-xs text-gray-600">
-                Install and symlink the official executable CLI binary to your user path:
+                Install the SLOP CLI and confirm it's on your path:
               </p>
               <pre className="bg-black text-green-400 p-3 rounded font-mono text-xs overflow-x-auto leading-relaxed">
-$ mkdir -p ~/.local/bin
-$ ln -sf /Volumes/MacMiniExtra/Projects/nates_software/bin/slop ~/.local/bin/slop
+$ npm install -g @nates-software/slop
 $ slop --help</pre>
             </div>
 
@@ -416,59 +400,7 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
           </div>
         )}
 
-        {/* Tab 3: Binaries */}
-        {activeTab === 'binaries' && (
-          <div className="space-y-3 max-w-2xl mx-auto">
-            <div>
-              <div className="font-bold text-base text-w95-blue mb-1">Multi-Platform Compiled Artifacts</div>
-              <p className="text-gray-600 text-xs">
-                Provide download links or automated GitHub Actions / Cloudflare R2 build artifacts for native desktop and mobile platforms.
-              </p>
-            </div>
-
-            <div>
-              <label className="font-bold text-gray-800 block mb-1">🍎 macOS Universal (.dmg / .app):</label>
-              <input
-                type="text"
-                value={macBinary}
-                onChange={(e) => setMacBinary(e.target.value)}
-                className="w-full p-2 border border-gray-400 font-mono text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-gray-800 block mb-1">🪟 Windows x64 (.exe installer):</label>
-              <input
-                type="text"
-                value={winBinary}
-                onChange={(e) => setWinBinary(e.target.value)}
-                className="w-full p-2 border border-gray-400 font-mono text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-gray-800 block mb-1">🐧 Linux (.AppImage / .deb):</label>
-              <input
-                type="text"
-                value={linuxBinary}
-                onChange={(e) => setLinuxBinary(e.target.value)}
-                className="w-full p-2 border border-gray-400 font-mono text-xs"
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-gray-800 block mb-1">📱 iOS / iPadOS (Apple TestFlight Link):</label>
-              <input
-                type="text"
-                value={iosBinary}
-                onChange={(e) => setIosBinary(e.target.value)}
-                className="w-full p-2 border border-gray-400 font-mono text-xs"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Tab 4: Pricing */}
+        {/* Tab 3: Pricing */}
         {activeTab === 'pricing' && (
           <div className="space-y-4 max-w-2xl mx-auto">
             <div>
