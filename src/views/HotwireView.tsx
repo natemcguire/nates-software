@@ -697,9 +697,9 @@ const CodeInspector: React.FC<{ app: AppListing }> = ({ app }) => {
           <span>{selectedFile}</span>
           <span>{app.hasCanonicalRepo ? 'from canonical repo' : 'not on forge'}</span>
         </div>
-        <Win95Scroll className="flex-1 p-3 font-mono text-[11px] leading-relaxed text-gray-800">
+        <Win95Scroll className="flex-1 p-3 font-mono text-[13px] leading-relaxed text-gray-800">
           {app.hasCanonicalRepo && app.repoSlug ? (
-            <pre className="whitespace-pre-wrap">{`${selectedFile}
+            <pre className="whitespace-pre-wrap font-mono text-[13px]">{`${selectedFile}
 ${librarySlug(app)} · ${app.version}
 
 The real file tree and source stream from the canonical
