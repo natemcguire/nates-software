@@ -661,57 +661,192 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
 };
 
 const CodeInspector: React.FC<{ app: AppListing }> = ({ app }) => {
-  const files = useMemo(() => {
-    const base = ['README.md', 'package.json', 'LICENSE'];
-    const src = ['src/index.ts', 'src/app.ts'];
-    return { src, base };
-  }, [app.id]);
-  const [selectedFile, setSelectedFile] = useState<string>('src/index.ts');
+  const [treeFiles, setTreeFiles] = useState<string[]>([]);
+  const [treeLoading, setTreeLoading] = useState<boolean>(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string>('');
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileLoading, setFileLoading] = useState<boolean>(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const repoQuery = useMemo(() => {
+    if (app.repositoryId) return `repoId=${encodeURIComponent(app.repositoryId)}`;
+    if (app.repoSlug) return `repo=${encodeURIComponent(app.repoSlug)}`;
+    if (app.author && (app.repoName || app.name)) {
+      const slug = (app.repoName || app.name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      return `owner=${encodeURIComponent(app.author)}&slug=${encodeURIComponent(slug)}`;
+    }
+    return `id=${encodeURIComponent(app.id)}`;
+  }, [app.repositoryId, app.repoSlug, app.author, app.repoName, app.name, app.id]);
+
+  const hasRepo = Boolean(app.hasCanonicalRepo && (app.repositoryId || app.repoSlug || app.repoName || app.name));
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!hasRepo) {
+      setTreeFiles([]);
+      setTreeError(null);
+      setTreeLoading(false);
+      setSelectedFile('');
+      setFileContent(null);
+      return;
+    }
+
+    setTreeLoading(true);
+    setTreeError(null);
+    setTreeFiles([]);
+
+    fetch(`/api/repo-tree?${repoQuery}`, { credentials: 'same-origin' })
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload?.success && Array.isArray(payload.files)) {
+            const validFiles = (payload.files as string[])
+              .filter((f): f is string => typeof f === 'string' && f.length > 0)
+              .sort();
+            setTreeFiles(validFiles);
+            if (validFiles.length > 0) {
+              const defaultFile = validFiles.find(f => f === 'README.md' || f.endsWith('/README.md')) ||
+                validFiles.find(f => f.includes('index') || f.includes('main') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.js')) ||
+                validFiles[0];
+              setSelectedFile(defaultFile);
+            } else {
+              setSelectedFile('');
+              setTreeError('Repository tree is empty at the current commit.');
+            }
+          } else {
+            setTreeFiles([]);
+            setTreeError('Repository gateway returned an invalid tree payload.');
+          }
+        } else if (res.status === 404) {
+          setTreeFiles([]);
+          setTreeError('Repository files not found on the forge (HTTP 404).');
+        } else {
+          setTreeFiles([]);
+          setTreeError(`Failed to list repository files (HTTP ${res.status}).`);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setTreeFiles([]);
+        setTreeError(err?.message || 'Network error loading repository tree');
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setTreeLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hasRepo, repoQuery]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!hasRepo || !selectedFile) {
+      setFileContent(null);
+      setFileError(null);
+      setFileLoading(false);
+      return;
+    }
+
+    setFileLoading(true);
+    setFileError(null);
+    setFileContent(null);
+
+    fetch(`/api/repo-file?${repoQuery}&path=${encodeURIComponent(selectedFile)}`, { credentials: 'same-origin' })
+      .then(async res => {
+        if (isCancelled) return;
+        if (res.ok) {
+          const text = await res.text();
+          setFileContent(text);
+          setFileError(null);
+        } else if (res.status === 404) {
+          setFileContent(null);
+          setFileError(`File "${selectedFile}" not found in repository (HTTP 404).`);
+        } else {
+          setFileContent(null);
+          setFileError(`Failed to retrieve "${selectedFile}" (HTTP ${res.status}).`);
+        }
+      })
+      .catch(err => {
+        if (isCancelled) return;
+        setFileContent(null);
+        setFileError(err?.message || 'Network error loading file content');
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setFileLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hasRepo, repoQuery, selectedFile]);
 
   return (
     <div className="flex-1 flex min-h-0">
-      <Win95Scroll className="w-[150px] shrink-0 bg-white border-r border-gray-500 py-1">
-        <div className="px-2 py-0.5 font-bold text-[11px] flex items-center gap-1">📂 src</div>
-        {files.src.map(f => (
-          <div
-            key={f}
-            onClick={() => { playClickSound(); setSelectedFile(f); }}
-            className={`pl-5 pr-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50'}`}
-          >
-            📄 {f.split('/').pop()}
+      <Win95Scroll className="w-[180px] shrink-0 bg-white border-r border-gray-500 py-1">
+        <div className="px-2 py-0.5 font-bold text-[11px] text-gray-700 uppercase border-b border-gray-200 mb-1">
+          Files {treeFiles.length > 0 && `(${treeFiles.length})`}
+        </div>
+        {treeLoading ? (
+          <div className="px-2 py-2 text-[11px] text-gray-500 flex items-center gap-1">
+            <span>⏳</span> Loading tree...
           </div>
-        ))}
-        {files.base.map(f => (
-          <div
-            key={f}
-            onClick={() => { playClickSound(); setSelectedFile(f); }}
-            className={`px-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50'}`}
-          >
-            📄 {f}
+        ) : !hasRepo ? (
+          <div className="px-2 py-2 text-[11px] text-gray-500">
+            No forge repository linked.
           </div>
-        ))}
+        ) : treeFiles.length === 0 ? (
+          <div className="px-2 py-2 text-[11px] text-gray-500">
+            {treeError || 'No files found.'}
+          </div>
+        ) : (
+          treeFiles.map(f => (
+            <div
+              key={f}
+              onClick={() => { playClickSound(); setSelectedFile(f); }}
+              className={`px-2 py-0.5 text-[11px] cursor-pointer flex items-center gap-1 truncate ${selectedFile === f ? 'bg-[#000080] text-white' : 'hover:bg-blue-50 text-gray-800'}`}
+              title={f}
+            >
+              <span>{f.endsWith('.md') || f.endsWith('.txt') ? '📄' : f.endsWith('.json') ? '⚙️' : f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.js') ? '📜' : '📄'}</span>
+              <span className="truncate">{f}</span>
+            </div>
+          ))
+        )}
       </Win95Scroll>
 
       <div className="flex-1 flex flex-col min-w-0 bg-white">
         <div className="font-mono text-[10px] text-gray-600 px-2 py-1 bg-[#eef0f2] border-b border-gray-500 flex justify-between">
-          <span>{selectedFile}</span>
-          <span>{app.hasCanonicalRepo ? 'from canonical repo' : 'not on forge'}</span>
+          <span className="truncate">{selectedFile || (hasRepo ? 'Select a file' : 'No file')}</span>
+          <span className="shrink-0">{hasRepo ? (app.repoSlug || 'canonical repo') : 'not on forge'}</span>
         </div>
         <Win95Scroll className="flex-1 p-3 font-mono text-[13px] leading-relaxed text-gray-800">
-          {app.hasCanonicalRepo && app.repoSlug ? (
-            <pre className="whitespace-pre-wrap font-mono text-[13px]">{`${selectedFile}
-${librarySlug(app)} · ${app.version}
-
-The real file tree and source stream from the canonical
-repo (${app.repoSlug}${app.repoHeadCommitOid ? ` @ ${app.repoHeadCommitOid.slice(0, 7)}` : ''}).
-
-Buying gives you this repository plus a license key. You run
-it yourself — this library page is where you read the code
-before you decide to buy or fork.`}</pre>
-          ) : (
+          {!hasRepo ? (
             <div className="text-gray-500">
               <p className="font-bold mb-2">Source not on the forge yet.</p>
               <p>{app.name} hasn&rsquo;t published its repository to GITSMITH, so there&rsquo;s no code to browse and it can&rsquo;t be bought or forked until it does.</p>
+            </div>
+          ) : fileLoading ? (
+            <div className="text-gray-500 flex items-center gap-1.5">
+              <span>⏳</span> Loading file contents...
+            </div>
+          ) : fileError ? (
+            <div className="text-red-700 bg-red-50 border border-red-200 p-2 text-xs">
+              <p className="font-bold mb-1">Could not load file</p>
+              <p>{fileError}</p>
+            </div>
+          ) : fileContent !== null ? (
+            <pre className="whitespace-pre-wrap font-mono text-[13px]">{fileContent}</pre>
+          ) : (
+            <div className="text-gray-400 text-xs">
+              {treeError || 'Select a file from the repository tree to view its contents.'}
             </div>
           )}
         </Win95Scroll>
