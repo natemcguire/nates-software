@@ -34,9 +34,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     vi.restoreAllMocks();
   });
 
-  /**
-   * Helper: Seeds an order, maker allocation, outbox item, and active Stripe account for usr_nate.
-   */
   async function seedOrderAndOutbox(options?: {
     orderId?: string;
     outboxId?: string;
@@ -60,13 +57,11 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     const outboxStatus = options?.outboxStatus ?? 'pending';
     const destinationStripeAccount = options?.destinationStripeAccount ?? null;
 
-    // 1. Create user if not exists
     await ctx.d1.prepare(`
       INSERT OR IGNORE INTO users (id, username, display_name)
       VALUES (?, ?, ?)
     `).bind(userId, userId.replace('usr_', ''), `User ${userId}`).run();
 
-    // 2. Stripe account for user
     if (stripeAccountId) {
       await ctx.d1.prepare(`
         INSERT OR REPLACE INTO stripe_accounts (user_id, stripe_account_id, charges_enabled, payouts_enabled, onboarding_status)
@@ -74,7 +69,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       `).bind(userId, stripeAccountId, payoutsEnabled).run();
     }
 
-    // 3. Fulfilled commerce order (fulfills foreign key requirements)
     await ctx.d1.prepare(`
       INSERT INTO commerce_orders (
         id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -90,7 +84,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       `pi_${orderId}`
     ).run();
 
-    // 4. Allocation (Maker)
     const allocId = `coa_m_${orderId}`;
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
@@ -99,7 +92,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       ) VALUES (?, ?, 0, 'maker', ?, 0, 9000, ?)
     `).bind(allocId, orderId, userId, amountCents).run();
 
-    // 5. Allocation (Protocol Pool - 150 cents)
     const poolAllocId = `coa_p_${orderId}`;
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
@@ -108,7 +100,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       ) VALUES (?, ?, 1, 'protocol_pool', NULL, NULL, 1000, 150)
     `).bind(poolAllocId, orderId).run();
 
-    // 6. Outbox item
     const nextAttemptMod = options?.nextAttemptAtOffsetSec !== undefined
       ? `datetime('now', '${options.nextAttemptAtOffsetSec >= 0 ? '+' : ''}${options.nextAttemptAtOffsetSec} seconds')`
       : `datetime('now')`;
@@ -167,9 +158,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     };
   }
 
-  // ==========================================================================
-  // 1. AUTHENTICATION & ENVIRONMENT CONFIGURATION (FAIL-CLOSED)
-  // ==========================================================================
   describe('1. Auth & Configuration Fail-Closed Guards', () => {
     it('returns 503 when PAYOUTS_ENABLED is missing or not true', async () => {
       const req = new Request('http://localhost/api/payments/process-transfers', {
@@ -180,7 +168,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         }
       });
 
-      // Missing PAYOUTS_ENABLED
       const res1 = await processTransfersApi.onRequestPost({
         request: req,
         env: { DB: ctx.d1, STRIPE_SECRET_KEY: defaultStripeKey, PAYOUT_WORKER_SECRET: defaultWorkerSecret }
@@ -190,7 +177,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       expect(data1.success).toBe(false);
       expect(data1.error).toMatch(/disabled/i);
 
-      // String 'false'
       const res2 = await processTransfersApi.onRequestPost({
         request: req,
         env: { DB: ctx.d1, PAYOUTS_ENABLED: 'false', STRIPE_SECRET_KEY: defaultStripeKey, PAYOUT_WORKER_SECRET: defaultWorkerSecret }
@@ -207,14 +193,12 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         }
       });
 
-      // Missing STRIPE_SECRET_KEY
       const res1 = await processTransfersApi.onRequestPost({
         request: req,
         env: { DB: ctx.d1, PAYOUTS_ENABLED: 'true', PAYOUT_WORKER_SECRET: defaultWorkerSecret }
       });
       expect(res1.status).toBe(500);
 
-      // Missing PAYOUT_WORKER_SECRET
       const res2 = await processTransfersApi.onRequestPost({
         request: req,
         env: { DB: ctx.d1, PAYOUTS_ENABLED: 'true', STRIPE_SECRET_KEY: defaultStripeKey }
@@ -223,7 +207,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
 
     it('returns 401 when Authorization header is missing or not Bearer', async () => {
-      // Missing header
       const req1 = new Request('http://localhost/api/payments/process-transfers', {
         method: 'POST'
       });
@@ -233,7 +216,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       });
       expect(res1.status).toBe(401);
 
-      // Basic auth instead of Bearer
       const req2 = new Request('http://localhost/api/payments/process-transfers', {
         method: 'POST',
         headers: { 'Authorization': `Basic dXNlcjpwYXNz` }
@@ -267,9 +249,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 2. DUE & LEASE CLAIMS
-  // ==========================================================================
   describe('2. Due & Lease Claims with Conditional Single-Row UPDATE', () => {
     it('claims a due pending outbox row and increments attempt_count', async () => {
       const seed = await seedOrderAndOutbox({ outboxStatus: 'pending' });
@@ -293,7 +272,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     it('claims a due retryable_failure row when next_attempt_at <= now', async () => {
       const seed = await seedOrderAndOutbox({
         outboxStatus: 'retryable_failure',
-        nextAttemptAtOffsetSec: -10 // in the past
+        nextAttemptAtOffsetSec: -10
       });
 
       const claim = await claimTransferOutboxRow(ctx.d1, seed.outboxId);
@@ -303,7 +282,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     it('does NOT claim a retryable_failure row when next_attempt_at > now (backoff active)', async () => {
       const seed = await seedOrderAndOutbox({
         outboxStatus: 'retryable_failure',
-        nextAttemptAtOffsetSec: 300 // 5 minutes in future
+        nextAttemptAtOffsetSec: 300
       });
 
       const claim = await claimTransferOutboxRow(ctx.d1, seed.outboxId);
@@ -313,7 +292,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     it('claims an expired processing lease (status=processing, lease_expires_at < now)', async () => {
       const seed = await seedOrderAndOutbox({
         outboxStatus: 'processing',
-        leaseExpiresAtOffsetSec: -30 // expired 30s ago
+        leaseExpiresAtOffsetSec: -30
       });
 
       const claim = await claimTransferOutboxRow(ctx.d1, seed.outboxId, { leaseDurationSeconds: 45 });
@@ -323,7 +302,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     it('does NOT claim an active processing lease (lease_expires_at > now)', async () => {
       const seed = await seedOrderAndOutbox({
         outboxStatus: 'processing',
-        leaseExpiresAtOffsetSec: 60 // expires in 60s
+        leaseExpiresAtOffsetSec: 60
       });
 
       const claim = await claimTransferOutboxRow(ctx.d1, seed.outboxId);
@@ -336,22 +315,17 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       const claim1 = await claimTransferOutboxRow(ctx.d1, seed.outboxId, { leaseDurationSeconds: 60 });
       expect(claim1.claimed).toBe(true);
 
-      // Concurrent second claim attempt must fail
       const claim2 = await claimTransferOutboxRow(ctx.d1, seed.outboxId, { leaseDurationSeconds: 60 });
       expect(claim2.claimed).toBe(false);
     });
   });
 
-  // ==========================================================================
-  // 3. DISABLED / MISSING STRIPE ACCOUNTS
-  // ==========================================================================
   describe('3. Disabled / Missing Stripe Accounts', () => {
     it('releases claim with backoff when destination user has no stripe_accounts row', async () => {
       const seed = await seedOrderAndOutbox({
-        stripeAccountId: '' // No stripe_accounts row seeded
+        stripeAccountId: ''
       });
 
-      // Remove stripe_account record if any
       await ctx.d1.prepare(`DELETE FROM stripe_accounts WHERE user_id = ?`).bind(seed.userId).run();
 
       const mockFetch = vi.fn();
@@ -364,7 +338,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       expect(result.retryable).toBe(true);
       expect(result.error).toMatch(/does not have a Stripe Connect account record/i);
 
-      // Verify outbox was released to retryable_failure with backoff
       const outboxRow: any = await ctx.d1.prepare(`
         SELECT status, claim_token, last_error FROM commerce_transfer_outbox WHERE id = ?
       `).bind(seed.outboxId).first();
@@ -406,9 +379,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 4. DESTINATION SNAPSHOT IMMUTABILITY
-  // ==========================================================================
   describe('4. Destination Stripe Account Snapshot Immutability', () => {
     it('atomically snapshots destination_stripe_account before first Stripe call', async () => {
       const seed = await seedOrderAndOutbox({
@@ -432,7 +402,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       expect(result.success).toBe(true);
       expect(capturedBody).toContain('destination=acct_1MsnapshotTest123');
 
-      // Verify outbox row persisted destination_stripe_account
       const outboxRow: any = await ctx.d1.prepare(`
         SELECT destination_stripe_account, status FROM commerce_transfer_outbox WHERE id = ?
       `).bind(seed.outboxId).first();
@@ -461,7 +430,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       });
 
       expect(result.success).toBe(true);
-      // Must use original snapshotted account, NOT the newly changed account
       expect(capturedBody).toContain(`destination=${snapshottedAccount}`);
     });
 
@@ -480,9 +448,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 5. REQUEST EXACTNESS & DETERMINISTIC ATTEMPT SHA-256
-  // ==========================================================================
   describe('5. Exact Canonical Request & Attempt SHA-256 Pre-Persistence', () => {
     it('sends exact parameters and persists attempt with request_sha256 before Stripe call', async () => {
       const seed = await seedOrderAndOutbox({
@@ -499,7 +464,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         capturedUrl = String(url);
         capturedInit = init;
 
-        // Check that attempt record is ALREADY persisted with outcome='started' before fetch completes
         attemptStateDuringFetch = await ctx.d1.prepare(`
           SELECT outbox_id, attempt_number, stripe_idempotency_key, request_sha256, outcome
           FROM commerce_transfer_attempts
@@ -523,7 +487,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       expect(capturedInit.headers['Idempotency-Key']).toBe(`transfer:${seed.outboxId}`);
       expect(capturedInit.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
 
-      // Verify request payload exactness
       const params = new URLSearchParams(capturedInit.body);
       expect(params.get('amount')).toBe('1350');
       expect(params.get('currency')).toBe('usd');
@@ -533,7 +496,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       expect(params.get('metadata[allocationId]')).toBe(seed.allocId);
       expect(params.get('metadata[outboxId]')).toBe(seed.outboxId);
 
-      // Verify pre-call attempt record
       expect(attemptStateDuringFetch).toBeTruthy();
       expect(attemptStateDuringFetch.outcome).toBe('started');
       expect(attemptStateDuringFetch.attempt_number).toBe(1);
@@ -544,9 +506,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 6. IDEMPOTENT RETRY & STABLE KEY REUSE
-  // ==========================================================================
   describe('6. Idempotent Retry & Stable Idempotency Key', () => {
     it('retrying a failed attempt reuses the exact stripe_idempotency_key and increments attempt_number', async () => {
       const seed = await seedOrderAndOutbox();
@@ -559,46 +518,39 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         idempotencyKeysUsed.push(init.headers['Idempotency-Key']);
 
         if (callCount === 1) {
-          // Attempt 1 fails with 500
           return new Response(JSON.stringify({ error: { message: 'Stripe internal error' } }), {
             status: 500,
             headers: { 'Content-Type': 'application/json', 'request-id': 'req_fail_1' }
           });
         }
-        // Attempt 2 succeeds
         return new Response(JSON.stringify(successfulTransfer(seed, 'tr_retry_success_99')), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'request-id': 'req_succ_2' }
         });
       });
 
-      // First run: fails with 500
       const res1 = await processTransferOutboxItem(ctx.d1, defaultEnv(), seed.outboxId, {
         stripeFetchOverride: mockFetch
       });
       expect(res1.success).toBe(false);
       expect(res1.retryable).toBe(true);
 
-      // Reset next_attempt_at to now for test retry
       await ctx.d1.prepare(`
         UPDATE commerce_transfer_outbox
         SET next_attempt_at = datetime('now')
         WHERE id = ?
       `).bind(seed.outboxId).run();
 
-      // Second run: succeeds
       const res2 = await processTransferOutboxItem(ctx.d1, defaultEnv(), seed.outboxId, {
         stripeFetchOverride: mockFetch
       });
       expect(res2.success).toBe(true);
       expect(res2.stripeTransferId).toBe('tr_retry_success_99');
 
-      // Assert both attempts used the EXACT same idempotency key
       expect(idempotencyKeysUsed).toHaveLength(2);
       expect(idempotencyKeysUsed[0]).toBe(`transfer:${seed.outboxId}`);
       expect(idempotencyKeysUsed[1]).toBe(`transfer:${seed.outboxId}`);
 
-      // Verify attempts table contains 2 distinct attempt rows
       const attempts: any[] = (await ctx.d1.prepare(`
         SELECT attempt_number, outcome, stripe_transfer_id, http_status
         FROM commerce_transfer_attempts
@@ -617,9 +569,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 7. HTTP RESPONSE CLASSIFICATIONS
-  // ==========================================================================
   describe('7. HTTP Response Classifications (2xx, 429, 5xx, 4xx)', () => {
     it('parks a 2xx transfer response whose economics do not match the durable request', async () => {
       const seed = await seedOrderAndOutbox();
@@ -791,9 +740,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 8. NETWORK AMBIGUITY
-  // ==========================================================================
   describe('8. Network Exceptions are Ambiguous', () => {
     it('records attempt outcome ambiguous and releases outbox as retryable_failure on fetch throw', async () => {
       const seed = await seedOrderAndOutbox();
@@ -823,9 +769,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 9. CONCURRENCY & RACE CONDITIONS
-  // ==========================================================================
   describe('9. Concurrent Execution & Race Conditions', () => {
     it('concurrent workers racing on the same row: exactly one claims and executes transfer', async () => {
       const seed = await seedOrderAndOutbox();
@@ -839,7 +782,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         });
       });
 
-      // Run two parallel workers
       const [res1, res2] = await Promise.all([
         processTransferOutboxItem(ctx.d1, defaultEnv(), seed.outboxId, { stripeFetchOverride: mockFetch }),
         processTransferOutboxItem(ctx.d1, defaultEnv(), seed.outboxId, { stripeFetchOverride: mockFetch })
@@ -855,16 +797,12 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 10. 23-HOUR IDEMPOTENCY CUTOFF FOR AMBIGUOUS ATTEMPTS
-  // ==========================================================================
   describe('10. 23-Hour Ambiguous Idempotency Window Cutoff', () => {
     it('parks terminal with manual-reconciliation error when ambiguous attempt exceeds 23 hours', async () => {
       const seed = await seedOrderAndOutbox({
         outboxStatus: 'retryable_failure'
       });
 
-      // Seed an ambiguous attempt started 24 hours ago (86400 seconds)
       const attemptId = `cta_old_ambiguous_${seed.outboxId}`;
       await ctx.d1.prepare(`
         INSERT INTO commerce_transfer_attempts (
@@ -884,13 +822,11 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         stripeFetchOverride: mockFetch
       });
 
-      // Must NOT call Stripe after 23 hours!
       expect(mockFetch).not.toHaveBeenCalled();
       expect(result.success).toBe(false);
       expect(result.terminal).toBe(true);
       expect(result.error).toMatch(/exceeded 23-hour safe idempotency window.*manual reconciliation required/i);
 
-      // Outbox must be parked as terminal_failure
       const outboxRow: any = await ctx.d1.prepare(`
         SELECT status, last_error FROM commerce_transfer_outbox WHERE id = ?
       `).bind(seed.outboxId).first();
@@ -902,7 +838,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         outboxStatus: 'retryable_failure'
       });
 
-      // Seed ambiguous attempt started 2 hours ago
       await ctx.d1.prepare(`
         INSERT INTO commerce_transfer_attempts (
           id, outbox_id, attempt_number, stripe_idempotency_key,
@@ -932,14 +867,10 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 11. NO PROTOCOL TRANSFERS
-  // ==========================================================================
   describe('11. No Protocol Pool Transfers', () => {
     it('protocol pool allocations never have outbox rows created and cannot be transferred', async () => {
       const seed = await seedOrderAndOutbox();
 
-      // Check that protocol pool allocation has NO outbox row
       const poolOutbox: any = await ctx.d1.prepare(`
         SELECT id FROM commerce_transfer_outbox WHERE allocation_id = ?
       `).bind(seed.poolAllocId).first();
@@ -965,9 +896,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 12. DATABASE WRITE FAILURE AFTER STRIPE SUCCESS
-  // ==========================================================================
   describe('12. Database Write Failure After Stripe Success (Idempotency Reconciliation)', () => {
     it('leaves outbox row retryable when D1 batch throws after Stripe 200 success', async () => {
       const seed = await seedOrderAndOutbox();
@@ -979,7 +907,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         })
       );
 
-      // Create a wrapped D1 db that fails on batch()
       const faultyDb = {
         ...ctx.d1,
         prepare: (q: string) => ctx.d1.prepare(q),
@@ -990,13 +917,11 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
         stripeFetchOverride: mockFetch
       });
 
-      // Must NOT report success!
       expect(result.success).toBe(false);
       expect(result.retryable).toBe(true);
       expect(result.ambiguous).toBe(true);
       expect(result.error).toMatch(/D1 write failed after Stripe transfer creation/i);
 
-      // Outbox row remains retryable (not terminal!) so next retry with same idempotency key can reconcile
       const outboxRow: any = await ctx.d1.prepare(`
         SELECT status FROM commerce_transfer_outbox WHERE id = ?
       `).bind(seed.outboxId).first();
@@ -1004,9 +929,6 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
   });
 
-  // ==========================================================================
-  // 13. BATCH EXECUTION & PARAMETER IMMUNITY ON API ENDPOINT
-  // ==========================================================================
   describe('13. Batch Execution & Parameter Rejection on POST /api/payments/process-transfers', () => {
     it('rejects caller attempts to provide amount, destination, price, or orderId overrides with 400', async () => {
       const forbiddenPayloads = [
@@ -1044,12 +966,10 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
     });
 
     it('processes bounded rows sequentially and reports honest per-status counts', async () => {
-      // Seed 3 outbox rows
       const seed1 = await seedOrderAndOutbox({ orderId: 'ord_b_1', outboxId: 'cto_b_1' });
       const seed2 = await seedOrderAndOutbox({ orderId: 'ord_b_2', outboxId: 'cto_b_2' });
       await seedOrderAndOutbox({ orderId: 'ord_b_3', outboxId: 'cto_b_3' });
 
-      // Stripe mock: seed1 succeeds, seed2 gets 500, seed3 gets 400
       let callCount = 0;
       globalThis.fetch = vi.fn().mockImplementation(async (_url, init) => {
         callCount++;
@@ -1098,7 +1018,7 @@ describe('Commerce P3: Stripe Connect Transfer Worker & Process-Transfers Endpoi
       expect(calculateBackoffSeconds(5)).toBe(480);
       expect(calculateBackoffSeconds(6)).toBe(960);
       expect(calculateBackoffSeconds(7)).toBe(1920);
-      expect(calculateBackoffSeconds(8)).toBe(3600); // capped at 3600
+      expect(calculateBackoffSeconds(8)).toBe(3600);
       expect(calculateBackoffSeconds(20)).toBe(3600);
     });
 

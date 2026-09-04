@@ -17,32 +17,22 @@ function git(...args) {
   return run('git', args, { capture: true }).trim();
 }
 
-// `paymentsEnabled` reflects the target environment's Stripe config. Production
-// carries the four Stripe secrets (PAYMENTS_ENABLED=true) so the money endpoints
-// require auth / signatures. The release-candidate lands in the PREVIEW
-// environment, which deliberately has NO Stripe keys — payments are gated off
-// there, so its endpoints correctly answer 503. We assert each environment's
-// real state rather than forcing a Stripe secret into preview to satisfy a smoke.
 async function smoke(baseUrl, label, { paymentsEnabled }) {
   const paymentChecks = paymentsEnabled
     ? [
         {
-          // Payments ENABLED: an unauthenticated create-intent must require auth (401).
           path: '/api/payments/create-intent',
           status: 401,
           init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"appId":"dronehunter"}' },
           json: body => body.success === false
         },
         {
-          // onboard is gated on PAYMENTS_ENABLED; unauthenticated -> 401.
           path: '/api/payments/onboard',
           status: 401,
           init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"userId":"release-smoke"}' },
           json: body => body.success === false
         },
         {
-          // webhook is enabled; an unsigned POST is rejected for the missing
-          // stripe-signature header (401) before any body parsing.
           path: '/api/payments/webhook',
           status: 401,
           init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"type":"payment_intent.succeeded"}' },
@@ -51,7 +41,6 @@ async function smoke(baseUrl, label, { paymentsEnabled }) {
       ]
     : [
         {
-          // Payments gated OFF (preview has no Stripe keys) -> 503 before auth.
           path: '/api/payments/create-intent',
           status: 503,
           init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"appId":"dronehunter"}' },
@@ -77,7 +66,6 @@ async function smoke(baseUrl, label, { paymentsEnabled }) {
     { path: '/api/git?service=git-upload-pack', status: 501, json: body => body.success === false },
     ...paymentChecks,
     {
-      // process-transfers stays gated on PAYOUTS_ENABLED (still off) -> 503 in every env.
       path: '/api/payments/process-transfers',
       status: 503,
       init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"limit":1}' },
@@ -137,12 +125,8 @@ run('npx', [
 
 console.log(`Deploying candidate ${candidateBranch} from ${commit}`);
 const candidateUrl = deploy(candidateBranch, commit, message);
-// Candidate lands in the preview environment (no Stripe secrets) -> payments gated off.
 await smoke(candidateUrl, 'candidate', { paymentsEnabled: false });
 
-// Production migrations run only after the isolated candidate and its canonical
-// preview schema pass. Wrangler records applied migrations and snapshots D1
-// before each new migration.
 run('npx', [
   'wrangler', 'd1', 'migrations', 'apply',
   'nates-software-prod-v2', '--remote'
@@ -150,7 +134,6 @@ run('npx', [
 
 console.log(`Promoting unchanged dist/ artifact to production from ${commit}`);
 const productionDeploymentUrl = deploy('main', commit, message);
-// Production carries the Stripe secrets -> payments live.
 await smoke(productionDeploymentUrl, 'production deployment', { paymentsEnabled: true });
 await smoke('https://nates-software.pages.dev', 'production alias', { paymentsEnabled: true });
 

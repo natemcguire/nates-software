@@ -1,13 +1,3 @@
-// Tests for the standalone scheduled Commerce Drain Worker (P4)
-//
-// This Worker does not reimplement any commerce state machine logic — it is a
-// thin scheduled caller over `processStripeInboxEvent` (src/lib/commerce/eventProcessor)
-// and `processTransferBatch` (src/lib/commerce/transferWorker), the SAME functions the
-// webhook handler and the /api/payments/process-transfers endpoint call. These tests
-// verify the scheduling/candidate-selection/gating glue, not the underlying state
-// machine (which is already covered by tests/commerce-event-processor.test.ts and
-// tests/commerce-transfer-worker.test.ts).
-
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { recordInboxEvent, hashPayload, claimInboxEvent } from '../src/lib/commerce/stripeInbox';
@@ -39,11 +29,10 @@ describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
     vi.restoreAllMocks();
   });
 
-  // Helper to create a root order (mirrors tests/commerce-event-processor.test.ts)
   async function seedRootOrder(orderId = 'ord_drain_test_1', status = 'requires_payment') {
     const grossCents = 1500;
-    const makerCents = 1350; // 90%
-    const poolCents = 150;   // 10%
+    const makerCents = 1350;
+    const poolCents = 150;
     const piId = `pi_${orderId}`;
 
     await ctx.d1.prepare(`
@@ -116,7 +105,6 @@ describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
       const eventId = 'evt_drain_retry_1';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
 
-      // Simulate a prior transient failure: retryable_failure with next_attempt_at in the past.
       await ctx.d1.prepare(`
         UPDATE stripe_event_inbox
         SET status = 'retryable_failure',
@@ -168,15 +156,12 @@ describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
       mockStripeSucceeded(piId, orderId, grossCents);
 
-      // First drive: fulfills normally via the real processor.
       const first = await runInboxDrain(defaultEnv());
       expect(first.succeededCount).toBe(1);
 
       const orderAfterFirst: any = await ctx.d1.prepare('SELECT status FROM commerce_orders WHERE id = ?').bind(orderId).first();
       expect(orderAfterFirst.status).toBe('fulfilled');
 
-      // Force the inbox row back to retryable so a second tick would pick it up again
-      // (simulating a redelivered/duplicate signal racing the drain).
       await ctx.d1.prepare(`
         UPDATE stripe_event_inbox
         SET status = 'retryable_failure',
@@ -192,7 +177,6 @@ describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
       expect(second.processedCount).toBe(1);
       expect(second.errorCount).toBe(0);
 
-      // Order must remain fulfilled — monotonic transition guard makes this a safe no-op.
       const orderAfterSecond: any = await ctx.d1.prepare('SELECT status FROM commerce_orders WHERE id = ?').bind(orderId).first();
       expect(orderAfterSecond.status).toBe('fulfilled');
     });
@@ -202,13 +186,9 @@ describe('Commerce Drain Worker (P4 scheduled re-drive)', () => {
       const eventId = 'evt_drain_race_1';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
 
-      // Simulate a webhook's `waitUntil` background processor currently holding
-      // the claim lease (status='processing', not-yet-expired expires_at).
       const webhookClaim = await claimInboxEvent(ctx.d1, eventId, { leaseDurationSeconds: 60 });
       expect(webhookClaim.claimed).toBe(true);
 
-      // A cron tick running concurrently must not see this as a due candidate
-      // (it's in 'processing', not 'received'/'retryable_failure').
       const summary = await runInboxDrain(defaultEnv());
 
       expect(summary.candidateCount).toBe(0);

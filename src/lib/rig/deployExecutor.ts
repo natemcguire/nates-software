@@ -93,9 +93,6 @@ export function getMediaType(filePath: string): string {
   }
 }
 
-/**
- * Scans a directory recursively and collects static assets with hashes.
- */
 function collectStaticAssets(dir: string, baseDir: string = dir): StaticAssetFile[] {
   const results: StaticAssetFile[] = [];
   if (!fs.existsSync(dir)) return results;
@@ -120,9 +117,6 @@ function collectStaticAssets(dir: string, baseDir: string = dir): StaticAssetFil
   return results;
 }
 
-/**
- * Executes a hardened real RIG deploy build and smoke check.
- */
 export async function executeRigDeployBuild(params: RigDeployBuildParams): Promise<RigDeployBuildResult> {
   const started = Date.now();
   const runner = params.runner || new NodeChildProcessRunner();
@@ -139,7 +133,6 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
   fs.mkdirSync(workspace, { recursive: true, mode: 0o700 });
 
   try {
-    // 1. Write and validate source archive
     fs.writeFileSync(archivePath, params.sourceArchive, { mode: 0o600 });
     const entries = execFileSync('tar', ['-tf', archivePath], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
       .split('\n')
@@ -152,12 +145,8 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
     let buildOutput = '';
     let buildExitCode = 0;
 
-    // 2. Execute candidate build in hardened container if buildCommand is defined
     if (plan.buildCommand && plan.buildCommand.trim().length > 0) {
       const runnerImage = params.runnerImageDigest || 'node@sha256:ba849c60be29959425b8734d57b8b4b7d56f98edd9504c9af091d5281095a71e';
-      // The 256MB RUNTIME cap is far too small to `npm install` + build a real
-      // framework (it OOM-kills). Builds are ephemeral and get their own, larger
-      // ceiling; the tight cap still governs the long-lived runtime container.
       const buildMemoryMb = 2048;
 
       const dockerArgs = [
@@ -170,9 +159,6 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
         '--security-opt=no-new-privileges',
         '--read-only',
         `--user=${process.getuid?.() || 65532}:${process.getgid?.() || 65532}`,
-        // npm/framework builds need a writable HOME + cache + exec-able tmp. The
-        // root FS stays read-only; only these tmpfs mounts are writable, and the
-        // bind-mounted /workspace is where node_modules + build output land.
         '--tmpfs=/tmp:rw,exec,nosuid,size=512m',
         '--tmpfs=/home/build:rw,exec,nosuid,size=1024m',
         '--env=HOME=/home/build',
@@ -205,7 +191,6 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
       buildOutput = `[RIG] Detected project type '${plan.detectedType}' with no build command required. Inspecting workspace directly.`;
     }
 
-    // 3. Locate and extract build output / static files
     let staticRoot: string | null = null;
     const candidates = ['out', 'dist', 'build', 'public'];
 
@@ -232,7 +217,6 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
         throw new Error(`Static output directory '${staticRoot}' contains no files.`);
       }
 
-      // Deterministic digest over sorted file paths and their contents
       const manifestEntries = [...staticFiles]
         .sort((a, b) => a.path.localeCompare(b.path))
         .map(f => `${f.path}:${f.sha256}`)
@@ -240,7 +224,6 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
       artifactDigest = digest(manifestEntries);
     } else {
       artifactKind = 'bundle';
-      // For non-static bundles, hash all workspace files
       const allFiles = collectStaticAssets(workspace);
       const manifestEntries = allFiles
         .sort((a, b) => a.path.localeCompare(b.path))
@@ -249,7 +232,6 @@ export async function executeRigDeployBuild(params: RigDeployBuildParams): Promi
       artifactDigest = digest(manifestEntries || params.commitOid);
     }
 
-    // 4. Real Smoke / Health Check
     const smokeStart = Date.now();
     let smokePassed = false;
     let smokeStatusCode = 0;
@@ -374,7 +356,6 @@ server.listen(0, '127.0.0.1', () => {
         }
       }
     } else {
-      // For server apps, verify entrypoint file exists
       if (plan.entrypointFile && fs.existsSync(path.join(workspace, plan.entrypointFile))) {
         smokePassed = true;
         smokeStatusCode = 200;

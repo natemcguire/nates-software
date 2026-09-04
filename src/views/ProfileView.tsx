@@ -27,18 +27,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
 
-  // Navigation & Target User State
   const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'published'>('shelf');
   const [viewingUsername, setViewingUsername] = useState<string | null>(initialUsername || null);
   const [searchHandleInput, setSearchHandleInput] = useState('');
 
-  // Live Data States
   const [isLoading, setIsLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'guest'>('syncing');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
 
-  // Profile Form & Details
   const [profileData, setProfileData] = useState({
     id: '',
     username: '',
@@ -54,10 +51,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     createdAt: ''
   });
 
-  // Shelf, Published Apps, & Royalties
   const [shelfApps, setShelfApps] = useState<ShelfItem[]>([]);
 
-  // Group and de-duplicate shelf apps by unique app id
   const groupedShelfApps = React.useMemo(() => {
     const map = new Map<string, { app: ShelfItem; count: number }>();
     for (const item of shelfApps) {
@@ -86,7 +81,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isLedgerLoading, setIsLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
 
-  // Contributor Revenue Grants & Earnings (from /api/payments/grants)
   interface ContributorGrant {
     id: string;
     repositoryId: string;
@@ -131,12 +125,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   }, []);
 
-  // Action Feedback States
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // CLI Access Token States
   const [cliToken, setCliToken] = useState<string | null>(null);
   const [isGeneratingCliToken, setIsGeneratingCliToken] = useState(false);
   const [cliTokenError, setCliTokenError] = useState<string | null>(null);
@@ -173,13 +165,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setTimeout(() => setCliTokenCopied(false), 2500);
   };
 
-  // Load Profile & Shelf Data
   const loadProfileAndShelf = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
     setSyncStatus('syncing');
 
-    // If not authenticated and no specific user requested, set guest state
     if (!isAuthenticated && !viewingUsername) {
       setSyncStatus('guest');
       setIsLoading(false);
@@ -222,7 +212,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         });
       }
 
-      // If viewing own profile and authenticated, fetch authoritative shelf and seller ledger
       if (profileJson.isOwner && isAuthenticated) {
         const shelfRes = await fetch('/api/shelf');
         const shelfJson = await shelfRes.json();
@@ -232,11 +221,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         if (Array.isArray(shelfJson.shelf)) {
           setShelfApps(shelfJson.shelf);
         }
-        // Fetch contributor revenue grants + earnings (own-scoped, best-effort;
-        // does not block the rest of the profile load on failure)
         loadGrants();
 
-        // Fetch the seller payout ledger (own sales / allocations / transfer status)
         try {
           setIsLedgerLoading(true);
           const ledgerRes = await fetch('/api/payments/ledger');
@@ -273,13 +259,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     loadProfileAndShelf();
   }, [loadProfileAndShelf]);
 
-  // Handle Save Profile Changes
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError(null);
     setSaveSuccess(false);
 
-    // Client-side domain validation
     const validation = validateMakerProfile({
       displayName: profileData.displayName,
       avatar: profileData.avatar,
@@ -332,7 +316,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  // Handle Public Maker Search
   const handleSearchMaker = (e: React.FormEvent) => {
     e.preventDefault();
     const handle = searchHandleInput.trim().replace(/^@/, '');
@@ -343,7 +326,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
-  // Unauthenticated / Guest Prompt View
   if (!isAuthenticated && !viewingUsername) {
     return (
       <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm select-none">
@@ -416,7 +398,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm select-none">
-      {/* Header Navigation */}
       <div className="bg-gradient-to-r from-w95-blue via-blue-900 to-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           {viewingUsername && isAuthenticated && (
@@ -452,7 +433,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
 
-        {/* Tab Navigation */}
         <div className="flex gap-1 flex-wrap">
           {isOwner && (
             <button
@@ -487,9 +467,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
-        {/* Error Banner */}
         {errorMessage && (
           <div className="mb-4 bg-red-50 border-2 border-red-500 p-3 rounded text-red-800 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -505,7 +483,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* Loading Spinner */}
         {isLoading && (
           <div className="p-8 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
             <RefreshCw size={14} className="animate-spin text-w95-blue" />
@@ -513,7 +490,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 1: OWNED APPS (Private to owner) */}
         {!isLoading && activeTab === 'shelf' && isOwner && (
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
@@ -590,7 +566,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 2: Published Apps & Live Drops */}
         {!isLoading && activeTab === 'published' && (
           <div className="space-y-3 max-w-4xl mx-auto">
             <div className="border-b pb-2 mb-2 flex justify-between items-center">
@@ -647,10 +622,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 3: Sales, Royalties & Contributor Grants (Private to owner) */}
         {!isLoading && activeTab === 'royalties' && isOwner && (
           <div className="space-y-4 max-w-4xl mx-auto font-tahoma">
-            {/* 1. Total Earned Summary Banner */}
             <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-4 rounded-lg border-2 border-emerald-700 shadow-lg flex items-center justify-between flex-wrap gap-4">
               <div>
                 <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 uppercase tracking-wider">
@@ -672,7 +645,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
 
-            {/* 2. Earnings by App Breakdown */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
               <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
                 <span>Earnings by app</span>
@@ -704,7 +676,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
 
-            {/* 3. Seller Sales & Payout Ledger */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
               <div className="font-bold text-gray-900 text-xs flex items-center justify-between border-b border-gray-200 pb-2">
                 <span className="flex items-center gap-1.5">
@@ -788,7 +759,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               )}
             </div>
 
-            {/* 4. Contributor Revenue Grants & Realized Earnings */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-3">
               <div className="border-b pb-2 flex justify-between items-center">
                 <div>
@@ -831,7 +801,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
               {grants.length > 0 && (
                 <div className="space-y-3">
-                  {/* Realized earnings summary from fulfilled orders */}
                   <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-3 rounded border border-emerald-700 shadow">
                     <div className="text-[10px] text-emerald-400 font-mono uppercase tracking-wider">Realized earnings from fulfilled orders</div>
                     {earningsByRole.length === 0 ? (
@@ -848,7 +817,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     )}
                   </div>
 
-                  {/* Pending / settled payouts from the outbox */}
                   <div className="space-y-1.5">
                     <div className="font-bold text-gray-800 text-[11px]">Payout status</div>
                     {payoutsByStatus.length === 0 ? (
@@ -866,7 +834,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     )}
                   </div>
 
-                  {/* Grant list */}
                   <div className="space-y-1.5">
                     <div className="font-bold text-gray-800 text-[11px]">Your grants</div>
                     <div className="space-y-1.5">
@@ -899,7 +866,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
 
-        {/* TAB 4: Account Settings (Private to owner) */}
         {!isLoading && activeTab === 'profile' && isOwner && (
           <form onSubmit={handleSaveProfile} className="max-w-2xl mx-auto space-y-3">
             <div className="border-b pb-2 mb-3">
@@ -994,7 +960,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <p className="text-gray-500 text-[11px] mt-1">Registers your SSH public key for GITSMITH git repository access.</p>
             </div>
 
-            {/* CLI Access Section */}
             <div className="bg-gray-50 border-2 border-gray-400 p-3 rounded space-y-2 mt-3">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-xs text-gray-900 flex items-center gap-1.5">

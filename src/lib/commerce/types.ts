@@ -1,6 +1,3 @@
-// Domain types and error classes for Durable Commerce P2
-// Defines state machine contracts, inbox/outbox schemas, and cryptographic payloads.
-
 export class CommerceError extends Error {
   constructor(message: string) {
     super(message);

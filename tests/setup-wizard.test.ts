@@ -63,10 +63,6 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
   });
 
   it('only surfaces RUNNABLE starters — a failed/draft app must never dead-end a first-timer', () => {
-    // The wizard leads with "Run in the browser now". A starter whose deployment
-    // is not active (e.g. certified-mailer/wallart while `failed`) would send a
-    // brand-new visitor into a raw build-error panel. The forkable filter must
-    // gate on deploymentState === 'active', not just an active repo.
     const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
     expect(source).toContain("const isDeployable = d.deploymentState === 'active';");
     expect(source).toContain('return hasRepo && isRepoActive && isDeployable;');
@@ -90,14 +86,9 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
 
   it('wires MarketingWindow hero to "Try an app now →", outcome CTAs, and user badge (O5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/views/MarketingWindow.tsx', import.meta.url)), 'utf8');
-    // Hero CTA (the arrow is appended as a separate {…} &rarr; span, so assert on the label).
     expect(source).toContain('Try an app now');
-    // Per-shop outcome CTAs now live as `cta:` values on the app-grid data array; the
-    // window renders `{s.cta} &rarr;`. Assert the CTA labels, not the old concatenated literals.
     expect(source).toContain("Browse today's drops");
     expect(source).toContain('Mod an app with AI');
-    // (The "RIG.EXE — See what's running" card was removed in task #41; RIG is now
-    // invisible infra, folded into SLOPSHOP's run step, so its CTA is gone.)
     expect(source).toContain('Browse the code');
     expect(source).toContain('Open your mailbox');
     expect(source).toContain('Free to browse and fork. Create a maker account when you\'re ready to publish.');
@@ -106,13 +97,8 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
 
   it('wires SETUP desktop icon with START HERE and gates first-run auto-open in App.tsx (#6, F5)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/App.tsx', import.meta.url)), 'utf8');
-    // The SETUP desktop icon label is now just 'SETUP.EXE' (parenthetical suffixes
-    // were removed from all icon labels); it still opens the setup window.
     expect(source).toContain("id: 'setup', label: 'SETUP.EXE'");
     expect(source).toContain('nsw_setup_wizard_seen');
-    // Flash fix: the setup window is closed on first paint and OPENED (once) after the
-    // session check resolves, for first-run/logged-out visitors — instead of opening by
-    // default and closing for returning users (which flashed the window on every refresh).
     expect(source).toContain('openWindow(\'setup\')');
     expect(source).toContain('authLoading');
     expect(source).toContain('liveSandboxApp');

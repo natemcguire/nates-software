@@ -1,24 +1,3 @@
-/**
- * RIG.EXE Bounded Docker Provider Adapter & Control API
- *
- * Core Guarantees & Invariants:
- * 1. Explicit fail-closed config and preflight (never claims live connectivity if daemon is unreachable).
- * 2. Command execution strictly via spawn/execFile-style argv array (never shell).
- * 3. Immutable OCI image reference pinned by sha256 digest.
- * 4. Hard resource limits: memory <= 256MB (--memory, --memory-swap), CPU bounds (--cpus), PID bounds (--pids-limit <= 100).
- * 5. Least-privilege isolation: non-root user (10001:10001), cap-drop ALL, no-new-privileges, read-only rootfs, tmpfs on /tmp & /run.
- * 6. Storage isolation: named docker volumes or tmpfs only; NEVER host bind mounts or docker socket mounts.
- * 7. Network isolation: default --network=none; explicit allow policy (--network=rig-bridge, never host).
- * 8. Host port bounds: only 3001-3010 loopback bound (-p 127.0.0.1:<port>:3001).
- * 9. Standardized TTL labels (rig.managed, rig.instance.id, rig.owner.id, rig.expires.at) with automated reaper.
- * 10. Per-owner instance quota enforcement.
- * 11. Bounded log retrieval (tail + buffer cap) and normalized 9-state lifecycle events.
- * 12. Idempotent stop and remove operations.
- * 13. Injectable Command Runner (DockerCommandRunner) for unit testing without live daemon.
- * 14. No auth fabrication: all API & provider methods require trusted RigOwnerIdentity.
- * 15. No forced WAL/storage/database: respects stateless or arbitrary declared storage.
- */
-
 import { spawn } from 'node:child_process';
 import {
   type RigSpec,
@@ -47,10 +26,6 @@ import {
   type CreateRigSpecParams
 } from './rigBackend.ts';
 
-// ---------------------------------------------------------------------------
-// 1. Injectable Command Runner Interface & Implementations
-// ---------------------------------------------------------------------------
-
 export interface CommandExecResult {
   readonly stdout: string;
   readonly stderr: string;
@@ -69,16 +44,13 @@ export interface DockerCommandRunner {
   exec(file: string, args: readonly string[], options?: CommandExecOptions): Promise<CommandExecResult>;
 }
 
-/**
- * Production child_process runner executing strictly without shell expansion.
- */
 export class NodeChildProcessRunner implements DockerCommandRunner {
   private readonly defaultTimeoutMs: number;
   private readonly defaultMaxBufferBytes: number;
 
   constructor(options?: { defaultTimeoutMs?: number; defaultMaxBufferBytes?: number }) {
     this.defaultTimeoutMs = options?.defaultTimeoutMs ?? 30000;
-    this.defaultMaxBufferBytes = options?.defaultMaxBufferBytes ?? 1024 * 1024; // 1 MB
+    this.defaultMaxBufferBytes = options?.defaultMaxBufferBytes ?? 1024 * 1024;
   }
 
   public async exec(
@@ -97,7 +69,6 @@ export class NodeChildProcessRunner implements DockerCommandRunner {
       let isSettled = false;
       let timer: NodeJS.Timeout | null = null;
 
-      // Strictly enforce shell: false to eliminate command injection vectors
       const child = spawn(file, args as string[], {
         shell: false,
         env: options?.env ? { ...process.env, ...options.env } : process.env,
@@ -170,10 +141,6 @@ export class NodeChildProcessRunner implements DockerCommandRunner {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 2. Configuration & Preflight Types
-// ---------------------------------------------------------------------------
-
 export interface DockerProviderConfig {
   readonly dockerBinPath?: string;
   readonly maxMemoryCapMb?: number;
@@ -235,10 +202,6 @@ export interface DockerInspectData {
   };
 }
 
-// ---------------------------------------------------------------------------
-// 3. Command Line Builder (Strict argv construction & validation)
-// ---------------------------------------------------------------------------
-
 export function buildDockerCreateArgv(params: {
   readonly spec: RigSpec;
   readonly owner: RigOwnerIdentity;
@@ -247,17 +210,14 @@ export function buildDockerCreateArgv(params: {
 }): string[] {
   const { spec, owner, hostPort, config } = params;
 
-  // 1. Identity validation
   assertOwnerIdentity(owner);
 
-  // 2. Image digest pinning enforcement
   if (!spec.runtime.imageDigest || !isValidImageDigest(spec.runtime.imageDigest)) {
     throw new RigSecurityViolationError(
       `Image must be pinned with an immutable sha256 digest (e.g. image@sha256:64hex). Received: "${spec.runtime.imageDigest || 'none'}"`
     );
   }
 
-  // 3. Hard resource bounds
   const memoryCapMb = spec.resources.memoryCapMb;
   const maxAllowedMem = Math.min(config?.maxMemoryCapMb ?? MEMORY_CAP_MB, MEMORY_CAP_MB);
   if (memoryCapMb <= 0 || memoryCapMb > maxAllowedMem) {
@@ -269,32 +229,27 @@ export function buildDockerCreateArgv(params: {
   const cpuCores = Math.min(Math.max(spec.resources.cpuCores ?? config?.defaultCpuCores ?? 1.0, 0.1), 2.0);
   const pidsLimit = Math.min(Math.max(spec.resources.pidsLimit ?? config?.defaultPidsLimit ?? 64, 1), 100);
 
-  // 4. Host port bounds (3001-3010)
   if (!Number.isInteger(hostPort) || hostPort < PORT_RANGE_START || hostPort > PORT_RANGE_END) {
     throw new RigSecurityViolationError(
       `Host port ${hostPort} outside bounded MicroDyno range [${PORT_RANGE_START}..${PORT_RANGE_END}].`
     );
   }
 
-  // 5. Network policy
   const networkPolicy: RigNetworkPolicy = spec.runtime.networkPolicy || config?.defaultNetwork || 'none';
   if (networkPolicy === 'bridge' && config?.allowBridgeNetwork !== true) {
     throw new RigSecurityViolationError('Bridge networking is disabled unless allowBridgeNetwork is explicitly enabled by trusted configuration.');
   }
   const networkFlagValue = networkPolicy === 'bridge' ? 'rig-bridge' : 'none';
 
-  // 6. TTL calculation
   const prefix = config?.containerPrefix ?? 'rig-box-';
   const containerName = `${prefix}${spec.id}`;
   const now = new Date();
   const expiresAt = new Date(now.getTime() + spec.ttlSeconds * 1000).toISOString();
 
-  // 7. Base argv array construction (never shell)
   const argv: string[] = [
     'create',
     '--name',
     containerName,
-    // Labels for TTL tracking and inventory ownership
     '--label',
     'rig.managed=true',
     '--label',
@@ -313,19 +268,16 @@ export function buildDockerCreateArgv(params: {
     `rig.host.port=${hostPort}`,
     '--label',
     `rig.memory.cap.mb=${memoryCapMb}`,
-    // Security flags: non-root, cap-drop, no new privileges, read-only rootfs
     '--user',
     '10001:10001',
     '--cap-drop=ALL',
     '--security-opt',
     'no-new-privileges:true',
     '--read-only',
-    // Transient tmpfs mounts only
     '--tmpfs',
     '/tmp:rw,noexec,nosuid,size=32m',
     '--tmpfs',
     '/run:rw,noexec,nosuid,size=8m',
-    // Bounded resource limits
     '--memory',
     `${memoryCapMb}m`,
     '--memory-swap',
@@ -334,15 +286,12 @@ export function buildDockerCreateArgv(params: {
     `${cpuCores}`,
     '--pids-limit',
     `${pidsLimit}`,
-    // Network isolation
     '--network',
     networkFlagValue,
-    // Loopback-only host port publication to private container port 3001
     '-p',
     `127.0.0.1:${hostPort}:3001`
   ];
 
-  // Standard environment variables
   argv.push(
     '-e',
     'PORT=3001',
@@ -356,7 +305,6 @@ export function buildDockerCreateArgv(params: {
     `RIG_OWNER_ID=${owner.ownerId}`
   );
 
-  // User-defined environment variables (strictly validated)
   if (spec.runtime.env) {
     for (const [key, val] of Object.entries(spec.runtime.env)) {
       if (!key.match(/^[a-zA-Z_][a-zA-Z0-9_]*$/)) {
@@ -369,7 +317,6 @@ export function buildDockerCreateArgv(params: {
     }
   }
 
-  // Storage mounts (named volumes or tmpfs only; NEVER host bind mounts or docker socket)
   if (spec.storage && spec.storage.length > 0) {
     spec.storage.forEach((mount, idx) => {
       if (isForbiddenMountPath(mount.mountPath)) {
@@ -387,10 +334,8 @@ export function buildDockerCreateArgv(params: {
     });
   }
 
-  // Pinned Image digest
   argv.push(spec.runtime.imageDigest);
 
-  // Optional start command argv parsing
   if (spec.runtime.startCommand && spec.runtime.startCommand.trim().length > 0) {
     const rawTokens = spec.runtime.startCommand.trim().split(/\s+/);
     if (rawTokens.length > 0 && rawTokens[0] !== '') {
@@ -400,10 +345,6 @@ export function buildDockerCreateArgv(params: {
 
   return argv;
 }
-
-// ---------------------------------------------------------------------------
-// 4. Bounded Docker Provider Adapter
-// ---------------------------------------------------------------------------
 
 export class BoundedDockerProvider {
   private readonly runner: DockerCommandRunner;
@@ -479,10 +420,6 @@ export class BoundedDockerProvider {
     }
   }
 
-  /**
-   * Preflight Check: Verifies Docker CLI existence and daemon reachability.
-   * Never claims live connectivity if daemon is unreachable.
-   */
   public async checkPreflight(forceRefresh = false): Promise<DockerPreflightResult> {
     const now = Date.now();
     if (!forceRefresh && this.preflightCache && now - this.preflightTimestamp < this.preflightCacheTtlMs) {
@@ -512,7 +449,6 @@ export class BoundedDockerProvider {
       try {
         parsed = JSON.parse(res.stdout);
       } catch {
-        // Fallback for non-json output
         const hasServer = res.stdout.includes('Server:');
         const result: DockerPreflightResult = {
           available: hasServer,
@@ -556,9 +492,6 @@ export class BoundedDockerProvider {
     }
   }
 
-  /**
-   * Creates and starts a hardened Docker container using spawn-style argv execution.
-   */
   public async createAndStart(
     owner: RigOwnerIdentity,
     spec: RigSpec,
@@ -572,7 +505,6 @@ export class BoundedDockerProvider {
       throw new RigSecurityViolationError('Live Docker creation requires source="provider" and adapter="docker".');
     }
 
-    // 1. Fail-closed preflight check
     const preflight = await this.checkPreflight();
     if (!preflight.daemonReachable) {
       throw new RigPreflightError(
@@ -581,7 +513,6 @@ export class BoundedDockerProvider {
     }
     await this.assertCapacity(owner);
 
-    // 2. Validate and build argv
     const argv = buildDockerCreateArgv({
       spec,
       owner,
@@ -589,7 +520,6 @@ export class BoundedDockerProvider {
       config: this.config
     });
 
-    // 3. Execute `docker create`
     const createRes = await this.runner.exec(this.getDockerBin(), argv, { timeoutMs: 15000 });
     if (createRes.exitCode !== 0) {
       throw new Error(`Failed to create container for ${spec.id}: ${createRes.stderr || createRes.stdout}`);
@@ -598,10 +528,8 @@ export class BoundedDockerProvider {
     const containerId = createRes.stdout.trim().slice(0, 12);
     const containerName = this.getContainerName(spec.id);
 
-    // 4. Execute `docker start`
     const startRes = await this.runner.exec(this.getDockerBin(), ['start', containerName], { timeoutMs: 10000 });
     if (startRes.exitCode !== 0) {
-      // Cleanup created container on start failure
       try {
         await this.runner.exec(this.getDockerBin(), ['rm', '-f', containerName]);
       } catch {}
@@ -636,9 +564,6 @@ export class BoundedDockerProvider {
     }
   }
 
-  /**
-   * Idempotently stops a container.
-   */
   public async stopContainer(
     owner: RigOwnerIdentity,
     instanceId: string,
@@ -662,7 +587,6 @@ export class BoundedDockerProvider {
       return { stopped: true, wasRunning: true };
     }
 
-    // If container not found or already stopped, treat as idempotent success
     const errText = (stopRes.stderr + stopRes.stdout).toLowerCase();
     if (errText.includes('no such container') || errText.includes('not running')) {
       return { stopped: true, wasRunning: false };
@@ -671,9 +595,6 @@ export class BoundedDockerProvider {
     throw new Error(`Failed to stop container ${containerName}: ${stopRes.stderr || stopRes.stdout}`);
   }
 
-  /**
-   * Idempotently removes a container and associated named volumes.
-   */
   public async removeContainer(owner: RigOwnerIdentity, instanceId: string): Promise<boolean> {
     assertOwnerIdentity(owner);
     assertInstanceId(instanceId);
@@ -698,9 +619,6 @@ export class BoundedDockerProvider {
     throw new Error(`Failed to remove container ${containerName}: ${rmRes.stderr || rmRes.stdout}`);
   }
 
-  /**
-   * Inspects a container's live Docker state.
-   */
   public async inspectContainer(
     owner: RigOwnerIdentity,
     instanceId: string
@@ -712,9 +630,6 @@ export class BoundedDockerProvider {
     return inspect;
   }
 
-  /**
-   * Retrieves bounded container logs with tail limit and buffer limit.
-   */
   public async getContainerLogs(
     owner: RigOwnerIdentity,
     instanceId: string,
@@ -745,9 +660,6 @@ export class BoundedDockerProvider {
     return res.stdout + (res.stderr ? `\n[STDERR]\n${res.stderr}` : '');
   }
 
-  /**
-   * Scans and reaps expired containers labeled with rig.managed=true.
-   */
   public async reapExpiredContainers(now: Date = new Date()): Promise<string[]> {
     const preflight = await this.checkPreflight();
     if (!preflight.daemonReachable) {
@@ -772,13 +684,11 @@ export class BoundedDockerProvider {
       if (!line.trim()) continue;
       try {
         const item = JSON.parse(line);
-        // Extract labels
         const labelsStr = item.Labels || '';
         let expiresAtIso: string | undefined;
         let instanceId: string | undefined;
         let ownerId: string | undefined;
 
-        // Docker ps json output can format labels as comma-separated or map
         if (typeof labelsStr === 'string') {
           const matchExp = labelsStr.match(/rig\.expires\.at=([^,]+)/);
           if (matchExp) expiresAtIso = matchExp[1];
@@ -802,9 +712,6 @@ export class BoundedDockerProvider {
     return reapedInstanceIds;
   }
 
-  /**
-   * Normalizes Docker inspect metadata into RIG's strict 9-state lifecycle machine.
-   */
   public normalizeDockerState(
     inspect: DockerInspectData | null,
     _spec?: RigSpec,
@@ -833,7 +740,6 @@ export class BoundedDockerProvider {
     } else if (state.Status === 'restarting') {
       lifecycle = 'starting';
     } else if (state.ExitCode === 137) {
-      // Exit 137 proves SIGKILL, not its cause. Only OOMKilled=true proves cgroup OOM.
       lifecycle = 'crashed';
       errorMessage = 'Process terminated with Exit Code 137 (SIGKILL); Docker did not report OOMKilled, so an out-of-memory cause is not proven.';
     } else if (state.ExitCode !== 0) {
@@ -856,10 +762,6 @@ export class BoundedDockerProvider {
     };
   }
 }
-
-// ---------------------------------------------------------------------------
-// 5. Authenticated Control API Service (`RigDockerControlApi`)
-// ---------------------------------------------------------------------------
 
 export interface RigControlApiOptions {
   readonly dockerProvider?: BoundedDockerProvider;
@@ -921,7 +823,6 @@ export class RigDockerControlApi {
     return Array.from(this.instances.values());
   }
 
-  /** Re-authorizes durable registry entries against actual Docker objects after gateway restart. */
   public async restoreInstances(candidates: readonly RigInstance[], now: Date = new Date()): Promise<{ restored: string[]; removed: string[] }> {
     if (this.instances.size > 0 || this.portAllocator.getAllocatedPorts().length > 0) {
       throw new Error('RIG restore requires a fresh control API instance.');
@@ -991,7 +892,6 @@ export class RigDockerControlApi {
   ): Promise<RigInstance> {
     this.validateOwner(owner);
 
-    // Enforce per-owner instance quota
     const currentActive = this.getOwnerInstanceCount(owner.ownerId);
     if (currentActive >= this.maxInstancesPerOwner) {
       throw new RigQuotaExceededError(
@@ -1063,7 +963,6 @@ export class RigDockerControlApi {
       throw new Error(`Instance with id ${spec.id} already exists.`);
     }
 
-    // Allocate port from 3001-3010
     const port = this.portAllocator.allocate(spec.appId, spec.preferredPort, spec.id);
     const now = new Date();
     const nowIso = now.toISOString();
@@ -1087,7 +986,6 @@ export class RigDockerControlApi {
       events: [initialEvent]
     };
 
-    // If source is provider and adapter is docker, execute live container creation
     if (spec.source === 'provider' && spec.runtime.adapter === 'docker') {
       try {
         await this.dockerProvider.createAndStart(owner, spec, port);
@@ -1205,13 +1103,11 @@ export class RigDockerControlApi {
       throw new Error(`Cannot restart instance from state '${fromState}': ${validation.error}`);
     }
 
-    // Stop container if still running
     if (instance.spec.source === 'provider' && instance.spec.runtime.adapter === 'docker') {
       await this.dockerProvider.stopContainer(owner, instanceId);
       await this.dockerProvider.removeContainer(owner, instanceId);
     }
 
-    // Allocate port if released
     let port = instance.observed.allocatedPort;
     if (port === undefined) {
       port = this.portAllocator.allocate(instance.spec.appId, instance.spec.preferredPort, instance.spec.id);
@@ -1303,7 +1199,6 @@ export class RigDockerControlApi {
       return this.dockerProvider.getContainerLogs(owner, instanceId, tailLines);
     }
 
-    // Local simulation logs
     return instance.observed.events
       .map(e => `[${e.timestamp}] [${e.toState.toUpperCase()}] ${e.reason || ''}`)
       .join('\n');
@@ -1326,7 +1221,6 @@ export class RigDockerControlApi {
       }
     }
 
-    // Also reap any orphaned docker containers
     const dockerReaped = await this.dockerProvider.reapExpiredContainers(now);
     for (const dId of dockerReaped) {
       if (!reapedIds.includes(dId)) {

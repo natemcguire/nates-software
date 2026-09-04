@@ -48,10 +48,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
   const [activeTab, setActiveTab] = useState<'preview' | 'screenshots' | 'comments' | 'spec'>('preview');
   const [activeShotIdx, setActiveShotIdx] = useState(0);
 
-  // Modals state
   const [showLineageModal, setShowLineageModal] = useState(false);
 
-  // Deployment & authoritative URL gating
   const hasActiveDeployment = Boolean(
     (app.deploymentState === 'active' && (app.activeDeploymentId || app.liveUrl)) ||
     app.liveUrl
@@ -62,11 +60,9 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
       : null
   );
 
-  // Comment state
   const [comments, setComments] = useState<AppComment[]>(app.comments || []);
   const [newCommentText, setNewCommentText] = useState('');
 
-  // Idea Spec state (Phase C-render)
   const [specContent, setSpecContent] = useState<string | null>(null);
   const [specLoading, setSpecLoading] = useState(false);
   const [specError, setSpecError] = useState<string | null>(null);
@@ -139,7 +135,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
     });
   }, [specContent, app.id, app.repositoryId, app.repoSlug]);
 
-  // Fetch comments from Cloudflare D1
   useEffect(() => {
     fetch(`/api/comments?app_id=${app.id}`)
       .then(res => res.json())
@@ -202,9 +197,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         })
       });
       const data = await res.json().catch(() => null);
-      // Require positive confirmation: a 2xx alone is not proof of persistence.
-      // Anything short of success:true with a canonical comment is treated as failure
-      // so the optimistic comment is rolled back rather than left as if it saved.
       if (!res.ok || !data || data.success !== true || !data.comment) {
         throw new Error(data?.error || `Failed to post comment (Status ${res.status})`);
       }
@@ -221,7 +213,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] text-sm font-tahoma">
-      {/* Top Visual Header Bar */}
       <div className="bg-blue-50 border-2 border-w95-blue p-3 flex items-center justify-between flex-wrap gap-2 mb-2">
         <div className="flex items-center gap-3">
           <div className="text-3xl bg-white p-1 rounded border border-gray-400 shadow-sm">{app.authorAvatar || app.creatorAvatar || '🎯'}</div>
@@ -259,10 +250,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         </div>
 
-        {/* Tab Switcher — real Win95 tab strip: the row sits ON the panel's top
-            border, the active tab is raised and connected to the content below (no
-            bottom border), inactive tabs sit recessed. flex-wrap keeps it from breaking
-            the layout when the card is narrow. */}
         {(() => {
           const tab = (id: string, node: React.ReactNode, key?: string) => {
             const active = activeTab === id;
@@ -287,7 +274,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               {tab('spec', <><FileText size={13} /> Spec</>)}
               {tab('screenshots', <><ImageIcon size={13} /> Shots ({app.screenshots?.length || 0})</>)}
               {tab('comments', <><MessageSquare size={13} /> Comments ({comments.length})</>)}
-              {/* Live host link (not a tab) — opens the deployed app; truncates on narrow widths. */}
               {hasActiveDeployment && authoritativeLiveUrl ? (
                 <a
                   href={authoritativeLiveUrl}
@@ -314,9 +300,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         })()}
       </div>
 
-      {/* Main View Area */}
       <div className="flex-1 bg-white border-2 border-gray-400 border-r-white border-b-white p-3 overflow-y-auto mb-2">
-        {/* TAB 1: Live App Embedded Runner */}
         {activeTab === 'preview' && (
           <div className="h-full flex flex-col">
             <div className="bg-gray-100 p-2 border border-gray-300 mb-2 flex items-center justify-between text-xs font-mono flex-wrap gap-2">
@@ -369,7 +353,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         )}
 
-        {/* TAB: Spec */}
         {activeTab === 'spec' && (
           <div className="h-full flex flex-col">
             {specLoading ? (
@@ -412,7 +395,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           </div>
         )}
 
-        {/* TAB 2: Screenshots */}
         {activeTab === 'screenshots' && (
           app.screenshots && app.screenshots.length > 0 ? (
             <div className="h-full flex flex-col items-center justify-center p-2">
@@ -448,10 +430,8 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
           )
         )}
 
-        {/* TAB 4: Comments & Pinned Maker Story */}
         {activeTab === 'comments' && (
           <div className="h-full flex flex-col space-y-3">
-            {/* Pinned Maker Pitch Story */}
             {app.makerPitch && (
               <div className="bg-amber-50 border-2 border-amber-300 rounded p-3 text-xs space-y-1 shadow-sm">
                 <div className="flex items-center justify-between text-amber-900 font-bold font-mono">
@@ -469,7 +449,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               </div>
             )}
 
-            {/* Comment List */}
             {comments.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-gray-500 bg-gray-50 border border-dashed border-gray-300 rounded">
                 <MessageSquare size={28} className="text-gray-400 mb-2" />
@@ -498,7 +477,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               </div>
             )}
 
-            {/* Comment Form */}
             <form onSubmit={handleAddComment} className="flex gap-2">
               <input
                 type="text"
@@ -515,7 +493,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         )}
       </div>
 
-      {/* Bottom Action Footer */}
       <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-gray-400">
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
@@ -602,7 +579,6 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
       </div>
 
-      {/* 1. Interactive Lineage DAG Visualizer Modal */}
       {showLineageModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-lg w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4">
@@ -650,14 +626,12 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         </div>
       )}
 
-      {/* 1-Click Fork & Code with AI Modal */}
       <ForkWithAiModal
         isOpen={showForkModal}
         onClose={() => setShowForkModal(false)}
         app={app}
       />
 
-      {/* Stripe Marketplace Checkout Modal */}
       <CheckoutModal
         isOpen={showCheckoutModal}
         onClose={() => setShowCheckoutModal(false)}

@@ -16,10 +16,6 @@ export interface AuthUser {
 export interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  // True until the initial session check (`me`) resolves. Callers should not make
-  // first-paint decisions (e.g. which windows to open) until this is false, or the
-  // UI flashes the logged-out state before the session hydrates. Optional so test
-  // mocks representing an already-resolved state can omit it (treated as false).
   authLoading?: boolean;
   isSuperAdmin: boolean;
   isAuthModalOpen: boolean;
@@ -42,9 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login');
   const [actionDescription, setActionDescription] = useState<string | null>(null);
 
-  // Check existing session on load. authLoading stays true until this resolves so
-  // the desktop doesn't paint the logged-out first-run state and then snap to the
-  // logged-in state (the "windows flash then disappear on refresh" bug).
   useEffect(() => {
     fetch('/api/auth?action=me')
       .then(res => res.json())
@@ -53,10 +46,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(data.user);
           return;
         }
-        // No local session. If this is a trusted first-party VIEW host (gitsmith,
-        // hotwire, …), bounce once to the apex broker to inherit an existing apex
-        // login (task #38). If a redirect is initiated we leave authLoading true —
-        // the page is navigating away, so painting the logged-out shell is wasted.
         if (attemptFirstPartySSO()) return;
       })
       .catch(() => {})

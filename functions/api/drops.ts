@@ -1,6 +1,4 @@
 import { requireAuth, getSessionUser } from './_auth';
-// GET /api/drops - Fetch sorted drops from D1 with Hotwire ranking, batch window filtering, and live maker streaks
-// POST /api/drops - Authenticated/validated shareware drop publishing with commerce_products synchronization
 
 import {
   getCurrentBatchWindow,
@@ -65,10 +63,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
     `;
 
-    // Build an optional time-window clause for date-scoped batches. This is kept
-    // SEPARATE from the base filter so the board can fall back to the full catalog when
-    // the window is empty (Reddit-style: if there's nothing new, show what we have —
-    // never a blank board).
+    
+    
+    
+    
     const baseWhere = `a.listing_status = 'active'`;
     let windowClause = '';
     const windowParams: any[] = [];
@@ -104,10 +102,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         : await env.DB.prepare(scopedQuery).all();
       results = dbRes.results || [];
 
-      // Reddit-style fallback: the CURRENT board (today/yesterday) should never be blank
-      // — if that window is empty, fall through to the full active catalog so we always
-      // show the apps we have. Archive/custom are explicit historical queries where an
-      // empty result is a legitimate answer, so they do NOT fall back.
+      
+      
+      
+      
       const isCurrentBoard = batchFilter.type === 'today' || batchFilter.type === 'yesterday';
       if (results.length === 0 && windowClause && isCurrentBoard) {
         const allRes = await env.DB.prepare(buildQuery(baseWhere)).all();
@@ -116,7 +114,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     }
 
-    // Fetch user drop history for maker streak calculation and live leaderboard
+    
     let makerStreaks: Record<string, any> = {};
     let makerLeaderboard: any[] = [];
     try {
@@ -152,7 +150,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     } catch {}
 
-    // Check viewer-scoped upvotes if authenticated
+    
     const authUser = await getSessionUser(request, env);
     const viewerVotedAppIds = new Set<string>();
 
@@ -174,7 +172,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       } catch {}
     }
 
-    // Robust structural parsing to prevent malformed data from crashing UI
+    
     const parsedDrops: DropRankingInput[] = (results || []).map((r: any) => {
       let screenshots: string[] = [];
       let binaries: Record<string, string> = {};
@@ -204,15 +202,15 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const grantableBps = grantable_bps;
       const hasVoted = viewerVotedAppIds.has(r.id);
 
-      // Resolve the app's real live URL for the in-app runner. An explicit binaries.web
-      // wins. Otherwise, for an ACTIVE app the serve path depends on origin_kind:
-      //  - r2_static → `/serve/<id>/index.html`. Its bare host <id>.nates-software.com is
-      //    a Custom Domain on the MAIN Pages project and is EXCLUDED from the wildcard
-      //    router, so that host serves the marketplace SPA, NOT the R2 bytes. The
-      //    /serve/<id> Pages Function is the only thing that serves this app's R2 bytes.
-      //    (This was the "American Gardener iframes the marketplace into itself" bug.)
-      //  - worker/container → the wildcard router DOES proxy these at <host>.nates-
-      //    software.com, so use the real host.
+      
+      
+      
+      
+      
+      
+      
+      
+      
       const originHost = (r.hostname || r.id) as string;
       const isActive = r.deploymentState === 'active' && Boolean(r.activeDeploymentId);
       const isStatic = !r.originKind || r.originKind === 'r2_static';
@@ -249,7 +247,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       };
     });
 
-    // Apply ranking algorithm for 'hotwire' or 'today' sort
+    
     let finalDrops = parsedDrops;
     if (sort === 'hotwire' || sort === 'today') {
       finalDrops = rankDrops(parsedDrops, { now });
@@ -261,15 +259,15 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       timeToNextDrop: timeToNext,
       sort,
       batch: batchParam || 'all',
-      // True when a date-scoped batch (e.g. today) was empty and we fell back to the
-      // full active catalog — lets the UI honestly label it "showing all apps".
+      
+      
       showingAllApps: windowFellBack,
       drops: finalDrops,
       makerLeaderboard,
       votedAppIds: Array.from(viewerVotedAppIds)
     });
   } catch (err: any) {
-    // Never leak internals to an unauthenticated public caller.
+    
     console.error('[DROPS] error:', err?.message || err);
     return Response.json({ success: false, error: 'Failed to retrieve drops' }, { status: 500 });
   }
@@ -281,7 +279,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
     }
 
-    // Strictly require same-origin authenticated session
+    
     const { user: authUser, errorResponse } = await requireAuth(request, env);
     if (errorResponse || !authUser) {
       return errorResponse || Response.json({ success: false, error: 'Unauthorized: Valid authenticated session required' }, { status: 401 });
@@ -293,7 +291,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
     const { id, name, tagline, description, version, license, price, storage, tags, screenshots, binaries, liveUrl } = body;
 
-    // Server-generated ID for new items or sanitized provided ID
+    
     let dropId: string;
     if (id && typeof id === 'string' && id.trim().length > 0) {
       dropId = id.trim();
@@ -304,7 +302,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       dropId = `app_${cleanSlug || 'drop'}_${Date.now().toString(36)}`;
     }
 
-    // Strict domain validation
+    
     const validation = validateDropSubmission({
       id: dropId,
       name,
@@ -318,17 +316,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: validation.errors.join(' ') }, { status: 400 });
     }
 
-    // SECURITY (Codex #5): reserved-name enforcement at the DB/creation
-    // BOUNDARY, not only inside the pure validator. dropId is the
-    // server-resolved id (client-supplied id is only ever a candidate —
-    // trimmed above) that will become both app_listings.id and
-    // app_listings.hostname, i.e. the literal <id>.nates-software.com
-    // subdomain the router serves. Redundant with validateDropSubmission's
-    // internal RESERVED_APP_IDS check by design: this is the endpoint itself
-    // refusing to write a reserved id/hostname, independent of validator
-    // internals, so this guard survives even if validateDropSubmission's
-    // rules ever drift. Migration 0035 adds the same rule as a DB trigger
-    // as the final backstop for any other write path.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     if (RESERVED_APP_IDS.has(dropId.toLowerCase())) {
       return Response.json({
         success: false,
@@ -336,16 +334,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 400 });
     }
 
-    // Strict price validation
+    
     const priceValidation = parseAndValidatePrice(price);
     if (!priceValidation.valid) {
       return Response.json({ success: false, error: priceValidation.error || 'Invalid price' }, { status: 400 });
     }
 
-    // Strictly derive creator identity from authenticated session ONLY
+    
     const creatorId = authUser.id;
 
-    // Prevent one maker overwriting another maker's existing listing ID
+    
     const existingListing = await env.DB.prepare('SELECT id, creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
     if (existingListing && existingListing.creator_id !== creatorId) {
       return Response.json({
@@ -354,24 +352,24 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 403 });
     }
 
-    // Merge liveUrl into binaries.web if provided
+    
     const mergedBinaries = typeof binaries === 'object' && binaries !== null ? { ...binaries } : {};
     if (liveUrl && typeof liveUrl === 'string' && liveUrl.trim().length > 0) {
       mergedBinaries.web = liveUrl.trim();
     }
 
-    // Determine initial deployment state: publication sets draft or source_ready (NEVER active)
+    
     let initialDeploymentState = 'draft';
-    // The client-supplied repositoryId is only a CANDIDATE. linkedRepositoryId
-    // is set below strictly from an ownership-verified lookup — it must never
-    // retain the raw client value, or a maker could link a repository owned
-    // by someone else onto their own listing (a cross-user write). Unowned /
-    // unknown candidate => stays null (no link).
+    
+    
+    
+    
+    
     const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     let linkedRepositoryId: string | null = null;
     let repositoryHasCommit = false;
     try {
-      // Only ever link a repository the AUTHENTICATED maker owns (owner_user_id = creatorId).
+      
       const repoRecord = await env.DB.prepare(`
         SELECT r.id, rf.commit_oid AS defaultCommitOid
         FROM repositories r
@@ -391,30 +389,30 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ? `No deployable revision exists for ${name.trim()}. Source has not been imported into GITSMITH and built by RIG.`
       : null;
 
-    // Fix 1 (HOTWIRE #6): provision the real product loop. If the maker has no
-    // repository linked yet, commission one now (server-derived owner, honest
-    // 'provisioning' status — no git objects exist yet, so it is NOT 'active')
-    // so the drop is actually forkable and has a lineage root the moment it's
-    // published. This is inserted into the SAME atomic D1 batch as the listing
-    // and commerce product below — never a partial write.
+    
+    
+    
+    
+    
+    
     let newRepositoryStmt: any = null;
     let newRepositoryId: string | null = null;
     if (!linkedRepositoryId) {
       newRepositoryId = `repo_${crypto.randomUUID()}`;
-      // Suffix with a slice of the repository UUID so two drops whose names
-      // slugify identically never collide on the (owner_user_id, slug) unique
-      // index — no retry loop needed for a server-generated ID.
+      
+      
+      
       const baseSlug = (dropId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'drop')
         .slice(0, 80) + '-' + newRepositoryId.slice(-8);
       const storageKey = buildRepositoryStorageKey(newRepositoryId);
-      // Guarded with "WHERE EXISTS (... owned by creatorId)" instead of a bare
-      // VALUES insert: the listing write above can lose an ownership race (a
-      // concurrent claim on the same drop ID) and report 0 rows written
-      // without D1 throwing — a bare INSERT here would still commit inside
-      // the same batch/transaction and leave an ORPHANED repository owned by
-      // the loser of the race. Tying this insert to the listing's actual
-      // post-write ownership means it only ever lands together with a
-      // genuinely successful, correctly-owned listing write.
+      
+      
+      
+      
+      
+      
+      
+      
       newRepositoryStmt = env.DB.prepare(`
         INSERT INTO repositories (
           id, app_id, owner_user_id, slug, visibility, object_format,
@@ -424,15 +422,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         WHERE EXISTS (SELECT 1 FROM app_listings WHERE id = ? AND creator_id = ?)
       `).bind(newRepositoryId, dropId, creatorId, baseSlug, storageKey, dropId, creatorId);
       linkedRepositoryId = newRepositoryId;
-      // A freshly-provisioned repository has no commit yet — deployment state
-      // stays honestly 'draft' regardless of the earlier lookup.
+      
+      
     }
 
-    // Validate the maker-chosen per-listing royalty rate (Shareware, Restored
-    // money model). Stored as integer basis points in [0, 10000] (0–100%).
-    // NEVER hardcoded: a maker who omits it (blank field) is choosing 0%
-    // (free to fork & resell). Also accepts the snake_case `royalty_bps`
-    // alias for symmetry.
+    
+    
+    
+    
+    
     const rawRoyaltyBps = body.royaltyBps !== undefined ? body.royaltyBps : body.royalty_bps;
     let validatedRoyaltyBps = 0;
     if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null) {
@@ -451,22 +449,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       validatedRoyaltyBps = rawRoyaltyBps;
     }
 
-    // NOTE on ordering: repositories.app_id references app_listings(id), and
-    // app_listings.repository_id references repositories(id) — a genuine
-    // circular FK pair. When we're provisioning a BRAND NEW repository in
-    // this same request, the listing must be written FIRST with
-    // repository_id NULL (so repositories.app_id has a row to point at),
-    // THEN the repository, THEN a follow-up UPDATE binds repository_id onto
-    // the listing. All of this stays inside the one atomic D1 batch below —
-    // still never a partial/fake write, just FK-legal statement order.
-    // SECURITY (Codex #5): hostname is the router's AUTHORITATIVE host-match
-    // column (`WHERE hostname = ? OR id = ?`) and migration 0035 now enforces
-    // a DB-level trigger rejecting NULL/reserved hostnames on every insert.
-    // Explicitly bind hostname = dropId here so new listings never rely on
-    // the router's `OR id = ?` fallback and never hit that trigger's
-    // NULL-hostname rejection. dropId was already run through
-    // validateDropSubmission() above (which rejects RESERVED_APP_IDS), so
-    // this is defense-in-depth on top of the DB trigger, not the only guard.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     const listingStmt = env.DB.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, listing_status, deployment_state, deployment_error, repository_id, hostname)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
@@ -504,8 +502,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       JSON.stringify(mergedBinaries),
       initialDeploymentState,
       initialDeploymentError,
-      // A brand-new repository doesn't exist as a row yet — bind it onto the
-      // listing in the follow-up UPDATE once it's been inserted below.
+      
+      
       newRepositoryStmt ? null : linkedRepositoryId,
       dropId
     );
@@ -515,21 +513,21 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           .bind(newRepositoryId, dropId, creatorId)
       : null;
 
-    // Synchronize with commerce_products so the product record exists the
-    // moment a drop is published. Fix 1 (HOTWIRE #6): status must reflect
-    // REAL readiness, never a fake 'active'. A product is only 'active'
-    // (immediately purchasable) once its repository is genuinely deployable
-    // (has a resolvable default-ref commit); otherwise it is honestly 'draft'
-    // until GITSMITH/RIG actually produce a deployable revision.
-    //
-    // ETHOS (Shareware, Restored spec §3.7 — "prove-it" publish gate): a
-    // Resale listing may only become purchasable once the platform has
-    // actually watched its repo build/run at least once. You can only buy
-    // software the platform has watched boot. `repositoryHasCommit` (set
-    // above from a resolvable default_ref commit) is the sole source of
-    // truth for that proof — this line is the enforcement point, and
-    // functions/api/payments/create-intent.ts re-checks `status === 'active'`
-    // at buy time as the second, independent half of the same invariant.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     const productPriceCents = priceValidation.priceCents;
     const honestProductStatus = repositoryHasCommit ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
@@ -547,11 +545,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       RETURNING app_id
     `).bind(linkedRepositoryId, productPriceCents, honestProductStatus, validatedRoyaltyBps, dropId, creatorId);
 
-    // Statement order matters for FK legality: listing (repo_id NULL for a
-    // new repo) -> new repository (app_id now resolvable) -> link update ->
-    // product (repository_id now resolvable).
-    // All execute atomically in one D1 batch — if any leg fails, nothing is
-    // persisted (never a partial/fake write).
+    
+    
+    
+    
+    
     const statements: any[] = [listingStmt];
     if (newRepositoryStmt) statements.push(newRepositoryStmt);
     if (linkRepositoryToListingStmt) statements.push(linkRepositoryToListingStmt);

@@ -1,8 +1,3 @@
-// POST /api/payments/process-transfers
-// Protected Service Endpoint for Stripe Connect Transfer Execution (Commerce P3)
-// Requires PAYOUTS_ENABLED='true', STRIPE_SECRET_KEY, and Authorization: Bearer <PAYOUT_WORKER_SECRET>
-// with constant-time token comparison. Never accepts caller economic parameters.
-
 import {
   processTransferBatch,
   processTransferOutboxItem,
@@ -16,7 +11,6 @@ import {
 } from '../../../src/lib/commerce/transferWorker';
 import { constantTimeCompare } from '../../../src/lib/commerce/stripeSignature';
 
-// Re-export pure worker functions for direct unit and integration tests
 export {
   processTransferBatch,
   processTransferOutboxItem,
@@ -32,7 +26,6 @@ export {
 export const onRequestPost = async (context: { request: Request; env: any }) => {
   const { request, env } = context;
 
-  // 1. Mandatory fail-closed config guards
   if (env?.PAYOUTS_ENABLED !== 'true') {
     return Response.json(
       { success: false, error: 'Payout execution is disabled.' },
@@ -56,7 +49,6 @@ export const onRequestPost = async (context: { request: Request; env: any }) => 
     );
   }
 
-  // 2. Authorization Bearer header verification with constant-time comparison
   const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return Response.json(
@@ -80,7 +72,6 @@ export const onRequestPost = async (context: { request: Request; env: any }) => 
     );
   }
 
-  // 3. Request body parsing & strict parameter rejection (never accept economic overrides)
   let limit = 10;
   try {
     const text = await request.text();
@@ -153,7 +144,6 @@ export const onRequestPost = async (context: { request: Request; env: any }) => 
     );
   }
 
-  // 4. Execute sequential batch processing
   const batchResult = await processTransferBatch(env.DB, env, { limit });
 
   return Response.json(batchResult, { status: 200 });

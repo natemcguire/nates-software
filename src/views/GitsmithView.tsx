@@ -203,27 +203,12 @@ export const GITSMITH_REPOS: GitsmithRepo[] = [
   }
 ];
 
-// Slug -> embedded showcase files. The four seeded showcase apps (dronehunter,
-// certified-mailer, wallart, american-gardener) also exist as canonical D1 repos,
-// but their committed blobs are NOT browsable through the object gateway
-// (/api/repo-file 404s for every path, including real files like README.md).
-// Rather than show a scary "File Read Unavailable / HTTP 404" for these known apps,
-// we serve their already-embedded showcase file content directly (no fetch).
 export const SHOWCASE_FILES_BY_SLUG: Record<string, GitsmithRepo['files']> =
   GITSMITH_REPOS.reduce((acc, repo) => {
     acc[repo.name] = repo.files;
     return acc;
   }, {} as Record<string, GitsmithRepo['files']>);
 
-// The four showcase apps are all owned by 'nate'. Repo slugs are unique PER-OWNER,
-// not globally (migrations/0006: UNIQUE(owner_user_id, slug)), so any user could
-// create a public repo named e.g. 'wallart'. Resolve embedded showcase files ONLY
-// for nate's canonical repo of that slug — otherwise a colliding repo would render
-// nate's files as if they were the other user's content (integrity/spoofing).
-// The showcase repos' canonical owner. mapCanonicalRepository sets `owner` to
-// ownerUsername ('nate') when present, else ownerUserId ('usr_nate') — accept both,
-// so the legit case never breaks if the username projection is ever absent, while
-// every other owner is rejected.
 const SHOWCASE_OWNERS = new Set(['nate', 'usr_nate']);
 export function showcaseFilesForRepo(repo: Pick<GitsmithRepo, 'name' | 'owner'>): GitsmithRepo['files'] | undefined {
   if (!SHOWCASE_OWNERS.has(repo.owner)) return undefined;
@@ -340,8 +325,6 @@ export const GitsmithView: React.FC = () => {
     { name: 'slop.config.json', type: 'file' },
     { name: 'package.json', type: 'file' }
   ];
-  // For canonical repos that mirror a seeded showcase app, surface the real embedded
-  // file list (with names + content) instead of the phantom candidateFiles guess.
   const showcaseFilesForSelected = selectedRepo && selectedRepo.source !== 'showcase'
     ? showcaseFilesForRepo(selectedRepo)
     : undefined;
@@ -373,10 +356,6 @@ export const GitsmithView: React.FC = () => {
       return;
     }
 
-    // Canonical repo that mirrors a seeded showcase app: serve the embedded content
-    // directly. The object gateway has no browsable blobs for these, so a fetch would
-    // 404 on every file. If the clicked file has embedded content, use it; if it's a
-    // directory or a phantom, fall through to the "select a file" empty state.
     const showcaseFiles = showcaseFilesForRepo(selectedRepo);
     if (showcaseFiles && showcaseFiles.length > 0) {
       const target = activeFile
@@ -388,7 +367,6 @@ export const GitsmithView: React.FC = () => {
       return;
     }
 
-    // Canonical repository
     if (selectedRepo.status === 'provisioning' || !selectedRepo.lastCommit.sha || selectedRepo.lastCommit.sha === 'No projected ref') {
       setFileContent(null);
       setFileError('Repository has no commits yet. Push the first commit to main to browse files.');
@@ -500,7 +478,6 @@ export const GitsmithView: React.FC = () => {
     }
   };
 
-  // Interactive Resizable Split Panes
   const [sidebarWidth, setSidebarWidth] = useState<number>(320);
   const [fileTreeWidth, setFileTreeWidth] = useState<number>(240);
   const isDraggingSidebar = useRef(false);
@@ -573,7 +550,6 @@ export const GitsmithView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#0f172a] text-slate-200 font-sans text-xs overflow-hidden select-none">
-      {/* Top Forge Navigation Bar */}
       <div className="bg-[#1e293b] border-b border-slate-700 px-4 py-2.5 flex items-center justify-between flex-wrap gap-2 shadow-md">
         <div className="flex items-center gap-3">
           <div 
@@ -590,7 +566,6 @@ export const GitsmithView: React.FC = () => {
           </span>
         </div>
 
-        {/* Global Stats Badges */}
         <div className="flex items-center gap-2.5 text-xs font-mono">
           <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-emerald-400">
             <ShieldCheck size={14} />
@@ -660,7 +635,6 @@ export const GitsmithView: React.FC = () => {
         </form>
       )}
 
-      {/* Main Forge Body Grid with Resizable Split Panes */}
       {showingShowcases ? (
         <div className="bg-amber-950/80 border-b border-amber-700 px-4 py-2 text-[11px] text-amber-200 font-mono flex items-center justify-between">
           <span>DEMO GALLERY — Bundled showcase snapshots for UI preview only. Not canonical repositories, gateway objects, or live forge state.</span>
@@ -688,12 +662,10 @@ export const GitsmithView: React.FC = () => {
         </div>
       )}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Repository Sidebar (Drag-Resizable Width) */}
         <div 
           style={{ width: `${sidebarWidth}px`, minWidth: '220px', maxWidth: '520px' }}
           className="border-r border-slate-700 bg-[#0f172a] flex flex-col overflow-hidden shrink-0"
         >
-          {/* Search Header */}
           <div className="p-3 border-b border-slate-700 bg-[#1e293b]">
             <div className="relative">
               <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -738,7 +710,6 @@ export const GitsmithView: React.FC = () => {
             </div>
           </div>
 
-          {/* Repo List Items */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-800">
             {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
               <div className="p-4 space-y-3 text-slate-300">
@@ -776,9 +747,6 @@ export const GitsmithView: React.FC = () => {
                   onClick={() => {
                     playClickSound();
                     setSelectedRepo(repo);
-                    // Prefer the repo's own files; for a canonical repo mirroring a
-                    // seeded showcase app, seed activeFile from the embedded showcase
-                    // files so the tree highlight + preview line up on first click.
                     const seedFiles = repo.files.length > 0
                       ? repo.files
                       : (repo.source !== 'showcase' ? showcaseFilesForRepo(repo) : undefined) || repo.files;
@@ -820,7 +788,6 @@ export const GitsmithView: React.FC = () => {
           </div>
         </div>
 
-        {/* DRAG RESIZER 1: Between Sidebar and Main Bay */}
         <div
           onMouseDown={startResizeSidebar}
           className="w-1.5 hover:w-2 bg-slate-800 hover:bg-sky-500 cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
@@ -829,7 +796,6 @@ export const GitsmithView: React.FC = () => {
           <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
         </div>
 
-        {/* Right Column: Selected Repo Detail View (GitHub IDE Style) */}
         <div className="flex-1 flex flex-col bg-[#0b1120] overflow-y-auto p-4 space-y-3 min-w-0">
           {!selectedRepo || repositoryCatalog.length === 0 ? (
             <div className="m-auto max-w-xl rounded-lg border border-slate-700 bg-slate-900 p-6 text-center shadow-xl">
@@ -850,7 +816,6 @@ export const GitsmithView: React.FC = () => {
               </p>
             </div>
           ) : (<>
-          {/* Repo Title Header Banner */}
           <div className="bg-[#1e293b] border border-slate-700 rounded-lg p-4 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
               <div>
@@ -890,7 +855,6 @@ export const GitsmithView: React.FC = () => {
                 </p>
               </div>
 
-              {/* Action Buttons: Live App, Fork, Clone */}
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   {selectedRepo.liveUrl && <a
@@ -948,7 +912,6 @@ export const GitsmithView: React.FC = () => {
               </div>
             </div>
 
-            {/* Meta Stats Bar */}
             <div className="pt-3 border-t border-slate-700 flex items-center justify-between text-xs text-slate-300 flex-wrap gap-2 font-mono">
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-1.5 text-sky-400 font-bold bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
@@ -958,7 +921,6 @@ export const GitsmithView: React.FC = () => {
                 <span>License: <strong className="text-white">{selectedRepo.license}</strong></span>
               </div>
 
-              {/* Verified Commit Badge */}
               <div className="flex items-center gap-2 bg-slate-900 px-3 py-1 rounded border border-slate-700">
                 <Clock size={13} className="text-slate-400" />
                 <span className="text-slate-400">
@@ -975,7 +937,6 @@ export const GitsmithView: React.FC = () => {
             </div>
           </div>
 
-          {/* Sub Tabs: Code & Files / Commit Log / Lineage */}
           <div className="flex items-center gap-2 border-b border-slate-700 select-none">
             <button
               onClick={() => { playClickSound(); setActiveTab('code'); }}
@@ -1009,10 +970,8 @@ export const GitsmithView: React.FC = () => {
             </button>
           </div>
 
-          {/* Tab 1: Code & Files with Resizable File Tree and Line Numbers */}
           {activeTab === 'code' && (
             <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] shadow-md flex flex-col flex-1 min-h-[420px]">
-              {/* File Breadcrumb & Action Bar */}
               <div className="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between font-mono text-xs">
                 <div className="flex items-center gap-2 text-white font-bold">
                   <FileCode size={15} className="text-sky-400" />
@@ -1038,7 +997,6 @@ export const GitsmithView: React.FC = () => {
               </div>
 
               <div className="flex flex-1 overflow-hidden">
-                {/* File List Tree Sidebar (Drag-Resizable Width) */}
                 <div 
                   style={{ width: `${fileTreeWidth}px`, minWidth: '160px', maxWidth: '460px' }}
                   className="bg-[#0f172a] p-2 space-y-1 overflow-y-auto shrink-0"
@@ -1075,7 +1033,6 @@ export const GitsmithView: React.FC = () => {
                   })}
                 </div>
 
-                {/* DRAG RESIZER 2: Between File Tree and Code Editor */}
                 <div
                   onMouseDown={startResizeFileTree}
                   className="w-1.5 hover:w-2 bg-slate-800 hover:bg-sky-500 cursor-col-resize flex items-center justify-center transition-all z-20 select-none group"
@@ -1084,7 +1041,6 @@ export const GitsmithView: React.FC = () => {
                   <GripVertical size={10} className="text-slate-500 group-hover:text-white" />
                 </div>
 
-                {/* Code Editor Viewport */}
                 {fileLoading ? (
                   <div className="flex-1 bg-[#090d16] p-6 font-mono text-xs text-slate-400 flex items-center justify-center">
                     <div className="flex items-center gap-2">
@@ -1105,14 +1061,12 @@ export const GitsmithView: React.FC = () => {
                   </div>
                 ) : fileContent !== null ? (
                   <div className="flex-1 bg-[#090d16] p-4 font-mono text-xs overflow-auto text-slate-100 flex min-w-0">
-                    {/* Line Numbers Gutter */}
                     <div className="select-none text-slate-600 text-right pr-4 border-r border-slate-800 font-mono space-y-1 shrink-0">
                       {codeLines.map((_: string, i: number) => (
                         <div key={i} className="leading-relaxed">{i + 1}</div>
                       ))}
                     </div>
 
-                    {/* Code Text Content */}
                     <div className="pl-4 flex-1 space-y-1 overflow-x-auto select-text font-mono text-slate-200">
                       {codeLines.map((line: string, i: number) => (
                         <div key={i} className="leading-relaxed whitespace-pre font-mono">
@@ -1130,7 +1084,6 @@ export const GitsmithView: React.FC = () => {
             </div>
           )}
 
-          {/* Tab 2: Commit Log & CAS Reflog */}
           {activeTab === 'commits' && (
             <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-3 shadow-md">
               <div className="font-mono text-sm font-bold text-white mb-2 flex items-center justify-between">
@@ -1161,7 +1114,6 @@ export const GitsmithView: React.FC = () => {
             </div>
           )}
 
-          {/* Tab 3: Lineage Settlement */}
           {activeTab === 'lineage' && (
             <div className="border border-slate-700 rounded-lg overflow-hidden bg-[#1e293b] p-4 space-y-4 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-700 pb-3">
@@ -1196,7 +1148,6 @@ export const GitsmithView: React.FC = () => {
           </>)}
         </div>
       </div>
-      {/* 1-Click Fork & Code with AI Modal */}
       {selectedRepo && repositoryCatalog.length > 0 && selectedRepo.source === 'canonical' && <ForkWithAiModal
         isOpen={showForkModal}
         onClose={() => setShowForkModal(false)}

@@ -53,7 +53,6 @@ describe('Marketplace Phase C-render: Markdown & ArtifactSandbox UI', () => {
   it('ArtifactSandbox renders the "Spec" tab with Win95 aesthetic', () => {
     const html = renderSandbox();
 
-    // Verify Tab Switcher contains Live App, Spec, Shots, Comments
     expect(html).toContain('Live App');
     expect(html).toContain('Spec');
     expect(html).toContain('Shots');
@@ -61,11 +60,6 @@ describe('Marketplace Phase C-render: Markdown & ArtifactSandbox UI', () => {
     expect(html).toContain('btn-w95');
   });
 
-  // The contributor-grant CREATE surface (publish-time grantable_bps input,
-  // grant-recording at merge-approve) was removed when contributors were
-  // dropped from the money model. grantable_bps itself remains a historical
-  // column — apps with a pre-existing nonzero value still render this
-  // read-only badge; new drops never set it, so it never appears for them.
   describe('legacy grantable_bps badge (read-only historical display)', () => {
     const badgeBaseApp: AppListing = {
       id: 'app_test_badge',

@@ -1,5 +1,3 @@
-// Types and Interfaces for GITSMITH Bare Git Gateway & Forge Outbox Dispatcher
-
 export type RepositoryObjectFormat = 'sha1' | 'sha256';
 export type RefOperation = 'create' | 'update' | 'delete';
 
@@ -278,4 +276,3 @@ export interface InspectCommitTreeResult {
   readonly manifestContents?: Record<string, string>;
   readonly error?: string;
 }
-

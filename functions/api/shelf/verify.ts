@@ -1,7 +1,3 @@
-// Server-authoritative license & shelf verification endpoint.
-// Confirms that the authenticated session user holds an active commerce license for the requested app.
-// Plaintext license keys are never stored or compared at rest beyond SHA-256 hash matching.
-
 import { requireAuth } from '../_auth';
 import { hashLicenseKey } from '../../../src/lib/commerce/licenseCrypto';
 
@@ -43,7 +39,6 @@ export const handleVerify = async ({ request, env }: { request: Request; env: an
     }
 
     if (appId && presentedKey) {
-      // Both appId and licenseKey provided: verify that session user owns this appId WITH this key
       const keyHash = await hashLicenseKey(presentedKey);
       const row = await env.DB.prepare(`
         SELECT cl.id, cl.app_id AS appId, cl.license_key_last4 AS licenseKeyLast4,
@@ -78,7 +73,6 @@ export const handleVerify = async ({ request, env }: { request: Request; env: an
     }
 
     if (appId) {
-      // Gated ownership check for session user by appId
       const row = await env.DB.prepare(`
         SELECT cl.id, cl.app_id AS appId, cl.license_key_last4 AS licenseKeyLast4,
                cl.status, cl.issued_at AS purchasedDate
@@ -112,7 +106,6 @@ export const handleVerify = async ({ request, env }: { request: Request; env: an
     }
 
     if (presentedKey) {
-      // License key verification for session user (presentedKey only)
       const keyHash = await hashLicenseKey(presentedKey);
       const row = await env.DB.prepare(`
         SELECT cl.id, cl.app_id AS appId, cl.license_key_last4 AS licenseKeyLast4,

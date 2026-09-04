@@ -9,7 +9,6 @@ import {
 
 describe('DYNO Real-World AI Developer Benchmark Suite', () => {
   it('should calculate credible real-world developer scores deterministically across all performance dimensions', () => {
-    // High-performing autonomous run
     const result = calculateDynoScore({
       tasksCompleted: 44,
       totalTasks: 50,
@@ -69,7 +68,6 @@ describe('DYNO Real-World AI Developer Benchmark Suite', () => {
   });
 
   it('should eliminate hardcoded fabricated leaderboard presets in favor of canonical D1 querying', () => {
-    // LEADERBOARD_PRESETS must be empty to ensure the product never serves fake/hardcoded leaderboards
     expect(LEADERBOARD_PRESETS).toEqual([]);
   });
 });

@@ -1,26 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 interface VoxelRevealProps {
-  /** The emoji glyph to render as assembling voxels. */
   glyph: string;
-  /** Pixel size of the square canvas (matches the icon glyph box, ~64). */
   size?: number;
-  /** How many blocks across/down (lower = chunkier voxels). */
   grid?: number;
-  /** Seconds the assembly takes. */
   duration?: number;
-  /** Delay (ms) before the assembly starts (canvas stays blank until then). */
   startDelayMs?: number;
-  /** Fires once the reveal finishes so the parent can swap to the real glyph. */
   onDone?: () => void;
 }
 
-/**
- * Real canvas voxel reveal: rasterizes the emoji, then materializes it as a grid
- * of chunky blocks that pop in over `duration` — each block fades + drops into
- * place on its own randomized delay, so the icon assembles out of voxels rather
- * than fading uniformly. Uses requestAnimationFrame; honors reduced-motion.
- */
 export const VoxelReveal: React.FC<VoxelRevealProps> = ({
   glyph,
   size = 64,
@@ -45,8 +33,6 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
     const reduced = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-    // 1) Rasterize the emoji onto an offscreen buffer, then read which grid cells
-    //    are "solid" (non-transparent) so empty cells never get a block.
     const buf = document.createElement('canvas');
     buf.width = size; buf.height = size;
     const bctx = buf.getContext('2d');
@@ -61,7 +47,6 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
       for (let gy = 0; gy < grid; gy++) {
         for (let gx = 0; gx < grid; gx++) {
           const d = bctx.getImageData(gx * cell, gy * cell, Math.ceil(cell), Math.ceil(cell)).data;
-          // average alpha + colour over the cell
           let a = 0, r = 0, g = 0, b = 0, n = 0;
           for (let i = 0; i < d.length; i += 4) { a += d[i + 3]; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
           const alpha = a / n;
@@ -71,8 +56,7 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
       }
     }
 
-    // 2) Per-block randomized start time within the duration.
-    const starts = cellSolid.map(() => Math.random() * 0.65); // fraction of duration
+    const starts = cellSolid.map(() => Math.random() * 0.65);
     const cell = size / grid;
     const t0 = performance?.now?.() ?? 0;
     let raf = 0;
@@ -80,18 +64,16 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
     if (reduced) { setDone(true); onDone?.(); return; }
 
     const frame = (now: number) => {
-      // Hold blank until the random start delay elapses (staggered per-icon reveal).
       const elapsed = now - t0 - startDelayMs;
       if (elapsed < 0) { raf = requestAnimationFrame(frame); return; }
       const t = Math.min(1, elapsed / (duration * 1000));
       ctx.clearRect(0, 0, size, size);
       for (let i = 0; i < cellSolid.length; i++) {
         if (!cellSolid[i]) continue;
-        const local = (t - starts[i]) / (1 - starts[i]); // 0..1 for this block
+        const local = (t - starts[i]) / (1 - starts[i]);
         if (local <= 0) continue;
         const p = Math.min(1, local);
         const gx = i % grid, gy = Math.floor(i / grid);
-        // block drops in from slightly above + scales up + fades in, hard-edged.
         const drop = (1 - p) * cell * 1.2;
         const inset = (1 - p) * cell * 0.35;
         ctx.globalAlpha = p;
@@ -110,7 +92,6 @@ export const VoxelReveal: React.FC<VoxelRevealProps> = ({
     return () => cancelAnimationFrame(raf);
   }, [glyph, size, grid, duration, startDelayMs, onDone]);
 
-  // Once done, render nothing (parent shows the real DOM glyph).
   if (done) return null;
   return (
     <canvas

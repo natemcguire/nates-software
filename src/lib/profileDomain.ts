@@ -1,5 +1,3 @@
-// Production Domain Logic for PROFILE.CFG & My Shelf
-// Truthful First-Run Architecture & Cryptographic Entitlements
 
 export interface PublicMakerProfile {
   readonly username: string;
@@ -61,7 +59,6 @@ export interface PublishedArtifactLink {
   readonly url: string;
 }
 
-/** Accept only known, HTTPS maker-published artifact actions. */
 export function publishedArtifactLinks(value: unknown): PublishedArtifactLink[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
   const links: PublishedArtifactLink[] = [];
@@ -73,7 +70,6 @@ export function publishedArtifactLinks(value: unknown): PublishedArtifactLink[] 
       if (url.protocol !== 'https:') continue;
       links.push({ kind, label, url: url.toString() });
     } catch {
-      // Invalid maker metadata is omitted instead of becoming a clickable URL.
     }
   }
   return links;
@@ -110,9 +106,6 @@ export interface ProfileValidationInput {
 
 import { ALLOWED_SSH_KEY_TYPES } from './sshDomain';
 
-/**
- * Validates maker profile fields against security and format rules.
- */
 export function validateMakerProfile(profile: ProfileValidationInput): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -155,11 +148,6 @@ export function validateMakerProfile(profile: ProfileValidationInput): { valid: 
   };
 }
 
-/**
- * Safely masks a license key for display in UI and public-safe API responses.
- * Never leaks the high-entropy body or plaintext secret.
- * Output example: "NSW-DH-••••-77F2"
- */
 export function maskLicenseKey(rawKey: string | undefined, appId?: string): string {
   if (!rawKey || typeof rawKey !== 'string') {
     const prefix = ((appId || 'SW').slice(0, 2)).toUpperCase();
@@ -176,19 +164,12 @@ export function maskLicenseKey(rawKey: string | undefined, appId?: string): stri
   return `NSW-${prefix}-••••-${last4}`;
 }
 
-/**
- * Extracts the last 4 characters of a license key.
- */
 export function extractLicenseKeyLast4(rawKey: string): string {
   if (!rawKey || typeof rawKey !== 'string') return '0000';
   const trimmed = rawKey.trim();
   return trimmed.length >= 4 ? trimmed.slice(-4) : trimmed.padStart(4, '0');
 }
 
-/**
- * Sanitizes a raw database user record into a strictly public maker profile.
- * Guarantees zero leakage of private credentials, Stripe accounts, or full licenses.
- */
 export function sanitizePublicProfile(rawUser: any): PublicMakerProfile {
   if (!rawUser) {
     throw new Error('rawUser is required for sanitization');
@@ -204,10 +185,6 @@ export function sanitizePublicProfile(rawUser: any): PublicMakerProfile {
   };
 }
 
-/**
- * Formats integer cents to USD currency string.
- * Example: 242000 -> "$2,420.00"
- */
 export function formatCentsToUsd(cents: number): string {
   const safeCents = Number.isFinite(cents) && cents >= 0 ? cents : 0;
   const dollars = safeCents / 100;
@@ -219,9 +196,6 @@ export function formatCentsToUsd(cents: number): string {
   }).format(dollars);
 }
 
-/**
- * Calculates maker royalties summary from authoritative allocation records.
- */
 export function calculateMakerEconomics(
   allocations: Array<{ role: string; amount_cents: number; app_id?: string; name?: string }> = []
 ): MakerRoyaltiesSummary {
@@ -239,9 +213,6 @@ export function calculateMakerEconomics(
     }
     const entry = breakdownMap.get(appId)!;
 
-    // 'seller' is the maker's own direct-sale cut under the Shareware, Restored model;
-    // 'maker' is the retired pre-rewrite role, kept here so historical allocation rows
-    // still count toward earnings.
     if (alloc.role === 'seller' || alloc.role === 'maker') {
       makerSalesCents += cents;
       entry.direct += cents;

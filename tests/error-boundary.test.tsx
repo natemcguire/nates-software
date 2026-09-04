@@ -35,7 +35,6 @@ describe('ErrorBoundary Component', () => {
 
     const html = renderToString(boundary.render() as React.ReactElement);
 
-    // Visual language and fallback content
     expect(html).toContain('HOTWIRE — Application Error');
     expect(html).toContain('A fatal error occurred in HOTWIRE.');
     expect(html).toContain('The component crashed and was terminated to protect the web OS environment.');
@@ -166,7 +165,6 @@ describe('ErrorBoundary Component', () => {
     };
     boundary.setState = vi.fn();
 
-    // Prop update with different resetKeys (e.g. window reopened isOpen: true)
     boundary.componentDidUpdate({ resetKeys: [true] });
 
     expect(boundary.setState).toHaveBeenCalledWith({
@@ -232,18 +230,15 @@ describe('ErrorBoundary Component', () => {
       onDismiss: () => { isOpen = false; }
     });
 
-    // 1. Crash state
     boundary.state = {
       hasError: true,
       error: new Error('Simulated runtime error in Hotwire'),
       errorInfo: null
     };
 
-    // 2. User dismisses window
     boundary.handleDismiss();
     expect(isOpen).toBe(false);
 
-    // 3. Reopening window mounts fresh ErrorBoundary
     const freshBoundary = new ErrorBoundary({
       fallbackTitle: 'HOTWIRE',
       children: <div data-testid="hotwire-view">Fresh Hotwire Drops</div>
@@ -262,12 +257,10 @@ describe('Web OS Desktop with Error Boundaries', () => {
       </AlertProvider>
     );
 
-    // Desktop icons and taskbar rendered
     expect(html).toContain('SETUP.EXE');
     expect(html).toContain('TERMINAL.EXE');
     expect(html).toContain('HOTWIRE');
     expect(html).toContain('GITSMITH');
-    // Top-level didn't trigger error boundary
     expect(html).not.toContain('Software Web OS — Application Error');
   });
 });

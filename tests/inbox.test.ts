@@ -71,9 +71,6 @@ describe('INBOX.EXE live-mode integrity', () => {
     ).run();
   }
 
-  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
-  // (Fix 1, RIG spec) can be satisfied by pre-existing tests in this file
-  // that predate it — see seedEvidenceBundleForApproval below.
   const storage = {
     store: new Map<string, Uint8Array>(),
     async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
@@ -84,9 +81,6 @@ describe('INBOX.EXE live-mode integrity', () => {
     }
   };
 
-  // Seeds a passing build_runs row + matching R2 evidence bundle for a merge
-  // attempt, so a subsequent 'approve' satisfies the evidence-bundle gate.
-  // Idempotent: no-ops if the attempt already has a recorded bundle.
   async function seedEvidenceBundleForApproval(mergeAttemptId: string) {
     const attempt: any = await ctx.d1.prepare(`
       SELECT ma.id, ma.result_commit_oid AS resultCommitOid, mj.target_repository_id AS repositoryId
@@ -116,10 +110,6 @@ describe('INBOX.EXE live-mode integrity', () => {
   const get = (url = 'http://localhost/api/inbox', authenticated = true) => inboxApi.onRequestGet({
     request: new Request(url, authenticated ? { headers: authHeaders } : undefined), env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot, STORAGE: storage as any }
   });
-  // Auto-fills the reviewer-saw-OID confirmation fields for 'approve' actions from the
-  // merge attempt's current OIDs, unless the test already specified them (so tests that
-  // intentionally probe the evidence gate itself can still override/omit), and seeds a
-  // matching signed evidence bundle so pre-existing tests satisfy the Fix 1 approval gate.
   const post = async (body: any) => {
     let payload = body;
     if (body && typeof body === 'object' && body.action === 'approve' && body.messageId &&
@@ -204,7 +194,6 @@ describe('INBOX.EXE live-mode integrity', () => {
     await insertMessage(ownMessage('unread-1', { unread: 1 }));
     await insertMessage(ownMessage('unread-2', { unread: 1 }));
     await insertMessage(ownMessage('already-read', { unread: 0 }));
-    // A message the current user sent to someone else must never count, even if flagged unread.
     await insertMessage({ ...ownMessage('sent-by-me'), user_id: 'usr_sam', sender_id: 'usr_nate', unread: 1 });
 
     const response = await get('http://localhost/api/inbox?action=unread-count');
@@ -213,7 +202,6 @@ describe('INBOX.EXE live-mode integrity', () => {
   });
 
   it('GET ?action=unread-count is strictly scoped to the caller and never leaks another mailbox', async () => {
-    // Two unread messages belong to usr_sam; usr_nate (the authenticated caller) has none.
     await insertMessage({ ...ownMessage('sam-unread-1'), user_id: 'usr_sam', sender_id: 'usr_josh', unread: 1 });
     await insertMessage({ ...ownMessage('sam-unread-2'), user_id: 'usr_sam', sender_id: 'usr_josh', unread: 1 });
 
@@ -221,9 +209,6 @@ describe('INBOX.EXE live-mode integrity', () => {
     const nateData: any = await nateResponse.json();
     expect(nateData).toEqual({ success: true, unreadCount: 0 });
 
-    // Mint a real session for usr_sam (not the hardcoded Vitest bypass user) and call the
-    // endpoint for real, proving the SQL binds to the authenticated caller's id, not a
-    // request-supplied value.
     const samToken = 'real-session-token-for-sam';
     await ctx.d1.prepare(`
       INSERT INTO user_sessions (token_hash, user_id, expires_at)
@@ -458,9 +443,6 @@ describe('INBOX.EXE live-mode integrity', () => {
   });
 
   it('renders a truthful first frame — the local agent-mailbox observer, no fabricated data', () => {
-    // Reworked in task #42: INBOX is now a single-purpose local agent-mailbox
-    // observer. First frame probes the loopback service and shows no data until
-    // it connects (honesty contract) — never fake mail or fabricated amounts.
     const html = renderToString(React.createElement(AuthProvider, null, React.createElement(InboxView)));
     expect(html).toContain('Local Agent Mailbox');
     expect(html).toContain('127.0.0.1:8791');

@@ -1,8 +1,3 @@
-// Temporary Test Sandbox for DYNO benchmark runner
-// Provides filesystem and process isolation for executing and grading benchmark tasks.
-// Prevents directory traversal, filters environment variables, enforces timeouts,
-// and tracks file modifications against initial fixture manifests.
-
 import { mkdtemp, rm, readFile, writeFile, unlink, readdir, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -53,12 +48,10 @@ export function sanitizeEnvironment(customEnv?: Record<string, string>): Record<
     CI: 'true'
   };
 
-  // Filter out host environment variables that might leak secrets
   for (const [key, value] of Object.entries(process.env)) {
     if (!value) continue;
     const upperKey = key.toUpperCase();
 
-    // Check if key is sensitive
     const isSensitive = SENSITIVE_ENV_PREFIXES.some(prefix => upperKey.startsWith(prefix)) ||
       SENSITIVE_ENV_KEYWORDS.some(keyword => upperKey.includes(keyword));
 
@@ -67,7 +60,6 @@ export function sanitizeEnvironment(customEnv?: Record<string, string>): Record<
     }
   }
 
-  // Merge custom environment overrides
   if (customEnv) {
     for (const [k, v] of Object.entries(customEnv)) {
       if (v !== undefined) {
@@ -92,9 +84,6 @@ export class DynoSandbox implements DynoSandboxInstance {
     this.networkPolicy = networkPolicy;
   }
 
-  /**
-   * Initializes a new temporary sandbox with optional initial fixture files.
-   */
   static async create(options?: {
     initialFiles?: Record<string, string>;
     tracer?: DynoTracerInstance;
@@ -109,7 +98,6 @@ export class DynoSandbox implements DynoSandboxInstance {
       for (const [relPath, content] of Object.entries(options.initialFiles)) {
         await sandbox.writeFile(relPath, content);
       }
-      // Snapshot initial files
       await sandbox.snapshotInitialFiles();
     }
 
@@ -200,7 +188,6 @@ export class DynoSandbox implements DynoSandboxInstance {
     async function walk(currentDir: string, baseDir: string) {
       const entries = await readdir(currentDir, { withFileTypes: true });
       for (const entry of entries) {
-        // Skip .git or temporary hidden files
         if (entry.name === '.git') continue;
         const full = join(currentDir, entry.name);
         if (entry.isDirectory()) {
@@ -220,7 +207,6 @@ export class DynoSandbox implements DynoSandboxInstance {
     const safety = classifyCommandSafety(fullCmd, this.networkPolicy);
     const startTime = Date.now();
 
-    // Policy-blocked and critically unsafe commands never reach the shell.
     if (safety === 'violation' || safety === 'blocked') {
       const result: DynoExecResult = {
         exitCode: 126,
@@ -247,7 +233,7 @@ export class DynoSandbox implements DynoSandboxInstance {
 
     const workingDir = options.cwd ? this.resolveSafePath(options.cwd) : this.dir;
     const timeoutMs = options.timeoutMs || 30_000;
-    const maxBuffer = options.maxBufferBytes || 1024 * 1024 * 5; // 5MB
+    const maxBuffer = options.maxBufferBytes || 1024 * 1024 * 5;
 
     const env = sanitizeEnvironment(options.env);
 
@@ -344,7 +330,6 @@ export class DynoSandbox implements DynoSandboxInstance {
     const created: string[] = [];
     const deleted: string[] = [];
 
-    // Check created & modified
     for (const file of currentFiles) {
       const fullPath = this.resolveSafePath(file);
       const currentHash = await sha256File(fullPath);
@@ -359,7 +344,6 @@ export class DynoSandbox implements DynoSandboxInstance {
       }
     }
 
-    // Check deleted
     for (const [file] of this.initialFileHashes.entries()) {
       if (!currentFilesSet.has(file)) {
         deleted.push(file);
@@ -386,7 +370,6 @@ export class DynoSandbox implements DynoSandboxInstance {
         await rm(this.dir, { recursive: true, force: true });
       }
     } catch {
-      // Ignore cleanup error in tmp directory
     }
   }
 }

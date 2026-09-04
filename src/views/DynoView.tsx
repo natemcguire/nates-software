@@ -35,18 +35,15 @@ export const DynoView: React.FC = () => {
   const [copiedBadge, setCopiedBadge] = useState(false);
   const [showSchemaExample, setShowSchemaExample] = useState(false);
 
-  // Leaderboard data
   const [leaderboardRuns, setLeaderboardRuns] = useState<any[]>([]);
   const [leaderboardFilter, setLeaderboardFilter] = useState<'all' | 'mine'>('all');
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardSuite, setLeaderboardSuite] = useState<any | null>(null);
 
-  // Selected run for deep inspection / export
   const [selectedRun, setSelectedRun] = useState<any | null>(null);
   const [selectedAttemptIndex, setSelectedAttemptIndex] = useState<number>(0);
 
-  // Import Tab state
   const [importJsonText, setImportJsonText] = useState('');
   const [importValidation, setImportValidation] = useState<{
     valid: boolean;
@@ -58,10 +55,6 @@ export const DynoView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitFeedback, setSubmitFeedback] = useState<{ success: boolean; message: string; runId?: string } | null>(null);
 
-  // Setup tab state
-  // DYNO does not ship pre-integrated model adapters — the form starts blank
-  // so the product never implies a "supported" model/harness/command that
-  // does not exist. The user configures their own subject.
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedHarness, setSelectedHarness] = useState('');
   const [agentCommand, setAgentCommand] = useState('');
@@ -69,7 +62,6 @@ export const DynoView: React.FC = () => {
   const [selectedNetworkPolicy, setSelectedNetworkPolicy] = useState<'none' | 'local_only' | 'isolated'>('none');
   const [activeFixtureIndex, setActiveFixtureIndex] = useState<number>(0);
 
-  // Verifier availability (Part 2 — honest verified-tier status)
   const [verifierStatus, setVerifierStatus] = useState<{ acceptingJobs: boolean; message: string } | null>(null);
   const [loadingVerifierStatus, setLoadingVerifierStatus] = useState(false);
 
@@ -94,7 +86,6 @@ export const DynoView: React.FC = () => {
     fetchVerifierStatus();
   }, []);
 
-  // Fetch canonical leaderboard on tab change or mount
   const fetchLeaderboard = async () => {
     setLoadingLeaderboard(true);
     setLeaderboardError(null);
@@ -120,13 +111,11 @@ export const DynoView: React.FC = () => {
     }
   }, [activeTab]);
 
-  // Toggle Non-Submittable Schema Reference Example
   const handleToggleSchemaExample = () => {
     playClickSound();
     setShowSchemaExample(prev => !prev);
   };
 
-  // Validate Imported JSON Bundle
   const handleValidateBundle = () => {
     playClickSound();
     setSubmitFeedback(null);
@@ -246,7 +235,6 @@ export const DynoView: React.FC = () => {
     }
   };
 
-  // Submit Validated Bundle to /api/dyno
   const handleSubmitBundle = async () => {
     if (!importValidation?.valid || !importValidation.parsedPayload) return;
 
@@ -288,7 +276,6 @@ export const DynoView: React.FC = () => {
     });
   };
 
-  // Formatted Markdown report
   const formatReportMarkdown = () => {
     if (!selectedRun) {
       return '# DYNO LLM Dynamometer Report\n\nNo run selected. Import a Street measurement or select an official result.';
@@ -374,7 +361,6 @@ export const DynoView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
-      {/* Top Windows 95 Header */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Gauge size={18} className="text-yellow-400" />
@@ -386,8 +372,6 @@ export const DynoView: React.FC = () => {
           </div>
         </div>
 
-        {/* Tab Controls */}
-        {/* Tab Controls */}
         <div className="flex gap-1 font-sans flex-wrap">
           <button
             onClick={() => { playClickSound(); setActiveTab('setup'); }}
@@ -422,9 +406,7 @@ export const DynoView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 overflow-auto p-3 space-y-3">
-        {/* Host Execution Boundary Notice */}
         <div className="bg-blue-50 border border-blue-300 p-2.5 rounded text-[11px] text-blue-950 flex items-start gap-2">
           <ShieldCheck size={16} className="text-blue-700 shrink-0 mt-0.5" />
           <div className="space-y-0.5">
@@ -437,7 +419,6 @@ export const DynoView: React.FC = () => {
           </div>
         </div>
 
-        {/* Verifier Availability Notice — honest, live status, no fabricated "path to verified" */}
         {!loadingVerifierStatus && verifierStatus && (
           <div className={`border p-2.5 rounded text-[11px] flex items-start gap-2 ${
             verifierStatus.acceptingJobs
@@ -452,12 +433,8 @@ export const DynoView: React.FC = () => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 1: RUNNER SETUP & CLI GUIDE */}
-        {/* ========================================================================= */}
         {activeTab === 'setup' && (
           <div className="space-y-3">
-            {/* Configuration Box */}
             <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
               <div className="flex items-center justify-between border-b border-gray-200 pb-2">
                 <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
@@ -531,7 +508,6 @@ export const DynoView: React.FC = () => {
                 </p>
               </div>
 
-              {/* CLI Command Generator */}
               <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs border border-gray-700 relative">
                 <div className="text-[10px] text-gray-400 mb-1"># Execute local benchmark via CLI runner:</div>
                 <div className="select-all">
@@ -547,7 +523,6 @@ export const DynoView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Local Storage & Non-Submittable Schema Notice */}
               <div className="flex items-center justify-between pt-1 border-t border-gray-200 flex-wrap gap-2 text-[11px]">
                 <div className="text-gray-600 flex items-center gap-1.5">
                   <Info size={14} className="text-blue-700 shrink-0" />
@@ -562,7 +537,6 @@ export const DynoView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Schema Example Box */}
               {showSchemaExample && (
                 <div className="p-2.5 bg-gray-900 text-gray-200 rounded font-mono text-[10px] space-y-1.5 border border-yellow-500/50">
                   <div className="flex items-center justify-between text-yellow-400 font-bold border-b border-gray-700 pb-1">
@@ -576,7 +550,6 @@ export const DynoView: React.FC = () => {
               )}
             </div>
 
-            {/* Neutral Dev Tasks Matrix */}
             <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
@@ -587,7 +560,6 @@ export const DynoView: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                {/* Task List */}
                 <div className="md:col-span-1 space-y-1 overflow-y-auto max-h-72 border p-1 rounded bg-gray-50">
                   {NEUTRAL_DEV_FIXTURES.map((task, idx) => (
                     <button
@@ -610,7 +582,6 @@ export const DynoView: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Selected Task Details */}
                 <div className="md:col-span-2 border p-3 rounded bg-white space-y-2 text-xs">
                   <div className="flex items-center justify-between border-b pb-1">
                     <span className="font-bold text-sm text-gray-900">{activeFixture.title}</span>
@@ -651,9 +622,6 @@ export const DynoView: React.FC = () => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 2: IMPORT & VALIDATE EXECUTION BUNDLE */}
-        {/* ========================================================================= */}
         {activeTab === 'import' && (
           <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
             <div className="flex items-center justify-between border-b border-gray-200 pb-2 flex-wrap gap-2">
@@ -675,7 +643,6 @@ export const DynoView: React.FC = () => {
               </button>
             </div>
 
-            {/* Schema Example Box */}
             {showSchemaExample && (
               <div className="p-2.5 bg-gray-900 text-gray-200 rounded font-mono text-[10px] space-y-1 border border-yellow-500/50">
                 <div className="flex items-center justify-between text-yellow-400 font-bold border-b border-gray-700 pb-1">
@@ -688,7 +655,6 @@ export const DynoView: React.FC = () => {
               </div>
             )}
 
-            {/* Textarea for JSON payload */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold text-gray-700">
                 Run Execution JSON Payload (`DynoRunExecutionResult` from `~/.dyno/report.json`):
@@ -702,7 +668,6 @@ export const DynoView: React.FC = () => {
               />
             </div>
 
-            {/* Validation & Ingest Actions */}
             <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
               <button
                 onClick={handleValidateBundle}
@@ -725,7 +690,6 @@ export const DynoView: React.FC = () => {
               )}
             </div>
 
-            {/* Validation Outcome Report */}
             {importValidation && (
               <div className={`p-3 rounded border text-xs ${
                 importValidation.valid ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-red-50 border-red-300 text-red-950'
@@ -762,7 +726,6 @@ export const DynoView: React.FC = () => {
               </div>
             )}
 
-            {/* Submission Feedback */}
             {submitFeedback && (
               <div className={`p-3 rounded border text-xs ${
                 submitFeedback.success ? 'bg-green-50 border-green-300 text-green-950' : 'bg-red-50 border-red-300 text-red-950'
@@ -784,9 +747,6 @@ export const DynoView: React.FC = () => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 3: VERIFIED LEADERBOARD */}
-        {/* ========================================================================= */}
         {activeTab === 'leaderboard' && (() => {
           const displayedRuns = leaderboardFilter === 'mine' && user?.username
             ? leaderboardRuns.filter(r => (r.username === user.username || r.owner === user.username))
@@ -957,9 +917,6 @@ export const DynoView: React.FC = () => {
           );
         })()}
 
-        {/* ========================================================================= */}
-        {/* TAB 4: RUN INSPECTOR & CRYPTOGRAPHIC EVIDENCE */}
-        {/* ========================================================================= */}
         {activeTab === 'inspector' && (
           <div className="space-y-3">
             {!selectedRun ? (
@@ -986,7 +943,6 @@ export const DynoView: React.FC = () => {
               </div>
             ) : (
               <>
-                {/* Run Metadata & Key KPI Summary */}
                 <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-3">
                   <div className="flex items-center justify-between border-b border-gray-200 pb-2 flex-wrap gap-2">
                     <div>
@@ -1019,7 +975,6 @@ export const DynoView: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* KPIs */}
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 text-center pt-1">
                     <div className="bg-blue-50 border border-blue-200 p-2 rounded">
                       <div className="text-[10px] text-gray-600 font-bold">DYNO DEV SCORE</div>
@@ -1079,7 +1034,6 @@ export const DynoView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Cryptographic Digests Box */}
                 <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-2">
                   <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
                     <ShieldCheck size={14} className="text-green-700" />
@@ -1103,7 +1057,6 @@ export const DynoView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Task Attempts Matrix */}
                 <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-2">
                   <span className="font-bold text-xs uppercase tracking-wide text-gray-800 flex items-center gap-1.5">
                     <FileCode size={14} className="text-blue-700" />
@@ -1170,12 +1123,8 @@ export const DynoView: React.FC = () => {
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* TAB 5: REPORT & DYNAMIC BADGE */}
-        {/* ========================================================================= */}
         {activeTab === 'export' && (
           <div className="space-y-3">
-            {/* Markdown Report Card */}
             <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-2">
               <div className="flex items-center justify-between border-b pb-2">
                 <span className="font-bold text-xs uppercase tracking-wide text-gray-800">
@@ -1195,7 +1144,6 @@ export const DynoView: React.FC = () => {
               </pre>
             </div>
 
-            {/* Dynamic SVG Badge */}
             <div className="bg-white border-2 border-gray-400 p-3 shadow-inner rounded-sm space-y-2">
               <div className="flex items-center justify-between border-b pb-2">
                 <span className="font-bold text-xs uppercase tracking-wide text-gray-800">

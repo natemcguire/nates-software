@@ -27,7 +27,6 @@ export class LocalProcessSession implements TerminalSession {
     this.lastActivityAt = Date.now();
     this.child = child;
 
-    // Attach output streams
     if (this.child.stdout) {
       this.child.stdout.on('data', (chunk: Buffer) => {
         this.lastActivityAt = Date.now();
@@ -66,10 +65,8 @@ export class LocalProcessSession implements TerminalSession {
   resize(cols: number, rows: number): void {
     if (this.destroyed || !this.child) return;
     this.lastActivityAt = Date.now();
-    // In local-process mode without native PTY openpty(), simulate terminal size via env or stty if available
     try {
       if (this.child.pid) {
-        // Send terminal dimension update if supported
       }
     } catch {}
   }
@@ -78,7 +75,6 @@ export class LocalProcessSession implements TerminalSession {
     if (this.child && !this.child.killed) {
       try {
         if (this.child.pid) {
-          // Kill process group if detached, otherwise direct child
           try {
             process.kill(-this.child.pid, signal);
           } catch {
@@ -109,14 +105,11 @@ export class LocalProcessSession implements TerminalSession {
     if (this.destroyed) return;
     this.destroyed = true;
 
-    // 1. Terminate child process
     this.kill('SIGTERM');
 
-    // Give grace period before SIGKILL
     await new Promise<void>(resolve => setTimeout(resolve, 50));
     this.kill('SIGKILL');
 
-    // 2. Erase ephemeral workspace directory recursively
     try {
       if (fs.existsSync(this.workspacePath)) {
         fs.rmSync(this.workspacePath, { recursive: true, force: true });
@@ -150,13 +143,11 @@ export class LocalProcessProvider extends BaseTerminalProvider {
     const sessionId = options.sessionId;
     const workspacePath = path.join(os.tmpdir(), `nsw-terminal-${sessionId}`);
 
-    // 1. Create clean ephemeral workspace
     if (fs.existsSync(workspacePath)) {
       fs.rmSync(workspacePath, { recursive: true, force: true });
     }
     fs.mkdirSync(workspacePath, { recursive: true });
 
-    // 2. Set up workspace bin directory and SLOP wrapper
     const binDir = path.join(workspacePath, 'bin');
     fs.mkdirSync(binDir, { recursive: true });
 
@@ -170,7 +161,6 @@ import { spawnSync } from 'node:child_process';
 const slopTs = ${JSON.stringify(slopSourcePath)};
 const repoDir = ${JSON.stringify(this.repoRoot)};
 
-// Execute slop CLI in the context of this workspace
 const res = spawnSync('npx', ['tsx', slopTs, ...process.argv.slice(2)], {
   cwd: process.cwd(),
   stdio: 'inherit',
@@ -185,7 +175,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
     const slopBinPath = path.join(binDir, 'slop');
     fs.writeFileSync(slopBinPath, slopWrapperScript, { mode: 0o755 });
 
-    // 3. Initialize workspace starter template
     const initialPkg = {
       name: `workspace-${sessionId.slice(0, 8)}`,
       version: '1.0.0',
@@ -206,7 +195,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
       `# ⚡ Nate's Software Ephemeral Workspace\n\nSession ID: \`${sessionId}\`\nInitialized: ${new Date().toISOString()}\n\nAvailable tools: \`slop\`, \`git\`, \`node\`, \`npm\`, \`npx\`.\nRun \`slop help\` to get started.\n`
     );
 
-    // Initialize git in workspace
     try {
       const gitInitRes = spawn('git', ['init', '-b', 'main', workspacePath], { stdio: 'ignore' });
       await new Promise<void>(resolve => {
@@ -215,7 +203,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
       });
     } catch {}
 
-    // 4. Clean and sanitize environment variables (Never leak LLM credentials or platform keys)
     const sanitizedEnv: Record<string, string> = {
       ...process.env as Record<string, string>,
       HOME: workspacePath,
@@ -231,7 +218,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
       NSW_PRODUCTION_VPS: 'false'
     };
 
-    // Explicitly delete sensitive keys to guarantee zero secret leakage
     const sensitiveKeyPatterns = [
       /API_KEY/i,
       /SECRET/i,
@@ -257,7 +243,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
       }
     }
 
-    // Merge any explicitly provided non-sensitive session env vars
     if (options.env) {
       for (const [k, v] of Object.entries(options.env)) {
         if (!sensitiveKeyPatterns.some(p => p.test(k))) {
@@ -266,7 +251,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
       }
     }
 
-    // 5. Select shell executable
     const shellCandidates = [
       process.env.SHELL,
       '/bin/bash',
@@ -283,7 +267,6 @@ process.exit(res.status ?? (res.error ? 1 : 0));
       }
     }
 
-    // Spawn shell
     const child = spawn(selectedShell, ['-i'], {
       cwd: workspacePath,
       env: sanitizedEnv,

@@ -1,7 +1,3 @@
-// DYNO Real-World AI Developer Benchmark Runner
-// Type definitions aligned with migrations/0007_dyno_real_world_benchmarks.sql canonical schema.
-// Independent benchmark of model + agent harness + tools on common developer tasks.
-
 export type DynoTaskCategory =
   | 'explain_repo'
   | 'find_bug'
@@ -48,10 +44,6 @@ export type DynoSafetyClassification =
 
 export type DynoNetworkPolicy = 'none' | 'isolated' | 'local_only' | 'full';
 
-// ============================================================================
-// CANONICAL DATABASE RECORD INTERFACES (Matching migration 0007)
-// ============================================================================
-
 export interface DynoSuiteRecord {
   readonly id: string;
   readonly slug: string;
@@ -84,10 +76,10 @@ export interface DynoSubjectRecord {
   readonly model_provider: string;
   readonly model_id: string;
   readonly model_version?: string | null;
-  readonly model_config: string; // JSON string
+  readonly model_config: string;
   readonly agent_harness: string;
   readonly harness_version: string;
-  readonly tool_manifest: string; // JSON string
+  readonly tool_manifest: string;
   readonly created_at?: string;
 }
 
@@ -100,7 +92,7 @@ export interface DynoEnvironmentRecord {
   readonly accelerator_model?: string | null;
   readonly memory_bytes?: number | null;
   readonly container_image_digest: string;
-  readonly runtime_manifest: string; // JSON string
+  readonly runtime_manifest: string;
   readonly network_policy: DynoNetworkPolicy;
   readonly created_at?: string;
 }
@@ -177,10 +169,6 @@ export interface DynoGraderResultRecord {
   readonly created_at?: string;
 }
 
-// ============================================================================
-// FIXTURE & GRADER SPECIFICATIONS
-// ============================================================================
-
 export interface DynoHiddenTestSpec {
   readonly name: string;
   readonly command: string;
@@ -200,7 +188,7 @@ export interface DynoGraderSpec {
   readonly version: string;
   readonly type: DynoGraderType;
   readonly description: string;
-  readonly weight?: number; // default 1
+  readonly weight?: number;
   readonly config: {
     readonly targetFiles?: readonly string[];
     readonly expectedPatterns?: readonly (string | RegExp)[];
@@ -220,7 +208,6 @@ export interface DynoFixture {
   readonly timeLimitSeconds: number;
   readonly weight: number;
   readonly files: Readonly<Record<string, string>>;
-  /** Grader-only files materialized after the agent relinquishes control. */
   readonly hiddenFiles?: Readonly<Record<string, string>>;
   readonly expectedModifiedFiles: readonly string[];
   readonly readOnlyFiles?: readonly string[];
@@ -228,12 +215,7 @@ export interface DynoFixture {
   readonly graders: readonly DynoGraderSpec[];
 }
 
-/** The only task surface an agent harness may observe. */
 export type DynoPublicTask = Omit<DynoFixture, 'hiddenFiles' | 'hiddenTests' | 'graders'>;
-
-// ============================================================================
-// SANDBOX & RUNTIME INTERFACES
-// ============================================================================
 
 export interface DynoExecOptions {
   readonly cwd?: string;
@@ -270,10 +252,6 @@ export interface DynoSandboxInstance {
   getFileChanges(expectedFiles: readonly string[]): Promise<DynoFileChangeSummary>;
   cleanup(): Promise<void>;
 }
-
-// ============================================================================
-// AGENT HARNESS & EXECUTION INTERFACES
-// ============================================================================
 
 export interface DynoExecutionContext {
   readonly runId: string;
@@ -325,10 +303,6 @@ export interface DynoTracerInstance {
   computeTraceSha256(): string;
 }
 
-// ============================================================================
-// RUNNER & AGGREGATE RESULTS
-// ============================================================================
-
 export interface DynoTaskAttemptExecutionResult {
   readonly attempt: DynoTaskAttemptRecord;
   readonly toolEvents: readonly DynoToolEventRecord[];
@@ -346,9 +320,9 @@ export interface DynoRunExecutionResult {
   readonly summary: {
     readonly totalTasks: number;
     readonly tasksPassed: number;
-    readonly completionRate: number; // 0..100
-    readonly firstAttemptSuccessRate: number; // 0..100
-    readonly hiddenTestsPassedRate: number; // 0..100
+    readonly completionRate: number;
+    readonly firstAttemptSuccessRate: number;
+    readonly hiddenTestsPassedRate: number;
     readonly medianDurationMs: number;
     readonly medianToolCalls: number;
     readonly totalTokens: number;
@@ -356,7 +330,7 @@ export interface DynoRunExecutionResult {
     readonly totalSafetyViolations: number;
     readonly totalUnnecessaryFilesChanged: number;
     readonly totalHumanInterventions: number;
-    readonly dynoScore: number; // 0..1000
+    readonly dynoScore: number;
     readonly grade: string;
   };
 }

@@ -8,7 +8,6 @@ describe('Ephemeral Workspace Creation & Cleanup', () => {
     const provider = new LocalProcessProvider();
     const sessionId = `test-session-${Date.now()}`;
 
-    // Create session
     const session = await provider.createSession({
       sessionId,
       username: 'nate'
@@ -17,7 +16,6 @@ describe('Ephemeral Workspace Creation & Cleanup', () => {
     expect(session.id).toBe(sessionId);
     expect(fs.existsSync(session.workspacePath)).toBe(true);
 
-    // Verify workspace structure
     const pkgPath = path.join(session.workspacePath, 'package.json');
     const readmePath = path.join(session.workspacePath, 'README.md');
     const slopBinPath = path.join(session.workspacePath, 'bin/slop');
@@ -28,23 +26,18 @@ describe('Ephemeral Workspace Creation & Cleanup', () => {
     expect(fs.existsSync(slopBinPath)).toBe(true);
     expect(fs.existsSync(gitPath)).toBe(true);
 
-    // Check executable permissions on slop launcher
     const stat = fs.statSync(slopBinPath);
-    expect(stat.mode & 0o111).toBeGreaterThan(0); // Has execute bits
+    expect(stat.mode & 0o111).toBeGreaterThan(0);
 
-    // Verify process is alive
     expect(session.isAlive()).toBe(true);
 
-    // Destroy session
     await session.destroy();
 
-    // Verify ephemeral workspace is completely erased
     expect(fs.existsSync(session.workspacePath)).toBe(false);
     expect(session.isAlive()).toBe(false);
   });
 
   it('ensures platform secrets and LLM credentials are never passed to session environment', async () => {
-    // Temporarily inject dummy secrets into process.env to verify sanitization
     const prevOpenAi = process.env.OPENAI_API_KEY;
     const prevAnthropic = process.env.ANTHROPIC_API_KEY;
     const prevStripe = process.env.STRIPE_SECRET_KEY;
@@ -63,10 +56,8 @@ describe('Ephemeral Workspace Creation & Cleanup', () => {
       output += chunk;
     });
 
-    // Write command to print env
     session.write('env\n');
 
-    // Wait a bit for command execution
     await new Promise((r) => setTimeout(r, 400));
 
     expect(output).not.toContain('sk-secret-test-openai-key');
@@ -75,7 +66,6 @@ describe('Ephemeral Workspace Creation & Cleanup', () => {
 
     await session.destroy();
 
-    // Restore env
     if (prevOpenAi) process.env.OPENAI_API_KEY = prevOpenAi; else delete process.env.OPENAI_API_KEY;
     if (prevAnthropic) process.env.ANTHROPIC_API_KEY = prevAnthropic; else delete process.env.ANTHROPIC_API_KEY;
     if (prevStripe) process.env.STRIPE_SECRET_KEY = prevStripe; else delete process.env.STRIPE_SECRET_KEY;

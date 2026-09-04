@@ -44,9 +44,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     await createSession('usr_sam', 'session_sam');
   });
 
-  // =========================================================================
-  // 1. DATA-MODEL & MIGRATION 0024 INTEGRITY
-  // =========================================================================
   describe('1. Schema Linkage & Migration 0024 Invariants', () => {
     it('passes foreign key checks across the full migration chain', () => {
       const violations = ctx.runForeignKeyCheck();
@@ -54,7 +51,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('has repository_id column on app_listings with foreign key enforcement', async () => {
-      // Default seed apps start with null repository_id
       const app = await ctx.d1.prepare('SELECT id, repository_id, forks FROM app_listings WHERE id = ?')
         .bind('wallart')
         .first<{ id: string; repository_id: string | null; forks: number }>();
@@ -62,7 +58,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(app?.id).toBe('wallart');
       expect(app?.repository_id).toBeNull();
 
-      // Reject non-existent repository FK
       await expect(
         ctx.d1.prepare('UPDATE app_listings SET repository_id = ? WHERE id = ?')
           .bind('repo_nonexistent', 'wallart')
@@ -71,9 +66,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
   });
 
-  // =========================================================================
-  // 2. GET /api/drops CANONICAL REPO IDENTITY SURFACING
-  // =========================================================================
   describe('2. GET /api/drops Canonical Repository Metadata', () => {
     it('surfaces honest-absent when app listing has no canonical repository', async () => {
       const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
@@ -92,7 +84,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('surfaces real repo slug, head commit OID, and active status when canonical repo is linked', async () => {
-      // 1. Create canonical repository and ref for wallart
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
         VALUES ('repo_wallart', 'usr_nate', 'wallart', 'public', 'sha1', 'refs/heads/main', 'repositories/repo_wallart', 'active')
@@ -103,12 +94,10 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
         VALUES ('repo_wallart', 'refs/heads/main', ?, 1, 'usr_nate')
       `).bind(OID_MAIN).run();
 
-      // 2. Link app_listing to repository
       await ctx.d1.prepare('UPDATE app_listings SET repository_id = ? WHERE id = ?')
         .bind('repo_wallart', 'wallart')
         .run();
 
-      // 3. Query /api/drops
       const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
       const res = await dropsApi.onRequestGet({ request: req, env: testEnv() });
       expect(res.status).toBe(200);
@@ -128,7 +117,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('surfaces canonical repo metadata via legacy reverse FK fallback (repositories.app_id)', async () => {
-      // Create repository with app_id pointing to dronehunter but app_listings.repository_id is null
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, app_id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
         VALUES ('repo_dronehunter', 'dronehunter', 'usr_nate', 'dronehunter', 'public', 'sha1', 'refs/heads/main', 'repositories/repo_dronehunter', 'active')
@@ -153,12 +141,8 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
   });
 
-  // =========================================================================
-  // 3. REAL FORK BUTTON & BACKEND FLOW
-  // =========================================================================
   describe('3. Real Fork Execution, Forks Increment & Honest Refusal', () => {
     beforeEach(async () => {
-      // Set up active parent repository with head commit for wallart
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status)
         VALUES ('repo_wallart', 'usr_nate', 'wallart', 'public', 'sha1', 'refs/heads/main', 'repositories/repo_wallart', 'active')
@@ -190,7 +174,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('honestly refuses fork when project has NO canonical repository', async () => {
-      // american-gardener has no repository row
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: {
@@ -213,11 +196,9 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('executes real fork, increments parent listing forks count, and queues outbox event', async () => {
-      // Check initial forks count on wallart
       const beforeApp = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
       expect(beforeApp?.forks).toBe(0);
 
-      // User Sam creates a real fork of wallart
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: {
@@ -246,11 +227,9 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(data.forkRequest.lineageRootRepositoryId).toBe('repo_wallart');
       expect(data.forkRequest.depth).toBe(1);
 
-      // Verify forks++ on app_listings
       const afterApp = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
       expect(afterApp?.forks).toBe(1);
 
-      // Verify forge_outbox_events row
       const outbox = await ctx.d1.prepare('SELECT * FROM forge_outbox_events WHERE id = ?')
         .bind(data.outboxEventId)
         .first<{ event_type: string; aggregate_type: string; payload: string }>();
@@ -263,7 +242,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(parsedPayload.parentCommitOid).toBe(OID_MAIN);
       expect(parsedPayload.forkedByUserId).toBe('usr_sam');
 
-      // Gateway confirms fork (Phase 2 confirmation)
       const confirmReq = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: {
@@ -288,7 +266,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(confirmData.success).toBe(true);
       expect(confirmData.status).toBe('active');
 
-      // Verify canonical immutable lineage edge in repository_forks
       const forkEdge = await ctx.d1.prepare('SELECT * FROM repository_forks WHERE child_repository_id = ?')
         .bind(data.repository.id)
         .first<{ child_repository_id: string; parent_repository_id: string; depth: number }>();
@@ -316,7 +293,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       const forksAfterFirst = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<any>();
       expect(forksAfterFirst.forks).toBe(1);
 
-      // Replay identical fork request
       const req2 = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer session_sam', Origin: 'http://localhost' },
@@ -327,7 +303,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       const data2 = await res2.json();
       expect(data2.idempotent).toBe(true);
 
-      // Forks count must remain 1 (no double increment)
       const forksAfterSecond = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<any>();
       expect(forksAfterSecond.forks).toBe(1);
     });
@@ -371,7 +346,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
         VALUES ('custom-app', 'usr_nate', 'Custom App', 'Custom Branch App', 'App on develop ref', '1.0.0', '0.00', 'repo_custom_branch', 0)
       `).run();
 
-      // 1. Explicit parentRefName: 'refs/heads/develop'
       const req1 = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: {
@@ -396,7 +370,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(data1.forkRequest.parentCommitOid).toBe(OID_CUSTOM);
       expect(data1.repository.defaultRef).toBe('refs/heads/develop');
 
-      // 2. Omitted parentRefName defaults to parent repository default_ref ('refs/heads/develop')
       const req2 = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: {
@@ -420,7 +393,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('rejects fork request with 400 when mismatched appId and parentRepositoryId are provided', async () => {
-      // wallart is linked to repo_wallart; dronehunter is not linked to repo_wallart
       const wallartBefore = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
       const droneBefore = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('dronehunter').first<{ forks: number }>();
 
@@ -434,7 +406,7 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
         body: JSON.stringify({
           action: 'fork',
           parentRepositoryId: 'repo_wallart',
-          appId: 'dronehunter', // mismatched appId
+          appId: 'dronehunter',
           childSlug: 'wallart-tampered'
         })
       });
@@ -445,7 +417,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
       expect(data.success).toBe(false);
       expect(data.error).toContain('Provided appId does not match the parent repository');
 
-      // Ensure neither listing's fork counter was modified
       const wallartAfter = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
       const droneAfter = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('dronehunter').first<{ forks: number }>();
       expect(wallartAfter?.forks).toBe(wallartBefore?.forks);
@@ -453,7 +424,6 @@ describe('Phase 1: Canonical Repository Linkage & Real Fork Suite', () => {
     });
 
     it('targets solely the resolved parent repository listing when incrementing forks count', async () => {
-      // Fork repo_wallart by repository ID without passing appId
       const wallartBefore = await ctx.d1.prepare('SELECT forks FROM app_listings WHERE id = ?').bind('wallart').first<{ forks: number }>();
 
       const req = new Request('http://localhost/api/git', {

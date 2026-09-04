@@ -1,12 +1,5 @@
-// Durable Stripe Event Inbox Repository
-// Implements idempotent event persistence, SHA-256 payload collision detection,
-// and finite conditional lease claims.
-
 import { InboxCollisionError } from './types';
 
-/**
- * Computes SHA-256 hex digest for raw event payload string.
- */
 export async function hashPayload(payload: string): Promise<string> {
   const encoder = new TextEncoder();
   const digestBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
@@ -31,15 +24,6 @@ export interface RecordInboxEventResult {
   existingStatus?: string;
 }
 
-/**
- * Persists a verified Stripe event into `stripe_event_inbox` idempotently.
- *
- * Invariants:
- * 1. If event is brand new -> stored with status 'received'.
- * 2. If identical event ID with identical payload hash already exists -> returns duplicate accepted.
- * 3. If event ID exists with DIFFERENT payload hash -> throws 409 InboxCollisionError (security breach attempt).
- * 4. Safe against racing inserts via unique constraint recovery.
- */
 export async function recordInboxEvent(
   db: any,
   params: RecordInboxEventParams
@@ -58,7 +42,6 @@ export async function recordInboxEvent(
     stripeObjectId = null
   } = params;
 
-  // 1. Check for existing event record
   const existing: any = await db.prepare(`
     SELECT event_id, payload_sha256, status
     FROM stripe_event_inbox
@@ -78,7 +61,6 @@ export async function recordInboxEvent(
     };
   }
 
-  // 2. Insert new event into inbox
   try {
     const livemodeInt = livemode ? 1 : 0;
     await db.prepare(`
@@ -100,7 +82,6 @@ export async function recordInboxEvent(
 
     return { status: 'recorded', eventId };
   } catch (insertErr: any) {
-    // Check if a concurrent request inserted the row during the race
     const raceRow: any = await db.prepare(`
       SELECT event_id, payload_sha256, status
       FROM stripe_event_inbox
@@ -124,13 +105,6 @@ export async function recordInboxEvent(
   }
 }
 
-/**
- * Claims an inbox event with a conditional finite lease.
- *
- * A claim succeeds ONLY if:
- * 1. Status is 'received' or 'retryable_failure', OR
- * 2. Status is 'processing' but the previous claim lease has expired.
- */
 export async function claimInboxEvent(
   db: any,
   eventId: string,
@@ -160,9 +134,6 @@ export async function claimInboxEvent(
   };
 }
 
-/**
- * Releases a claim lease after a transient failure and marks the event retryable.
- */
 export async function releaseInboxClaim(
   db: any,
   eventId: string,
@@ -181,9 +152,6 @@ export async function releaseInboxClaim(
   `).bind(errorMsg, backoffSeconds, eventId, claimToken).run();
 }
 
-/**
- * Durably marks an inbox event as terminal failure (e.g. invalid signature, unsupported event, tamper).
- */
 export async function markInboxTerminalFailure(
   db: any,
   eventId: string,

@@ -1,9 +1,3 @@
-// GET /api/payments/grants
-// Authenticated read-only surface for the caller's OWN contributor revenue
-// shares (grants) plus realized earnings from fulfilled orders and payout
-// status from the transfer outbox. Never accepts a userId from the request —
-// always scoped to the authenticated session's own user id.
-
 import { requireAuth } from '../_auth';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {

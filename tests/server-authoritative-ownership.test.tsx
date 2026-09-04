@@ -11,7 +11,6 @@ import { AlertProvider } from '../src/context/AlertContext';
 import { ArtifactSandbox } from '../src/components/ArtifactSandbox';
 import { AppListing } from '../src/data/mockData';
 
-// Helper component to extract CatalogContext state
 function CatalogStateConsumer({ onState }: { onState: (ctx: ReturnType<typeof useCatalog>) => void }) {
   const ctx = useCatalog();
   onState(ctx);
@@ -30,12 +29,8 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
     vi.restoreAllMocks();
   });
 
-  // ==========================================================================
-  // 1. Client-Side Anti-Forgery & Server-Authoritative CatalogContext.isOwned
-  // ==========================================================================
   describe('1. Client-Side Anti-Forgery & Server-Authoritative isOwned', () => {
     it('forged localStorage license key does NOT grant ownership (isOwned returns false)', async () => {
-      // Attacker manipulates window.localStorage
       const mockStorage: Record<string, string> = {
         'nsw_license_dronehunter': 'NSW-DH-9812-77F2-FORGED',
         'nsw_license_wallart': 'NSW-WA-9999-0000',
@@ -52,7 +47,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
       };
 
       try {
-        // Mock server fetch: unauthenticated guest user has empty shelf
         global.fetch = vi.fn().mockImplementation((url: string) => {
           if (url.includes('/api/drops')) {
             return Promise.resolve(new Response(JSON.stringify({
@@ -79,7 +73,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         );
 
         expect(catalogContext).toBeDefined();
-        // Server shelf is empty -> isOwned MUST be false despite localStorage forgery
         expect(catalogContext!.isOwned('dronehunter')).toBe(false);
         expect(catalogContext!.isOwned('wallart')).toBe(false);
       } finally {
@@ -121,10 +114,8 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
       expect(typeof catalogContext!.refreshShelf).toBe('function');
       expect(typeof catalogContext!.isOwned).toBe('function');
 
-      // Unowned by default for unauthenticated/unfetched state
       expect(catalogContext!.isOwned('dronehunter')).toBe(false);
 
-      // Invoking refreshShelf triggers authoritative /api/shelf network request
       await catalogContext!.refreshShelf();
       expect(shelfFetched).toBe(true);
       expect(global.fetch).toHaveBeenCalledWith('/api/shelf');
@@ -147,7 +138,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         price: 15
       };
 
-      // 1. Unowned app renders "Register License" CTA
       const unownedHtml = renderToString(
         <AlertProvider>
           <AuthProvider>
@@ -163,9 +153,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
     });
   });
 
-  // ==========================================================================
-  // 2. Server License Verification Endpoint (/api/shelf/verify)
-  // ==========================================================================
   describe('2. Server License Verification Endpoint (/api/shelf/verify)', () => {
     it('rejects unauthenticated GET /api/shelf/verify with 401 Unauthorized', async () => {
       const req = new Request('http://localhost/api/shelf/verify?appId=dronehunter', { method: 'GET' });
@@ -249,7 +236,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         VALUES (?, 'usr_real_owner', ?)
       `).bind(await hashSessionToken(token), Date.now() + 100000).run();
 
-      // Seed a fulfilled order and active commerce license
       const orderId = 'cord_test_owner_01';
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
@@ -268,7 +254,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         ) VALUES ('lic_owner_01', ?, 'dronehunter', ?, ?, ?, 'active')
       `).bind(orderId, ownerId, keyHash, last4).run();
 
-      // 1. Verify via GET /api/shelf/verify?appId=dronehunter
       const getReq = new Request('http://localhost/api/shelf/verify?appId=dronehunter', {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` }
@@ -283,7 +268,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
       expect(getData.license.appId).toBe('dronehunter');
       expect(getData.license.licenseKeyLast4).toBe(last4);
 
-      // 2. Verify via POST /api/shelf/verify with JSON body
       const postReq = new Request('http://localhost/api/shelf/verify', {
         method: 'POST',
         headers: {
@@ -299,7 +283,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
       expect(postData.verified).toBe(true);
       expect(postData.isOwned).toBe(true);
 
-      // 3. Verify with correct presented license key
       const keyReq = new Request(`http://localhost/api/shelf/verify?appId=dronehunter&key=${encodeURIComponent(licenseKey)}`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` }
@@ -309,7 +292,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
       expect(keyData.success).toBe(true);
       expect(keyData.verified).toBe(true);
 
-      // 4. Reject with forged/incorrect license key for that user
       const fakeKeyReq = new Request(`http://localhost/api/shelf/verify?appId=dronehunter&key=NSW-FORGED-0000-0000`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` }
@@ -361,7 +343,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
     });
 
     it('rejects cross-user license key verification attempts (user A cannot claim user B license)', async () => {
-      // User B owns the license
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES ('usr_user_b', 'user_b', 'User B', 'user'),
@@ -390,7 +371,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
         ) VALUES ('lic_b_01', 'cord_b_01', 'dronehunter', 'usr_user_b', ?, '1234', 'active')
       `).bind(hashB).run();
 
-      // User A tries to verify using User B's valid license key
       const req = new Request(`http://localhost/api/shelf/verify?appId=dronehunter&key=${encodeURIComponent(keyB)}`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${tokenA}` }
@@ -431,7 +411,6 @@ describe('Spec LICENSE — Server-Authoritative Ownership & Verification', () =>
       const licenseKey = generateLicenseKey('dronehunter');
       const hash = await hashLicenseKey(licenseKey);
 
-      // Verify hash is 64 hex characters
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
       expect(hash).not.toContain(licenseKey);
       expect(licenseKey).not.toBe(hash);

@@ -122,9 +122,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       if (!body.jti || !body.userId || !body.gatewaySessionId) {
         return Response.json({ success: false, error: 'Missing redemption fields' }, { status: 400 });
       }
-      // D1 serializes this single conditional write. The NOT EXISTS clause
-      // makes the one-active-session policy authoritative at redemption time,
-      // even when two independently minted tickets race across gateway nodes.
       const updated = await env.DB.prepare(`
         UPDATE terminal_session_tickets SET redeemed_at = ?, session_expires_at = ?, gateway_session_id = ?
         WHERE jti = ? AND user_id = ? AND redeemed_at IS NULL AND expires_at > ?

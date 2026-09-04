@@ -1,13 +1,5 @@
-// Stripe Webhook v1 HMAC-SHA256 Signature Verification
-// Enforces mandatory secret, 5-minute replay tolerance, constant-time comparison,
-// and malformed header rejection.
-
 import { StripeSignatureResult, StripeVerificationError } from './types';
 
-/**
- * Constant-time string equality check to prevent timing attacks.
- * Compares bytes using bitwise XOR accumulation over equal length.
- */
 export function constantTimeCompare(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const aBytes = new TextEncoder().encode(a);
@@ -20,9 +12,6 @@ export function constantTimeCompare(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/**
- * Computes Stripe v1 HMAC-SHA256 signature for a timestamped payload using Web Crypto.
- */
 export async function computeStripeSignature(
   payload: string,
   timestamp: number,
@@ -44,9 +33,6 @@ export async function computeStripeSignature(
     .join('');
 }
 
-/**
- * Generates a full `stripe-signature` header value for tests or mock delivery.
- */
 export async function generateStripeSignatureHeader(
   payload: string,
   secret: string,
@@ -61,15 +47,6 @@ export async function generateStripeSignatureHeader(
   };
 }
 
-/**
- * Verifies a raw-body Stripe webhook request against its `stripe-signature` header.
- *
- * Rules:
- * 1. Webhook secret is mandatory (non-empty).
- * 2. Header must contain valid integer timestamp `t=` and at least one `v1=` signature.
- * 3. Enforces 5-minute (300 seconds) tolerance window from current time.
- * 4. Verifies HMAC-SHA256 signature using constant-time comparison.
- */
 export async function verifyStripeSignature(
   rawBody: string,
   sigHeader: string | null | undefined,
@@ -114,7 +91,6 @@ export async function verifyStripeSignature(
     return { valid: false, reason: 'Malformed stripe-signature timestamp' };
   }
 
-  // 5-minute replay tolerance
   const toleranceSec = options?.toleranceSec ?? 300;
   const nowSec = options?.currentTimestampSec ?? Math.floor(Date.now() / 1000);
   if (Math.abs(nowSec - timestamp) > toleranceSec) {

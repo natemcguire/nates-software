@@ -6,9 +6,6 @@ import { StartMenu } from '../src/components/StartMenu';
 import { AuthProvider } from '../src/context/AuthContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 
-// The former standalone ExplainerView was consolidated into the single
-// "WELCOME TO NATE'S SOFTWARE EMPORIUM" window (MarketingWindow). These tests
-// assert the consolidated window still carries the honest explainer content.
 const noop = () => {};
 
 describe('Consolidated About/Explainer window (Spec M)', () => {
@@ -63,8 +60,6 @@ describe('Consolidated About/Explainer window (Spec M)', () => {
     expect(html).toContain('GITSMITH');
     expect(html).toContain('The git forge');
     expect(html).toContain('INBOX');
-    // INBOX is now the honest local agent-mailbox observer (the old 3-pane
-    // merge-proposal/diff-approval UI was removed) — assert the real copy.
     expect(html).toContain('A live window onto your local agent mailbox');
     expect(html).toContain('DYNO');
     expect(html).toContain('A benchmark for how AI models and agent harnesses do on real');

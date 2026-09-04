@@ -54,9 +54,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
     setIsLoadingStarters(true);
     setStartersError(null);
     try {
-      // The catalog fetch can hit a transient 5xx on a cold edge/D1 start
-      // (the "retry worked" symptom). Retry a few times with a short backoff so
-      // a warm-up blip never surfaces the scary "Failed to load starters" panel.
       let res: Response | null = null;
       let data: any = null;
       let lastErr = '';
@@ -67,7 +64,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           data = await res.json().catch(() => null);
           if (res.ok && data?.success && Array.isArray(data?.drops)) break;
           lastErr = data?.error || `Failed to fetch starters (HTTP ${res.status})`;
-          // 4xx is not transient — don't waste retries on a real client error.
           if (res.status >= 400 && res.status < 500) break;
         } catch (e: any) {
           lastErr = e?.message || 'Network error';
@@ -81,10 +77,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         .filter((d: any) => {
           const hasRepo = Boolean(d.canonicalRepositoryId || d.repositoryId || (d.repoSlugName && d.repoStatus === 'active'));
           const isRepoActive = d.repoStatus ? d.repoStatus === 'active' : hasRepo;
-          // First-run starters must be RUNNABLE. The wizard leads with "Run in
-          // the browser now", so only surface apps whose deployment is actually
-          // active — a `failed`/`draft` app would dead-end a first-time visitor
-          // on a raw build error (e.g. certified-mailer/wallart while broken).
           const isDeployable = d.deploymentState === 'active';
           return hasRepo && isRepoActive && isDeployable;
         })
@@ -195,7 +187,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden select-none">
-      {/* Wizard Header Banner */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-950 text-white p-3 border-b-2 border-gray-600 flex items-center justify-between shadow-md shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 bg-white/10 rounded flex items-center justify-center border border-white/20 text-base">
@@ -207,7 +198,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
           </div>
         </div>
 
-        {/* Step Indicator */}
         <div className="flex items-center gap-1 font-mono text-[11px]">
           <span className={`px-2 py-0.5 rounded border ${step === 1 ? 'bg-amber-400 text-black font-bold border-amber-500' : 'bg-blue-950 text-gray-400 border-blue-800'}`}>
             1. Pick an app
@@ -223,7 +213,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         </div>
       </div>
 
-      {/* Main Content Body */}
       <div className="flex-1 p-4 overflow-y-auto bg-w95-gray">
         {step === 1 && (
           <div className="space-y-4 max-w-2xl mx-auto w-full">
@@ -237,7 +226,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </p>
             </div>
 
-            {/* Starters Grid */}
             {isLoadingStarters && (
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-6 text-center text-gray-500 font-mono text-xs flex items-center justify-center gap-2">
                 <RefreshCw size={14} className="animate-spin text-blue-900" />
@@ -316,7 +304,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </div>
             )}
 
-            {/* Primary 1-Click In-Browser Fork Action */}
             <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 p-3 rounded border-2 border-blue-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="text-white">
                 <div className="font-bold text-xs flex items-center gap-1.5 text-amber-400">
@@ -341,7 +328,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </button>
             </div>
 
-            {/* Identity boundary */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono">
               <div className="space-y-0.5">
                 <div className="block text-gray-800 font-bold text-xs">Publishing Identity</div>
@@ -430,7 +416,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </p>
             </div>
 
-            {/* PRIMARY ACTION: Run in the browser now */}
             <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-blue-950 text-white p-4 rounded border-2 border-emerald-600 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1">
                 <div className="font-bold text-sm text-emerald-300 flex items-center gap-1.5">
@@ -455,7 +440,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </button>
             </div>
 
-            {/* SECONDARY PANEL: Prefer your own machine? Install with SLOP */}
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3.5 space-y-3">
               <div className="border-b border-gray-300 pb-1.5 flex items-center justify-between">
                 <div className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
@@ -469,7 +453,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 Authenticate once via <code className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-900">slop login</code> using your CLI token. Then clone <strong>{selectedStarter?.name || 'your app'}</strong> into a local worktree:
               </p>
 
-              {/* Tool Tabs */}
               <div className="flex gap-1 border-b border-gray-400 pb-1">
                 {[
                   { id: 'claude', name: 'Claude Code', icon: '🟣' },
@@ -492,7 +475,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 ))}
               </div>
 
-              {/* Terminal Command Box */}
               <div className="bg-slate-950 text-slate-100 p-3 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
                 <div className="flex items-center justify-between text-slate-400 text-[11px] border-b border-slate-800 pb-1">
                   <span>Native Terminal Install</span>
@@ -553,9 +535,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </p>
             </div>
 
-            {/* Three Real Actions */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Action 1: Open {AppName} live */}
               <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 flex flex-col justify-between space-y-2 shadow-sm">
                 <div>
                   <div className="font-bold text-xs text-blue-950 flex items-center gap-1.5 mb-1">
@@ -580,7 +560,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 </button>
               </div>
 
-              {/* Action 2: See its code on GITSMITH */}
               <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 flex flex-col justify-between space-y-2 shadow-sm">
                 <div>
                   <div className="font-bold text-xs text-blue-950 flex items-center gap-1.5 mb-1">
@@ -605,7 +584,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
                 </button>
               </div>
 
-              {/* Action 3: Browse today's drops */}
               <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 flex flex-col justify-between space-y-2 shadow-sm">
                 <div>
                   <div className="font-bold text-xs text-blue-950 flex items-center gap-1.5 mb-1">
@@ -633,7 +611,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               </div>
             </div>
 
-            {/* Publishing & Royalty Economics Box */}
             <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-blue-950 text-white p-3.5 rounded border border-blue-700 shadow font-mono text-xs space-y-2">
               <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
                 <ShieldCheck size={14} />
@@ -659,7 +636,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         )}
       </div>
 
-      {/* Sticky/Pinned Wizard Navigation Footer */}
       <div className="bg-w95-gray px-4 py-2.5 border-t border-gray-400 flex items-center justify-between shrink-0 shadow-sm">
         {step > 1 ? (
           <button
@@ -700,7 +676,6 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         )}
       </div>
 
-      {/* 1-Click In-Browser Fork Modal */}
       {selectedStarter && (
         <ForkWithAiModal
           isOpen={isForkModalOpen}

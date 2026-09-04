@@ -1,5 +1,3 @@
-// Retro Win95 Sound Synthesizer via Web Audio API
-
 let audioCtx: AudioContext | null = null;
 let soundEnabled = true;
 
@@ -55,7 +53,7 @@ export function playSuccessChime(): void {
   const ctx = getAudioContext();
   if (!ctx) return;
 
-  const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+  const notes = [523.25, 659.25, 783.99, 1046.50];
   notes.forEach((freq, idx) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

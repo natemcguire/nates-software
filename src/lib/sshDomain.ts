@@ -1,6 +1,3 @@
-// Shared SSH Public Key Domain, Validation, and Normalization
-// Authoritative rules for SSH key registration and gateway authentication.
-
 export const ALLOWED_SSH_KEY_TYPES = [
   'ssh-ed25519',
   'ssh-rsa',
@@ -25,9 +22,6 @@ export type SshKeyValidationResult =
   | { valid: true; key: ParsedSshKey }
   | { valid: false; error: string; status: number };
 
-/**
- * Validates discrete keyType and keyBase64 components.
- */
 export function validateSshKeyComponents(
   rawKeyType: unknown,
   rawKeyBase64: unknown,
@@ -61,10 +55,6 @@ export function validateSshKeyComponents(
   };
 }
 
-/**
- * Parses and validates a full SSH public key string (e.g. "ssh-ed25519 AAAA... comment").
- * Handles arbitrary whitespace between tokens.
- */
 export function parseAndValidateSshKeyString(
   rawKey: unknown,
   fallbackLabel?: unknown
@@ -88,10 +78,6 @@ export function parseAndValidateSshKeyString(
   return validateSshKeyComponents(keyType, keyBase64, label);
 }
 
-/**
- * Parses and validates an SSH key payload from request bodies or parameters.
- * Supports both split fields ({ keyType, keyBase64 }) and raw strings ({ publicKey / sshKey / key }).
- */
 export function parseAndValidateSshKeyInput(input: {
   keyType?: unknown;
   keyBase64?: unknown;

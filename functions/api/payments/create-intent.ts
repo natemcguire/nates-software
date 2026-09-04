@@ -1,7 +1,3 @@
-// POST /api/payments/create-intent
-// Durable Commerce Purchase State Machine Step 1:
-// Snapshot authoritative price & lineage DAG allocations in D1 and create Stripe PaymentIntent.
-
 import { requireAuth } from '../_auth';
 import { calculateAllocations, fetchFrozenLiens, CommerceValidationError } from '../../../src/lib/commerceDomain';
 
@@ -9,20 +5,6 @@ type PaymentIntentRecoveryResult =
   | { ok: true; paymentIntentId: string; clientSecret: string }
   | { ok: false; status: number; error: string; retryAfter?: string };
 
-/**
- * Recovers an orphaned PaymentIntent for an order stuck in 'creating' status
- * with no stripe_payment_intent_id attached. This happens when Stripe
- * successfully created a PaymentIntent but the D1 write that attaches it to
- * the order failed afterward.
- *
- * Stripe's PaymentIntent creation endpoint is idempotent on the
- * `Idempotency-Key` header: replaying the exact same request with the same
- * key returns the original PaymentIntent rather than creating a new charge.
- * This code always sends the deterministic key `pi_<orderId>`, so replaying
- * the create call with that same key is a safe, honest way to retrieve
- * (never fabricate) the PaymentIntent that genuinely exists at Stripe and
- * re-attach it to the order.
- */
 async function recoverOrCreatePaymentIntent(params: {
   env: any;
   orderId: string;
@@ -53,17 +35,12 @@ async function recoverOrCreatePaymentIntent(params: {
       headers: {
         'Authorization': `Bearer ${stripeSecretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
-        // SAME deterministic idempotency key as the original create call for
-        // this order. Stripe treats this as a replay of the original
-        // request and returns the original PaymentIntent unchanged.
         'Idempotency-Key': `pi_${orderId}`
       },
       body: stripeParams.toString()
     });
   } catch (networkErr: any) {
     console.error('[STRIPE RECOVERY NETWORK ERROR]', networkErr);
-    // Fail closed and honest: Stripe is unreachable, so we cannot verify
-    // whether the PaymentIntent exists. Do not fabricate a recovered PI.
     return {
       ok: false,
       status: 502,
@@ -98,7 +75,6 @@ async function recoverOrCreatePaymentIntent(params: {
 }
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
-  // Fail-closed guard: payments disabled in production until durable commerce is fully commissioned
   if (env?.PAYMENTS_ENABLED !== 'true') {
     return Response.json(
       { success: false, error: 'Checkout is temporarily unavailable while durable settlement is being commissioned.' },
@@ -111,14 +87,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'Database service is unavailable' }, { status: 500 });
     }
 
-    // Require authenticated session and validate same-origin mutation
     const auth = await requireAuth(request, env);
     if (auth.errorResponse) {
       return auth.errorResponse;
     }
     const buyer = auth.user!;
 
-    // Require Idempotency-Key header
     const idempotencyKey = request.headers.get('Idempotency-Key') || request.headers.get('idempotency-key');
     if (!idempotencyKey || !idempotencyKey.trim()) {
       return Response.json(
@@ -134,8 +108,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Parse request body and strictly validate appId
-    // All client-supplied price, buyer, maker, and ancestor fields are deliberately ignored.
     let body: any;
     try {
       body = await request.json();
@@ -148,7 +120,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'appId is required' }, { status: 400 });
     }
 
-    // Check for existing order with (buyer_user_id, idempotency_key)
     const existingOrder: any = await env.DB.prepare(`
       SELECT id, idempotency_key, buyer_user_id, app_id, repository_id, seller_user_id,
              app_version, price_version, gross_cents, currency, lineage_policy,
@@ -192,22 +163,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         );
       }
 
-      // Recovery path: the order is durably persisted in 'creating' status
-      // with no stripe_payment_intent_id attached. This is exactly the state
-      // left behind when Stripe successfully created a PaymentIntent but the
-      // subsequent D1 write that attaches it to the order failed (network
-      // blip, D1 outage, worker eviction, etc). The PI is NOT lost — Stripe's
-      // create endpoint is idempotent on the `Idempotency-Key` header, and
-      // this code always sends the deterministic key `pi_<orderId>`. Replaying
-      // the identical create call with that same key returns the original
-      // PaymentIntent (Stripe never creates a second charge for a reused
-      // idempotency key) so it can be re-attached instead of stranded.
       if (existingOrder.status === 'creating') {
         const stripeSecretKey = env?.STRIPE_SECRET_KEY;
         const stripePublishableKey = env?.STRIPE_PUBLISHABLE_KEY;
 
         if (!stripeSecretKey || typeof stripeSecretKey !== 'string' || !stripeSecretKey.trim()) {
-          // Fail closed and honest: never fabricate a recovered PaymentIntent.
           return Response.json(
             { success: false, error: 'Stripe secret key is not configured on the server; cannot verify or recover this order' },
             { status: 500 }
@@ -232,9 +192,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         });
 
         if (!recovery.ok) {
-          // Fail closed honestly: Stripe is unreachable or returned an error.
-          // The order stays in 'creating' (still recoverable on the next
-          // retry) rather than being marked payment_failed or fabricated.
           return Response.json(
             { success: false, error: recovery.error },
             { status: recovery.status, headers: recovery.retryAfter ? { 'Retry-After': recovery.retryAfter } : undefined }
@@ -259,9 +216,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             )
           ]);
         } catch (dbErr: any) {
-          // The PI is confirmed to exist at Stripe (verified above), but D1
-          // is unavailable right now. Report honestly; the order remains in
-          // 'creating' and the next retry will re-run this same recovery.
           console.error('[COMMERCE ORDER RECOVERY PERSISTENCE ERROR]', dbErr);
           return Response.json(
             { success: false, error: `Verified PaymentIntent at Stripe but failed to persist recovery: ${dbErr?.message || 'database error'}` },
@@ -289,7 +243,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Read authoritative product definition from D1 commerce_products
     const product: any = await env.DB.prepare(`
       SELECT app_id AS appId, repository_id AS repositoryId, seller_user_id AS sellerUserId,
              price_cents AS priceCents, currency, price_version AS priceVersion, status
@@ -308,7 +261,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Read authoritative app listing from D1 app_listings
     const appListing: any = await env.DB.prepare(`
       SELECT id, name, version, creator_id AS creatorId
       FROM app_listings
@@ -319,7 +271,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: `App listing not found for app: ${appId}` }, { status: 404 });
     }
 
-    // Determine repository ID (from product or fallback to repositories table if linked)
     let repositoryId = product.repositoryId || null;
     if (!repositoryId) {
       const repoRow: any = await env.DB.prepare(`
@@ -343,17 +294,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
-    // Read the frozen ancestor liens captured at fork-confirm time for this
-    // repository (see migration 0038 / src/lib/commerceDomain.ts). Liens are
-    // frozen once, at fork time, so this is a single indexed read instead of
-    // walking the ancestry chain generation-by-generation at buy time.
-    // Dark/no-op when repositoryId is null (unlinked product = no liens).
     const liens = repositoryId ? await fetchFrozenLiens(env.DB, repositoryId) : [];
 
-    // Calculate deterministic allocations. Never call Stripe or fabricate a
-    // charge if the frozen liens fail validation (e.g. an impossible
-    // over-cap state that should have been blocked at fork time) — fail the
-    // order honestly instead.
     let calculation;
     try {
       calculation = calculateAllocations({
@@ -397,11 +339,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       throw allocErr;
     }
 
-    // Generate durable order ID and prepare atomic batch
     const orderId = `ord_${crypto.randomUUID().replace(/-/g, '')}`;
     const statements: any[] = [];
 
-    // 1. Persist commerce_orders row in 'creating' status
     statements.push(
       env.DB.prepare(`
         INSERT INTO commerce_orders (
@@ -426,13 +366,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       )
     );
 
-    // 2. Persist immutable commerce_order_allocations rows.
-    // basis_points is nullable — platform/seller rows carry no fixed bps rate
-    // (the seller's cut is a floored remainder, not a bps split). Skip any
-    // allocation with amountCents <= 0 as defense-in-depth: calculateAllocations
-    // already skips zero-amount liens, so this should never trigger, but the
-    // table CHECK (amount_cents >= 0) alone would otherwise allow a 0-cents row
-    // to be written for a payable role, which the ethos forbids.
     for (const alloc of calculation.allocations) {
       if (alloc.amountCents <= 0) continue;
       const allocId = `coa_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -457,7 +390,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // 3. Persist initial checkout event
     const eventId = `coe_${crypto.randomUUID().replace(/-/g, '')}`;
     statements.push(
       env.DB.prepare(`
@@ -479,7 +411,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       )
     );
 
-    // Execute atomic persistence before calling Stripe
     try {
       await env.DB.batch(statements);
     } catch (dbErr: any) {
@@ -490,7 +421,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Fail honestly: never fabricate mock Stripe keys, secrets, or IDs
     const stripeSecretKey = env?.STRIPE_SECRET_KEY;
     const stripePublishableKey = env?.STRIPE_PUBLISHABLE_KEY;
 
@@ -518,7 +448,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Call Stripe to create genuine PaymentIntent
     let stripeRes: Response;
     try {
       const stripeParams = new URLSearchParams();
@@ -526,11 +455,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       stripeParams.append('currency', calculation.currency);
       stripeParams.append('description', `Shareware License: ${appListing.name || appId}`);
       stripeParams.append('automatic_payment_methods[enabled]', 'true');
-      // Restrict to non-redirect methods (cards, wallets). The CheckoutModal
-      // confirms in-page with `redirect: 'if_required'` and provides no
-      // return_url, so redirect-based methods (which Stripe would otherwise
-      // offer with the default allow_redirects=always) cannot complete and
-      // would error at confirm time. 'never' keeps the in-modal flow honest.
       stripeParams.append('automatic_payment_methods[allow_redirects]', 'never');
       stripeParams.append('metadata[orderId]', orderId);
       stripeParams.append('metadata[appId]', appId);
@@ -607,14 +531,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // Update commerce_orders to 'requires_payment' and record event.
-    // IMPORTANT: the PaymentIntent already exists at Stripe at this point. If
-    // this D1 write fails (network blip, D1 outage, worker eviction), the
-    // order MUST NOT be marked payment_failed and the PI must not be
-    // stranded — the order simply stays in 'creating', which is the durable
-    // signal a retry with the SAME Idempotency-Key uses to recover and
-    // re-attach this exact PaymentIntent (see the existingOrder.status ===
-    // 'creating' recovery branch above). Never fabricate success here either.
     try {
       await env.DB.batch([
         env.DB.prepare(`
@@ -634,10 +550,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ]);
     } catch (dbErr: any) {
       console.error('[COMMERCE ORDER ATTACH PI PERSISTENCE ERROR]', dbErr);
-      // Fail closed and honest: report the failure, but leave the order in
-      // 'creating' (do NOT mark payment_failed) so the same Idempotency-Key
-      // retry can recover the PaymentIntent that genuinely exists at Stripe
-      // instead of stranding it or fabricating a duplicate charge.
       return Response.json(
         {
           success: false,

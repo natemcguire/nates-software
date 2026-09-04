@@ -1,8 +1,3 @@
-// GET /api/payments/ledger
-// Scoped SELLER ledger read for the profile owner — returns their own fulfilled sales,
-// per-order allocations, and transfer-outbox status (pending vs settled).
-// Strictly requires authentication and is scoped to the caller's user id.
-
 import { requireAuth } from '../_auth';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
@@ -15,7 +10,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   const seller = auth.user!;
 
   try {
-    // 1. Fetch fulfilled orders where caller is the seller or an allocation recipient
     const { results: orders } = await env.DB.prepare(`
       SELECT DISTINCT
         o.id,
@@ -69,10 +63,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const orderIds = (orders as any[]).map(o => o.id);
     const placeholders = orderIds.map(() => '?').join(',');
 
-    // 2. Fetch per-order allocations and transfer outbox records
-    // Note: Outbox column destination_user_id (NOT recipient_user_id)
     const { results: rawAllocations } = await env.DB.prepare(`
-      SELECT 
+      SELECT
         a.id AS allocationId,
         a.order_id AS orderId,
         a.sequence,

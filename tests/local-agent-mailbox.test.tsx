@@ -9,21 +9,6 @@ import {
   type LocalInbox
 } from '../src/components/LocalAgentMailbox';
 
-/**
- * This repo runs component tests via react-dom/server `renderToString`
- * (see tests/error-boundary.test.tsx) — there is no jsdom/testing-library
- * DOM environment, so React effects do NOT fire under SSR. We therefore test
- * the health-probe + offline/running contract by:
- *   1. mocking global fetch,
- *   2. awaiting the exported async service functions (the same ones the
- *      component's useEffect calls),
- *   3. asserting the returned state, then
- *   4. renderToString-ing the presentational pane for that state and
- *      asserting on the produced HTML.
- * Nothing is mocked in the UI itself — offline yields the honest pane,
- * running yields the real fetched inboxes.
- */
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -78,7 +63,6 @@ describe('OfflinePane (honest offline contract)', () => {
     expect(html).toContain('http://127.0.0.1:8791');
     expect(html).toContain('./scripts/install.sh');
     expect(html).toContain('agent-inbox serve');
-    // Never claims to show data when offline.
     expect(html).toContain('No mock data is shown');
   });
 });
@@ -90,11 +74,10 @@ describe('offline flow: /healthz rejects → offline pane renders', () => {
     const health = await checkLocalAgentInboxHealth();
     expect(health.running).toBe(false);
 
-    // With running:false the component shows OfflinePane. Render it directly.
     const html = renderToString(<OfflinePane onReconnect={() => {}} />);
     expect(html).toContain('Local Agent Mailbox Offline');
     expect(html).toContain('Reconnect');
-    expect(html).not.toContain('Agent Inboxes'); // running-pane header absent
+    expect(html).not.toContain('Agent Inboxes');
   });
 });
 
@@ -163,12 +146,10 @@ describe('running flow: /healthz + /v1/inboxes resolve → inboxes render', () =
       />
     );
 
-    // Real fetched inbox addresses appear; header + version chip present.
     expect(html).toContain('codex-worker1@boats');
     expect(html).toContain('claude@nate-bot');
     expect(html).toContain('Agent Inboxes');
     expect(html).toContain('v1.0.0');
-    // No offline copy leaks into the running pane.
     expect(html).not.toContain('Local Agent Mailbox Offline');
   });
 });

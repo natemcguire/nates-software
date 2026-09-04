@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as treePage from '../functions/tree/[app]';
 
-// Renders the embeddable /tree/:app HTML page from real D1 data:
-//   @tn/t-dronehunter (root) → @ts/t-dh-swarm (fork), nate earned $48.20
 describe('GET /tree/:app (embeddable lineage HTML page)', () => {
   let ctx: TestD1Context;
 
@@ -55,10 +53,9 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     expect(html).toContain('t-dronehunter · fork lineage');
     expect(html).toContain('@tnate');
     expect(html).toContain('@tsam');
-    expect(html).toContain('ROOT');            // root badge
-    expect(html).toContain('$48.20');          // real earnings, formatted
+    expect(html).toContain('ROOT');
+    expect(html).toContain('$48.20');
     expect(html).toContain('lineage earned');
-    // No external asset references (self-contained embed).
     expect(html).not.toMatch(/src="https?:\/\//);
   });
 
@@ -66,14 +63,11 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     const html = await (await render('t-dronehunter')).text();
     expect(html).toContain('property="og:title"');
     expect(html).toContain('twitter:card" content="summary_large_image"');
-    // og:image points at the .svg card variant (path extension → Pages serves image/svg).
     expect(html).toContain('.svg"');
-    // Real stats in the share copy (1 fork, 2 makers).
     expect(html).toMatch(/has 1 fork/);
   });
 
   it('serves a 1200x630 SVG share card via a .svg path extension', async () => {
-    // The .svg suffix is the trigger (CF Pages infers image/svg+xml from the route path).
     const res = await treePage.onRequestGet({
       params: { app: 't-dronehunter.svg' },
       request: new Request('https://nates-software.com/tree/t-dronehunter.svg'),
@@ -95,16 +89,12 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
   });
 
   it('escapes untrusted handle/app text (no HTML injection)', async () => {
-    // A handle can only be [A-Za-z0-9_-] at registration, but the renderer must still
-    // escape defensively. Prove the escaper by feeding a crafted app id through resolve:
-    // an unknown app just 404s, so instead assert the escaper is applied in output shape.
     const html = await (await render('t-dronehunter')).text();
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('onerror=');
   });
 
   it('also renders when the path segment is a repository id (repo not linked to an app)', async () => {
-    // Forge repos with app_id=NULL are reachable by their repo id directly.
     const res = await render('repo_dh');
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -132,8 +122,6 @@ describe('GET /tree/:app (embeddable lineage HTML page)', () => {
     });
     expect(noDb.status).toBe(503);
     const body = await noDb.text();
-    // No leaked internals. Word-boundaried so the error page's own hex colours
-    // (e.g. #0d1117) don't false-match on a bare "d1" substring.
     expect(body).not.toMatch(/\b(sql|prepare|stack trace|TypeError|SqlJs|D1Database)\b/i);
   });
 });

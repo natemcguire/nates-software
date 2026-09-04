@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as lineageApi from '../functions/api/lineage';
 
-// Exercises GET /api/lineage end-to-end against the real schema via the D1 harness:
-//   @tn/t-dronehunter (root) → @ts/t-dh-swarm (fork)
 describe('GET /api/lineage (public tree endpoint)', () => {
   let ctx: TestD1Context;
 
@@ -53,7 +51,6 @@ describe('GET /api/lineage (public tree endpoint)', () => {
     expect(body.tree.rootAppId).toBe('t-dronehunter');
     expect(body.tree.totalNodes).toBe(2);
     expect(body.tree.totalForks).toBe(1);
-    // A fork's appId resolves the same family (any node → whole tree).
     const byRepo = new Map(body.tree.nodes.map((n: any) => [n.repositoryId, n]));
     expect((byRepo.get('repo_dh') as any).handle).toBe('tnate');
     expect((byRepo.get('repo_dhs') as any).handle).toBe('tsam');

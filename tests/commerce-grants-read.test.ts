@@ -1,6 +1,3 @@
-// Verifies the Part 2 grants read endpoint: GET /api/payments/grants
-// (functions/api/payments/grants.ts). Always scoped to the authenticated
-// caller's own user id — never accepts a userId from the request.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as grantsApi from '../functions/api/payments/grants';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
@@ -70,7 +67,6 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
   it('returns the authed happy path: grants, earnings by role, and payouts by status', async () => {
     await seedUsers();
 
-    // App + repository owned by usr_maker
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES ('app-grants', 'Grants App', 'Tag', 'Desc', 'usr_maker', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
@@ -80,13 +76,11 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
       VALUES ('repo-grants', 'app-grants', 'usr_maker', 'app-grants', 'key_repo_grants', 2000)
     `).run();
 
-    // Active grant for usr_a
     await ctx.d1.prepare(`
       INSERT INTO contributor_shares (
         id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at
       ) VALUES ('cs_active', 'repo-grants', 'usr_a', 'usr_maker', 1500, 'active', datetime('now'))
     `).run();
-    // Pending grant for usr_a on same repo would collide with cap trigger; use a second repo instead
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES ('app-grants-2', 'Grants App 2', 'Tag', 'Desc', 'usr_maker', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
@@ -101,7 +95,6 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
       ) VALUES ('cs_pending', 'repo-grants-2', 'usr_a', 'usr_maker', 1000, 'pending')
     `).run();
 
-    // A fulfilled order paying usr_a as a contributor
     await ctx.d1.prepare(`
       INSERT INTO commerce_orders (
         id, idempotency_key, buyer_user_id, app_id, repository_id, seller_user_id,
@@ -120,7 +113,6 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
         ('coa_pool_1', 'ord_fulfilled_1', 2, 'protocol_pool', NULL, NULL, NULL, 1000, 150)
     `).run();
 
-    // A second fulfilled order also paying usr_a as contributor, to prove SUM/COUNT grouping
     await ctx.d1.prepare(`
       INSERT INTO commerce_orders (
         id, idempotency_key, buyer_user_id, app_id, repository_id, seller_user_id,
@@ -139,7 +131,6 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
         ('coa_pool_2', 'ord_fulfilled_2', 2, 'protocol_pool', NULL, NULL, NULL, 1000, 100)
     `).run();
 
-    // A non-fulfilled order also allocating to usr_a — must NOT be counted
     await ctx.d1.prepare(`
       INSERT INTO commerce_orders (
         id, idempotency_key, buyer_user_id, app_id, repository_id, seller_user_id,
@@ -155,7 +146,6 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
       ) VALUES ('coa_contrib_3', 'ord_pending_1', 1, 'contributor', 'usr_a', 'repo-grants', NULL, 1000, 100)
     `).run();
 
-    // Payout outbox rows for usr_a (destination_user_id, NOT recipient_user_id)
     await ctx.d1.prepare(`
       INSERT INTO commerce_transfer_outbox (
         id, order_id, allocation_id, destination_user_id, amount_cents, currency, status
@@ -179,7 +169,6 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
     expect(res.status).toBe(200);
     expect(data.success).toBe(true);
 
-    // Grants: 2 rows (active + pending), most recent first
     expect(data.grants).toHaveLength(2);
     const activeGrant = data.grants.find((g: any) => g.id === 'cs_active');
     const pendingGrant = data.grants.find((g: any) => g.id === 'cs_pending');
@@ -194,12 +183,10 @@ describe('GET /api/payments/grants — caller-scoped grants + earnings + payouts
     });
     expect(pendingGrant.activatedAt).toBeNull();
 
-    // Earnings by role: only fulfilled orders count, contributor role only for usr_a
     expect(data.earningsByRole).toEqual([
       { role: 'contributor', count: 2, totalCents: 275 }
     ]);
 
-    // Payouts by status from the outbox (destination_user_id = usr_a)
     const byStatus = data.payouts.byStatus.slice().sort((a: any, b: any) => a.status.localeCompare(b.status));
     expect(byStatus).toEqual([
       { status: 'pending', count: 1, totalCents: 50 },

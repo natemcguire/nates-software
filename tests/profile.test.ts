@@ -15,9 +15,6 @@ import { encryptLicenseSecret, generateBase64EncryptionKey, hashLicenseKey } fro
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 
 describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
-  // ==========================================================================
-  // 1. Domain Validation & Sanitization Invariants
-  // ==========================================================================
   describe('1. Profile Domain Validation & Masking Invariants', () => {
     it('should accept valid maker profile input', () => {
       const valid = {
@@ -48,15 +45,15 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
     it('should reject invalid usernames with special characters, uppercase, or invalid length', () => {
       expect(validateMakerProfile({ username: 'NateUpper' }).valid).toBe(false);
       expect(validateMakerProfile({ username: 'nate@admin.dev' }).valid).toBe(false);
-      expect(validateMakerProfile({ username: 'a' }).valid).toBe(false); // too short (< 2)
-      expect(validateMakerProfile({ username: 'a'.repeat(35) }).valid).toBe(false); // too long (> 30)
+      expect(validateMakerProfile({ username: 'a' }).valid).toBe(false);
+      expect(validateMakerProfile({ username: 'a'.repeat(35) }).valid).toBe(false);
     });
 
     it('should reject invalid display names and malformed SSH keys', () => {
       expect(validateMakerProfile({ displayName: ' ' }).valid).toBe(false);
       expect(validateMakerProfile({ displayName: 'a'.repeat(60) }).valid).toBe(false);
       expect(validateMakerProfile({ displayName: 'Valid Name', sshKey: 'not-an-ssh-key' }).valid).toBe(false);
-      expect(validateMakerProfile({ displayName: 'Valid Name', sshKey: 'ssh-ed25519' }).valid).toBe(false); // single token
+      expect(validateMakerProfile({ displayName: 'Valid Name', sshKey: 'ssh-ed25519' }).valid).toBe(false);
     });
 
     it('should safely mask license keys without leaking plaintext entropy', () => {
@@ -121,8 +118,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
     });
 
     it('should calculate maker economics accurately', () => {
-      // 'seller' is the direct-sale role the current engine writes; a legacy 'maker'
-      // row must still count (historical back-compat). Both feed makerSalesCents.
       const allocations = [
         { role: 'seller', amount_cents: 1050, app_id: 'dronehunter', name: 'DroneHunter 95' },
         { role: 'ancestor', amount_cents: 300, app_id: 'dronehunter', name: 'DroneHunter 95' },
@@ -137,9 +132,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
     });
   });
 
-  // ==========================================================================
-  // 2. Profile API Endpoint Contracts (/api/profile)
-  // ==========================================================================
   describe('2. Profile API Endpoint Contracts (/api/profile)', () => {
     let ctx: TestD1Context;
 
@@ -160,14 +152,12 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
       expect(data.user.avatar).toBe('⚡');
       expect(data.user.isVerified).toBe(true);
 
-      // Private fields MUST NOT exist in public response
       expect(data.user.sshKey).toBeUndefined();
       expect(data.user.stripeAccountId).toBeUndefined();
       expect(data.user.password_hash).toBeUndefined();
       expect(data.shelf).toBeUndefined();
       expect(data.royalties).toBeUndefined();
 
-      // Published apps summary should be present
       expect(Array.isArray(data.publishedApps)).toBe(true);
       expect(data.publishedApps.length).toBeGreaterThanOrEqual(1);
     });
@@ -203,7 +193,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
     });
 
     it('should return private profile with SSH keys, Stripe status, and royalties for authenticated owner', async () => {
-      // Create session for usr_nate
       const sessionToken = 'tok_nate_owner';
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
@@ -317,9 +306,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
     });
   });
 
-  // ==========================================================================
-  // 3. Shelf API & Canonical Commerce Licensing Contracts (/api/shelf)
-  // ==========================================================================
   describe('3. Shelf API & Canonical Commerce Licensing Contracts (/api/shelf)', () => {
     let ctx: TestD1Context;
     const encryptionKeyBase64 = generateBase64EncryptionKey();
@@ -375,7 +361,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
         VALUES (?, 'usr_attacker', ?)
       `).bind(await hashSessionToken(token), Date.now() + 100000).run();
 
-      // Attacker attempts to snoop usr_nate's shelf by passing ?username=nate
       const req = new Request('http://localhost/api/shelf?username=nate', {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` }
@@ -385,7 +370,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
 
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      // Returns attacker's shelf (empty), NOT nate's shelf
       expect(data.shelf).toEqual([]);
     });
 
@@ -401,7 +385,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
         VALUES (?, 'usr_alice_buyer', ?)
       `).bind(await hashSessionToken(token), Date.now() + 100000).run();
 
-      // Seed a fulfilled commerce order & canonical license
       const orderId = 'cord_alice_01';
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
@@ -431,7 +414,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
         privateInstaller: 'https://example.com/not-allowlisted'
       }), 'dronehunter').run();
 
-      // Query shelf
       const req = new Request('http://localhost/api/shelf', {
         method: 'GET',
         headers: { Authorization: `Bearer ${token}` }
@@ -454,7 +436,6 @@ describe('PROFILE.CFG & MY SHELF Comprehensive Suite', () => {
         web: 'https://drone.example.com/',
         mac: 'https://cdn.example.com/drone.dmg'
       });
-      // Plaintext key is NOT leaked in default shelf response
       expect(item.rawLicenseKey).toBeUndefined();
       expect(item.licenseKey).toBeUndefined();
     });

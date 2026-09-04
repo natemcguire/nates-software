@@ -1,4 +1,4 @@
-// tests/money-model-additive-liens.test.ts
+
 import { describe, it, expect } from 'vitest';
 import { calculateAllocations } from '../src/lib/commerceDomain';
 
@@ -27,7 +27,7 @@ describe('additive frozen-lien allocations', () => {
   });
 
   it('house tip: $9.95 dust accrues to platform, conservation exact', () => {
-    // platform_base = floor(0.10*995)=99, R=896; lien 10% -> floor(0.10*896)=89 (bob), floor(0.10*896)=89 (ann)
+
     const r = calculateAllocations({
       grossCents: 995, currency: 'usd', sellerUserId: 'carol', sellerRepositoryId: 'repo_c',
       liens: [
@@ -37,8 +37,8 @@ describe('additive frozen-lien allocations', () => {
     });
     const platform = r.allocations.filter(a=>a.role==='platform').reduce((s,a)=>s+a.amountCents,0);
     const sum = r.allocations.reduce((s,a)=>s+a.amountCents,0);
-    expect(sum).toBe(995);            // conservation exact
-    expect(platform).toBeGreaterThanOrEqual(99); // base + any dust
+    expect(sum).toBe(995);
+    expect(platform).toBeGreaterThanOrEqual(99);
   });
 
   it('skips a 0% lien instead of writing a 0-amount row', () => {

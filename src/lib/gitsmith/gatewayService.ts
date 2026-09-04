@@ -1,7 +1,3 @@
-// Authoritative Git Gateway Service
-// Manages bare repositories, enforces git update-ref CAS as authority,
-// and coordinates authenticated callbacks with D1 control plane.
-
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -37,9 +33,6 @@ export class GitsmithGatewayService {
     validateProductionStartup(this.config);
   }
 
-  /**
-   * Helper to get receipt file directory and path.
-   */
   private getReceiptDir(): string {
     return path.join(this.config.reposRoot, '.gitsmith-receipts');
   }
@@ -49,9 +42,6 @@ export class GitsmithGatewayService {
     return path.join(this.getReceiptDir(), `${digest}.json`);
   }
 
-  /**
-   * Durably and atomically persists a callback receipt on disk.
-   */
   private persistCallbackReceipt(payload: any): boolean {
     try {
       const receiptDir = this.getReceiptDir();
@@ -74,9 +64,6 @@ export class GitsmithGatewayService {
     }
   }
 
-  /**
-   * Cleans up a callback receipt after successful delivery.
-   */
   private removeCallbackReceipt(idempotencyKey: string): void {
     try {
       const targetPath = this.getReceiptFilePath(idempotencyKey);
@@ -86,21 +73,14 @@ export class GitsmithGatewayService {
     } catch {}
   }
 
-  /**
-   * Reads authoritative Git ref from disk bare repo.
-   */
   public getAuthoritativeRef(storageKey: string, refName: string): string | null {
     return readAuthoritativeRef(this.config.reposRoot, storageKey, refName);
   }
 
-  /**
-   * Lists all authoritative Git refs from disk bare repo.
-   */
   public listAuthoritativeRefs(storageKey: string, prefix?: string): Array<{ refName: string; commitOid: string }> {
     return listAuthoritativeRefs(this.config.reposRoot, storageKey, prefix);
   }
 
-  /** Records a ref change already applied atomically by git-receive-pack. */
   public async recordAppliedRef(params: {
     repositoryId: string;
     refName: string;
@@ -143,21 +123,13 @@ export class GitsmithGatewayService {
     }
   }
 
-  /**
-   * Safely provisions a bare git repository on disk.
-   */
   public provisionRepository(params: ProvisionRepoParams): ProvisionRepoResult {
     return initBareRepo(this.config.reposRoot, params);
   }
 
-  /**
-   * Performs an authoritative compare-and-swap ref update in Git, then reconciles D1 projection.
-   * Enforces caller-required idempotency key.
-   */
   public async updateAuthoritativeRef(
     params: AuthoritativeRefCasParams & { repositoryId?: string }
   ): Promise<AuthoritativeRefCasResult> {
-    // Require caller-supplied non-empty idempotencyKey
     if (!params.idempotencyKey || typeof params.idempotencyKey !== 'string' || !params.idempotencyKey.trim()) {
       return {
         success: false,
@@ -171,7 +143,6 @@ export class GitsmithGatewayService {
 
     const idempotencyKey = params.idempotencyKey.trim();
 
-    // 1. Authoritative CAS update in Git on disk
     const gitCasResult = updateAuthoritativeRefCas(this.config.reposRoot, {
       ...params,
       idempotencyKey
@@ -180,10 +151,8 @@ export class GitsmithGatewayService {
       return gitCasResult;
     }
 
-    // If repositoryId is not provided, we derive it from storageKey
     const repoId = params.repositoryId || params.storageKey.replace(/^repositories\//, '');
 
-    // 2. Prepare payload for control-plane callback
     const payload = {
       action: 'gateway-record-ref',
       repositoryId: repoId,
@@ -215,7 +184,6 @@ export class GitsmithGatewayService {
           if (body?.error) errorMsg = body.error;
         } catch {}
 
-        // Persist durable atomic receipt on callback failure
         const receiptPersisted = this.persistCallbackReceipt(payload);
 
         return {
@@ -228,7 +196,6 @@ export class GitsmithGatewayService {
 
       const body = await res.json();
 
-      // Successful callback: remove any existing receipt
       this.removeCallbackReceipt(idempotencyKey);
 
       return {
@@ -238,8 +205,6 @@ export class GitsmithGatewayService {
         idempotent: body?.idempotent
       };
     } catch (err: any) {
-      // Git update succeeded on disk, but control plane callback failed (e.g. network partition)
-      // Persist durable atomic local callback receipt
       const receiptPersisted = this.persistCallbackReceipt(payload);
 
       return {
@@ -251,9 +216,6 @@ export class GitsmithGatewayService {
     }
   }
 
-  /**
-   * Replays any durable local callback receipts saved from previous interrupted runs.
-   */
   public async replayPendingCallbacks(): Promise<{ replayed: number; failed: number; errors: string[] }> {
     const receiptDir = this.getReceiptDir();
     if (!fs.existsSync(receiptDir)) {
@@ -310,17 +272,12 @@ export class GitsmithGatewayService {
     return { replayed, failed, errors };
   }
 
-  /**
-   * Provisions a fork on disk and confirms the fork lineage with the control plane.
-   */
   public async provisionFork(params: ForkProvisionParams): Promise<ForkProvisionResult> {
-    // 1. Provision fork and transfer commit objects on disk
     const diskResult = cloneOrFetchForFork(this.config.reposRoot, params);
     if (!diskResult.success) {
       return diskResult;
     }
 
-    // 2. Call control plane /api/git to confirm fork
     const callbackPayload = {
       action: 'gateway-confirm-fork',
       childRepositoryId: params.childRepositoryId,

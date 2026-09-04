@@ -23,15 +23,10 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
 
   return (
     <div
-      // Stop BOTH click and pointerdown from reaching the desktop root — the desktop's
-      // onPointerDown fires before click and was closing the menu (unmounting it) before
-      // any item's onClick could register, so nothing worked. The `start-menu` class also
-      // lets the desktop handler skip it defensively.
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
       className="start-menu fixed bottom-10 left-0 w-64 bg-w95-gray w95-border w95-shadow z-50 flex font-tahoma text-xs select-none shadow-2xl"
     >
-      {/* Left Blue Vertical Banner */}
       <div
         className="w-8 bg-gradient-to-t from-w95-blue to-w95-blue-light flex items-center justify-center text-white font-black tracking-widest text-sm"
         style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
@@ -39,7 +34,6 @@ export const StartMenu: React.FC<StartMenuProps> = ({ isOpen, onClose, onOpenWin
         NATE'S&nbsp;95
       </div>
 
-      {/* Menu Items List */}
       <div className="flex-1 py-1 flex flex-col">
         <div
           onClick={() => handleItemClick('profile')}

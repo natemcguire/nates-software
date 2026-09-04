@@ -56,7 +56,7 @@ describe('CHAT web lounge persistence & identity', () => {
       expect(response.status).toBe(201);
       const body: any = await response.json();
       expect(body.message.sender).toBe('sam');
-      expect(body.message.isOp).toBe(0); // Not an op
+      expect(body.message.isOp).toBe(0);
 
       const row: any = await ctx.d1.prepare('SELECT user_id, text FROM chat_messages WHERE id = ?').bind(body.message.id).first();
       expect(row.user_id).toBe('usr_sam');
@@ -154,36 +154,31 @@ describe('CHAT web lounge persistence & identity', () => {
     });
 
     it('returns active users in WHO/NAMES/presence queries and drops stale users', async () => {
-      // 1. Nate is active now
+
       await post({ channel: '#lounge' }, 'test_token_nate', '?action=heartbeat');
 
-      // 2. Sam was active 20 seconds ago
       await ctx.d1.prepare(`
         INSERT INTO chat_presence (user_id, channel, last_seen)
         VALUES ('usr_sam', '#lounge', datetime('now', '-20 seconds'))
       `).run();
 
-      // 3. Josh was active 90 seconds ago (stale, > 60s)
       await ctx.d1.prepare(`
         INSERT INTO chat_presence (user_id, channel, last_seen)
         VALUES ('usr_josh', '#lounge', datetime('now', '-90 seconds'))
       `).run();
 
-      // Query WHO / names
       const resWho = await get('?channel=%23lounge&action=who');
       const bodyWho: any = await resWho.json();
       expect(bodyWho.success).toBe(true);
-      expect(bodyWho.presence).toHaveLength(2); // Nate and Sam, Josh dropped
+      expect(bodyWho.presence).toHaveLength(2);
       const nicks = bodyWho.presence.map((p: any) => p.nick);
       expect(nicks).toContain('nate');
       expect(nicks).toContain('sam');
       expect(nicks).not.toContain('josh');
 
-      // Nate is Op
       const natePresence = bodyWho.presence.find((p: any) => p.nick === 'nate');
       expect(natePresence.isOp).toBe(true);
 
-      // Sam is not Op
       const samPresence = bodyWho.presence.find((p: any) => p.nick === 'sam');
       expect(samPresence.isOp).toBe(false);
     });
@@ -203,12 +198,10 @@ describe('CHAT web lounge persistence & identity', () => {
       expect(topicBody.success).toBe(true);
       expect(topicBody.topic).toBe('12:01 AM UTC Daily Drops Active · v2.0 Released');
 
-      // GET reflects the new topic
       const getRes = await get('?channel=%23lounge');
       const getBody: any = await getRes.json();
       expect(getBody.topic).toBe('12:01 AM UTC Daily Drops Active · v2.0 Released');
 
-      // Also created a TOPIC announcement in chat_messages
       const topicMsg = getBody.messages.find((m: any) => m.type === 'TOPIC');
       expect(topicMsg).toBeDefined();
       expect(topicMsg.text).toContain('nate changed topic to: "12:01 AM UTC Daily Drops Active · v2.0 Released"');

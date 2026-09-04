@@ -1,12 +1,4 @@
-// Tests for the OPS operator health/reconciliation surface:
-//   GET /api/ops/health        (functions/api/ops/health.ts)
-//   GET /api/ops/dead-letters  (functions/api/ops/dead-letters.ts)
-//   src/lib/opsDomain.ts       (pure metric computation over the same tables
-//                                the scheduled drain worker reconciles)
-//
-// Covers: super_admin-only gating (401 unauthenticated, 403 non-admin),
-// honest status-count/queue-age/dead-letter computation against a seeded
-// D1 harness, and that non-admins never receive any queue-state payload.
+
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
@@ -149,7 +141,7 @@ describe('OPS operator health/reconciliation surface', () => {
       expect(res.status).toBe(403);
       const body = await res.json();
       expect(body.success).toBe(false);
-      // Non-admin response must never leak queue state.
+
       expect(body.stripeEventInbox).toBeUndefined();
       expect(body.transferOutbox).toBeUndefined();
     });
@@ -201,7 +193,7 @@ describe('OPS operator health/reconciliation surface', () => {
   describe('computeOpsHealthSnapshot (honest status counts + queue age + flags)', () => {
     it('counts stripe_event_inbox rows by status and finds the oldest unprocessed next_attempt_at', async () => {
       await seedInboxEvent('evt_recv_1', { status: 'received', nextAttemptAt: '2026-01-05 00:00:00' });
-      await seedInboxEvent('evt_recv_2', { status: 'received', nextAttemptAt: '2026-01-01 00:00:00' }); // oldest
+      await seedInboxEvent('evt_recv_2', { status: 'received', nextAttemptAt: '2026-01-01 00:00:00' });
       await seedInboxEvent('evt_retry_1', { status: 'retryable_failure', nextAttemptAt: '2026-01-03 00:00:00' });
       await seedInboxEvent('evt_processed_1', { status: 'processed' });
       await seedInboxEvent('evt_dead_1', { status: 'terminal_failure', lastError: 'card declined permanently' });
@@ -220,7 +212,7 @@ describe('OPS operator health/reconciliation surface', () => {
 
     it('counts commerce_transfer_outbox rows by status, oldest pending, and dead-letters', async () => {
       await seedFulfilledOrderWithTransfer({ orderId: 'ord_a', outboxId: 'cto_a', userId: 'usr_maker_a', status: 'pending', createdAt: '2026-01-02 00:00:00' });
-      await seedFulfilledOrderWithTransfer({ orderId: 'ord_b', outboxId: 'cto_b', userId: 'usr_maker_b', status: 'pending', createdAt: '2026-01-01 00:00:00' }); // oldest
+      await seedFulfilledOrderWithTransfer({ orderId: 'ord_b', outboxId: 'cto_b', userId: 'usr_maker_b', status: 'pending', createdAt: '2026-01-01 00:00:00' });
       await seedFulfilledOrderWithTransfer({ orderId: 'ord_c', outboxId: 'cto_c', userId: 'usr_maker_c', status: 'succeeded' });
       await seedFulfilledOrderWithTransfer({ orderId: 'ord_d', outboxId: 'cto_d', userId: 'usr_maker_d', status: 'terminal_failure', lastError: 'destination account closed' });
 

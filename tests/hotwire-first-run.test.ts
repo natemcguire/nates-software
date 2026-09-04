@@ -25,13 +25,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     vi.restoreAllMocks();
   });
 
-  // ==========================================================================
-  // 1. LIVE CATALOG VS DEMO DATA DISTINCTION & NO SEED MERGING
-  // ==========================================================================
   describe('1. Live Catalog Rows Distinct from Demo Data & Authoritative Purity', () => {
-    // (The former "seed demo apps have isDemo=true" test was removed with the fabricated
-    // INITIAL_APPS fixture — the catalog is now sourced exclusively from D1. The live
-    // authoritative-purity tests below are the real coverage.)
     it('should return authoritative live D1 drops without injecting fake seed apps', async () => {
       const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
       const res = await dropsApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
@@ -41,13 +35,11 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.success).toBe(true);
       expect(Array.isArray(data.drops)).toBe(true);
 
-      // Verify that drops from D1 have creator, version, moddabilityScore, etc.
       const dropIds = data.drops.map((d: any) => d.id);
       expect(dropIds).toContain('dronehunter');
       expect(dropIds).toContain('certified-mailer');
       expect(dropIds).toContain('american-gardener');
 
-      // Verify none of the items carry fabricated unpersisted demo tags
       data.drops.forEach((d: any) => {
         expect(d.name).toBeTruthy();
         expect(d.version).toBeTruthy();
@@ -56,7 +48,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should never merge unpersisted seed apps into an authoritative response with new items', async () => {
-      // Clear seeded apps from D1 to simulate a freshly purged D1 with only 1 custom app
       await ctx.d1.prepare('DELETE FROM commerce_products').run();
       await ctx.d1.prepare('DELETE FROM app_listings').run();
       await ctx.d1.prepare(`
@@ -72,7 +63,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.drops).toHaveLength(1);
       expect(data.drops[0].id).toBe('solitaire-95');
 
-      // Seed apps (e.g. certified-mailer) MUST NOT be present in authoritative output
       const ids = data.drops.map((d: any) => d.id);
       expect(ids).not.toContain('certified-mailer');
     });
@@ -90,12 +80,8 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
   });
 
-  // ==========================================================================
-  // 2. Shelf Ownership Purity for Guest First Run
-  // ==========================================================================
   describe('2. Shelf Ownership Purity for Guest First Run', () => {
     it('should return empty shelf for user without shelf purchases in D1', async () => {
-      // Create fresh user in D1 with session
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES ('usr_guest_demo', 'guest_demo', 'Guest User', 'user')
@@ -116,7 +102,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should never grant automatic seed shelf ownership to new users', async () => {
-      // Create fresh user alice with session
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES ('usr_alice_new', 'alice_new', 'Alice', 'user')
@@ -135,7 +120,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
 
       expect(data.success).toBe(true);
       expect(data.shelf).toEqual([]);
-      // Ensure seed apps are not owned
       const ownedIds = data.shelf.map((s: any) => s.appId);
       expect(ownedIds).not.toContain('dronehunter');
       expect(ownedIds).not.toContain('certified-mailer');
@@ -151,7 +135,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         VALUES (?, 'usr_bob_buyer', ?)
       `).bind(await hashSessionToken('tok_bob_123'), Date.now() + 100000).run();
 
-      // Direct POST minting is disabled
       const postReq = new Request('http://localhost/api/shelf', {
         method: 'POST',
         headers: {
@@ -163,7 +146,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const postRes = await shelfApi.onRequestPost({ request: postReq, env: { DB: ctx.d1 } });
       expect(postRes.status).toBe(405);
 
-      // Seed a fulfilled order and its authoritative commerce license.
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -181,7 +163,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '44A1', 'active')
       `).run();
 
-      // Verify Bob now owns only dronehunter with safe masked key
       const getReq = new Request('http://localhost/api/shelf', {
         method: 'GET',
         headers: { Authorization: 'Bearer tok_bob_123' }
@@ -195,9 +176,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
   });
 
-  // ==========================================================================
-  // 3. OPTIMISTIC UPVOTE ROLLBACK & ERROR EXPLANATION
-  // ==========================================================================
   describe('3. Optimistic Upvote Rollback & Truthful Error Semantics', () => {
     it('requires a real authenticated account and ignores caller-invented voter identity', async () => {
       const response = await upvoteApi.onRequestPost({
@@ -243,7 +221,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.success).toBe(true);
       expect(data.upvotes).toBe(initialCount + 1);
 
-      // Verify in DB
       const updated = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('wallart').first();
       expect((updated as any).upvotes).toBe(initialCount + 1);
     });
@@ -258,7 +235,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const data1 = await res1.json();
       const firstCount = data1.upvotes;
 
-      // Duplicate vote
       const req2 = new Request('http://localhost/api/upvote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
@@ -276,7 +252,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const initial = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('dronehunter').first();
       const initialCount = (initial as any).upvotes;
 
-      // Two concurrent requests with identical voter key
       const createReq = () => new Request('http://localhost/api/upvote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
@@ -294,20 +269,15 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data1.success).toBe(true);
       expect(data2.success).toBe(true);
 
-      // Exactly one request was a new vote, the other was alreadyVoted
       const alreadyVotedFlags = [data1.alreadyVoted, data2.alreadyVoted];
       expect(alreadyVotedFlags).toContain(false);
       expect(alreadyVotedFlags).toContain(true);
 
-      // Verify DB count only incremented by 1
       const finalApp = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('dronehunter').first();
       expect((finalApp as any).upvotes).toBe(initialCount + 1);
     });
   });
 
-  // ==========================================================================
-  // 4. DROP SUBMISSION VALIDATION & PERSISTENCE FAILURE INTEGRITY
-  // ==========================================================================
   describe('4. Drop Submission Validation & Persistence Failure Contracts', () => {
     it('should reject invalid drop submissions with validation errors (e.g. short name or bad semver)', () => {
       const invalidName = validateDropSubmission({ name: 'ab', version: 'v1.0.0' });
@@ -362,25 +332,14 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.batchWindow).toBeDefined();
       expect(data.batchWindow.batchId).toMatch(/^drop-\d{4}-\d{2}-\d{2}$/);
 
-      // Verify row persisted in D1
       const appInDb = await ctx.d1.prepare('SELECT * FROM app_listings WHERE id = ?').bind(dropId).first();
       expect(appInDb).not.toBeNull();
       expect((appInDb as any).name).toBe('Retro Paint 95');
       expect((appInDb as any).version).toBe('v1.0.0');
 
-      // SECURITY (Codex #5): hostname is the router's authoritative host-match
-      // column. It must be persisted at creation time, not left NULL relying
-      // on the router's `OR id = ?` fallback.
       expect((appInDb as any).hostname).toBe(dropId);
     });
 
-    // SECURITY (Codex #5): RESERVED_APP_IDS must be enforced at the DB/creation
-    // BOUNDARY (the drops.ts POST handler itself), not only inside the pure
-    // validateDropSubmission() function tested above. This proves the actual
-    // HTTP endpoint refuses to write a reserved id/hostname to app_listings —
-    // the id becomes <id>.nates-software.com, so a maker registering a
-    // reserved word could otherwise impersonate the first-party app shell
-    // (e.g. inbox/chat/admin.nates-software.com).
     it('should reject a reserved app id at the /api/drops POST endpoint with 400 and write nothing to app_listings', async () => {
       for (const reservedId of ['inbox', 'chat', 'admin', 'ADMIN', 'Api']) {
         const req = new Request('http://localhost/api/drops', {
@@ -405,10 +364,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       }
     });
 
-    // Migration 0035: the reserved-name rule is also a DB-level invariant, so
-    // it holds even for a write path that bypasses drops.ts entirely (a
-    // future admin tool, a raced/alternate insert, or a bulk import) — the
-    // trigger, not application code, is the final backstop.
     it('should have the DB trigger (migration 0035) reject a reserved id/hostname on a raw INSERT that bypasses the app layer entirely', async () => {
       await expect(
         ctx.d1.prepare(`
@@ -422,11 +377,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('POST /api/drops always persists a non-reserved hostname equal to the drop id, never relying on a NULL-hostname router fallback', async () => {
-      // Documents the actual non-null invariant for hostname: it is not a
-      // trigger-level NOT NULL guard (see migration 0035's header for why —
-      // SQLite BEFORE INSERT triggers on a real table can't assign computed
-      // defaults into NEW), it's enforced at the write boundary in
-      // functions/api/drops.ts, which always binds hostname = dropId.
       const dropId = 'hostname-invariant-app';
       const req = new Request('http://localhost/api/drops', {
         method: 'POST',
@@ -441,9 +391,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
   });
 
-  // ==========================================================================
-  // 5. 12:01 AM UTC DAILY DROP PROTOCOL INTEGRITY
-  // ==========================================================================
   describe('5. 12:01 AM UTC Daily Drop Protocol & Batch Identity', () => {
     it('should compute correct batch window spanning 00:01:00 UTC to 00:01:00 UTC next day', () => {
       const testDate = new Date('2026-08-29T10:30:00.000Z');
@@ -456,7 +403,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should compute exact countdown string to next 12:01 AM UTC cutoff', () => {
-      // 1 hour before 00:01:00 UTC cutoff
       const testTime = new Date('2026-08-29T23:01:00.000Z');
       const countdown = getTimeToNextDrop(testTime);
 
@@ -491,9 +437,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
   });
 
-  // ==========================================================================
-  // 6. BATCH WINDOW FILTERING & DISCOVERY INTEGRITY
-  // ==========================================================================
   describe('6. Batch Window Filtering & Multi-Batch Discovery', () => {
     it('should filter drops by specific batch window (today, yesterday, archive)', async () => {
       await ctx.d1.prepare('DELETE FROM commerce_products').run();
@@ -507,13 +450,12 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
 
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries, created_at)
-        VALUES 
+        VALUES
         ('today-app', 'Today App', 'Built today', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', ?),
         ('yesterday-app', 'Yesterday App', 'Built yesterday', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', ?),
         ('archive-app', 'Archive App', 'Built long ago', 'Desc', 'usr_nate', 'v1.0.0', 'MIT', '$15', '/data/app.sqlite', '["Art"]', '[]', '{}', ?)
       `).bind(todayDrop, yesterdayStart, olderArchived).run();
 
-      // Query today batch
       const reqToday = new Request('http://localhost/api/drops?batch=today', { method: 'GET' });
       const resToday = await dropsApi.onRequestGet({ request: reqToday, env: { DB: ctx.d1 } });
       const dataToday = await resToday.json();
@@ -521,7 +463,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(dataToday.drops).toHaveLength(1);
       expect(dataToday.drops[0].id).toBe('today-app');
 
-      // Query yesterday batch
       const reqYesterday = new Request('http://localhost/api/drops?batch=yesterday', { method: 'GET' });
       const resYesterday = await dropsApi.onRequestGet({ request: reqYesterday, env: { DB: ctx.d1 } });
       const dataYesterday = await resYesterday.json();
@@ -529,7 +470,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(dataYesterday.drops).toHaveLength(1);
       expect(dataYesterday.drops[0].id).toBe('yesterday-app');
 
-      // Query archive
       const reqArchive = new Request('http://localhost/api/drops?batch=archive', { method: 'GET' });
       const resArchive = await dropsApi.onRequestGet({ request: reqArchive, env: { DB: ctx.d1 } });
       const dataArchive = await resArchive.json();
@@ -541,9 +481,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
 
     it('should include SQLite CURRENT_TIMESTAMP rows in the active daily batch', async () => {
       const currentBatch = getCurrentBatchWindow(new Date());
-      // During the one-minute interval before rollover, CURRENT_TIMESTAMP still
-      // belongs to the prior batch, so explicitly use SQLite's canonical text
-      // format for an instant safely inside the computed active window.
       const insideBatch = new Date(currentBatch.windowStart.getTime() + 60_000)
         .toISOString()
         .replace('T', ' ')
@@ -569,11 +506,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('CURRENT board (today) falls back to the full catalog when today is empty (Reddit-style, never blank)', async () => {
-      // An app that exists but was NOT created today (frozen past date, like the seeded
-      // catalog). A today-batch query finds nothing in the window and must fall back.
-      // Age every existing app to a frozen past date so TODAY's window is genuinely
-      // empty (the harness seeds apps with a current timestamp), then add one real
-      // past-dated app. A today-batch query must fall back to show it.
       await ctx.d1.prepare("UPDATE app_listings SET created_at = '2020-01-01 00:00:00'").run();
       await ctx.d1.prepare(`
         INSERT INTO app_listings
@@ -587,7 +519,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       });
       const data = await res.json();
       expect(data.success).toBe(true);
-      // Today's window is empty → the board fell back to the full active catalog.
       expect(data.drops.map((d: any) => d.id)).toContain('old-real-app');
       expect(data.showingAllApps).toBe(true);
     });
@@ -603,14 +534,10 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       });
       const data = await res.json();
       expect(data.success).toBe(true);
-      // Archive is an explicit historical view; it must not dump the full catalog.
       expect(data.showingAllApps).toBeFalsy();
     });
   });
 
-  // ==========================================================================
-  // 7. LIVE MAKER STREAKS LEADERBOARD
-  // ==========================================================================
   describe('7. Live Maker Streaks Leaderboard from D1 Drops History', () => {
     it('should calculate live maker leaderboard with streaks and badge tiers', async () => {
       const req = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
@@ -631,9 +558,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
   });
 
-  // ==========================================================================
-  // 8. DROP PUBLISHING COMMERCE SYNCHRONIZATION & AUTH HARDENING
-  // ==========================================================================
   describe('8. Drop Publishing Commerce Synchronization, Auth & Security Hardening', () => {
     it('should synchronize newly published drop into commerce_products AND honestly provision a real repository (Fix 1: never fake "active")', async () => {
       const newDropId = 'retro-synth-95';
@@ -656,13 +580,10 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const data = await res.json();
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
-      // Honest response contract: caller can see the real resulting state
-      // without a second round-trip.
       expect(data.productStatus).toBe('draft');
       expect(data.repositoryProvisioned).toBe(true);
       expect(typeof data.repositoryId).toBe('string');
 
-      // Verify listing row has liveUrl preserved in binaries.web
       const listing = await ctx.d1.prepare('SELECT binaries, price, repository_id FROM app_listings WHERE id = ?').bind(newDropId).first();
       expect(listing).not.toBeNull();
       const binaries = JSON.parse((listing as any).binaries);
@@ -670,9 +591,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect((listing as any).price).toBe('$20.00');
       expect((listing as any).repository_id).toBe(data.repositoryId);
 
-      // Fix 1 (HOTWIRE #6): commerce_products must be synchronized, but its
-      // status must HONESTLY reflect readiness — this drop has no deployable
-      // commit yet, so it is 'draft', never a fake 'active'.
       const product = await ctx.d1.prepare('SELECT price_cents, status, seller_user_id, repository_id FROM commerce_products WHERE app_id = ?').bind(newDropId).first();
       expect(product).not.toBeNull();
       expect((product as any).price_cents).toBe(2000);
@@ -680,14 +598,10 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect((product as any).seller_user_id).toBe('usr_nate');
       expect((product as any).repository_id).toBe(data.repositoryId);
 
-      // Fix 1: a real repositories row was provisioned transactionally,
-      // server-owned by the authenticated session — never a fake/absent link.
       const repo = await ctx.d1.prepare('SELECT id, app_id, owner_user_id, status FROM repositories WHERE id = ?').bind(data.repositoryId).first();
       expect(repo).not.toBeNull();
       expect((repo as any).app_id).toBe(newDropId);
       expect((repo as any).owner_user_id).toBe('usr_nate');
-      // No git objects/commits exist yet for a freshly-provisioned repo, so
-      // 'provisioning' (not 'active') is the honest status.
       expect((repo as any).status).toBe('provisioning');
     });
 
@@ -717,7 +631,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(readinessData.readiness.product.exists).toBe(true);
       expect(readinessData.readiness.product.active).toBe(false);
       expect(readinessData.readiness.repository.exists).toBe(true);
-      // A freshly-provisioned repo has no commit -> not 'active' -> not forkable either.
       expect(readinessData.readiness.repository.active).toBe(false);
       expect(readinessData.readiness.overall).toBe('draft');
     });
@@ -767,7 +680,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should derive creator strictly from authenticated session and prevent creator spoofing', async () => {
-      // Create session for user sam (usr_sam)
       const samToken = 'tok_sam_spoof_test';
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
@@ -786,7 +698,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
           name: 'Sam Secret Tool',
           tagline: 'Spoofing attempt',
           description: 'Testing creator identity binding.',
-          creator: 'nate', // Attacker attempts to spoof nate
+          creator: 'nate',
           version: 'v1.0.0',
           price: '$30.00'
         })
@@ -797,22 +709,18 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
 
-      // Verify creator_id is bound strictly to authenticated usr_sam
       const listing = await ctx.d1.prepare('SELECT creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
       expect((listing as any).creator_id).toBe('usr_sam');
 
-      // Verify commerce_products seller_user_id is bound to usr_sam
       const product = await ctx.d1.prepare('SELECT seller_user_id, price_cents FROM commerce_products WHERE app_id = ?').bind(dropId).first();
       expect((product as any).seller_user_id).toBe('usr_sam');
       expect((product as any).price_cents).toBe(3000);
 
-      // Verify no fake user was created
       const fakeUser = await ctx.d1.prepare('SELECT * FROM users WHERE username = ?').bind('fake_maker_spoofed').first();
       expect(fakeUser).toBeNull();
     });
 
     it('should prevent one maker from overwriting another maker existing listing ID', async () => {
-      // dronehunter is owned by usr_nate
       const samToken = 'tok_sam_collision';
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
@@ -826,7 +734,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
           Authorization: `Bearer ${samToken}`
         },
         body: JSON.stringify({
-          id: 'dronehunter', // Existing app owned by usr_nate
+          id: 'dronehunter',
           name: 'DroneHunter Hijack',
           tagline: 'Attempting to hijack existing listing',
           description: 'Should be rejected with 403',
@@ -841,7 +749,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(data.success).toBe(false);
       expect(data.error).toContain('owned by another maker');
 
-      // Verify original listing was untouched
       const original = await ctx.d1.prepare('SELECT name, creator_id FROM app_listings WHERE id = ?').bind('dronehunter').first();
       expect((original as any).name).toBe('DroneHunter 95');
       expect((original as any).creator_id).toBe('usr_nate');
@@ -854,8 +761,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         VALUES (?, 'usr_sam', ?)
       `).bind(await hashSessionToken(samToken), Date.now() + 100000).run();
 
-      // Simulate the race window: the preflight observes no owner, while the
-      // atomic conditional statements execute against the already-claimed ID.
       const raceDb = {
         ...ctx.d1,
         prepare: (query: string) => {
@@ -889,12 +794,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect((product as any).seller_user_id).toBe('usr_nate');
       expect((product as any).price_cents).toBe(1500);
 
-      // Fix 1 regression guard: the race loser (usr_sam) must NOT end up with
-      // an orphaned repository row. The repository INSERT is guarded by
-      // "WHERE EXISTS (listing owned by creatorId)" specifically so that a
-      // lost ownership race can't silently commit a repo owned by the loser
-      // inside the same D1 batch/transaction (D1 only rolls back on a thrown
-      // statement error, not on a 0-row conditional write).
       const orphanedRepos = await ctx.d1.prepare(
         `SELECT id FROM repositories WHERE app_id = 'dronehunter' AND owner_user_id = 'usr_sam'`
       ).all();
@@ -906,7 +805,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: 'Bearer valid_test_token' // usr_nate
+          Authorization: 'Bearer valid_test_token'
         },
         body: JSON.stringify({
           id: 'dronehunter',
@@ -933,7 +832,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should reject invalid drop ID and price formats with 400', async () => {
-      // Invalid ID
       const reqBadId = new Request('http://localhost/api/drops', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
@@ -946,7 +844,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const resBadId = await dropsApi.onRequestPost({ request: reqBadId, env: { DB: ctx.d1 } });
       expect(resBadId.status).toBe(400);
 
-      // Invalid Price
       const reqBadPrice = new Request('http://localhost/api/drops', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
@@ -962,7 +859,6 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
     });
 
     it('should atomically roll back listing and never report success if commerce synchronization fails', async () => {
-      // Mock D1 batch failure
       const originalBatch = ctx.d1.batch.bind(ctx.d1);
       ctx.d1.batch = vi.fn().mockRejectedValue(new Error('Commerce synchronization transaction failed'));
 
@@ -1093,13 +989,11 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
 
     it('should cascade delete drop_upvotes when an app listing is deleted', async () => {
       const cascadeAppId = 'cascade-vote-drop';
-      // Insert test drop
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version)
         VALUES (?, 'Cascade Vote Drop', 'Tagline', 'Desc', 'usr_nate', 'v1.0.0')
       `).bind(cascadeAppId).run();
 
-      // Cast an upvote for cascade-vote-drop
       const voteReq = new Request('http://localhost/api/upvote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token_nate' },
@@ -1109,18 +1003,14 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       const voteData = await voteRes.json();
       expect(voteData.success).toBe(true);
 
-      // Verify upvote exists in drop_upvotes
       const votesBefore = await ctx.d1.prepare('SELECT count(*) AS c FROM drop_upvotes WHERE app_id = ?').bind(cascadeAppId).first('c');
       expect(Number(votesBefore)).toBe(1);
 
-      // Delete app listing
       await ctx.d1.prepare('DELETE FROM app_listings WHERE id = ?').bind(cascadeAppId).run();
 
-      // Verify drop_upvotes was cascaded
       const votesAfter = await ctx.d1.prepare('SELECT count(*) AS c FROM drop_upvotes WHERE app_id = ?').bind(cascadeAppId).first('c');
       expect(Number(votesAfter)).toBe(0);
 
-      // Verify foreign keys remain clean
       expect(ctx.runForeignKeyCheck()).toEqual([]);
     });
   });

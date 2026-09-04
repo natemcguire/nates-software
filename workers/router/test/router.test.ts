@@ -11,13 +11,6 @@ import routerWorker, {
 } from '../src/index';
 import { buildOriginAuthToken, deriveOriginAppKey } from '../src/originAuth';
 
-/**
- * Verifies a X-NSW-Origin-Auth token the same way an origin is documented to
- * (see originAuth.ts module header): split the 6 "~"-separated fields,
- * recompute the per-app derived key from the SAME global secret, recompute
- * the HMAC over the bound fields, and compare. Used by tests below to assert
- * the token is a valid, app-scoped signed proof — never the raw secret.
- */
 async function verifyOriginAuthToken(
   token: string,
   expected: { globalSecret: string; appId: string; host: string; method: string; path: string; nowSeconds?: number }
@@ -105,9 +98,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     };
   }
 
-  // ==========================================================================
-  // 1. AUTHORITATIVE EXCLUSION LIST & TRAILING-DOT NORMALIZATION (FIX 2)
-  // ==========================================================================
   describe('1. Authoritative 13 Proxied Hostnames & Trailing-Dot Passthrough (FIX 2)', () => {
     const expected13Hosts = [
       'nates-software.com',
@@ -144,27 +134,22 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const r1 = new Request(u1);
       expect(extractSubdomain('app.nates-software.com', u1, r1)).toEqual({ isCanary: false, subdomain: 'app' });
 
-      // Trailing dot normalized in extractSubdomain
       const u1Dot = new URL('https://app.nates-software.com./path');
       const r1Dot = new Request(u1Dot);
       expect(extractSubdomain('app.nates-software.com.', u1Dot, r1Dot)).toEqual({ isCanary: false, subdomain: 'app' });
 
-      // Canary with valid secret header
       const u2 = new URL('https://router-canary.nates-software.com/?app=my-drop');
       const r2 = new Request(u2, { headers: { 'x-canary-secret': 'secret123' } });
       const canaryEnv = { CANARY_SECRET: 'secret123' } as any;
       expect(extractSubdomain('router-canary.nates-software.com', u2, r2, canaryEnv)).toEqual({ isCanary: true, subdomain: 'my-drop' });
 
-      // Canary with valid secret header and x-app-id
       const u3 = new URL('https://router-canary.nates-software.com/');
       const r3 = new Request(u3, { headers: { 'x-app-id': 'header-drop', 'x-canary-secret': 'secret123' } });
       expect(extractSubdomain('router-canary.nates-software.com', u3, r3, canaryEnv)).toEqual({ isCanary: true, subdomain: 'header-drop' });
 
-      // Canary without valid secret does NOT extract subdomain
       const r3NoSecret = new Request(u3, { headers: { 'x-app-id': 'header-drop' } });
       expect(extractSubdomain('router-canary.nates-software.com', u3, r3NoSecret, canaryEnv)).toEqual({ isCanary: true, subdomain: '' });
 
-      // Apex and www return empty subdomain
       const u4 = new URL('https://nates-software.com/');
       const r4 = new Request(u4);
       expect(extractSubdomain('nates-software.com', u4, r4)).toEqual({ isCanary: false, subdomain: '' });
@@ -181,7 +166,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         expect(mockFetch).toHaveBeenCalledTimes(1);
         expect(mockFetch).toHaveBeenCalledWith(request);
 
-        // Zero D1 queries, zero R2 storage accesses
         expect(d1PrepareSpy).not.toHaveBeenCalled();
         expect(r2GetSpy).not.toHaveBeenCalled();
 
@@ -227,9 +211,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 2. SUFFIX GUARD & URL-ONLY HOSTNAME DERIVATION (FIX 3)
-  // ==========================================================================
   describe('2. Suffix Guard & URL-Only Hostname Derivation (FIX 3)', () => {
     it('passes through foreign hostnames untouched via suffix guard without D1 lookup', async () => {
       const foreignUrls = [
@@ -276,7 +257,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         size: 24
       });
 
-      // Request URL is real-app.nates-software.com, but Host header is spoofed as evil.com
       const request = new Request('https://real-app.nates-software.com/', {
         headers: { Host: 'evil.com' }
       });
@@ -284,14 +264,12 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const response = await handleRequest(request, env);
       expect(response.status).toBe(200);
       expect(await response.text()).toBe('<h1>Real App Content</h1>');
-      // D1 query was performed for real-app, not evil.com
       expect(d1PrepareSpy).toHaveBeenCalled();
     });
 
     it('does not route D1 when request URL is apex nates-software.com even if Host header is spoofed', async () => {
       const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
 
-      // Request URL is apex (exclusion), Host header claims to be an app
       const request = new Request('https://nates-software.com/', {
         headers: { Host: 'unauthorized-app.nates-software.com' }
       });
@@ -304,9 +282,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 3. D1-DRIVEN HOST RESOLUTION & REVISION HEALTH GATING (FIX 1)
-  // ==========================================================================
   describe('3. D1 Host Resolution and Revision Healthy Gating (FIX 1)', () => {
     it('serves active static application index.html when revisionStatus is healthy', async () => {
       const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
@@ -354,10 +329,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const body = await res.text();
       expect(body).toBe(htmlBody);
 
-      // SECURITY (Codex #5): the router now queries by the authoritative
-      // hostname column FIRST and only falls back to `id = ?` if that misses.
-      // The hostname-only query already resolved this listing, so bind is
-      // called with just the subdomain, and the id-fallback query never runs.
       expect(mockStmt.bind).toHaveBeenCalledWith('cool-app');
       expect(mockStmt.bind).not.toHaveBeenCalledWith('cool-app', 'cool-app');
       expect(r2GetSpy).toHaveBeenCalledWith('apps/cool-app/revisions/rev_999/index.html');
@@ -366,7 +337,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     it('returns 503 and does NOT serve bytes when active_deployment_id points at superseded revision (FIX 1 regression)', async () => {
       const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
 
-      // App is deployment_state='active', active_deployment_id='rev_old', but joined revisionStatus is 'superseded'
       const supersededRecord: AppListingRecord = {
         id: 'stale-app',
         origin_kind: 'r2_static',
@@ -390,7 +360,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         success: false,
         error: "App 'stale-app' does not have an active verified deployment (current state: active)."
       });
-      // CRITICAL: zero R2 gets when revisionStatus is not healthy
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
 
@@ -510,7 +479,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       });
 
       r2GetSpy.mockImplementation((key: string) => {
-        // Direct path not found, index.html found
         if (key === 'apps/nested-app/revisions/rev_nest/settings/index.html') {
           return Promise.resolve({
             body: '<h1>Settings Page</h1>',
@@ -567,9 +535,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 4. INACTIVE, DRAFT, FAILED, OR MISSING APPS (CLEAN 404 / 503 / 400)
-  // ==========================================================================
   describe('4. Inactive, Draft, Missing, or Traversal Error Handling', () => {
     it('returns clean 404 JSON when app is not found in D1', async () => {
       const { env, d1PrepareSpy } = createMockEnv();
@@ -701,9 +666,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 5. KV HOST CACHING BEHAVIOR
-  // ==========================================================================
   describe('5. KV Host Lookup Caching', () => {
     it('uses KV cache on hit and skips D1 query', async () => {
       const cachedListing: AppListingRecord = {
@@ -776,9 +738,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 6. CANARY ROUTING WITH SECRET GATING (FIX 4)
-  // ==========================================================================
   describe('6. Canary Route Handling with Secret Gating (FIX 4)', () => {
     it('returns canary info JSON without D1 lookup when requested without secret', async () => {
       const { env, d1PrepareSpy } = createMockEnv({ CANARY_SECRET: 'secret-xyz' });
@@ -793,7 +752,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(json.canary).toBe(true);
       expect(json.message).toContain('Router canary active');
 
-      // CRITICAL: No D1 queries when secret is missing
       expect(d1PrepareSpy).not.toHaveBeenCalled();
     });
 
@@ -883,9 +841,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 7. SPA ROUTE RESOLUTION DECOUPLING (NO INITIAL_APPS DEPENDENCY)
-  // ==========================================================================
   describe('7. resolveAppRoute Decoupling from INITIAL_APPS', () => {
     it('resolves standalone views correctly', () => {
       expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({
@@ -933,9 +888,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 8. PHASE 3 ORIGIN KIND DISPATCH (CF_CONTAINER, WORKER, FARGATE_WARM)
-  // ==========================================================================
   describe('8. Phase 3 Origin Kind Dispatch', () => {
     it('proxies to origin_ref for active and healthy cf_container app preserving method, path, and query', async () => {
       const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
@@ -986,8 +938,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(forwardedReq.url).toBe('https://container-app-worker.internal.workers.dev/api/v1/items?limit=10&page=2');
       expect(forwardedReq.method).toBe('GET');
       expect(forwardedReq.headers.get('X-Custom-Header')).toBe('custom-val');
-      // SECURITY (Codex #4): the raw global secret must never be forwarded.
-      // The header must be a request-scoped, app-scoped signed proof instead.
       const originAuthToken = forwardedReq.headers.get('X-NSW-Origin-Auth');
       expect(originAuthToken).not.toBeNull();
       expect(originAuthToken).not.toBe('test-origin-secret-xyz');
@@ -1032,7 +982,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // The platform's session credentials MUST NOT reach a tenant origin.
           'Authorization': 'Bearer victim-session-token',
           'Cookie': 'nsw_session=victim-token'
         },
@@ -1048,13 +997,9 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const forwardedReq = mockFetch.mock.calls[0][0] as Request;
       expect(forwardedReq.url).toBe('https://api-container.workers.dev/submit');
       expect(forwardedReq.method).toBe('POST');
-      // Body + benign headers are forwarded, but the session credentials are
-      // STRIPPED so a hostile tenant app can never exfiltrate them (account
-      // takeover). Only the router→origin shared secret is added.
       expect(forwardedReq.headers.get('Content-Type')).toBe('application/json');
       expect(forwardedReq.headers.get('Authorization')).toBeNull();
       expect(forwardedReq.headers.get('Cookie')).toBeNull();
-      // SECURITY (Codex #4): app-scoped signed proof, not the raw global secret.
       const originAuthToken = forwardedReq.headers.get('X-NSW-Origin-Auth');
       expect(originAuthToken).not.toBeNull();
       expect(originAuthToken).not.toBe('test-origin-secret-xyz');
@@ -1202,7 +1147,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(res.status).toBe(503);
       const json = await res.json();
       expect(json.error).toContain('does not have an active verified deployment');
-      // Mock fetch must NOT be called for origin
       expect(mockFetch).not.toHaveBeenCalled();
       expect(r2GetSpy).not.toHaveBeenCalled();
     });
@@ -1288,12 +1232,10 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const forwardedReq = mockFetch.mock.calls[0][0] as Request;
       const originAuthToken = forwardedReq.headers.get('X-NSW-Origin-Auth');
 
-      // The disclosed value is never the raw platform-global secret.
       expect(originAuthToken).not.toBeNull();
       expect(originAuthToken).not.toBe('custom-secret-456');
       expect(originAuthToken).not.toContain('custom-secret-456');
 
-      // It IS a valid v1 signed proof bound to this exact appId/host/method/path.
       expect(
         await verifyOriginAuthToken(originAuthToken!, {
           globalSecret: 'custom-secret-456',
@@ -1308,7 +1250,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     it('an origin-auth token minted for one app cannot authenticate as a different app (Codex #4 cross-tenant forgery)', async () => {
       const globalSecret = 'shared-platform-secret';
 
-      // Router mints a token for app "victim-app" at its own host.
       const tokenForVictim = await buildOriginAuthToken({
         globalSecret,
         appId: 'victim-app',
@@ -1317,11 +1258,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         path: '/api/data'
       });
 
-      // An attacker who captured tokenForVictim (e.g. from their own tenant
-      // origin logs after triggering a proxied request) tries to replay it
-      // against a DIFFERENT app's origin, "attacker-app". A correctly
-      // implemented origin only trusts a token whose bound appId matches its
-      // own configured appId, so the token is rejected outright...
       expect(
         await verifyOriginAuthToken(tokenForVictim, {
           globalSecret,
@@ -1332,10 +1268,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         })
       ).toBe(false);
 
-      // ...and even ignoring the appId mismatch, the signature itself does
-      // not verify against attacker-app's per-app derived key, because the
-      // per-app key derivation and the signed payload are BOTH bound to the
-      // original appId ("victim-app"), not a global secret usable anywhere.
       const attackerDerivedKey = await deriveOriginAppKey(globalSecret, 'attacker-app');
       const victimDerivedKey = await deriveOriginAppKey(globalSecret, 'victim-app');
       expect(Buffer.from(attackerDerivedKey).toString('hex')).not.toBe(
@@ -1353,9 +1285,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         path: '/read-only'
       });
 
-      // Same token, but the verifying origin checks it against a different
-      // path (as if an attacker tried to replay a captured GET /read-only
-      // token against POST /admin/delete) — must fail.
       expect(
         await verifyOriginAuthToken(token, {
           globalSecret,
@@ -1369,7 +1298,7 @@ describe('Cloudflare Router Worker (workers/router)', () => {
 
     it('rejects an expired origin-auth token', async () => {
       const globalSecret = 'expiry-secret';
-      const mintedAt = Date.now() - 10 * 60 * 1000; // 10 minutes ago, well past the 60s TTL
+      const mintedAt = Date.now() - 10 * 60 * 1000;
       const token = await buildOriginAuthToken({
         globalSecret,
         appId: 'app-y',
@@ -1454,15 +1383,10 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     });
   });
 
-  // ==========================================================================
-  // 9. RESERVED / FIRST-PARTY SUBDOMAIN GUARD (Codex #5)
-  // ==========================================================================
   describe('9. Reserved-Subdomain id-Fallback Guard (Codex #5)', () => {
     it('never issues the id-fallback D1 query for a reserved subdomain, even if hostname lookup misses', async () => {
       const { env, d1PrepareSpy } = createMockEnv();
 
-      // hostname match misses (no listing has this reserved word as hostname,
-      // which migration 0035's DB trigger also guarantees) -> first() resolves null.
       const bindSpy = vi.fn().mockReturnThis();
       d1PrepareSpy.mockReturnValue({
         bind: bindSpy,
@@ -1473,8 +1397,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       const res = await handleRequest(req, env);
 
       expect(res.status).toBe(404);
-      // Only ONE D1 query (the hostname-only lookup) — the id-fallback query
-      // is never issued for a reserved subdomain like "inbox".
       expect(d1PrepareSpy).toHaveBeenCalledTimes(1);
       expect(bindSpy).toHaveBeenCalledWith('inbox');
       expect(bindSpy).not.toHaveBeenCalledWith('inbox', 'inbox');
@@ -1483,15 +1405,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
     it('never dispatches a tenant listing to a reserved subdomain via the id-fallback match', async () => {
       const { env, d1PrepareSpy, r2GetSpy } = createMockEnv();
 
-      // Simulate a hypothetical bad/legacy row: app_listings.id = 'inbox' with
-      // a DIFFERENT (non-matching) hostname. Even if this row somehow existed
-      // (migration 0035's trigger is meant to prevent it going forward), the
-      // router must never resolve https://inbox.nates-software.com/ to it via
-      // the `OR id = ?` fallback, because "inbox" is a reserved/first-party
-      // subdomain. (Note: unlike "chat"/"hotwire"/etc., "inbox" is reserved
-      // but is NOT one of the 13 EXCLUSION_HOSTNAMES passthrough hosts, so
-      // this request actually reaches the D1 host-resolution step being
-      // tested here rather than short-circuiting at the exclusion allowlist.)
       const maliciousRow: AppListingRecord = {
         id: 'inbox',
         origin_kind: 'r2_static',
@@ -1502,9 +1415,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       };
 
       const bindSpy = vi.fn().mockReturnThis();
-      // hostname query misses (this row's hostname column doesn't equal
-      // 'inbox'); only if the router incorrectly ran the id-fallback query
-      // would it find this row.
       d1PrepareSpy.mockReturnValue({
         bind: bindSpy,
         first: vi.fn().mockResolvedValue(null)
@@ -1516,9 +1426,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
       expect(res.status).toBe(404);
       expect(d1PrepareSpy).toHaveBeenCalledTimes(1);
       expect(r2GetSpy).not.toHaveBeenCalled();
-      // Sanity: prove the guard is actually what's stopping this, not just a
-      // coincidental miss — the malicious row would have matched the
-      // id-fallback query had it run.
       expect(maliciousRow.id).toBe('inbox');
     });
 
@@ -1540,7 +1447,6 @@ describe('Cloudflare Router Worker (workers/router)', () => {
         bind: bindSpy,
         first: vi.fn().mockImplementation(() => {
           callCount += 1;
-          // First call (hostname match) misses; second call (id fallback) hits.
           return Promise.resolve(callCount === 1 ? null : legitRecord);
         })
       }));

@@ -1,21 +1,3 @@
-/**
- * RIG.EXE & GITSMITH Deployment Lifecycle State Machine & Plan Generator
- * 
- * CORE INVARIANTS:
- * 1. Apps must reach a verified deployment revision before appearing 'active'.
- * 2. Publication (catalog listing) sets 'draft' (or 'source_ready'), NEVER 'active'.
- * 3. App deployment states:
- *    - draft: metadata only
- *    - source_ready: canonical GITSMITH repository + commit exist
- *    - building: candidate build in progress
- *    - deployable: verified build artifact exists
- *    - active: promoted revision + hostname healthy
- *    - failed: deployment failed, with logs/evidence
- *    - retired: no longer offered
- * 4. RIG runtime detection: detects Node, Docker, Python, Rust, Go, Static HTML, and applies optional manifest overrides.
- * 5. Fail-closed deployment: where a real execution backend isn't available, fail closed with specific evidence; NEVER mock success.
- */
-
 import type { AppDeploymentState } from '../data/mockData';
 export type { AppDeploymentState };
 
@@ -30,9 +12,6 @@ export const APP_DEPLOYMENT_STATES: readonly AppDeploymentState[] = [
   'client_demo'
 ] as const;
 
-// NB: there is no 'deploying' state. The build AND deploy stages both surface as
-// 'building' (prod's deployment_state CHECK has no 'deploying' value); the deploy
-// vs build stage is discriminated by the build_runs CodeBuild project, not app state.
 export const DEPLOYMENT_STATE_TRANSITIONS: Readonly<Record<AppDeploymentState, readonly AppDeploymentState[]>> = {
   draft: ['source_ready', 'building', 'failed', 'retired', 'client_demo'],
   source_ready: ['building', 'failed', 'retired', 'draft'],
@@ -125,9 +104,6 @@ export interface DeploymentExecutionResult {
   readonly logs: string[];
 }
 
-/**
- * Parses an optional manifest (slop.json, deploy.json, rig.json, app.json)
- */
 export function parseManifestOverride(
   manifestContent: string | Record<string, any>
 ): {
@@ -147,7 +123,6 @@ export function parseManifestOverride(
 
     const result: any = {};
 
-    // Build command
     if (typeof data.buildCommand === 'string' && data.buildCommand.trim()) {
       result.buildCommand = data.buildCommand.trim();
     } else if (typeof data.build_command === 'string' && data.build_command.trim()) {
@@ -156,7 +131,6 @@ export function parseManifestOverride(
       result.buildCommand = data.build.trim();
     }
 
-    // Start command
     if (typeof data.startCommand === 'string' && data.startCommand.trim()) {
       result.startCommand = data.startCommand.trim();
     } else if (typeof data.start_command === 'string' && data.start_command.trim()) {
@@ -165,7 +139,6 @@ export function parseManifestOverride(
       result.startCommand = data.start.trim();
     }
 
-    // Port
     const rawPort = data.port ?? data.targetPort ?? data.target_port;
     if (typeof rawPort === 'number' && Number.isInteger(rawPort) && rawPort > 0 && rawPort <= 65535) {
       result.port = rawPort;
@@ -174,7 +147,6 @@ export function parseManifestOverride(
       if (p > 0 && p <= 65535) result.port = p;
     }
 
-    // Health check
     if (typeof data.healthEndpoint === 'string' && data.healthEndpoint.trim()) {
       result.healthEndpoint = data.healthEndpoint.trim();
     } else if (typeof data.health_endpoint === 'string' && data.health_endpoint.trim()) {
@@ -189,7 +161,6 @@ export function parseManifestOverride(
       result.healthCommand = data.healthCommand.trim();
     }
 
-    // Memory (capped at 256MB per RIG invariant)
     const rawMem = data.memoryMb ?? data.memory_mb ?? data.memoryCapMb ?? data.memory;
     if (typeof rawMem === 'number' && rawMem > 0) {
       result.memoryMb = Math.min(Math.round(rawMem), 256);
@@ -198,7 +169,6 @@ export function parseManifestOverride(
       if (m > 0) result.memoryMb = Math.min(m, 256);
     }
 
-    // Volumes
     const rawVolumes = data.volumes ?? data.storage ?? data.mounts;
     if (Array.isArray(rawVolumes)) {
       result.volumes = rawVolumes
@@ -211,7 +181,6 @@ export function parseManifestOverride(
         }));
     }
 
-    // Environment variables
     const rawEnv = data.env ?? data.envVars ?? data.env_vars;
     if (rawEnv && typeof rawEnv === 'object' && !Array.isArray(rawEnv)) {
       const cleanEnv: Record<string, string> = {};
@@ -223,7 +192,6 @@ export function parseManifestOverride(
       result.env = cleanEnv;
     }
 
-    // Postgres add-on opt-in
     if (typeof data.postgres === 'boolean') {
       result.postgres = data.postgres;
     } else if (typeof data.postgres === 'string') {
@@ -271,9 +239,9 @@ function extractPythonDependencies(
     for (let line of content.split('\n')) {
       line = line.trim();
       if (!line || line.startsWith('#') || line.startsWith('-')) continue;
-      const commentIdx = line.indexOf('#');
-      if (commentIdx !== -1) {
-        line = line.slice(0, commentIdx).trim();
+      const hashIdx = line.indexOf('#');
+      if (hashIdx !== -1) {
+        line = line.slice(0, hashIdx).trim();
       }
       const match = line.match(/^([a-zA-Z0-9_\-\.]+)/);
       if (match && match[1]) {
@@ -298,13 +266,11 @@ function extractPythonDependencies(
       }
     };
 
-    // 1. [project] section dependencies = [ ... ]
     const projectDepMatch = pyprojectContent.match(/\[project\][\s\S]*?dependencies\s*=\s*\[([\s\S]*?)\]/i);
     if (projectDepMatch && projectDepMatch[1]) {
       extractDepsFromArray(projectDepMatch[1]);
     }
 
-    // 2. [project.optional-dependencies] section
     const optDepMatch = pyprojectContent.match(/\[project\.optional-dependencies\]([\s\S]*?)(?:^\[|\z)/im);
     if (optDepMatch && optDepMatch[1]) {
       const arrayMatches = optDepMatch[1].matchAll(/=\s*\[([\s\S]*?)\]/g);
@@ -315,7 +281,6 @@ function extractPythonDependencies(
       }
     }
 
-    // 3. Match generic dependencies = [ ... ] if not caught under [project]
     if (!projectDepMatch) {
       const genericDepMatch = pyprojectContent.match(/dependencies\s*=\s*\[([\s\S]*?)\]/i);
       if (genericDepMatch && genericDepMatch[1]) {
@@ -323,7 +288,6 @@ function extractPythonDependencies(
       }
     }
 
-    // 4. [tool.poetry.dependencies] section
     const poetryMatch = pyprojectContent.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?:^\[|\z)/im);
     if (poetryMatch && poetryMatch[1]) {
       for (const line of poetryMatch[1].split('\n')) {
@@ -351,9 +315,6 @@ function extractPythonDependencies(
   return deps;
 }
 
-/**
- * RIG runtime detection: inspects repository file list and contents to produce a deployment plan.
- */
 export function detectRigRuntime(
   files: string[],
   fileContents: Record<string, string> = {}
@@ -363,7 +324,6 @@ export function detectRigRuntime(
   const hasStaticEntry = fileSet.has('index.html') || fileSet.has('public/index.html') || fileSet.has('dist/index.html');
   const staticEntry = fileSet.has('index.html') ? 'index.html' : (fileSet.has('dist/index.html') ? 'dist/index.html' : 'public/index.html');
 
-  // 1. Check for optional manifest override
   const manifestCandidates = ['slop.json', 'deploy.json', 'rig.json', 'app.json', 'manifest.json'];
   let manifestFile: string | undefined;
   let manifestOverrides: ReturnType<typeof parseManifestOverride> = null;
@@ -377,13 +337,11 @@ export function detectRigRuntime(
     }
   }
 
-  // Helper to extract content if present
   const getContent = (pattern: string): string | undefined => {
     const key = Object.keys(fileContents).find(k => k.toLowerCase() === pattern.toLowerCase() || k.toLowerCase().endsWith(`/${pattern.toLowerCase()}`));
     return key ? fileContents[key] : undefined;
   };
 
-  // 2. Dockerfile Detection
   if (fileSet.has('dockerfile') || Array.from(fileSet).some(f => f.endsWith('/dockerfile') || f.endsWith('.dockerfile'))) {
     const dockerContent = getContent('dockerfile') || '';
     let exposedPort = 8080;
@@ -414,16 +372,12 @@ export function detectRigRuntime(
     };
   }
 
-  // 3. Next.js Detection (Worker / OpenNext lane)
-  // Runs AFTER Dockerfile (hand-written Dockerfile takes precedence as 'docker')
-  // and BEFORE Node (so Next repos aren't swallowed as generic node/port 3000).
   if (fileSet.has('package.json')) {
     const pkgForNextContent = getContent('package.json');
     let pkgForNext: any = {};
     if (pkgForNextContent) {
       try { pkgForNext = JSON.parse(pkgForNextContent); } catch {}
     }
-    // hasNextDep gate is crucial: keeps repos with build: 'vite build' but NO next dep classified as 'node'
     const hasNextDep = Boolean(pkgForNext?.dependencies?.next || pkgForNext?.devDependencies?.next);
     const hasNextConfig = fileSet.has('next.config.js') || fileSet.has('next.config.mjs') || fileSet.has('next.config.ts');
     const hasAppOrPages = normalizedFiles.some(f => {
@@ -474,7 +428,6 @@ export function detectRigRuntime(
     }
   }
 
-  // 4. Node.js (package.json) Detection vs Static Web with package.json
   if (fileSet.has('package.json')) {
     const pkgContent = getContent('package.json');
     let pkg: any = {};
@@ -489,8 +442,6 @@ export function detectRigRuntime(
     const mainField = typeof pkg?.main === 'string' ? pkg.main.trim() : '';
     const mainIsHtml = mainField.toLowerCase().endsWith('.html') || mainField.toLowerCase().endsWith('.htm');
 
-    // If repo has index.html and no real build script and no real Node server start script (e.g. dronehunter),
-    // and no standalone server file (server.js, etc.), classify as STATIC!
     if (hasStaticEntry && !hasBuildScript && (!hasStartScript || isStaticServeCommand(rawStart))) {
       const hasServerFile = !mainIsHtml && (fileSet.has('server.js') || fileSet.has('server.mjs') || fileSet.has('server.ts') || fileSet.has('app.js'));
       if (!hasServerFile) {
@@ -520,11 +471,6 @@ export function detectRigRuntime(
     const mainCandidate = mainField || (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : (fileSet.has('app.js') ? 'app.js' : 'dist/index.js')));
     const mainFile = mainIsHtml ? (fileSet.has('index.js') ? 'index.js' : (fileSet.has('server.js') ? 'server.js' : (fileSet.has('app.js') ? 'app.js' : 'index.js'))) : mainCandidate;
 
-    // A node build script (e.g. "vinext build", "next build") needs its
-    // dependencies present first — the build container starts with none. Install
-    // before building. Prefer a reproducible `npm ci` when a lockfile exists, else
-    // fall back to `npm install`. Without this the build fails with e.g.
-    // "vinext: not found" (exit 127) because the CLI it calls was never installed.
     const hasLockfile = fileSet.has('package-lock.json') || fileSet.has('npm-shrinkwrap.json');
     const installCmd = hasLockfile
       ? 'npm ci --no-audit --no-fund || npm install --no-audit --no-fund'
@@ -554,7 +500,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 4. Python (requirements.txt / pyproject.toml / Pipfile) Detection
   if (fileSet.has('requirements.txt') || fileSet.has('pyproject.toml') || fileSet.has('pipfile')) {
     const pyDeps = extractPythonDependencies(getContent);
     const hasFastApi = pyDeps.some(d => /(^|[^a-z])fastapi/i.test(d));
@@ -613,7 +558,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 5. Rust (Cargo.toml) Detection
   if (fileSet.has('cargo.toml')) {
     const cargoContent = getContent('cargo.toml') || '';
     let binName = 'app';
@@ -644,7 +588,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 6. Go (go.mod) Detection
   if (fileSet.has('go.mod')) {
     const defaultPlan: DeploymentPlan = {
       detectedType: 'go',
@@ -668,7 +611,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 7. Static Web (index.html / public/index.html / dist/index.html) Detection
   if (fileSet.has('index.html') || fileSet.has('public/index.html') || fileSet.has('dist/index.html')) {
     const entry = fileSet.has('index.html') ? 'index.html' : (fileSet.has('dist/index.html') ? 'dist/index.html' : 'public/index.html');
     const defaultPlan: DeploymentPlan = {
@@ -693,7 +635,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 8. Cloudflare Worker / Pages Functions
   if (fileSet.has('functions/_middleware.ts') || fileSet.has('functions/api/index.ts') || fileSet.has('wrangler.toml')) {
     const defaultPlan: DeploymentPlan = {
       detectedType: 'worker-pages',
@@ -717,7 +658,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 9. If manifest provided startCommand directly even without indicator file:
   if (manifestOverrides && manifestOverrides.startCommand) {
     const manifestPlan: DeploymentPlan = {
       detectedType: 'docker',
@@ -744,7 +684,6 @@ export function detectRigRuntime(
     };
   }
 
-  // 10. Unsupported project type -> fail closed with specific error & reasons
   return {
     success: false,
     isDeployable: false,
@@ -782,9 +721,6 @@ function applyManifest(
   };
 }
 
-/**
- * Renders user-facing honest message describing why an app has no verified deployment.
- */
 export function getHonestDeploymentMessage(
   app: { name: string; id: string; deploymentState?: AppDeploymentState; deploymentError?: string }
 ): {
@@ -796,10 +732,6 @@ export function getHonestDeploymentMessage(
   const state = app.deploymentState || 'draft';
   const name = app.name || app.id;
 
-  // deploymentError can be raw multi-line build stderr (a pip/vinext trace).
-  // Never surface the full trace in user-facing copy — collapse to the first
-  // meaningful line, capped, so the message stays honest without leaking a
-  // stack trace. The full evidence stays server-side / in stored evidence.
   const firstErrLine = (app.deploymentError || '')
     .split('\n')
     .map(l => l.trim())

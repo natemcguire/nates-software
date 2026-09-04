@@ -1,7 +1,3 @@
-// Authoritative Stripe Event Processor & Atomic Fulfillment State Machine
-// Re-fetches Stripe PaymentIntent, verifies immutability constraints,
-// mints cryptographic license + AES-256-GCM secret, and batches outbox transfers.
-
 import {
   claimInboxEvent,
   markInboxTerminalFailure,
@@ -24,30 +20,6 @@ export interface ProcessorOptions {
   stripeFetchOverride?: typeof fetch;
 }
 
-/**
- * Processes a verified event from `stripe_event_inbox`.
- *
- * Requirements:
- * 1. Claims the inbox event with a conditional finite lease.
- * 2. Routes refund events (refundProcessor.ts), account.updated (accountProcessor.ts),
- *    and charge.dispute.* events (disputeProcessor.ts) to their dedicated handlers.
- *    Any other unsupported event type (e.g. charge.refunded, customer.subscription.*)
- *    durably marks terminal_failure with an explicit reason.
- * 3. For payment_intent.succeeded: Re-fetches authoritative PaymentIntent from Stripe using STRIPE_SECRET_KEY.
- * 4. Validates Stripe status (succeeded), orderId metadata, paymentIntent ID, amount, currency, and livemode against immutable D1 order.
- * 5. Enforces monotonic order transition from requires_payment/processing to fulfilled.
- * 6. Atomically batches:
- *    - Conditional order status -> fulfilled with state_version increment
- *    - Exactly one commerce_licenses record (hashed key + last4)
- *    - Exactly one commerce_license_secrets record (AES-256-GCM encrypted)
- *    - Exactly one commerce_license_secret_events record
- *    - One commerce_transfer_outbox row per positive maker/ancestor allocation (never the platform's own cut)
- *    - commerce_order_events audit row
- *    - stripe_event_inbox status -> processed
- *    (NOTE ON SHELF_ITEMS: Legacy shelf_items requires plaintext license_key. To uphold the security invariant
- *     of never storing plaintext license keys at rest, shelf_items is NOT dual-written. commerce_licenses is canonical.)
- * 7. Safe against concurrent race conditions via unique constraints and state_version CAS.
- */
 export async function processStripeInboxEvent(
   db: any,
   env: any,
@@ -58,7 +30,6 @@ export async function processStripeInboxEvent(
     return { success: false, error: 'Database service is unavailable' };
   }
 
-  // 1. Claim event with conditional finite lease
   let claimToken = options?.claimToken;
   if (!claimToken) {
     const claimRes = await claimInboxEvent(db, eventId, {
@@ -94,7 +65,6 @@ export async function processStripeInboxEvent(
     claimToken = claimRes.claimToken;
   }
 
-  // 2. Fetch inbox event row
   const inboxRow: any = await db.prepare(`
     SELECT event_id, event_type, api_version, livemode,
            payload_json, payload_sha256, status, attempt_count,
@@ -150,12 +120,10 @@ export async function processStripeInboxEvent(
     );
   }
 
-  // 3. Handle unsupported event types fail-closed with explicit error
   if (eventType !== 'payment_intent.succeeded') {
     const unsupportedMsg = `Explicitly unsupported event type: '${eventType}'. Refund, dispute, and full lifecycle handling must be commissioned before payments can be enabled.`;
     await markInboxTerminalFailure(db, eventId, claimToken, unsupportedMsg);
 
-    // If an orderId can be discovered from the object metadata, log an audit event
     const possibleOrderId = event?.data?.object?.metadata?.orderId;
     if (possibleOrderId && typeof possibleOrderId === 'string') {
       try {
@@ -174,7 +142,6 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: unsupportedMsg };
   }
 
-  // 4. Extract Stripe PaymentIntent ID and re-fetch authoritative state from Stripe API
   const paymentIntentId = event?.data?.object?.id || inboxRow.stripe_object_id;
   if (!paymentIntentId || typeof paymentIntentId !== 'string' || !paymentIntentId.trim()) {
     const err = 'Missing PaymentIntent ID in event payload';
@@ -220,7 +187,6 @@ export async function processStripeInboxEvent(
     return { success: false, retryable: true, error: msg };
   }
 
-  // 5. Authoritative validation against immutable D1 order
   if (stripePi.status !== 'succeeded') {
     const msg = `Authoritative Stripe PaymentIntent status is '${stripePi.status}', expected 'succeeded'`;
     await markInboxTerminalFailure(db, eventId, claimToken, msg);
@@ -256,14 +222,12 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // PaymentIntent ID validation on order
   if (!order.stripe_payment_intent_id || order.stripe_payment_intent_id !== paymentIntentId) {
     const msg = `Order PaymentIntent ID mismatch: order has '${order.stripe_payment_intent_id}', Stripe returned '${paymentIntentId}'`;
     await markInboxTerminalFailure(db, eventId, claimToken, msg);
     return { success: false, terminal: true, error: msg };
   }
 
-  // Amount verification (conserved gross integer cents)
   const stripeAmount = parseInt(String(stripePi.amount), 10);
   if (stripeAmount !== order.gross_cents) {
     const msg = `Gross amount mismatch: Stripe amount (${stripeAmount}) !== order gross_cents (${order.gross_cents})`;
@@ -278,7 +242,6 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // Currency verification (lowercase 3-letter)
   const stripeCurrency = String(stripePi.currency || '').toLowerCase();
   const orderCurrency = String(order.currency || '').toLowerCase();
   if (stripeCurrency !== orderCurrency) {
@@ -287,7 +250,6 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // Livemode verification
   const eventLivemode = Boolean(inboxRow.livemode);
   const stripeLivemode = Boolean(stripePi.livemode);
   if (eventLivemode !== stripeLivemode) {
@@ -308,7 +270,6 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // Optional metadata consistency checks
   if (stripePi.metadata?.appId && stripePi.metadata.appId !== order.app_id) {
     const msg = `App ID mismatch in metadata: Stripe appId (${stripePi.metadata.appId}) !== order app_id (${order.app_id})`;
     await markInboxTerminalFailure(db, eventId, claimToken, msg);
@@ -321,9 +282,7 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // 6. Monotonic Order Transition Check
   if (order.status === 'fulfilled') {
-    // Already fulfilled! Mark inbox processed idempotently
     await db.prepare(`
       UPDATE stripe_event_inbox
       SET status = 'processed',
@@ -348,7 +307,6 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // 7. Read immutable order allocations
   const allocRows = await db.prepare(`
     SELECT id, sequence, role, recipient_user_id AS recipientUserId,
            source_repository_id AS sourceRepositoryId, lineage_depth AS lineageDepth,
@@ -372,7 +330,6 @@ export async function processStripeInboxEvent(
     return { success: false, terminal: true, error: msg };
   }
 
-  // 8. Generate cryptographically random license key and AES-256-GCM secret
   const licenseKey = generateLicenseKey(order.app_id);
   const licenseKeyHash = await hashLicenseKey(licenseKey);
   const licenseKeyLast4 = getLicenseKeyLast4(licenseKey);
@@ -387,10 +344,8 @@ export async function processStripeInboxEvent(
     return { success: false, retryable: true, error: msg };
   }
 
-  // 9. Prepare atomic batch statements
   const statements: any[] = [];
 
-  // A. Conditional order update to fulfilled with state_version increment
   statements.push(
     db.prepare(`
       UPDATE commerce_orders
@@ -403,7 +358,6 @@ export async function processStripeInboxEvent(
     `).bind(order.id, order.state_version)
   );
 
-  // B. Exactly one canonical license record
   statements.push(
     db.prepare(`
       INSERT INTO commerce_licenses (
@@ -421,7 +375,6 @@ export async function processStripeInboxEvent(
     )
   );
 
-  // C. AES-256-GCM encrypted secret at rest
   statements.push(
     db.prepare(`
       INSERT INTO commerce_license_secrets (
@@ -436,7 +389,6 @@ export async function processStripeInboxEvent(
     )
   );
 
-  // D. Secret lifecycle event
   statements.push(
     db.prepare(`
       INSERT INTO commerce_license_secret_events (
@@ -449,12 +401,6 @@ export async function processStripeInboxEvent(
     )
   );
 
-  // E. One outbox row per positive payable allocation to a real recipient
-  // (seller or ancestor). 'platform' is the house's own cut off the top —
-  // it always has a null recipientUserId and is excluded by that condition,
-  // and is NEVER paid out via Connect. Migration 0038 (Shareware, Restored)
-  // widened the outbox trigger's payable role list to admit 'seller' and
-  // retired 'maker'/'contributor'/'protocol_pool'; this filter mirrors it.
   let outboxRowCount = 0;
   for (const alloc of allocations) {
     if ((alloc.role === 'seller' || alloc.role === 'ancestor') && alloc.amountCents > 0 && alloc.recipientUserId) {
@@ -480,7 +426,6 @@ export async function processStripeInboxEvent(
     }
   }
 
-  // F. Order fulfilled event
   statements.push(
     db.prepare(`
       INSERT INTO commerce_order_events (
@@ -499,7 +444,6 @@ export async function processStripeInboxEvent(
     )
   );
 
-  // G. Mark inbox event processed
   statements.push(
     db.prepare(`
       UPDATE stripe_event_inbox
@@ -512,17 +456,14 @@ export async function processStripeInboxEvent(
     `).bind(eventId, claimToken)
   );
 
-  // 10. Execute atomic batch
   try {
     await db.batch(statements);
   } catch (batchErr: any) {
-    // Check if another concurrent processor fulfilled this order during the race
     const freshOrder: any = await db.prepare(`
       SELECT status FROM commerce_orders WHERE id = ?
     `).bind(order.id).first();
 
     if (freshOrder?.status === 'fulfilled') {
-      // Succeeded via concurrent peer
       await db.prepare(`
         UPDATE stripe_event_inbox
         SET status = 'processed',

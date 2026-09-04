@@ -1,6 +1,4 @@
-// Functions API: /api/_aws
-// SigV4 AWS Client Integration for Cloudflare Pages Functions
-// Supports: S3 PutObject, CodeBuild StartBuild/BatchGetBuilds, ECR CreateRepository/DescribeImages, RDS Data API, SSM Parameter Store
+
 
 import { AwsClient } from 'aws4fetch';
 
@@ -104,9 +102,6 @@ export interface S3PutObjectOptions {
   contentType?: string;
 }
 
-/**
- * Uploads a file (such as a source tarball) to S3 using SigV4 PutObject.
- */
 export async function putS3SourceArchive(
   env: any,
   params: S3PutObjectOptions
@@ -159,9 +154,6 @@ export interface CodeBuildEnvOverride {
   type?: 'PLAINTEXT' | 'PARAMETER_STORE' | 'SECRETS_MANAGER';
 }
 
-/**
- * Dispatches an asynchronous build job on AWS CodeBuild using StartBuild.
- */
 export async function startCodeBuild(
   env: any,
   params: {
@@ -214,7 +206,7 @@ export async function startCodeBuild(
     type: 'PLAINTEXT'
   }));
 
-  // Ops assumption: the nsw-build / nsw-deploy CodeBuild projects must permit a StartBuild buildspec override.
+  
   const payload: any = {
     projectName,
     environmentVariablesOverride: envList
@@ -261,9 +253,6 @@ export async function startCodeBuild(
   }
 }
 
-/**
- * Fetches status for one or more CodeBuild builds using BatchGetBuilds.
- */
 export async function batchGetCodeBuilds(
   env: any,
   params: {
@@ -331,10 +320,6 @@ export interface CreateEcrRepositoryResult {
   status?: number;
 }
 
-/**
- * Creates an ECR repository if it does not already exist using CreateRepository (JSON-1.1).
- * Idempotent: treats RepositoryAlreadyExistsException as success.
- */
 export async function createEcrRepository(
   env: any,
   params: CreateEcrRepositoryOptions
@@ -424,10 +409,6 @@ export async function createEcrRepository(
   }
 }
 
-/**
- * Queries ECR for image details (digest) by tag or digest using DescribeImages.
- * Fail-closed handling for missing repository or missing image.
- */
 export async function describeEcrImages(
   env: any,
   params: {
@@ -570,10 +551,6 @@ export interface ExecuteDataApiStatementResult {
   status?: number;
 }
 
-/**
- * Executes a single SQL statement via RDS Data API (SigV4 service 'rds-data', rest-json).
- * Retries on DatabaseResumingException (scale-to-zero resume).
- */
 export async function executeDataApiStatement(
   env: any,
   params: ExecuteDataApiStatementOptions
@@ -632,7 +609,7 @@ export async function executeDataApiStatement(
         errMsg.toLowerCase().includes('paused') ||
         errMsg.toLowerCase().includes('communications link failure');
 
-      // Check for Postgres "already exists" errors (42710 for role, 42P04 for database)
+      
       const isAlreadyExists = errMsg.includes('42710') ||
         errMsg.includes('42P04') ||
         errMsg.toLowerCase().includes('already exists') ||
@@ -684,9 +661,6 @@ export interface PutSsmParameterOptions {
   keyId?: string;
 }
 
-/**
- * Stores a parameter in AWS Systems Manager Parameter Store using SigV4 PutParameter (JSON-1.1).
- */
 export async function putSsmParameter(
   env: any,
   params: PutSsmParameterOptions
@@ -755,9 +729,6 @@ export interface GetSsmParameterOptions {
   withDecryption?: boolean;
 }
 
-/**
- * Retrieves a parameter from AWS Systems Manager Parameter Store using SigV4 GetParameter (JSON-1.1).
- */
 export async function getSsmParameter(
   env: any,
   params: GetSsmParameterOptions
@@ -820,9 +791,6 @@ export async function getSsmParameter(
   }
 }
 
-/**
- * Generates a cryptographically secure alphanumeric password (32+ chars, [A-Za-z0-9] only).
- */
 export function generateDbPassword(length = 32): string {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = new Uint8Array(length);
@@ -840,18 +808,6 @@ export interface ProvisionDatabaseResult {
   error?: string;
 }
 
-/**
- * Provisions a dedicated per-app Postgres database and user on the shared Aurora Serverless v2 cluster.
- * Steps:
- * 1. Idempotency guard: if SSM /nsw/apps/<id>/db-url exists, reuse it.
- * 2. Generate 32-char alphanumeric password.
- * 3. CREATE ROLE "app_<id>" LOGIN PASSWORD '<pw>'
- * 3b. GRANT "app_<id>" TO CURRENT_USER
- * 4. CREATE DATABASE "app_<id>" OWNER "app_<id>"
- * 5. REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC
- * 6. REVOKE ALL ON SCHEMA public FROM PUBLIC; GRANT ALL ON SCHEMA public TO "app_<id>"
- * 7. Assemble DSN and store in SSM SecureString /nsw/apps/<id>/db-url.
- */
 export async function provisionAppDatabase(
   env: any,
   appId: string,
@@ -866,7 +822,7 @@ export async function provisionAppDatabase(
 
   const ssmPath = `/nsw/apps/${appId}/db-url`;
 
-  // 1. Idempotency guard: check if SSM parameter already exists
+  
   try {
     const existing = await getSsmParameter(env, { name: ssmPath, withDecryption: true });
     if (existing.success && existing.value) {
@@ -899,7 +855,7 @@ export async function provisionAppDatabase(
     });
   };
 
-  // Step 3: CREATE ROLE "app_<id>" LOGIN PASSWORD '<pw>'
+  
   const roleRes = await exec(`CREATE ROLE "${dbName}" LOGIN PASSWORD '${password}'`, 'postgres');
   if (!roleRes.success && !roleRes.alreadyExists && roleRes.errorCode !== '42710') {
     if (roleRes.isResuming) {
@@ -917,8 +873,8 @@ export async function provisionAppDatabase(
     };
   }
 
-  // Step 3b: GRANT "app_<id>" TO CURRENT_USER
-  // PostgreSQL requires the executing user to be a member of the role to set it as DB owner.
+  
+  
   const grantRoleRes = await exec(`GRANT "${dbName}" TO CURRENT_USER`, 'postgres');
   if (!grantRoleRes.success) {
     if (grantRoleRes.isResuming) {
@@ -936,7 +892,7 @@ export async function provisionAppDatabase(
     };
   }
 
-  // Step 4: CREATE DATABASE "app_<id>" OWNER "app_<id>"
+  
   const dbRes = await exec(`CREATE DATABASE "${dbName}" OWNER "${dbName}"`, 'postgres');
   if (!dbRes.success && !dbRes.alreadyExists && dbRes.errorCode !== '42P04') {
     if (dbRes.isResuming) {
@@ -954,7 +910,7 @@ export async function provisionAppDatabase(
     };
   }
 
-  // Step 5: REVOKE ALL ON DATABASE "app_<id>" FROM PUBLIC
+  
   const revokeDbRes = await exec(`REVOKE ALL ON DATABASE "${dbName}" FROM PUBLIC`, 'postgres');
   if (!revokeDbRes.success) {
     if (revokeDbRes.isResuming) {
@@ -972,7 +928,7 @@ export async function provisionAppDatabase(
     };
   }
 
-  // Step 6a: REVOKE ALL ON SCHEMA public FROM PUBLIC (on database: app_<id>)
+  
   const revokeSchemaRes = await exec(`REVOKE ALL ON SCHEMA public FROM PUBLIC`, dbName);
   if (!revokeSchemaRes.success) {
     if (revokeSchemaRes.isResuming) {
@@ -990,7 +946,7 @@ export async function provisionAppDatabase(
     };
   }
 
-  // Step 6b: GRANT ALL ON SCHEMA public TO "app_<id>" (on database: app_<id>)
+  
   const grantSchemaRes = await exec(`GRANT ALL ON SCHEMA public TO "${dbName}"`, dbName);
   if (!grantSchemaRes.success) {
     if (grantSchemaRes.isResuming) {
@@ -1008,10 +964,10 @@ export async function provisionAppDatabase(
     };
   }
 
-  // Step 7: Assemble DSN
+  
   const dsn = `postgresql://${dbName}:${password}@${dbHost}:5432/${dbName}?sslmode=require`;
 
-  // Step 8: SSM PutParameter (SecureString, Overwrite=false)
+  
   const putRes = await putSsmParameter(env, {
     name: ssmPath,
     value: dsn,

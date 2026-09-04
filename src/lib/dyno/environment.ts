@@ -1,6 +1,3 @@
-// Local Environment Detection for DYNO benchmark runner
-// Captures host machine, OS, CPU, memory, and runtime manifest deterministically.
-
 import { platform, release, arch, cpus, totalmem } from 'node:os';
 import { DynoEnvironmentRecord, DynoNetworkPolicy } from './types';
 import { sha256Json } from './crypto';

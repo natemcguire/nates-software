@@ -65,15 +65,11 @@ class DaytonaTerminalSession implements TerminalSession {
   }
 
   async destroy(): Promise<void> {
-    // A PTY exit marks the process dead before SessionManager calls destroy().
-    // Sandbox deletion must therefore be guarded independently from liveness.
     if (this.destroyed) return;
     this.destroyed = true;
     this.alive = false;
     try { await this.pty.kill(); } catch {}
     try { await this.pty.disconnect(); } catch {}
-    // The sandbox is ephemeral and has autoDeleteInterval=0, but explicit deletion
-    // makes disconnect cleanup deterministic instead of waiting for provider GC.
     try { await this.sandbox.delete(60, true); } catch {}
   }
 
@@ -84,11 +80,6 @@ class DaytonaTerminalSession implements TerminalSession {
   }
 }
 
-/**
- * Creates one Daytona sandbox per browser session. Production startup is
- * fail-closed unless the configured snapshot has been independently verified
- * as VM-backed; a generic shared-kernel container must never be called a VPS.
- */
 export class DaytonaSandboxProvider extends BaseTerminalProvider {
   readonly id = 'daytona-ephemeral-vm';
   readonly name = 'Daytona Ephemeral VM Provider';

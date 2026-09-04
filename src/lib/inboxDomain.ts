@@ -1,4 +1,3 @@
-// Production Domain Logic for INBOX 3-Pane Client
 
 export type InboxCategory = 'proposals' | 'agent_logs' | 'royalties' | 'feedback';
 

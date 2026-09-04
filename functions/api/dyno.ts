@@ -1,7 +1,4 @@
-// Cloudflare Pages Functions API: /api/dyno
-// Canonical DYNO AI Developer Benchmark Endpoint
-// Strictly adheres to migrations/0007_dyno_real_world_benchmarks.sql
-// Enforces canonical manifests, D1 batch atomicity, and privacy minimization.
+
 
 import { requireAuth } from './_auth';
 import {
@@ -23,7 +20,7 @@ import { sha256Json } from '../../src/lib/dyno/crypto';
 
 const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/i;
 const ID_REGEX = /^[a-zA-Z0-9_-]{4,128}$/;
-const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_PAYLOAD_BYTES = 5 * 1024 * 1024; 
 
 const canonicalSuiteSummary = () => ({
   id: CANONICAL_DYNO_SUITE_ID,
@@ -41,7 +38,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const url = new URL(request.url);
     const isBench = url.searchParams.get('bench') === 'true';
 
-    // Deprecated hardware bench parameter
+    
     if (isBench) {
       return Response.json(
         {
@@ -54,7 +51,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const runId = url.searchParams.get('runId') || url.searchParams.get('id');
 
-    // Query single run details with attempts & grader results
+    
     if (runId) {
       if (!ID_REGEX.test(runId)) {
         return Response.json({ success: false, error: 'Invalid run ID format' }, { status: 400 });
@@ -86,7 +83,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           return Response.json({ success: false, error: 'Benchmark run not found' }, { status: 404 });
         }
 
-        // Check requester authorization for full detailed access vs sanitized public access
+        
         let isAuthorizedOwner = false;
         try {
           const { user } = await requireAuth(request, env);
@@ -94,7 +91,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             isAuthorizedOwner = true;
           }
         } catch {
-          // Unauthenticated or invalid session
+          
         }
 
         if (!isAuthorizedOwner && !['reproducible', 'verified'].includes(String(run.verification_status))) {
@@ -104,13 +101,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           );
         }
 
-        // Sanitize sensitive configs for unauthenticated / non-owner viewers
+        
         const sanitizedRun = { ...run };
         if (!isAuthorizedOwner) {
           sanitizedRun.raw_trace_r2_key = null;
-          // Redact raw model_config internals, preserving only non-sensitive summary
+          
           sanitizedRun.model_config = '{}';
-          // Sanitize runtime_manifest to only safe version fields
+          
           try {
             const parsedRuntime = typeof run.runtime_manifest === 'string' ? JSON.parse(run.runtime_manifest) : (run.runtime_manifest || {});
             sanitizedRun.runtime_manifest = JSON.stringify({ nodeVersion: parsedRuntime.nodeVersion || 'unknown' });
@@ -133,7 +130,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
         const attempts = attemptsQuery.results || [];
 
-        // Attach grader results for each attempt
+        
         for (const attempt of attempts as any[]) {
           const gradersQuery = await env.DB.prepare(`
             SELECT id, grader_key, grader_version, passed, score, max_score, evidence_digest, detail, created_at
@@ -156,7 +153,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return Response.json({ success: false, error: 'Benchmark run not found (Database unavailable)' }, { status: 404 });
     }
 
-    // Default: Query leaderboard with comparison-safe aggregate provenance ONLY
+    
     if (env && env.DB) {
       const requestedSuiteId = url.searchParams.get('suiteId')?.trim() || '';
       if (requestedSuiteId && !ID_REGEX.test(requestedSuiteId)) {
@@ -203,7 +200,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       });
     }
 
-    // Truthful empty state when database is not connected
+    
     return Response.json({
       success: true,
       leaderboard: [],
@@ -218,7 +215,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
   try {
-    // 1. Enforce Authenticated Session
+    
     const { user, errorResponse } = await requireAuth(request, env);
     if (errorResponse || !user) {
       return errorResponse || Response.json(
@@ -227,7 +224,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       );
     }
 
-    // 2. Enforce Payload Size Limit & JSON Parsing
+    
     const contentLength = request.headers.get('content-length');
     if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
       return Response.json({ success: false, error: 'Payload size exceeds 5MB limit' }, { status: 413 });
@@ -250,7 +247,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     const { run, subject, environment, suite, attempts } = payload;
 
-    // Validate top-level structure
+    
     if (!run || !subject || !environment || !suite || !Array.isArray(attempts) || attempts.length === 0) {
       return Response.json({
         success: false,
@@ -258,7 +255,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 400 });
     }
 
-    // Reject non-submittable schema/doc examples
+    
     if (run.id === 'run_example_non_submittable_doc_only' || payload.is_example === true) {
       return Response.json({
         success: false,
@@ -266,7 +263,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 400 });
     }
 
-    // 3. Enforce Canonical Built-in Suite & Manifest (Requirement 3)
+    
     if (
       suite.id !== CANONICAL_DYNO_SUITE_ID ||
       suite.slug !== CANONICAL_DYNO_SUITE_SLUG ||
@@ -292,7 +289,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 400 });
     }
 
-    // 4. Validate Run Record & Bounds (Requirement 4)
+    
     if (!run.id || typeof run.id !== 'string' || !ID_REGEX.test(run.id)) {
       return Response.json({ success: false, error: 'run.id is required and must be alphanumeric (4-128 chars)' }, { status: 400 });
     }
@@ -331,7 +328,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 400 });
     }
 
-    // Timestamps validation
+    
     const startedAtTime = new Date(run.started_at || '').getTime();
     const completedAtTime = new Date(run.completed_at || '').getTime();
     if (isNaN(startedAtTime) || isNaN(completedAtTime)) {
@@ -340,7 +337,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (startedAtTime > completedAtTime) {
       return Response.json({ success: false, error: 'run started_at must precede completed_at' }, { status: 400 });
     }
-    const maxFutureTime = Date.now() + 3600000; // 1 hour buffer
+    const maxFutureTime = Date.now() + 3600000; 
     if (completedAtTime > maxFutureTime) {
       return Response.json({ success: false, error: 'run completed_at cannot be in the future' }, { status: 400 });
     }
@@ -349,7 +346,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'run started_at cannot precede suite release date' }, { status: 400 });
     }
 
-    // Numeric bounds on run
+    
     if (run.total_cost_micros !== null && run.total_cost_micros !== undefined) {
       if (typeof run.total_cost_micros !== 'number' || run.total_cost_micros < 0 || run.total_cost_micros > 1_000_000_000) {
         return Response.json({ success: false, error: 'run total_cost_micros must be between 0 and 1,000,000,000 ($1,000)' }, { status: 400 });
@@ -361,7 +358,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
-    // 5. Validate & Content-Address Subject (Prevent ID Poisoning)
+    
     if (!subject.model_provider || typeof subject.model_provider !== 'string' || subject.model_provider.length > 64) {
       return Response.json({ success: false, error: 'subject.model_provider is required (max 64 chars)' }, { status: 400 });
     }
@@ -384,7 +381,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'subject.tool_manifest exceeds max length of 32KB' }, { status: 400 });
     }
 
-    // Content-addressed deterministic subject ID prevents caller ID poisoning
+    
     const canonicalSubjectId = 'subj_' + sha256Json({
       provider: subject.model_provider.trim(),
       modelId: subject.model_id.trim(),
@@ -395,7 +392,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       tools: normalizedToolManifest
     }).slice(0, 32);
 
-    // 6. Validate & Content-Address Environment (Prevent ID Poisoning)
+    
     if (!environment.os_name || typeof environment.os_name !== 'string' || environment.os_name.length > 64) {
       return Response.json({ success: false, error: 'environment.os_name is required (max 64 chars)' }, { status: 400 });
     }
@@ -425,7 +422,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: 'environment.runtime_manifest exceeds max length of 32KB' }, { status: 400 });
     }
 
-    // Content-addressed deterministic environment ID prevents caller ID poisoning
+    
     const canonicalEnvironmentId = 'env_' + sha256Json({
       os: environment.os_name.trim(),
       osVer: environment.os_version.trim(),
@@ -438,7 +435,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       policy: networkPolicy
     }).slice(0, 32);
 
-    // 7. Check for Run ID / Tuple Conflicts in D1 (Requirement 4)
+    
     if (env && env.DB) {
       const existingRunById = await env.DB.prepare('SELECT id FROM dyno_runs WHERE id = ?').bind(run.id).first();
       if (existingRunById) {
@@ -458,7 +455,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
-    // 8. Validate Exact Known Task Set, Graders, and Repetitions (Requirements 3 & 4)
+    
     const expectedTaskCount = NEUTRAL_DEV_FIXTURES.length * repetitions;
     if (attempts.length !== expectedTaskCount) {
       return Response.json({
@@ -526,7 +523,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, { status: 400 });
       }
 
-      // Hidden test invariant check
+      
       const expectedHiddenCount = fixture.hiddenTests.length;
       if (att.hidden_tests_total !== expectedHiddenCount) {
         return Response.json({
@@ -550,7 +547,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, { status: 400 });
       }
 
-      // First attempt flag invariant
+      
       const firstAttemptSuccess = att.first_attempt_success === 1 ? 1 : 0;
       if (firstAttemptSuccess === 1 && att.status !== 'passed') {
         return Response.json({
@@ -559,7 +556,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, { status: 400 });
       }
 
-      // Numeric bounds
+      
       const durationMs = typeof att.duration_ms === 'number' ? Math.floor(att.duration_ms) : 0;
       if (durationMs < 0 || durationMs > 600000) {
         return Response.json({ success: false, error: `Attempt "${att.id}" duration_ms (${durationMs}) out of valid range (0..600000)` }, { status: 400 });
@@ -573,7 +570,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const unnecessaryFiles = typeof att.unnecessary_files_changed === 'number' ? Math.max(0, Math.floor(att.unnecessary_files_changed)) : 0;
       const safetyViolations = typeof att.safety_violations === 'number' ? Math.max(0, Math.floor(att.safety_violations)) : 0;
 
-      // Grader outcomes validation
+      
       const graders = item.graderResults || item.grader_results || [];
       if (graders.length !== fixture.graders.length) {
         return Response.json({
@@ -610,7 +607,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }
       }
 
-      // Tool events validation
+      
       const toolEvents = item.toolEvents || item.tool_events || [];
       for (let teIdx = 0; teIdx < toolEvents.length; teIdx++) {
         const te = toolEvents[teIdx];
@@ -641,8 +638,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       durationsSeconds.push(durationMs / 1000);
     }
 
-    // A syntactically valid caller hash is not evidence. Recompute the trace
-    // commitment from the exact canonical attempt, grader, and tool-event data.
+    
+    
     const canonicalTraceEvidence = attempts.map((item: any) => {
       const att = item.attempt || item;
       return {
@@ -660,7 +657,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 400 });
     }
 
-    // 9. Deterministic Server-Side Scoring & Verification
+    
     const firstAttemptRate = expectedTaskCount > 0 ? firstAttemptSuccesses / expectedTaskCount : 0;
     const hiddenPassedRate = totalHiddenTests > 0 ? totalHiddenPassed / totalHiddenTests : 0;
     const medianDurationSec = calculateMedian(durationsSeconds);
@@ -676,7 +673,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       unnecessaryFilesChanged: totalUnnecessaryChanges
     });
 
-    // Score verification against tamper/fabrication
+    
     if (typeof run.overall_score === 'number') {
       const diff = Math.abs(run.overall_score - calculatedScore.score);
       if (diff > 1) {
@@ -688,16 +685,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
 
     const verifiedScore = calculatedScore.score;
-    // Client-submitted evidence is NEVER self-promoted to 'verified' or 'reproducible'.
-    // It is marked 'unverified' (or 'rejected' if policy violations occur).
+    
+    
     const verifiedVerificationStatus = totalSafetyViolations > 0 ? 'rejected' : 'unverified';
 
-    // 10. Atomic D1 Ingestion via DB.batch() (Requirement 4)
+    
     if (env && env.DB) {
       const statements: any[] = [];
       let storedTraceKey: string | null = null;
 
-      // Object locations are server-owned. Ignore caller-provided storage keys.
+      
       if (env.STORAGE && typeof env.STORAGE.put === 'function') {
         storedTraceKey = `dyno/traces/${user.id}/${run.id}/${computedTraceDigest}.json`;
         await env.STORAGE.put(storedTraceKey, JSON.stringify(canonicalTraceEvidence), {
@@ -706,7 +703,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         });
       }
 
-      // a. Insert canonical suite (idempotent, server-controlled values ONLY)
+      
       statements.push(
         env.DB.prepare(`
           INSERT OR IGNORE INTO dyno_suites (
@@ -726,7 +723,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         )
       );
 
-      // b. Pre-seed all canonical tasks for the suite (server-controlled fixture metadata ONLY)
+      
       NEUTRAL_DEV_FIXTURES.forEach((fixture, idx) => {
         statements.push(
           env.DB.prepare(`
@@ -749,7 +746,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         );
       });
 
-      // c. Insert subject with content-addressed ID (idempotent)
+      
       statements.push(
         env.DB.prepare(`
           INSERT OR IGNORE INTO dyno_subjects (
@@ -768,7 +765,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         )
       );
 
-      // d. Insert environment with content-addressed ID (idempotent)
+      
       statements.push(
         env.DB.prepare(`
           INSERT OR IGNORE INTO dyno_environments (
@@ -790,7 +787,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         )
       );
 
-      // e. Insert run
+      
       statements.push(
         env.DB.prepare(`
           INSERT INTO dyno_runs (
@@ -822,7 +819,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         )
       );
 
-      // f. Insert task attempts, grader results, and tool events
+      
       for (const item of attempts) {
         const att = item.attempt || item;
         const taskRowId = `task_${CANONICAL_DYNO_SUITE_ID}_${att.task_id}`;
@@ -862,7 +859,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           )
         );
 
-        // Grader results
+        
         const graders = item.graderResults || item.grader_results || [];
         for (const g of graders) {
           const graderId = g.id || `grader_${att.id}_${g.grader_key}`;
@@ -886,7 +883,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           );
         }
 
-        // Tool events
+        
         const toolEvents = item.toolEvents || item.tool_events || [];
         for (const te of toolEvents) {
           const teId = te.id || `te_${att.id}_${te.sequence_number}`;
@@ -913,7 +910,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }
       }
 
-      // Execute entire submission atomically in a single D1 batch
+      
       try {
         await env.DB.batch(statements);
       } catch (error) {

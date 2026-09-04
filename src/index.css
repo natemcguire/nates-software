@@ -3,12 +3,10 @@
 @tailwind utilities;
 
 :root {
-  /* User-selectable text-size multiplier (taskbar "T" sizer). 1 = default. */
   --font-scale: 1;
 }
 
 html, body {
-  /* Base bumped +30% (15px -> 19.5px), then multiplied by the user's text-size choice. */
   font-size: calc(19.5px * var(--font-scale, 1));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -32,18 +30,9 @@ html, body {
   }
 }
 
-/* ===================================================================
-   Global Windows-95 scrollbar. Applies to EVERY scroll container in
-   the app (WebKit/Blink via ::-webkit-scrollbar, Firefox via the
-   scrollbar-* fallback) so all 49-odd scroll areas get the chunky
-   retro look with a beveled track, a raised thumb, and arrow buttons.
-   =================================================================== */
-/* Vintage classic-Mac / Lisa / Xerox Star scrollbar: a dense DIAGONAL-HATCH track
-   with a PLAIN WHITE thumb and outlined arrow boxes at each end. Thin black
-   outlines, no 3D bevel — the 1983 look. */
 * {
   scrollbar-width: auto;
-  scrollbar-color: #ffffff #ffffff;      /* Firefox: white thumb on white (no hatch) */
+  scrollbar-color: #ffffff #ffffff;
 }
 
 ::-webkit-scrollbar {
@@ -52,7 +41,6 @@ html, body {
   background: #ffffff;
 }
 
-/* Track: dense diagonal hatch (the defining vintage detail), thin black outline. */
 ::-webkit-scrollbar-track {
   background-color: #ffffff;
   background-image: repeating-linear-gradient(45deg, #000 0, #000 0.5px, transparent 0.5px, transparent 3px);
@@ -60,7 +48,6 @@ html, body {
   border-right: 1px solid #000;
 }
 
-/* Thumb: a plain WHITE block with a thin black outline (blank, no pattern). */
 ::-webkit-scrollbar-thumb {
   background-color: #ffffff;
   border: 1px solid #000;
@@ -69,7 +56,6 @@ html, body {
 ::-webkit-scrollbar-thumb:hover { background-color: #f0f0f0; }
 ::-webkit-scrollbar-thumb:active { background-color: #e4e4e4; }
 
-/* Arrow buttons at the ends of the bar: white box, thin black outline. */
 ::-webkit-scrollbar-button {
   background-color: #ffffff;
   border: 1px solid #000;
@@ -78,7 +64,6 @@ html, body {
   display: block;
 }
 ::-webkit-scrollbar-button:active { background-color: #e4e4e4; }
-/* Only show the single button at each end (start-decrement + end-increment). */
 ::-webkit-scrollbar-button:single-button { width: 17px; height: 17px; }
 ::-webkit-scrollbar-button:single-button:vertical:decrement {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M4 1 L7 6 L1 6 Z' fill='%23000'/></svg>");
@@ -92,17 +77,12 @@ html, body {
 ::-webkit-scrollbar-button:single-button:horizontal:increment {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'><path d='M2 1 L2 7 L7 4 Z' fill='%23000'/></svg>");
 }
-/* Hide the extra (double) buttons so we get exactly one arrow per end. */
 ::-webkit-scrollbar-button:double-button { display: none; }
 ::-webkit-scrollbar-corner { background: #c0c0c0; }
 
-/* Opt-out: hide the scrollbar entirely on a container (still scrolls via wheel/
-   trackpad). Used on the About/"What is this?" window so it reads clean. */
 .nsw-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .nsw-no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
-/* Wizard "Continue" attention pulse — fires when an app is picked, drawing the
-   eye to the next action. Runs a few times then settles (not a forever-blink). */
 @keyframes wizard-continue-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 221, 51, 0); transform: translateY(0); }
   50%      { box-shadow: 0 0 0 4px rgba(255, 221, 51, 0.85); transform: translateY(-1px); }
@@ -115,16 +95,8 @@ html, body {
   .wizard-continue-ready { animation: none; }
 }
 
-/* ===================================================================
-   First-visit intro: desktop icons start hidden, then "pixel fade" in
-   (staggered) after the "What is this?" popup appears. Per-icon delay
-   is set inline via --reveal-delay.
-   =================================================================== */
 .desktop-intro-hidden { opacity: 0; pointer-events: none; }
 
-/* During the voxel reveal the icon CONTAINER is visible immediately (the <canvas>
-   inside draws the glyph assembling out of blocks). The text LABEL fades up near
-   the end so it lands as the blocks finish. */
 .desktop-icon-reveal-wrap { opacity: 1; }
 .desktop-icon-reveal-wrap > div:last-of-type,
 .desktop-icon-reveal-wrap .text-shadow {
@@ -135,8 +107,6 @@ html, body {
   100%    { opacity: 1; }
 }
 
-/* Popup entrance — a longer, bouncier Win95 window "boot" pop. Overshoots twice
-   (settles with a little spring) so it feels lively when the window opens. */
 @keyframes nsw-popup-in {
   0%   { opacity: 0; transform: scale(0.6)  translateY(28px); }
   45%  { opacity: 1; transform: scale(1.06) translateY(-8px); }
@@ -151,7 +121,6 @@ html, body {
   .nsw-popup-enter { animation: none; }
 }
 
-/* Classic Win95 Bevel Button - Scaled & Readable */
 .btn-w95 {
   display: inline-flex;
   align-items: center;
@@ -198,8 +167,6 @@ html, body {
   user-select: none;
 }
 
-/* The ONE deliberate modern animation in the whole app: a gentle attention
-   pulse on the "GET YOUR USERNAME" call-to-action, shown only until sign-up. */
 @keyframes nsw-cta-pulse {
   0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 191, 0, 0.55); }
   50%      { transform: scale(1.045); box-shadow: 0 0 0 6px rgba(255, 191, 0, 0); }

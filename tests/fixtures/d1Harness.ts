@@ -1,8 +1,3 @@
-// Local D1-Compatible SQLite Migration-Chain Harness for Vitest
-// Provides complete Cloudflare D1 emulation backed by sql.js WASM engine
-// Enforces PRAGMA foreign_keys = ON and executes the complete canonical chain.
-// and supports PRAGMA foreign_key_check validation.
-
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
 import * as fs from 'fs';
 import * as path from 'path';

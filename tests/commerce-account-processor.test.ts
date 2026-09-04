@@ -1,8 +1,4 @@
-// Tests for account.updated handling (src/lib/commerce/accountProcessor.ts),
-// routed through the SAME processStripeInboxEvent state machine the webhook
-// invokes (src/lib/commerce/eventProcessor.ts). Verifies the authoritative
-// re-fetch pattern: the webhook body is never trusted for charges_enabled /
-// payouts_enabled, only used to discover which account to re-fetch.
+
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
@@ -44,9 +40,6 @@ describe('Commerce: account.updated authoritative processor', () => {
   it('flips payouts_enabled and marks onboarding complete from the authoritative account, ignoring a lying webhook body', async () => {
     await event('evt_acct_1', 'acct_test123');
 
-    // Simulate a webhook body claiming enabled=true isn't even read — the handler
-    // re-fetches from Stripe. We verify by making the mocked "authoritative"
-    // response the source of truth regardless of what the stored payload said.
     const result = await processStripeInboxEvent(ctx.d1, env, 'evt_acct_1', {
       stripeFetchOverride: stripeFetch({
         id: 'acct_test123',
@@ -125,7 +118,6 @@ describe('Commerce: account.updated authoritative processor', () => {
     const first = await processStripeInboxEvent(ctx.d1, env, 'evt_acct_idem', { stripeFetchOverride: fetchImpl });
     expect(first.success).toBe(true);
 
-    // Force the inbox row back to retryable to simulate a redelivery, and re-run.
     await ctx.d1.prepare(`UPDATE stripe_event_inbox SET status='retryable_failure', next_attempt_at=datetime('now','-5 seconds'), claim_token=NULL, expires_at=NULL WHERE event_id='evt_acct_idem'`).run();
     const second = await processStripeInboxEvent(ctx.d1, env, 'evt_acct_idem', { stripeFetchOverride: fetchImpl });
     expect(second.success).toBe(true);

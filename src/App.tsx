@@ -53,11 +53,9 @@ export function resolveAppRoute(
   }
 
   if (hostname.startsWith('rig.') || pathname.startsWith('/rig') || pathname.startsWith('/runtime') || viewQuery === 'rig') {
-    // RIG is no longer a user-facing app (task #41) — it's the invisible deploy
-    // engine. Keep 'rig' resolving to a reserved standalone_view (never a tenant
-    // app) so rig.nates-software.com can't be claimed; it renders an infra notice.
     return { type: 'standalone_view', id: 'rig', title: 'RIG — INFRASTRUCTURE' };
   }
+
 
   if (hostname.startsWith('inbox.') || pathname.startsWith('/inbox') || viewQuery === 'inbox') {
     return { type: 'standalone_view', id: 'inbox', title: 'AGENT INBOX' };
@@ -123,16 +121,12 @@ import { playClickSound, playSuccessChime } from './lib/soundEngine';
 import { useAlert } from './context/AlertContext';
 
 const ICON_POSITIONS_KEY = 'nsw_icon_positions';
-// Bump when the default icon set/order changes so everyone gets the fresh clean
-// layout once (old drag positions are dropped), instead of keeping a stale/scattered
-// arrangement. Users can re-drag afterwards; those saves are kept until the next bump.
 const ICON_LAYOUT_VERSION = '5';
 const ICON_LAYOUT_VERSION_KEY = 'nsw_icon_layout_v';
 
 function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
   if (typeof window === 'undefined') return {};
   try {
-    // One-time reset to the clean default grid when the layout version changes.
     if (localStorage.getItem(ICON_LAYOUT_VERSION_KEY) !== ICON_LAYOUT_VERSION) {
       localStorage.removeItem(ICON_POSITIONS_KEY);
       localStorage.setItem(ICON_LAYOUT_VERSION_KEY, ICON_LAYOUT_VERSION);
@@ -145,63 +139,41 @@ function loadSavedIconPositions(): Record<string, { x: number; y: number }> {
       return parsed;
     }
   } catch {
-    // Ignore invalid JSON / storage errors
   }
   return {};
 }
 
-// Grid spacing must exceed the icon cell (w-28 = 112px) by enough that a
-// two-line wrapped label (e.g. WHAT_IS_THIS.TXT) never touches its neighbor,
-// on laptops and at any font zoom. Column pitch = iconWidth + gapX = 140px;
-// row pitch = iconHeight + gapY = 116px (labels can be 2 lines tall + emoji).
 const ICON_GRID = { startX: 16, startY: 16, iconWidth: 128, iconHeight: 96, gapX: 24, gapY: 20, rowsPerCol: 6 } as const;
 
-// Default layout has THREE spatial groups:
-//   • main  — the working apps, a 3-row × 2-col block in the TOP-LEFT.
-//   • refs  — WHITE_PAPERS + Source on GitHub, a small "references" cluster parked
-//             on its own in the BOTTOM-LEFT, away from the apps.
-//   • soon  — the "coming soon" apps, a 2-wide block in the BOTTOM-RIGHT corner.
-// Positions are computed from the current viewport so bottom clusters hug the
-// corners on any screen.
-const MAIN_ROWS = 3; // 3 rows tall, filling column-major → a 3×2 block
+const MAIN_ROWS = 3;
 function getGroupedIconPosition(group: 'main' | 'refs' | 'soon', indexInGroup: number): { x: number; y: number } {
   const { startX, startY, iconWidth, iconHeight, gapX, gapY } = ICON_GRID;
   const colPitch = iconWidth + gapX;
   const rowPitch = iconHeight + gapY;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
-  // Clear the 40px taskbar AND the icon's 2-line label (which extends ~40px below
-  // the glyph box): taskbar 40 + label 48 + margin 16 = 104px of bottom clearance.
   const bottomY = vh - iconHeight - 104;
 
   if (group === 'main') {
-    // 3×2 block: fill down each column (3 per column), then wrap to the next column.
     const col = Math.floor(indexInGroup / MAIN_ROWS);
     const row = indexInGroup % MAIN_ROWS;
     return { x: startX + col * colPitch, y: startY + row * rowPitch };
   }
 
   if (group === 'refs') {
-    // Bottom-left cluster, side by side (2 wide).
     return { x: startX + indexInGroup * colPitch, y: bottomY };
   }
 
-  // "soon": 2-wide block anchored to the bottom-right corner.
   const SOON_COLS = 2;
-  const col = indexInGroup % SOON_COLS;   // 0 = left col of the cluster, 1 = right
+  const col = indexInGroup % SOON_COLS;
   const row = Math.floor(indexInGroup / SOON_COLS);
-  const clusterRightX = vw - iconWidth - 24;          // right column x
+  const clusterRightX = vw - iconWidth - 24;
   return {
     x: clusterRightX - (SOON_COLS - 1 - col) * colPitch,
     y: bottomY - row * rowPitch,
   };
 }
 
-// Position + width for the single "Coming Soon" header that sits ABOVE the soon
-// cluster (bottom-right). Derived from the same grid math so it hugs the cluster
-// without moving any icon. The soon block is 2 cols × 2 rows growing upward, so
-// its top row is at (bottomY - rowPitch); the header sits just above that, spanning
-// both columns.
 function getSoonHeaderPosition(): { x: number; y: number; width: number } {
   const { iconWidth, iconHeight, gapX, gapY } = ICON_GRID;
   const colPitch = iconWidth + gapX;
@@ -210,12 +182,12 @@ function getSoonHeaderPosition(): { x: number; y: number; width: number } {
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
   const bottomY = vh - iconHeight - 104;
   const clusterRightX = vw - iconWidth - 24;
-  const leftColX = clusterRightX - colPitch;          // left column's x
-  const topRowY = bottomY - rowPitch;                 // y of the soon block's top row
+  const leftColX = clusterRightX - colPitch;
+  const topRowY = bottomY - rowPitch;
   return {
     x: leftColX,
-    y: topRowY - 34,                                   // just above the top row
-    width: colPitch + iconWidth,                        // spans both columns
+    y: topRowY - 34,
+    width: colPitch + iconWidth,
   };
 }
 
@@ -227,10 +199,6 @@ export function AppInner() {
   const [editingApp, setEditingApp] = useState<AppListing | null>(null);
   const [liveSandboxApp, setLiveSandboxApp] = useState<AppListing | null>(null);
 
-  // (The INBOX desktop badge that polled the cloud /api/inbox unread count was
-  // removed in task #42: the INBOX window now shows LOCAL agent mail from the
-  // loopback agent-inboxes service, so a cloud-inbox count would be misleading.
-  // The window's own status strip shows CONNECTED/OFFLINE.)
   const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
@@ -294,7 +262,6 @@ export function AppInner() {
     );
   }
 
-  // Standalone Subdomain / Route Wrappers
   const renderStandaloneWrapper = (title: string, component: React.ReactNode) => (
     <div className="fixed inset-0 bg-[#0f172a] flex flex-col font-sans text-xs overflow-hidden">
       <div className="bg-[#000080] text-white px-3 py-1.5 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
@@ -337,8 +304,6 @@ export function AppInner() {
                     "Drop Published",
                     honestStatus === 'active' ? "success" : "info"
                   );
-                  // Only auto-close when the product is genuinely active; otherwise
-                  // keep the editor open so the maker sees the honest state banner.
                   if (honestStatus === 'active') setEditingApp(null);
                   return {
                     productStatus: res.productStatus,
@@ -362,8 +327,6 @@ export function AppInner() {
   if (route.type === 'standalone_view') {
     switch (route.id) {
       case 'explainer': {
-        // Standalone "what is this" route: reuse the consolidated About/README window.
-        // App links navigate to the main Web OS (that's where the windows live).
         const goHome = () => { window.location.href = 'https://nates-software.com'; };
         return renderStandaloneWrapper(route.title || "WELCOME TO NATE'S SOFTWARE EMPORIUM", (
           <div className="h-full overflow-auto bg-[#ece9d8] p-3">
@@ -418,7 +381,6 @@ export function AppInner() {
     }
   }
 
-  // Main Desktop Environment
   const {
     windows,
     activeWindowId,
@@ -435,27 +397,17 @@ export function AppInner() {
   const [restarting, setRestarting] = useState(false);
   const [theme, setTheme] = useState<'teal' | 'matrix' | 'sunset' | 'navy'>('teal');
 
-  // Auto-open SETUP for genuine first-run / logged-out visitors — but only AFTER the
-  // session check resolves. The setup window is closed on first paint (see
-  // useWindowManager); we open it here once we actually know the auth state, so a
-  // returning logged-in user never sees it flash open then closed on refresh.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (authLoading) return; // wait until we know whether there's a session
+    if (authLoading) return;
     const SETUP_SEEN_KEY = 'nsw_setup_wizard_seen';
     const hasSeenSetup = localStorage.getItem(SETUP_SEEN_KEY);
-    // Show the welcome wizard to first-time visitors and to anyone not logged in
-    // (they still need to create an account). Returning logged-in users skip it.
     if (!isAuthenticated || !hasSeenSetup) {
       openWindow('setup');
       localStorage.setItem(SETUP_SEEN_KEY, 'true');
     }
   }, [authLoading, isAuthenticated, openWindow]);
 
-  // First-visit intro: on load, ONLY the "WHAT_IS_THIS.TXT" icon is visible — every
-  // other icon stays hidden. The visitor must CLICK it; that opens the "What is
-  // this?" window (which fades in) and triggers the rest of the icons to voxel-fade
-  // in together. First-time-only in production; runs EVERY reload for testing.
   const INTRO_EVERY_RELOAD = true;
   const INTRO_SEEN_KEY = 'nsw_intro_seen';
   const [introPhase, setIntroPhase] = useState<'waiting' | 'primed' | 'revealing' | 'done'>(() => {
@@ -463,23 +415,15 @@ export function AppInner() {
     if (INTRO_EVERY_RELOAD) return 'waiting';
     return localStorage.getItem(INTRO_SEEN_KEY) ? 'done' : 'waiting';
   });
-  // Per-icon random reveal-start offset (ms), rolled fresh each reveal so icons
-  // come in in a different order/timing every load.
   const [revealDelays, setRevealDelays] = useState<Record<string, number>>({});
   const [showSoonHeader, setShowSoonHeader] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     if (INTRO_EVERY_RELOAD) return false;
     return Boolean(localStorage.getItem(INTRO_SEEN_KEY));
   });
-  // Called when the visitor clicks WHAT_IS_THIS during the intro: after a beat, the
-  // rest voxel-fade in for a dramatic effect. Wait ~2s (they read the popup), then
-  // the reveal runs a few seconds with each icon starting at a random offset.
   const triggerIntroReveal = useCallback(() => {
     setIntroPhase((prev) => {
       if (prev !== 'waiting') return prev;
-      // Roll a random start delay per icon so the reveal order differs every run.
-      // The working apps + references come in FIRST (0–800ms); the "coming soon"
-      // group comes in LAST (1000–1700ms), so it clearly trails the real apps.
       const mainIds = ['setup', 'hotwire', 'gitsmith', 'chat', 'profile', 'papers', 'github'];
       const soonIds = ['slopshop', 'inbox', 'dyno', 'terminal'];
       const delays: Record<string, number> = {};
@@ -488,12 +432,10 @@ export function AppInner() {
       setRevealDelays(delays);
       setShowSoonHeader(false);
       setTimeout(() => setShowSoonHeader(true), 3200);
-      // hold on 'primed' (still hidden) for 2s, then start the slow reveal.
       setTimeout(() => setIntroPhase('revealing'), 2000);
-      // mark done after the reveal has fully played out.
       setTimeout(() => {
         setIntroPhase('done');
-        try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* ignore */ }
+        try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {  }
       }, 6500);
       return 'primed';
     });
@@ -502,9 +444,6 @@ export function AppInner() {
   const [iconPositions, setIconPositions] = useState<Record<string, { x: number; y: number }>>(loadSavedIconPositions);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
-  // Auto-layout on resize: bump a tick so icons WITHOUT a manually-dragged position
-  // recompute from getGroupedIconPosition (which reads the live viewport) — keeps
-  // the bottom clusters hugging the corners instead of overlapping/clipping.
   const [, setViewportTick] = useState(0);
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -521,28 +460,23 @@ export function AppInner() {
         try {
           localStorage.setItem(ICON_POSITIONS_KEY, JSON.stringify(next));
         } catch {
-          // Ignore storage failures
         }
       }
       return next;
     });
   };
 
-  // Right-click context menu (Win95-style). `target` is 'desktop' or an icon id.
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; target: string } | null>(null);
 
-  // "Align to grid" — drop every saved position so all icons fall back to the
-  // default grid (getDefaultIconPosition), snapping them into clean columns.
   const alignIconsToGrid = () => {
     playClickSound();
     setIconPositions({});
     if (typeof window !== 'undefined') {
-      try { localStorage.removeItem(ICON_POSITIONS_KEY); } catch { /* ignore */ }
+      try { localStorage.removeItem(ICON_POSITIONS_KEY); } catch {  }
     }
   };
 
   const openContextMenu = (e: React.MouseEvent, target: string) => {
-    // Take over the browser's native right-click menu with our own.
     e.preventDefault();
     e.stopPropagation();
     playClickSound();
@@ -597,8 +531,6 @@ export function AppInner() {
     navy: 'bg-[#000033]'
   };
 
-  // Populated as the desktop icons render (below); read by the right-click menu's
-  // "Open" action. Fresh each render so it always reflects the current icon set.
   const desktopIconOpeners: Record<string, () => void> = {};
 
   return (
@@ -607,8 +539,6 @@ export function AppInner() {
       onPointerMove={handleDesktopPointerMove}
       onPointerUp={handleDesktopPointerUp}
       onContextMenu={(e) => {
-        // Only take over the right-click on the bare desktop — let windows,
-        // inputs, and links keep their native menu (so text fields still work).
         const el = e.target as HTMLElement;
         if (el.closest('.RetroWindow') || el.closest('input') || el.closest('textarea') || el.closest('a')) return;
         if (!el.closest('.desktop-icon')) openContextMenu(e, 'desktop');
@@ -619,10 +549,6 @@ export function AppInner() {
         backgroundSize: '24px 24px'
       }}
     >
-      {/* Mobile gate — the fixed Win95 desktop isn't usable below ~768px. Rather than
-          fake a responsive rework, show an honest full-screen notice on small screens
-          (Tailwind md: = 768px, so this is visible only below that) with a way into the
-          explainer. No modern animation; stays in the retro aesthetic. */}
       <div className="md:hidden fixed inset-0 z-[60] bg-w95-teal flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-[#c0c0c0] border-2 shadow-[4px_4px_0_rgba(0,0,0,0.45)]"
              style={{ borderColor: '#ffffff #404040 #404040 #ffffff' }}>
@@ -647,7 +573,6 @@ export function AppInner() {
         </div>
       </div>
 
-      {/* Rubberband Drag Selection Box */}
       {selectionBox && (
         <div
           style={{
@@ -660,7 +585,6 @@ export function AppInner() {
         />
       )}
 
-      {/* Top Right Controls & Greeting */}
       <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
         <TldrButton />
         <button
@@ -673,8 +597,6 @@ export function AppInner() {
           <span>What is this?</span>
         </button>
         {authLoading ? (
-          // Never flash logged-out → logged-in: hold a neutral placeholder until
-          // the session check resolves (matches the AccountWidget fix).
           <div className="flex items-center gap-1.5 bg-black/30 px-2.5 py-1 rounded border border-white/10 text-white/60 text-[11px] font-tahoma">
             <span className="inline-block w-3 h-3 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
             <span>Loading…</span>
@@ -722,23 +644,17 @@ export function AppInner() {
         </div>
       </div>
 
-      {/* Desktop App Icons. Two spatial groups: WORKING apps flow TOP-LEFT; the
-          "coming soon" apps (dimmed + SOON badge, still clickable) are parked
-          BOTTOM-RIGHT as a separate not-yet-ready cluster. */}
       {(() => {
         type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'refs' | 'soon'; comingSoon?: boolean };
         const icons: DeskIcon[] = [
-          // --- TOP-LEFT: the working apps (3×2 block) ---
           { id: 'setup', label: 'SETUP.EXE', icon: '🚀', group: 'main', onClick: () => { playClickSound(); openWindow('setup'); } },
           { id: 'whatis', label: 'WHAT_IS_THIS.TXT', icon: '❓', group: 'main', onClick: () => { playClickSound(); triggerIntroReveal(); openWindow('mktg'); } },
           { id: 'hotwire', label: 'HOTWIRE', icon: '🔥', group: 'main', onClick: () => { playClickSound(); openWindow('hotwire'); } },
           { id: 'gitsmith', label: 'GITSMITH', icon: '📁', group: 'main', onClick: () => { playClickSound(); openWindow('gitsmith'); } },
           { id: 'chat', label: 'CHAT', icon: '💬', group: 'main', onClick: () => { playClickSound(); openWindow('chat'); } },
           { id: 'profile', label: 'ACCOUNT.CFG', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
-          // --- BOTTOM-LEFT: references, on their own ---
           { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'refs', onClick: () => { playClickSound(); openWindow('papers'); } },
           { id: 'github', label: 'Source on GitHub', icon: '🌐', group: 'refs', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
-          // --- BOTTOM-RIGHT: coming soon (dimmed + SOON, still clickable) ---
           { id: 'slopshop', label: 'SLOPSHOP', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
           { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('inbox'); } },
           { id: 'dyno', label: 'DYNO', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },
@@ -748,8 +664,6 @@ export function AppInner() {
         return icons.map((item) => {
           const idxInGroup = groupIndex[item.group]++;
           const isWhatis = item.id === 'whatis';
-          // During the intro, WHAT_IS_THIS sits DEAD CENTER of the screen (it's the
-          // one thing to click). It flies to its grid spot once the reveal starts.
           const introCentered = isWhatis && (introPhase === 'waiting' || introPhase === 'primed');
           const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
           const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
@@ -757,10 +671,6 @@ export function AppInner() {
             ? { x: Math.round(vw / 2 - 64), y: Math.round(vh / 2 - 60) }
             : (iconPositions[item.id] || getGroupedIconPosition(item.group, idxInGroup));
           desktopIconOpeners[item.id] = item.onClick;
-          // Intro: WHAT_IS_THIS is the only icon visible up front (the trigger).
-          // 'waiting' + 'primed' = the rest stay hidden (primed = the 2s dramatic
-          // pause before the reveal). 'revealing' = they assemble via the canvas
-          // voxel effect (below).
           const introClass =
             (introPhase === 'waiting' || introPhase === 'primed')
               ? (isWhatis ? '' : 'desktop-intro-hidden')
@@ -768,9 +678,6 @@ export function AppInner() {
                 ? (isWhatis ? '' : 'desktop-icon-reveal-wrap')
                 : '';
           const doVoxel = introPhase === 'revealing' && !isWhatis;
-          // Each icon's voxel assembly starts at a random offset (computed ONCE when
-          // the reveal begins — see revealDelays) so the order/timing differs every
-          // load. Stable within a reveal (no re-randomize on re-render → no flicker).
           const voxelDelayMs = doVoxel ? (revealDelays[item.id] ?? 0) : 0;
           return (
             <DesktopIcon
@@ -836,9 +743,6 @@ export function AppInner() {
         />
       )}
 
-      {/* Floating Application Windows */}
-
-      {/* 0. SETUP.EXE — 1-Click Fork Quickstart Wizard */}
       <ErrorBoundary
         key={`setup-${windows.setup.isOpen}`}
         fallbackTitle="SETUP.EXE"
@@ -893,7 +797,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 0. Marketing / About ("What is this?") */}
       <ErrorBoundary
         key={`mktg-${windows.mktg.isOpen}`}
         fallbackTitle="WHAT_IS_THIS.TXT"
@@ -924,9 +827,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 0.1 Product Explainer — now consolidated into the README/About window above. */}
-
-      {/* 0.5 CHAT IRC Chatroom Window */}
       <ErrorBoundary
         key={`chat-${windows.chat.isOpen}`}
         fallbackTitle="CHAT"
@@ -947,7 +847,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 1. Terminal DOS Shell */}
       <ErrorBoundary
         key={`terminal-${windows.terminal.isOpen}`}
         fallbackTitle="TERMINAL.EXE"
@@ -968,7 +867,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 2. Hotwire Drops */}
       <ErrorBoundary
         key={`hotwire-${windows.hotwire.isOpen}`}
         fallbackTitle="HOTWIRE"
@@ -999,7 +897,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 3. Slopshop AI Speed Shop */}
       <ErrorBoundary
         key={`slopshop-${windows.slopshop.isOpen}`}
         fallbackTitle="SLOPSHOP"
@@ -1020,11 +917,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* RIG.EXE was removed as a user-facing app (task #41). RIG is now an
-          invisible engine — the deploy build pipeline (executeRigDeployBuild),
-          merge verification, and SLOPSHOP's live-run gateway. No window here. */}
-
-      {/* 5. Inbox Merge Discussions */}
       <ErrorBoundary
         key={`inbox-${windows.inbox.isOpen}`}
         fallbackTitle="INBOX"
@@ -1045,7 +937,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 6. Dyno Workstation Speedometer */}
       <ErrorBoundary
         key={`dyno-${windows.dyno.isOpen}`}
         fallbackTitle="DYNO"
@@ -1066,7 +957,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 7. Technical White Papers */}
       <ErrorBoundary
         key={`papers-${windows.papers.isOpen}`}
         fallbackTitle="WHITE PAPERS"
@@ -1087,7 +977,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 8. User Profile & My Shelf */}
       <ErrorBoundary
         key={`profile-${windows.profile.isOpen}`}
         fallbackTitle="PROFILE"
@@ -1108,7 +997,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* 9. Gitsmith GitHub-Style Forge */}
       <ErrorBoundary
         key={`gitsmith-${windows.gitsmith.isOpen}`}
         fallbackTitle="GITSMITH"
@@ -1129,7 +1017,6 @@ export function AppInner() {
         </RetroWindow>
       </ErrorBoundary>
 
-      {/* Pop-Up Start Menu */}
       {restarting && <RestartOverlay />}
       <StartMenu
         isOpen={startMenuOpen}
@@ -1138,7 +1025,6 @@ export function AppInner() {
         onRestart={() => setRestarting(true)}
       />
 
-      {/* PostEditor Modal Overlay */}
       {editingApp && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl h-[90vh] bg-[#c0c0c0] border-2 border-white shadow-2xl flex flex-col">
@@ -1159,8 +1045,6 @@ export function AppInner() {
                     "Drop Published",
                     honestStatus === 'active' ? "success" : "info"
                   );
-                  // Only auto-close when the product is genuinely active; otherwise
-                  // keep the editor open so the maker sees the honest state banner.
                   if (honestStatus === 'active') setEditingApp(null);
                   return {
                     productStatus: res.productStatus,
@@ -1179,7 +1063,6 @@ export function AppInner() {
         </div>
       )}
 
-      {/* Live Sandbox Modal Overlay */}
       {liveSandboxApp && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-4xl h-[85vh] bg-[#ece9d8] border-2 border-white shadow-2xl flex flex-col font-tahoma">
@@ -1207,7 +1090,6 @@ export function AppInner() {
         </div>
       )}
 
-      {/* Authentic Win95 Desktop Taskbar */}
       <DesktopTaskbar
         tabs={taskbarTabs}
         onStartClick={() => setStartMenuOpen(prev => !prev)}

@@ -1,8 +1,3 @@
-// Durable Forge Outbox Dispatcher & Discrepancy Reconciler
-// Claims due provisioning/fork events with finite conditional leases,
-// enforces exponential backoff and dead-lettering, coordinates authenticated
-// callbacks to /api/git, and reconciles Git bare state with D1 projections.
-
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import type {
@@ -67,9 +62,6 @@ export class ForgeOutboxDispatcher {
     };
   }
 
-  /**
-   * Claims due outbox events with a finite conditional lease.
-   */
   public async claimDueEvents(limit = 10, leaseSeconds?: number): Promise<OutboxEventRecord[]> {
     if (!this.db) {
       const body = await this.postControlPlane({
@@ -83,7 +75,6 @@ export class ForgeOutboxDispatcher {
     const lease = leaseSeconds || this.config.leaseDurationSeconds || 60;
     const maxAttempts = this.config.maxAttempts || 5;
 
-    // Fetch candidate un-delivered, un-leased due events
     const candidatesRes = await this.db.prepare(`
       SELECT id, aggregate_type, aggregate_id, event_type, payload,
              attempts, available_at, delivered_at, last_error,
@@ -105,7 +96,6 @@ export class ForgeOutboxDispatcher {
     for (const event of candidates) {
       const claimToken = `clm_${crypto.randomUUID().replace(/-/g, '')}`;
 
-      // Conditional atomic update to lock lease
       const updateRes = await this.db.prepare(`
         UPDATE forge_outbox_events
         SET claim_token = ?,
@@ -131,9 +121,6 @@ export class ForgeOutboxDispatcher {
     return claimedEvents;
   }
 
-  /**
-   * Releases an event claim on transient failure and sets exponential backoff.
-   */
   public async releaseClaimWithBackoff(
     event: OutboxEventRecord,
     errorMessage: string
@@ -153,7 +140,6 @@ export class ForgeOutboxDispatcher {
     const maxAttempts = this.config.maxAttempts || 5;
 
     if (attempts >= maxAttempts) {
-      // Mark dead-letter
       await this.db.prepare(`
         UPDATE forge_outbox_events
         SET claim_token = NULL,
@@ -164,7 +150,6 @@ export class ForgeOutboxDispatcher {
         WHERE id = ? AND claim_token = ?
       `).bind(`Dead-letter: Max attempts reached (${attempts}). Last error: ${errorMessage}`, event.id, event.claim_token).run();
 
-      // Insert reconciliation issue
       try {
         const issueId = `recon_dead_${crypto.randomUUID()}`;
         await this.db.prepare(`
@@ -196,9 +181,6 @@ export class ForgeOutboxDispatcher {
     `).bind(backoffSec, errorMessage, event.id, event.claim_token).run();
   }
 
-  /**
-   * Marks an outbox event as successfully delivered.
-   */
   public async markDelivered(event: OutboxEventRecord): Promise<void> {
     if (!this.db) {
       await this.postControlPlane({
@@ -218,9 +200,6 @@ export class ForgeOutboxDispatcher {
     `).bind(event.id, event.claim_token).run();
   }
 
-  /**
-   * Processes a claimed outbox event.
-   */
   public async processEvent(event: OutboxEventRecord): Promise<ProcessOutboxResult> {
     if (event.delivered_at) {
       return {
@@ -242,14 +221,12 @@ export class ForgeOutboxDispatcher {
     }
 
     try {
-      // 1. EVENT: repository.provisioning_requested
       if (event.event_type === 'repository.provisioning_requested') {
         const { repositoryId, storageKey, objectFormat = 'sha1', defaultRef = 'refs/heads/main' } = payload;
         if (!storageKey) {
           throw new Error('storageKey is missing from repository.provisioning_requested payload');
         }
 
-        // Provision bare repository on disk
         const initRes = initBareRepo(this.config.reposRoot, {
           storageKey,
           objectFormat,
@@ -260,7 +237,6 @@ export class ForgeOutboxDispatcher {
           throw new Error(`Disk bare repo initialization failed: ${initRes.error}`);
         }
 
-        // Call control plane /api/git with gateway-confirm-provisioning if repository is in D1
         if (repositoryId) {
           try {
             const url = `${this.config.controlPlaneUrl.replace(/\/$/, '')}/api/git`;
@@ -280,12 +256,10 @@ export class ForgeOutboxDispatcher {
             if (!callbackRes.ok) {
               const body = await callbackRes.json().catch(() => null);
               if (body?.error && !body?.idempotent) {
-                // If callback returned error, throw to retry
                 throw new Error(`Control plane provisioning confirmation failed (${callbackRes.status}): ${body.error}`);
               }
             }
           } catch (cbErr: any) {
-            // If callback fails, rethrow to retry
             throw new Error(`Provisioning callback failed: ${cbErr.message}`);
           }
         }
@@ -300,7 +274,6 @@ export class ForgeOutboxDispatcher {
         };
       }
 
-      // 2. EVENT: repository.fork_requested
       if (event.event_type === 'repository.fork_requested') {
         const {
           childRepositoryId,
@@ -327,7 +300,6 @@ export class ForgeOutboxDispatcher {
           throw new Error(parentOidVal.error);
         }
 
-        // Resolve parent storage key from D1 or conventions
         let parentStorageKey = `repositories/${parentRepositoryId}`;
         let parentObjectFormat = 'sha1';
         if (this.db) {
@@ -340,7 +312,6 @@ export class ForgeOutboxDispatcher {
           }
         }
 
-        // Provision child bare repo and transfer parent commit objects on disk
         const diskForkRes = cloneOrFetchForFork(this.config.reposRoot, {
           childRepositoryId,
           childStorageKey,
@@ -360,7 +331,6 @@ export class ForgeOutboxDispatcher {
           throw new Error(`Fork object transfer failed on disk: ${diskForkRes.error}`);
         }
 
-        // Call control plane /api/git action gateway-confirm-fork
         const url = `${this.config.controlPlaneUrl.replace(/\/$/, '')}/api/git`;
         const confirmRes = await this.fetchImpl(url, {
           method: 'POST',
@@ -383,7 +353,6 @@ export class ForgeOutboxDispatcher {
         if (!confirmRes.ok) {
           const body = await confirmRes.json().catch(() => null);
           const errorMsg = body?.error || `HTTP ${confirmRes.status}`;
-          // If conflict is due to non-idempotent conflict, fail closed
           if (confirmRes.status === 409 && !body?.idempotent) {
             throw new Error(`Control plane rejected fork confirmation (409 Conflict): ${errorMsg}`);
           }
@@ -400,7 +369,6 @@ export class ForgeOutboxDispatcher {
         };
       }
 
-      // 3. EVENT: merge.approved — Git is authoritative; D1 is finalized by callbacks.
       if (event.event_type === 'merge.approved') {
         const {
           mergeJobId, mergeAttemptId, repositoryId, storageKey, targetRef,
@@ -467,9 +435,6 @@ export class ForgeOutboxDispatcher {
     }
   }
 
-  /**
-   * Processes a single batch of due outbox events.
-   */
   public async dispatchBatch(limit = 10): Promise<{ claimed: number; results: ProcessOutboxResult[] }> {
     this.lastPolledAt = new Date().toISOString();
     const claimed = await this.claimDueEvents(limit);
@@ -486,9 +451,6 @@ export class ForgeOutboxDispatcher {
     };
   }
 
-  /**
-   * Scans disk repositories and D1 projections to detect and record reconciliation issues.
-   */
   public async reconcileDiscrepancies(): Promise<ReconciliationSummary> {
     if (!this.db) {
       throw new Error('Database is required for reconciliation.');
@@ -508,7 +470,6 @@ export class ForgeOutboxDispatcher {
       const repoId = String(repo.id);
       const storageKey = String(repo.storageKey);
 
-      // Check if disk path exists
       const pathRes = resolveRepoPath(this.config.reposRoot, storageKey);
       if (!pathRes.valid || !pathRes.resolvedPath) {
         continue;
@@ -516,7 +477,6 @@ export class ForgeOutboxDispatcher {
 
       const repoPath = pathRes.resolvedPath;
 
-      // 1. Issue: artifact_missing (Repo active in D1, but directory missing on disk)
       if (repo.status === 'active' && !fs.existsSync(repoPath)) {
         const issueId = `recon_miss_${crypto.randomUUID()}`;
         await this.db.prepare(`
@@ -538,7 +498,6 @@ export class ForgeOutboxDispatcher {
 
       if (!fs.existsSync(repoPath)) continue;
 
-      // Compare refs between disk and D1
       const diskRefs = listAuthoritativeRefs(this.config.reposRoot, storageKey);
       const diskRefMap = new Map<string, string>();
       for (const dr of diskRefs) {
@@ -556,12 +515,10 @@ export class ForgeOutboxDispatcher {
         d1RefMap.set((d1r as any).refName, (d1r as any).commitOid);
       }
 
-      // Check disk refs missing in D1 or OID mismatch
       for (const [refName, diskOid] of diskRefMap.entries()) {
         const d1Oid = d1RefMap.get(refName);
 
         if (!d1Oid) {
-          // git_missing_in_d1: Git has ref, D1 projection does not
           const issueId = `recon_gmid_${crypto.randomUUID()}`;
           await this.db.prepare(`
             INSERT INTO forge_reconciliation_issues (
@@ -584,7 +541,6 @@ export class ForgeOutboxDispatcher {
             detected_at: new Date().toISOString()
           });
         } else if (d1Oid !== diskOid) {
-          // oid_mismatch: Git OID differs from D1 projection OID
           const issueId = `recon_mismatch_${crypto.randomUUID()}`;
           await this.db.prepare(`
             INSERT INTO forge_reconciliation_issues (
@@ -609,7 +565,6 @@ export class ForgeOutboxDispatcher {
         }
       }
 
-      // Check D1 refs missing in Git
       for (const [refName, d1Oid] of d1RefMap.entries()) {
         if (!diskRefMap.has(refName)) {
           const issueId = `recon_dmig_${crypto.randomUUID()}`;
@@ -645,9 +600,6 @@ export class ForgeOutboxDispatcher {
     };
   }
 
-  /**
-   * Starts periodic polling in background.
-   */
   public startPolling(intervalMs?: number): void {
     if (this.isPolling) return;
     this.isPolling = true;
@@ -666,9 +618,6 @@ export class ForgeOutboxDispatcher {
     this.pollTimer = setTimeout(pollLoop, 0);
   }
 
-  /**
-   * Stops periodic polling.
-   */
   public stopPolling(): void {
     this.isPolling = false;
     if (this.pollTimer) {

@@ -23,9 +23,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
     vi.restoreAllMocks();
   });
 
-  // ==========================================================================
-  // §1 SEED INVENTORY AS LIVE & HONEST EMPTY / ERROR STATE
-  // ==========================================================================
   describe('§1 Seed inventory as live & honest error states', () => {
     it('returns empty array from /api/drops when D1 has 0 listings, preserving purity without mock inventory', async () => {
       await ctx.d1.prepare('DELETE FROM commerce_products').run();
@@ -52,20 +49,15 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
         </AlertProvider>
       );
 
-      // Should not render fake product names when catalog starts pure
       expect(html).toContain('12:01 AM DAILY DROP');
     });
   });
 
-  // ==========================================================================
-  // §2 HAVE-I-VOTED VIEWER-SCOPED HYDRATION
-  // ==========================================================================
   describe('§2 Have-I-voted viewer-scoped hydration', () => {
     it('GET /api/upvote and GET /api/drops return viewer-scoped hasVoted for authenticated user', async () => {
       const secret = 'test-secret-salt-12345';
       const env = { DB: ctx.d1, UPVOTE_HASH_SECRET: secret };
 
-      // User usr_nate upvotes dronehunter
       const rawToken = 'nate_session_token_123';
       const tokenHash = await hashSessionToken(rawToken);
       await ctx.d1.prepare(`
@@ -73,7 +65,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
         VALUES (?, 'usr_nate', ?)
       `).bind(tokenHash, Date.now() + 86400000).run();
 
-      // Post upvote as nate
       const postReq = new Request('http://localhost/api/upvote', {
         method: 'POST',
         headers: {
@@ -92,7 +83,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
       }
       expect(postData.success).toBe(true);
 
-      // GET /api/upvote?action=my-votes for nate
       const myVotesReq = new Request('http://localhost/api/upvote?action=my-votes', {
         method: 'GET',
         headers: { 'Cookie': `nsw_session=${rawToken}` }
@@ -103,7 +93,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
       expect(myVotesData.success).toBe(true);
       expect(myVotesData.votedAppIds).toContain('dronehunter');
 
-      // GET /api/drops as nate should return hasVoted: true for dronehunter
       const dropsReq = new Request('http://localhost/api/drops?sort=today', {
         method: 'GET',
         headers: { 'Cookie': `nsw_session=${rawToken}` }
@@ -116,7 +105,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
       const dronehunter = dropsData.drops.find((d: any) => d.id === 'dronehunter');
       expect(dronehunter?.hasVoted).toBe(true);
 
-      // Bob (unauthenticated or different user) should have hasVoted: false
       const unauthReq = new Request('http://localhost/api/drops?sort=today', { method: 'GET' });
       const unauthRes = await dropsApi.onRequestGet({ request: unauthReq, env });
       const unauthData = await unauthRes.json();
@@ -135,14 +123,10 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
         </AlertProvider>
       );
 
-      // HotwireView structure includes upvote flame button
       expect(html).toContain('win95-btn');
     });
   });
 
-  // ==========================================================================
-  // §4 FABRICATED DEFAULTS REMOVED
-  // ==========================================================================
   describe('§4 Fabricated defaults removed (author, score, cleanliness, price, screenshots)', () => {
     it('does not invent defaults in /api/drops when database row contains minimal columns', async () => {
       await ctx.d1.prepare('DELETE FROM commerce_products').run();
@@ -164,9 +148,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
     });
   });
 
-  // ==========================================================================
-  // §5 HARDCODED VOTERS / LEADERBOARD
-  // ==========================================================================
   describe('§5 Live maker leaderboard and voter transparency gating', () => {
     it('computes live maker leaderboard from D1 drop history', async () => {
       const req = new Request('http://localhost/api/drops', { method: 'GET' });
@@ -183,9 +164,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
     });
   });
 
-  // ==========================================================================
-  // §6 DROP CREATION LOOP / HONEST ABSENT STATES
-  // ==========================================================================
   describe('§6 Honest disabled states for unpublished / non-forge drops', () => {
     it('ArtifactSandbox displays "Not yet published" and "No repo on forge" for un-deployed drops', () => {
       const draftApp: AppListing = {
@@ -226,9 +204,6 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
     });
   });
 
-  // ==========================================================================
-  // §7 FIXTURE COMMENTS ON EMPTY THREAD
-  // ==========================================================================
   describe('§7 Empty comments thread is treated as authoritative empty, not fixtures', () => {
     it('ArtifactSandbox renders empty comments state when drop has 0 comments', () => {
       const emptyCommentApp: AppListing = {
@@ -244,7 +219,7 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
         forks: 0,
         tags: [],
         screenshots: [],
-        comments: [], // 0 comments
+        comments: [],
         isDemo: false
       };
 

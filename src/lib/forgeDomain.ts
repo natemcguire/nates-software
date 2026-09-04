@@ -27,11 +27,6 @@ export function canTransitionMergeJob(from: MergeJobStatus, to: MergeJobStatus):
   return MERGE_JOB_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
-/**
- * Validates repository slug format.
- * Slug must start with a lowercase alphanumeric character and contain only lowercase letters, digits, '.', '_', '-'.
- * Must be 1-100 chars, cannot end with '.git', '.lock', or '.', and cannot contain '..' or '//'.
- */
 export function validateRepositorySlug(slug: unknown): { valid: boolean; error?: string } {
   if (typeof slug !== 'string' || !slug.trim()) {
     return { valid: false, error: 'Repository slug must be a non-empty string.' };
@@ -59,9 +54,6 @@ export function isValidRepositorySlug(slug: unknown): boolean {
   return validateRepositorySlug(slug).valid;
 }
 
-/**
- * Validates that an OID is a full 40-hex (SHA-1) or 64-hex (SHA-256) Git object ID.
- */
 export function validateGitOid(oid: unknown, label = 'Git object ID'): { valid: boolean; error?: string } {
   if (typeof oid !== 'string' || !oid.trim()) {
     return { valid: false, error: `${label} must be a non-empty string.` };
@@ -87,9 +79,6 @@ export function isGitOidCompatibleWithObjectFormat(
     : /^[a-f0-9]{40}$/i.test(oid);
 }
 
-/**
- * Validates git reference naming rules (e.g. refs/heads/main, refs/tags/v1.0).
- */
 export function validateGitRef(ref: unknown): { valid: boolean; error?: string; namespace?: string } {
   if (typeof ref !== 'string' || !ref.trim()) {
     return { valid: false, error: 'Ref path must be a non-empty string.' };
@@ -108,7 +97,6 @@ export function validateGitRef(ref: unknown): { valid: boolean; error?: string; 
     return { valid: false, error: 'Ref path cannot contain consecutive slashes or "..".' };
   }
 
-  // Check for forbidden characters in git refs: ~ ^ : ? * [ \ whitespace control chars
   if (/[\x00-\x20\x7F~^:?*\[\\@]/.test(trimmed) || trimmed.includes('@{')) {
     return { valid: false, error: 'Ref path contains illegal Git reference characters.' };
   }
@@ -126,14 +114,10 @@ export function isValidGitRef(ref: unknown): boolean {
   return validateGitRef(ref).valid;
 }
 
-export const MAX_TEXT_FILE_BYTES = 256 * 1024; // 256 KiB
-export const MAX_IMAGE_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB
-export const MAX_DEFAULT_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB
+export const MAX_TEXT_FILE_BYTES = 256 * 1024;
+export const MAX_IMAGE_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_DEFAULT_FILE_BYTES = 2 * 1024 * 1024;
 
-/**
- * Returns the maximum allowed byte size for a given file path based on its extension.
- * Text/markdown/spec files capped at 256 KiB; images and binaries capped at 2 MiB.
- */
 export function getMaxFileSizeBytes(filePath: string): number {
   if (typeof filePath !== 'string') return MAX_DEFAULT_FILE_BYTES;
   const lastDot = filePath.lastIndexOf('.');
@@ -149,11 +133,6 @@ export function getMaxFileSizeBytes(filePath: string): number {
   return MAX_DEFAULT_FILE_BYTES;
 }
 
-/**
- * Validates a repository relative file path for safe Git lookups.
- * Rejects: non-strings, empty strings, null bytes, ALL backslashes, leading slashes, Windows drive prefixes,
- * CLI option flags, path traversal (..) and empty/current-dir (.) segments.
- */
 export function validateRepoFilePath(filePath: unknown): { valid: boolean; error?: string } {
   if (typeof filePath !== 'string' || !filePath.trim()) {
     return { valid: false, error: 'File path must be a non-empty string.' };
@@ -161,22 +140,18 @@ export function validateRepoFilePath(filePath: unknown): { valid: boolean; error
 
   const clean = filePath.trim();
 
-  // No null bytes
   if (clean.includes('\0')) {
     return { valid: false, error: 'File path cannot contain null bytes.' };
   }
 
-  // Reject ANY backslash (Windows path separator / escaping attempts)
   if (clean.includes('\\')) {
     return { valid: false, error: 'File path cannot contain backslashes.' };
   }
 
-  // Reject absolute paths, leading slashes, Windows drive prefixes, CLI option flags
   if (clean.startsWith('/') || clean.startsWith('-') || /^[a-zA-Z]:/.test(clean)) {
     return { valid: false, error: 'Absolute paths, leading slashes, and option flags are forbidden.' };
   }
 
-  // Split by '/' and verify all segments
   const segments = clean.split('/');
   for (const segment of segments) {
     if (segment === '' || segment === '.' || segment === '..') {
@@ -195,18 +170,12 @@ export function isValidRepoFilePath(filePath: unknown): boolean {
   return validateRepoFilePath(filePath).valid;
 }
 
-/**
- * Generates an immutable, id-based storage key for a repository.
- */
 export function buildRepositoryStorageKey(repositoryId: string): string {
   const cleanId = String(repositoryId || '').trim();
   if (!cleanId) throw new Error('Repository ID is required to build storage key.');
   return `repositories/${cleanId}`;
 }
 
-/**
- * Constant-time comparison for authentication tokens to prevent timing attacks.
- */
 export function constantTimeTokenCompare(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const lenA = a.length;
@@ -251,11 +220,6 @@ export function validateForkOrigin(input: ForkOriginInput): readonly string[] {
     errors.push('Child initial commit must be a full Git object ID.');
   }
   if (!input.lineageRootRepositoryId?.trim()) errors.push('Lineage root repository is required.');
-  // Bound fork depth. Forks are free, so without a ceiling an attacker could
-  // build an arbitrarily deep chain; the checkout lineage walk then does one D1
-  // query per generation (a request→DB amplification vector). MAX_FORK_DEPTH
-  // keeps chains shallow at creation time; the ancestry walk also self-bounds
-  // as a second line of defense.
   if (!Number.isInteger(input.depth) || input.depth < 1) {
     errors.push('Fork depth must be a positive integer.');
   } else if (input.depth > MAX_FORK_DEPTH) {
@@ -264,9 +228,6 @@ export function validateForkOrigin(input: ForkOriginInput): readonly string[] {
   return errors;
 }
 
-// Maximum allowed fork lineage depth. Kept well below the payable lineage cap
-// (COMMERCE_BASIS_POINTS.FORK_LINEAGE_TOTAL = 2000) so the per-checkout ancestry
-// walk stays cheap even for the deepest legitimate chain.
 export const MAX_FORK_DEPTH = 500;
 
 export interface CasRefUpdateInput {
@@ -367,11 +328,9 @@ function comparePolicySpecificity(a: RefPolicy, b: RefPolicy): number {
   const prefixLenA = hasWildcardA ? normA.slice(0, -1).length : normA.length;
   const prefixLenB = hasWildcardB ? normB.slice(0, -1).length : normB.length;
 
-  // 1. Longest literal prefix wins (most specific prefix)
   if (prefixLenB !== prefixLenA) {
     return prefixLenB - prefixLenA;
   }
-  // 2. Exact match over wildcard (fewest wildcards)
   if (hasWildcardA !== hasWildcardB) {
     return hasWildcardA - hasWildcardB;
   }
@@ -390,7 +349,6 @@ export function selectRefPolicy(policies: readonly RefPolicy[], refName: string)
 
   if (topTier.length === 1) return topTier[0];
 
-  // For EQUAL specificity, combine conservatively PER OPERATION (deny wins)
   const allowForcePush = topTier.every(p => Boolean(p.allowForcePush));
   const allowDelete = topTier.every(p => Boolean(p.allowDelete));
   const requireSignedCommits = topTier.some(p => Boolean(p.requireSignedCommits));

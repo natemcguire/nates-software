@@ -1,8 +1,3 @@
-// GET /api/payments/orders/:id
-// Buyer-scoped order status, fulfillment polling, receipt, and license retrieval endpoint.
-// Strictly requires authentication and returns ONLY the authenticated buyer's own order.
-// Returns HTTP 404 if order does not exist or does not belong to the buyer (audit §11).
-
 import { requireAuth } from '../../_auth';
 import { safePublishedArtifacts } from '../../../../src/lib/profileDomain';
 import { decryptLicenseSecret } from '../../../../src/lib/commerce/licenseCrypto';

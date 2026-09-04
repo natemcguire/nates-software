@@ -1,6 +1,3 @@
-// GET /api/pipeline - Query SLOPSHOP AI Feature Modification Pipeline Preflight Status
-// POST /api/pipeline - Preflight & Validate Feature Package, Generating Unified Patches & Evidence
-
 import { SlopshopPipelineEngine, FileModification } from '../../src/lib/slopshopPipeline';
 import { requireAuth } from './_auth';
 import { validateGitOid } from '../../src/lib/forgeDomain';
@@ -147,7 +144,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env?: 
       }, { status: 202 });
     }
 
-    // Reject land and revert actions truthfully because Cloudflare Edge cannot execute Git
     if (action === 'land' || action === 'revert') {
       return Response.json(
         {

@@ -1,6 +1,3 @@
-// Functions Route: /serve/[app]/[[path]]
-// Direct path-based static application serving from R2
-
 import { getMediaType } from '../../../src/lib/rig/deployExecutor';
 
 const json = (body: unknown, status = 200) =>

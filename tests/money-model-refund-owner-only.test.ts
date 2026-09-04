@@ -1,18 +1,4 @@
-// Tests for the owner-only discretionary refund INITIATION endpoint:
-//   POST /api/payments/refund  (functions/api/payments/refund.ts)
-//
-// Policy (docs/superpowers/plans/2026-09-03-shareware-restored-money-model.md,
-// Task D1 + Global Constraints): all sales are final. ONLY the site owner
-// (role 'super_admin') may initiate a refund, at their discretion. No
-// buyer/maker refund path may exist anywhere in the app.
-//
-// This endpoint only CREATES the Stripe refund (POST /v1/refunds). It must
-// NOT write commerce_refunds / commerce_order_allocations rows itself — that
-// money-movement recording is exclusively the job of the existing
-// refund.created webhook processor (src/lib/commerce/refundProcessor.ts),
-// which GETs the authoritative refund back from Stripe before recording
-// anything. Duplicating that here would create two paths that can disagree
-// about the truth of a refund.
+
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
@@ -129,9 +115,7 @@ describe('POST /api/payments/refund — owner-only discretionary refund', () => 
     expect(body.success).toBe(true);
     expect(body.refundId).toBe('re_test_123');
 
-    // This endpoint must NEVER write commerce_refunds itself — that is
-    // exclusively the refund.created webhook processor's job (it re-fetches
-    // the authoritative refund from Stripe before recording anything).
+
     const rows = await ctx.d1.prepare(`SELECT COUNT(*) AS n FROM commerce_refunds`).first();
     expect(Number((rows as any).n)).toBe(0);
   });
@@ -253,8 +237,8 @@ describe('no non-admin refund-initiation path exists (grep guard)', () => {
         expect(m.text.toLowerCase()).not.toContain("method: 'get'");
       }
       if (m.file === 'src/lib/commerce/refundProcessor.ts') {
-        // The webhook processor only ever GETs the authoritative refund back;
-        // it must never itself POST a new refund into existence.
+
+
         expect(m.text).not.toMatch(/method:\s*'POST'/);
       }
     }

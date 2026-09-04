@@ -1,7 +1,3 @@
-// Safe Git Filesystem Storage and Authoritative Git Command Runner
-// Guarantees path sandboxing beneath configured explicit root, symlink protection,
-// object format (sha1/sha256) support, and git update-ref compare-and-swap.
-
 import fs from 'node:fs';
 import path from 'node:path';
 import child_process from 'node:child_process';
@@ -36,9 +32,6 @@ import {
 export const SHA1_ZERO_OID = '0000000000000000000000000000000000000000';
 export const SHA256_ZERO_OID = '0000000000000000000000000000000000000000000000000000000000000000';
 
-/**
- * Validates storage key format and ensures no traversal or illegal characters.
- */
 export function validateStorageKey(storageKey: unknown): { valid: boolean; error?: string } {
   if (typeof storageKey !== 'string' || !storageKey.trim()) {
     return { valid: false, error: 'Storage key must be a non-empty string.' };
@@ -46,27 +39,22 @@ export function validateStorageKey(storageKey: unknown): { valid: boolean; error
 
   const trimmed = storageKey.trim();
 
-  // No null bytes
   if (trimmed.includes('\0')) {
     return { valid: false, error: 'Storage key cannot contain null bytes.' };
   }
 
-  // No absolute paths or Windows drive letters
   if (path.isAbsolute(trimmed) || /^[a-zA-Z]:/.test(trimmed) || trimmed.startsWith('/') || trimmed.startsWith('\\')) {
     return { valid: false, error: 'Storage key must be a relative path.' };
   }
 
-  // No traversal sequences
   if (trimmed.includes('..') || trimmed.includes('//') || trimmed.includes('\\\\') || trimmed.includes('/./')) {
     return { valid: false, error: 'Storage key cannot contain path traversal sequences (.., //, /./).' };
   }
 
-  // Forbidden filesystem characters
   if (/[<>:"|?*]/.test(trimmed)) {
     return { valid: false, error: 'Storage key contains illegal filesystem characters.' };
   }
 
-  // Safe pattern: e.g. repositories/repo_123, repo_123, users/nate/repo
   if (!/^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/.test(trimmed)) {
     return { valid: false, error: 'Storage key contains invalid characters.' };
   }
@@ -78,10 +66,6 @@ export function validateStorageKey(storageKey: unknown): { valid: boolean; error
   return { valid: true };
 }
 
-/**
- * Resolves repository path strictly beneath reposRoot, validating against symlink escapes.
- * Rejects any symlink component in the path and the target itself.
- */
 export function resolveRepoPath(reposRoot: string, storageKey: string): StorageValidationResult {
   if (!reposRoot || typeof reposRoot !== 'string' || !reposRoot.trim()) {
     return { valid: false, error: 'Configured reposRoot is required.' };
@@ -95,18 +79,15 @@ export function resolveRepoPath(reposRoot: string, storageKey: string): StorageV
   const cleanRoot = path.resolve(reposRoot.trim());
   const targetPath = path.resolve(cleanRoot, storageKey.trim());
 
-  // Check 1: Target path must start with root + separator
   if (!targetPath.startsWith(cleanRoot + path.sep) && targetPath !== cleanRoot) {
     return { valid: false, error: 'Storage key attempts path traversal outside configured reposRoot.' };
   }
 
-  // Check 2: Relative path must not start with ..
   const rel = path.relative(cleanRoot, targetPath);
   if (rel.startsWith('..') || path.isAbsolute(rel) || rel === '') {
     return { valid: false, error: 'Storage path must be a subdirectory beneath reposRoot.' };
   }
 
-  // Check 3: Symlink protection across existing path components and target itself
   try {
     let current = cleanRoot;
     if (fs.existsSync(cleanRoot)) {
@@ -138,16 +119,12 @@ export function resolveRepoPath(reposRoot: string, storageKey: string): StorageV
   return { valid: true, resolvedPath: targetPath };
 }
 
-/**
- * Probes system Git binary and checks support for object formats.
- */
 export function checkGitCapabilities(): GitCapabilities {
   try {
     const out = execFileSync('git', ['--version'], { encoding: 'utf8', timeout: 3000 }).trim();
     const versionMatch = out.match(/git version (\d+\.\d+\.\d+)/);
     const gitVersion = versionMatch ? versionMatch[1] : out;
 
-    // Test sha256 support
     let supportsSha256 = false;
     try {
       const tempDir = path.join(process.cwd(), `.git-cap-check-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`);
@@ -201,9 +178,6 @@ export function getRepoObjectFormat(repoPath: string): RepositoryObjectFormat {
   return 'sha1';
 }
 
-/**
- * Safely provisions a bare git repository beneath configured reposRoot.
- */
 export function initBareRepo(reposRoot: string, params: ProvisionRepoParams): ProvisionRepoResult {
   const { storageKey, objectFormat = 'sha1', defaultRef = 'refs/heads/main' } = params;
 
@@ -221,9 +195,7 @@ export function initBareRepo(reposRoot: string, params: ProvisionRepoParams): Pr
 
   const repoPath = pathRes.resolvedPath;
 
-  // Check if directory already exists
   if (fs.existsSync(repoPath)) {
-    // Check if it's already a valid bare git repo
     try {
       const isBare = execFileSync('git', ['rev-parse', '--is-bare-repository'], {
         cwd: repoPath,
@@ -266,15 +238,12 @@ export function initBareRepo(reposRoot: string, params: ProvisionRepoParams): Pr
     }
   }
 
-  // Create parent directories
   fs.mkdirSync(path.dirname(repoPath), { recursive: true });
 
-  // Execute git init --bare --object-format=<format>
   try {
     const initArgs = ['init', '--bare', `--object-format=${objectFormat}`, repoPath];
     execFileSync('git', initArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
 
-    // Set default ref symbolic-ref HEAD
     if (defaultRef && defaultRef.startsWith('refs/')) {
       try {
         execFileSync('git', ['symbolic-ref', 'HEAD', defaultRef], { cwd: repoPath, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -301,11 +270,6 @@ export function initBareRepo(reposRoot: string, params: ProvisionRepoParams): Pr
   }
 }
 
-/**
- * Resolves a Git reference or OID to a canonical hexadecimal commit OID in a bare repository.
- * Rejects any option-like inputs (starting with '-'), non-string values, or references that
- * do not resolve to an actual commit object in the repository.
- */
 export function resolveCanonicalCommitOid(repoPath: string, refOrOid: string): string | null {
   if (typeof refOrOid !== 'string' || !refOrOid.trim() || refOrOid.trim().startsWith('-')) {
     return null;
@@ -323,9 +287,6 @@ export function resolveCanonicalCommitOid(repoPath: string, refOrOid: string): s
   }
 }
 
-/**
- * Reads authoritative ref from bare git repository using git rev-parse / show-ref.
- */
 export function readAuthoritativeRef(reposRoot: string, storageKey: string, refName: string): string | null {
   const pathRes = resolveRepoPath(reposRoot, storageKey);
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
@@ -347,7 +308,6 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
 
     return isValidGitOid(out) ? out : null;
   } catch {
-    // If ref^{commit} fails, try direct ref (for tags/notes)
     try {
       const outDirect = execFileSync('git', ['rev-parse', '--verify', '-q', '--end-of-options', cleanRef], {
         cwd: repoPath,
@@ -361,11 +321,6 @@ export function readAuthoritativeRef(reposRoot: string, storageKey: string, refN
   }
 }
 
-/**
- * Exports one exact commit from the authoritative bare repository as a tar archive.
- * The caller receives only the committed tree: no Git metadata, working tree state,
- * untracked files, or mutable ref lookup is involved.
- */
 export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string, commitOid: string): Buffer {
   const pathRes = resolveRepoPath(reposRoot, storageKey);
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
@@ -386,9 +341,6 @@ export function archiveAuthoritativeCommit(reposRoot: string, storageKey: string
   }
 }
 
-/**
- * Lists all file paths in the committed tree at a specific commit OID in a bare repository.
- */
 export function listCommitFiles(reposRoot: string, storageKey: string, commitOid: string): string[] {
   const pathRes = resolveRepoPath(reposRoot, storageKey);
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
@@ -412,10 +364,6 @@ export function listCommitFiles(reposRoot: string, storageKey: string, commitOid
   }
 }
 
-/**
- * Reads the object byte size of a file at a specific commit OID in a bare repository
- * using `git cat-file -s <oid>:<path>` without buffering the file content.
- */
 export function getCommitFileSize(
   reposRoot: string,
   storageKey: string,
@@ -444,10 +392,6 @@ export function getCommitFileSize(
   }
 }
 
-/**
- * Reads the text content of a file at a specific commit OID in a bare repository.
- * Checks object size via `git cat-file -s` before buffering.
- */
 export function readCommitFileContent(
   reposRoot: string,
   storageKey: string,
@@ -463,7 +407,6 @@ export function readCommitFileContent(
   const pathVal = validateRepoFilePath(filePath);
   if (!pathVal.valid) return null;
 
-  // Check object size FIRST via git cat-file -s before reading/buffering
   const size = getCommitFileSize(reposRoot, storageKey, commitOid, filePath);
   if (size === null) return null;
   if (size > maxBytes) {
@@ -489,10 +432,6 @@ export function readCommitFileContent(
   }
 }
 
-/**
- * Reads the raw binary buffer of a file at a specific commit OID in a bare repository.
- * Checks object size via `git cat-file -s` before buffering.
- */
 export function readCommitFileBuffer(
   reposRoot: string,
   storageKey: string,
@@ -508,7 +447,6 @@ export function readCommitFileBuffer(
   const pathVal = validateRepoFilePath(filePath);
   if (!pathVal.valid) return null;
 
-  // Check object size FIRST via git cat-file -s before reading/buffering
   const size = getCommitFileSize(reposRoot, storageKey, commitOid, filePath);
   if (size === null) return null;
   if (size > maxBytes) {
@@ -533,9 +471,6 @@ export function readCommitFileBuffer(
   }
 }
 
-/**
- * Reads the base64 encoded content of a file at a specific commit OID in a bare repository.
- */
 export function readCommitFileBase64(
   reposRoot: string,
   storageKey: string,
@@ -547,10 +482,6 @@ export function readCommitFileBase64(
   return buf ? buf.toString('base64') : null;
 }
 
-/**
- * Inspects a committed tree on disk: verifies existence, lists committed files,
- * and reads contents of manifest candidate files.
- */
 export function inspectCommitTree(
   reposRoot: string,
   storageKey: string,
@@ -620,9 +551,6 @@ export function inspectCommitTree(
   };
 }
 
-/**
- * Lists all authoritative refs in a bare repository.
- */
 export function listAuthoritativeRefs(
   reposRoot: string,
   storageKey: string,
@@ -664,9 +592,6 @@ export function listAuthoritativeRefs(
   }
 }
 
-/**
- * Checks if a Git object exists in the repository object store.
- */
 export function hasGitObject(reposRoot: string, storageKey: string, oid: string): boolean {
   const pathRes = resolveRepoPath(reposRoot, storageKey);
   if (!pathRes.valid || !pathRes.resolvedPath || !fs.existsSync(pathRes.resolvedPath)) {
@@ -684,9 +609,6 @@ export function hasGitObject(reposRoot: string, storageKey: string, oid: string)
   }
 }
 
-/**
- * Executes an authoritative ref compare-and-swap mutation using `git update-ref`.
- */
 export function updateAuthoritativeRefCas(
   reposRoot: string,
   params: AuthoritativeRefCasParams
@@ -729,15 +651,12 @@ export function updateAuthoritativeRefCas(
     };
   }
 
-  // Read current authoritative ref from disk
   const currentOid = readAuthoritativeRef(reposRoot, storageKey, refName);
 
-  // Check object format of the repository
   const objectFormat = getRepoObjectFormat(repoPath);
 
   const zeroOid = objectFormat === 'sha256' ? SHA256_ZERO_OID : SHA1_ZERO_OID;
 
-  // 1. OPERATION: CREATE
   if (operation === 'create' || (expectedOldOid === null && currentOid === null && newOid !== null)) {
     if (!newOid) {
       return { success: false, refName, oldOid: null, newOid: null, currentOid, error: 'newOid is required for create operation.' };
@@ -747,7 +666,6 @@ export function updateAuthoritativeRefCas(
       return { success: false, refName, oldOid: null, newOid, currentOid, error: newOidVal.error };
     }
 
-    // Idempotency check: if ref is already at newOid
     if (currentOid === newOid) {
       return {
         success: true,
@@ -759,7 +677,6 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Verify target commit object exists
     if (!hasGitObject(reposRoot, storageKey, newOid)) {
       return {
         success: false,
@@ -771,7 +688,6 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Execute atomic git update-ref -- <ref> <newOid> <zeroOid>
     const res = spawnSync('git', ['update-ref', '--', refName, newOid, zeroOid], {
       cwd: repoPath,
       encoding: 'utf8',
@@ -800,13 +716,11 @@ export function updateAuthoritativeRefCas(
     };
   }
 
-  // 2. OPERATION: UPDATE
   if (operation === 'update') {
     if (!newOid || !expectedOldOid) {
       return { success: false, refName, oldOid: expectedOldOid, newOid, currentOid, error: 'newOid and expectedOldOid are required for update.' };
     }
 
-    // Idempotency check: if ref is already at newOid
     if (currentOid === newOid) {
       return {
         success: true,
@@ -818,7 +732,6 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Authoritative CAS guard check before Git execution
     if (currentOid !== expectedOldOid) {
       return {
         success: false,
@@ -831,7 +744,6 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Verify target commit object exists
     if (!hasGitObject(reposRoot, storageKey, newOid)) {
       return {
         success: false,
@@ -843,7 +755,6 @@ export function updateAuthoritativeRefCas(
       };
     }
 
-    // Execute atomic git update-ref -- <ref> <newOid> <expectedOldOid>
     const res = spawnSync('git', ['update-ref', '--', refName, newOid, expectedOldOid], {
       cwd: repoPath,
       encoding: 'utf8',
@@ -872,7 +783,6 @@ export function updateAuthoritativeRefCas(
     };
   }
 
-  // 3. OPERATION: DELETE
   if (operation === 'delete') {
     if (!expectedOldOid) {
       return { success: false, refName, oldOid: null, newOid: null, currentOid, error: 'expectedOldOid is required for delete.' };
@@ -939,9 +849,6 @@ export function updateAuthoritativeRefCas(
   };
 }
 
-/**
- * Provisions a fork repository by cloning/fetching objects from parent repository on disk.
- */
 export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionParams): ForkProvisionResult {
   const {
     childRepositoryId,
@@ -955,7 +862,6 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
     defaultRef = parentRefName || 'refs/heads/main'
   } = params;
 
-  // Validate parent and child storage keys
   const parentPathRes = resolveRepoPath(reposRoot, parentStorageKey);
   if (!parentPathRes.valid || !parentPathRes.resolvedPath) {
     return {
@@ -997,7 +903,6 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
     };
   }
 
-  // Verify parent has commit object
   if (!hasGitObject(reposRoot, parentStorageKey, parentCommitOid)) {
     return {
       success: false,
@@ -1010,7 +915,6 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
     };
   }
 
-  // If child repository already exists, check if already provisioned
   if (fs.existsSync(childRepoPath)) {
     try {
       const isBare = execFileSync('git', ['rev-parse', '--is-bare-repository'], {
@@ -1036,7 +940,6 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
     } catch {}
   }
 
-  // Provision child bare repo
   const initRes = initBareRepo(reposRoot, {
     storageKey: childStorageKey,
     objectFormat,
@@ -1055,14 +958,12 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
     };
   }
 
-  // Fetch objects from parent repo into child repo
   try {
     execFileSync('git', ['fetch', parentRepoPath, `+refs/*:refs/*`], {
       cwd: childRepoPath,
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    // Set child default ref to childInitialCommitOid
     const casRes = updateAuthoritativeRefCas(reposRoot, {
       storageKey: childStorageKey,
       refName: defaultRef,
@@ -1083,7 +984,6 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
       };
     }
 
-    // Set HEAD symbolic-ref
     try {
       execFileSync('git', ['symbolic-ref', 'HEAD', defaultRef], {
         cwd: childRepoPath,
@@ -1113,9 +1013,6 @@ export function cloneOrFetchForFork(reposRoot: string, params: ForkProvisionPara
   }
 }
 
-/**
- * Parses diff hunks from a single file's patch text.
- */
 export function parseDiffHunks(patch: string): DiffHunk[] {
   if (!patch || !patch.trim()) return [];
 
@@ -1197,9 +1094,6 @@ export function parseDiffHunks(patch: string): DiffHunk[] {
   return hunks;
 }
 
-/**
- * Parses raw git unified diff output into structured per-file diffs.
- */
 export function parseUnifiedDiff(
   rawDiff: string,
   numstatMap?: Map<string, { additions: number; deletions: number; isBinary: boolean }>
@@ -1279,10 +1173,6 @@ export function parseUnifiedDiff(
   return results;
 }
 
-/**
- * Computes the real Git unified diff, commit list, ahead/behind counts, and
- * mergeability/divergence status between base and head in an on-disk bare repository.
- */
 export function getProposalDiff(
   reposRoot: string,
   storageKey: string,
@@ -1323,13 +1213,11 @@ export function getProposalDiff(
 
   const repoPath = pathRes.resolvedPath;
 
-  // Resolve base to canonical commit OID first and validate existence
   const canonicalBaseOid = resolveCanonicalCommitOid(repoPath, baseRefOrOid);
   if (!canonicalBaseOid || !isValidGitOid(canonicalBaseOid)) {
     return emptyDiff(`Base commit '${baseRefOrOid}' does not exist or does not resolve to a commit in repository.`);
   }
 
-  // Resolve head to canonical commit OID first and validate existence
   const canonicalHeadOid = resolveCanonicalCommitOid(repoPath, headRefOrOid);
   if (!canonicalHeadOid || !isValidGitOid(canonicalHeadOid)) {
     return emptyDiff(`Head commit '${headRefOrOid}' does not exist or does not resolve to a commit in repository.`);
@@ -1338,7 +1226,6 @@ export function getProposalDiff(
   const baseOid = canonicalBaseOid;
   const headOid = canonicalHeadOid;
 
-  // If base and head are identical
   if (baseOid === headOid) {
     return {
       success: true,
@@ -1358,7 +1245,6 @@ export function getProposalDiff(
     };
   }
 
-  // 1. Find merge-base with canonical OIDs and -- argument terminator
   let mergeBaseOid: string | null = null;
   try {
     const mbOut = execFileSync('git', ['merge-base', '--', baseOid, headOid], {
@@ -1369,7 +1255,6 @@ export function getProposalDiff(
     if (isValidGitOid(mbOut)) mergeBaseOid = mbOut;
   } catch {}
 
-  // 2. Check if base is an ancestor of head (clean fast-forward)
   let isFastForward = false;
   try {
     const res = spawnSync('git', ['merge-base', '--is-ancestor', baseOid, headOid], {
@@ -1381,7 +1266,6 @@ export function getProposalDiff(
 
   const diverged = !isFastForward;
 
-  // 3. Ahead / Behind counts with canonical OIDs and -- argument terminator
   let aheadCount = 0;
   let behindCount = 0;
   try {
@@ -1402,7 +1286,6 @@ export function getProposalDiff(
     behindCount = parseInt(behindOut, 10) || 0;
   } catch {}
 
-  // 4. Commit list: git log base..head with canonical OIDs and -- argument terminator
   const commits: GitCommitInfo[] = [];
   try {
     const logOut = execFileSync('git', [
@@ -1435,7 +1318,6 @@ export function getProposalDiff(
     }
   } catch {}
 
-  // 5. Unified diff (three-dot diff relative to merge base, or direct diff)
   let unifiedDiff = '';
   const diffTarget = mergeBaseOid ? `${mergeBaseOid}..${headOid}` : `${baseOid}..${headOid}`;
   const maxDiffBuffer = options?.maxBuffer ?? (20 * 1024 * 1024);
@@ -1474,7 +1356,6 @@ export function getProposalDiff(
     }
   }
 
-  // 6. Numstat for file counts and line additions/deletions
   const numstatMap = new Map<string, { additions: number; deletions: number; isBinary: boolean }>();
   try {
     const numstatOut = execFileSync('git', ['diff', '--numstat', diffTarget, '--'], {
@@ -1497,7 +1378,6 @@ export function getProposalDiff(
     }
   } catch {}
 
-  // 7. Parse unified diff into per-file chunks
   const files = parseUnifiedDiff(unifiedDiff, numstatMap);
   let totalAdditions = 0;
   let totalDeletions = 0;
@@ -1523,4 +1403,3 @@ export function getProposalDiff(
     unifiedDiff
   };
 }
-

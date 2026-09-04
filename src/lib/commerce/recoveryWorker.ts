@@ -1,14 +1,3 @@
-// Stripe Connect Transfer Reversal / Recovery Execution Worker
-// Mirrors transferWorker.ts's exact shape (claim/lease, deterministic canonical
-// request hashing, strict HTTP status classification, exponential bounded
-// backoff, 23-hour idempotency cutoff, durable reconciliation) but drives
-// commerce_recovery_obligations -> commerce_reversal_outbox -> POST
-// /v1/transfers/<id>/reversals instead of POST /v1/transfers.
-//
-// Gated on PAYOUTS_ENABLED, same as transferWorker.ts: reversing money that was
-// never actually paid out makes no sense while payouts are off, and this keeps
-// the worker fail-closed in lockstep with the forward transfer path.
-
 import { hashPayload } from './stripeInbox';
 import { CommerceError } from './types';
 import { calculateBackoffSeconds, DEFAULT_LEASE_DURATION_SECONDS, STRIPE_IDEMPOTENCY_SAFETY_WINDOW_SECONDS, validatePayoutWorkerConfig } from './transferWorker';
@@ -31,17 +20,6 @@ export interface EnqueueReversalResult {
   error?: string;
 }
 
-/**
- * Promotes ONE pending obligation to 'reversal_queued' by creating its
- * commerce_reversal_outbox row, ONLY if the original transfer has succeeded.
- * If the original transfer has not (yet) succeeded, the obligation is left
- * 'pending' so a later tick can retry once the forward transfer completes
- * (or the obligation is otherwise resolved out of band).
- *
- * Idempotent: commerce_reversal_outbox has a UNIQUE(original_outbox_id,
- * source_event_id) constraint and the obligation is only promoted from
- * 'pending' via a conditional UPDATE, so concurrent workers race safely.
- */
 export async function enqueueReversalForObligation(
   db: any,
   obligationId: string
@@ -62,10 +40,6 @@ export async function enqueueReversalForObligation(
   }
 
   if (!obligation.original_outbox_id) {
-    // No transfer was ever sent for this allocation (e.g. the outbox row was
-    // never created, or is itself still terminal/failed) — nothing to reverse.
-    // Leave pending; an operator or a later reconciliation pass resolves this
-    // out of band (there is no money to claw back from Stripe yet).
     return { success: true, obligationId, skipped: true, reason: 'No original transfer outbox is associated with this obligation' };
   }
 
@@ -100,8 +74,6 @@ export async function enqueueReversalForObligation(
       throw new Error('reversal outbox insert affected no rows');
     }
   } catch (err: any) {
-    // Unique constraint on (original_outbox_id, source_event_id) means a
-    // concurrent worker already enqueued this reversal — treat as a safe race.
     const already: any = await db.prepare(`
       SELECT id FROM commerce_reversal_outbox WHERE original_outbox_id = ? AND source_event_id = ?
     `).bind(obligation.original_outbox_id, obligation.source_event_id).first();
@@ -123,20 +95,12 @@ export async function enqueueReversalForObligation(
   `).bind(reversalOutboxId, obligationId).run();
 
   if ((claimRes?.meta?.changes ?? 0) !== 1) {
-    // Lost the race after inserting the reversal row; another worker already
-    // moved this obligation. The just-inserted reversal_outbox row is orphaned
-    // but harmless (it references a valid original_outbox_id/source_event_id
-    // and will simply never be claimed by an obligation).
     return { success: true, obligationId, reversalOutboxId, skipped: true, reason: 'Obligation was concurrently claimed by another worker' };
   }
 
   return { success: true, obligationId, reversalOutboxId };
 }
 
-/**
- * Builds canonical Stripe /v1/transfers/<id>/reversals request parameters.
- * Deterministic parameter ordering guarantees identical SHA-256 payload across retries.
- */
 export function buildStripeReversalPayload(reversal: {
   id: string;
   amount_cents: number;
@@ -164,10 +128,6 @@ export interface ProcessReversalResult {
   reason?: string;
 }
 
-/**
- * Claims a commerce_reversal_outbox row with the same conditional finite lease
- * shape as claimTransferOutboxRow.
- */
 async function claimReversalOutboxRow(
   db: any,
   reversalOutboxId: string,
@@ -219,11 +179,6 @@ async function markReversalTerminal(db: any, id: string, claimToken: string | nu
   }
 }
 
-/**
- * Executes reversal workflow for a single commerce_reversal_outbox item, then
- * (on success) marks the originating commerce_recovery_obligations row
- * 'recovered'. Same fail-closed shape as processTransferOutboxItem.
- */
 export async function processReversalOutboxItem(
   db: any,
   env: any,
@@ -267,7 +222,6 @@ export async function processReversalOutboxItem(
     return { success: true, duplicate: true, reversalOutboxId, status: 'succeeded', stripeReversalId: reversal.stripe_reversal_id };
   }
 
-  // 23-hour idempotency safety window on prior ambiguous attempts
   const priorAmbiguous: any = await db.prepare(`
     SELECT id, started_at, (strftime('%s','now') - strftime('%s', started_at)) AS elapsed_seconds
     FROM commerce_reversal_attempts
@@ -481,14 +435,6 @@ export interface ProcessRecoveryBatchResult {
   results: (EnqueueReversalResult | ProcessReversalResult)[];
 }
 
-/**
- * Executes one bounded recovery drain pass:
- * 1. Promotes up to `limit` pending obligations whose original transfer has
- *    succeeded into queued reversal outbox rows.
- * 2. Executes up to `limit` due reversal outbox rows against Stripe.
- * Gated on PAYOUTS_ENABLED via validatePayoutWorkerConfig, same as
- * processTransferBatch — a clean no-op when payouts are off.
- */
 export async function processRecoveryBatch(
   db: any,
   env: any,
@@ -507,7 +453,6 @@ export async function processRecoveryBatch(
   const results: (EnqueueReversalResult | ProcessReversalResult)[] = [];
   let enqueuedCount = 0;
 
-  // Phase 1: promote pending obligations whose original transfer has succeeded.
   const pendingObligations: any = await db.prepare(`
     SELECT id FROM commerce_recovery_obligations
     WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?
@@ -519,7 +464,6 @@ export async function processRecoveryBatch(
     if (res.success && !res.skipped) enqueuedCount++;
   }
 
-  // Phase 2: execute due reversal outbox rows.
   let succeededCount = 0;
   let retryableCount = 0;
   let terminalCount = 0;

@@ -15,26 +15,14 @@ interface DesktopContextMenuProps {
   onClose: () => void;
 }
 
-/**
- * A Win95-style right-click context menu. Rendered as a fixed overlay at the
- * cursor, clamped to the viewport. Closes on outside click, Escape, scroll, or
- * resize. The desktop passes the item list (desktop actions vs. icon actions),
- * so this component stays presentational.
- */
 export const DesktopContextMenu: React.FC<DesktopContextMenuProps> = ({ x, y, items, onClose }) => {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Ignore the pointer events belonging to the SAME right-click that opened
-    // this menu (they arrive after mount and would otherwise self-close it).
-    // A short arming delay + skipping the right mouse button handles both the
-    // native contextmenu sequence and re-opening the menu on another spot.
     let armed = false;
     const armTimer = setTimeout(() => { armed = true; }, 0);
     const onDown = (e: PointerEvent | MouseEvent) => {
       if (!armed) return;
-      // A right-click elsewhere should re-open (handled by the desktop), not just
-      // close; a left-click / any click outside the menu closes it.
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -51,14 +39,13 @@ export const DesktopContextMenu: React.FC<DesktopContextMenuProps> = ({ x, y, it
     };
   }, [onClose]);
 
-  // Clamp so the menu never runs off-screen (approx sizes; good enough for w95).
   const MENU_W = 232;
   const itemH = 26;
   const menuH = items.length * itemH + 8;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
   const left = Math.min(x, vw - MENU_W - 4);
-  const top = Math.min(y, vh - menuH - 44); // leave room above the taskbar
+  const top = Math.min(y, vh - menuH - 44);
 
   return (
     <div

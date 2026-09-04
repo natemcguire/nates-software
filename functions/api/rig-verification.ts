@@ -18,19 +18,6 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/**
- * Verification evidence bundle: one immutable, signed-digest JSON object
- * capturing everything a reviewer needs to trust a passing RIG verification
- * run without re-running it themselves — full logs, the derived test report,
- * every known artifact digest for this build_run, the network/isolation
- * attestation the sandbox actually enforced, and the pinned runtime identity.
- *
- * The digest is computed server-side over the exact canonical JSON bytes
- * written to R2 — it is never accepted from the worker or any other caller.
- * INBOX approval later re-fetches this exact object and recomputes the
- * digest before trusting it (see functions/api/inbox.ts), so the bundle
- * must be byte-stable: canonicalize with a fixed key order.
- */
 export function buildEvidenceBundle(input: {
   buildRunId: string;
   mergeAttemptId: string;
@@ -245,11 +232,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: V
 
     const passed = status === 'passed';
 
-    // Fix 1: assemble one signed, immutable R2 evidence bundle for this
-    // verification run. A passing verification is NEVER marked reproducible
-    // (i.e. NEVER advanced to an approvable INBOX proposal) without one —
-    // fail closed honestly if STORAGE is unavailable or the upload fails,
-    // rather than silently proceeding without evidence.
     let evidenceBundleR2Key: string | null = null;
     let evidenceBundleSha256: string | null = null;
     let evidenceBundleSizeBytes = 0;

@@ -54,7 +54,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return unavailable('Database service is unavailable');
     }
 
-    // Determine target username or session user
     let targetUsername = requestedUsername;
     let isSelf = false;
 
@@ -84,7 +83,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return Response.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    // Fetch published apps by this maker
     const { results: publishedApps } = await env.DB.prepare(`
         SELECT id, name, tagline, version, upvotes, forks, price, storage,
                screenshots, binaries, tags, created_at AS createdAt
@@ -100,7 +98,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       tags: parseJsonColumn(app.tags, [])
     }));
 
-    // Authenticated Owner: Return private fields, SSH keys, Stripe status & real royalties
     if (isSelf) {
       let royalties = {
         makerBalanceCents: 0,
@@ -121,7 +118,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         royalties = calculateMakerEconomics(allocations as any[]) as any;
       }
 
-      // Check Stripe Account Status
       let stripeStatus: 'not_connected' | 'pending' | 'active' | 'connected' = 'not_connected';
       let payoutsEnabled = false;
       const stripeRow = await env.DB.prepare(`
@@ -156,7 +152,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       });
     }
 
-    // Public Maker Profile: Strictly sanitize to public fields only (Zero secret/license/financial leakage)
     return Response.json({
       success: true,
       isOwner: false,
@@ -222,7 +217,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const url = new URL(request.url);
     const action = String(body?.action || url.searchParams.get('action') || '');
 
-    // Action: Add SSH Key
     if (action === 'add-ssh-key') {
       const parsed = parseAndValidateSshKeyInput(body);
       if (!parsed.valid) {
@@ -259,7 +253,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }, { status: 201 });
     }
 
-    // Action: Remove SSH Key
     if (action === 'remove-ssh-key') {
       const id = String(body?.id || url.searchParams.get('id') || '').trim();
       if (!id) {
@@ -274,10 +267,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       });
     }
 
-    // Default: Legacy Profile Update
     const { displayName, avatar, bio, sshKey } = body;
 
-    // Validate using domain rules
     const validation = validateMakerProfile({
       username: sessionUser.username,
       displayName: displayName !== undefined ? displayName : sessionUser.displayName,
@@ -303,7 +294,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
       parsedNewKey = parsed.key;
 
-      // Check cross-user uniqueness collision before mutation
       const existingOther = await env.DB.prepare(`
         SELECT user_id FROM user_ssh_keys WHERE key_prefix = ? AND user_id != ? LIMIT 1
       `).bind(parsedNewKey.keyPrefix, sessionUser.id).first();
@@ -329,7 +319,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           `).bind(keyId, sessionUser.id, parsedNewKey.keyType, parsedNewKey.keyBase64, parsedNewKey.keyPrefix, parsedNewKey.label || null)
         );
       } else {
-        // Clearing sshKey
         statements.push(
           env.DB.prepare(`
             DELETE FROM user_ssh_keys WHERE user_id = ?

@@ -1,22 +1,3 @@
-// POST /api/payments/refund
-// Owner-only discretionary refund INITIATION endpoint.
-//
-// Policy (docs/superpowers/plans/2026-09-03-shareware-restored-money-model.md,
-// Global Constraints "Refunds"): all sales are final. ONLY the site owner
-// (role 'super_admin', usr_nate) may initiate a refund, at their sole
-// discretion. There is no buyer/maker refund path anywhere in the app —
-// this is the only route in the codebase that is allowed to POST
-// /v1/refunds to Stripe (enforced by a repo-wide grep guard test:
-// tests/money-model-refund-owner-only.test.ts).
-//
-// This endpoint ONLY creates the Stripe refund. It deliberately does NOT
-// write commerce_refunds / commerce_order_allocations / recovery-obligation
-// rows — that durable money-movement recording is exclusively the job of
-// the existing refund.created/refund.updated webhook processor
-// (src/lib/commerce/refundProcessor.ts), which re-fetches the authoritative
-// refund object from Stripe before recording anything. Having this endpoint
-// also write those rows would create a second, racing source of truth.
-
 import { requireSuperAdmin } from '../ops/_guard';
 
 function json(body: unknown, status: number): Response {
@@ -131,9 +112,5 @@ export const onRequestPost = async ({ request, env, stripeFetchOverride }: {
     return json({ success: false, error: 'Stripe returned an unexpected response' }, 502);
   }
 
-  // Deliberately no D1 writes here. commerce_refunds/commerce_order_allocations
-  // are recorded exclusively by the refund.created webhook processor once it
-  // re-fetches this exact refund back from Stripe as the authoritative source
-  // of truth (see src/lib/commerce/refundProcessor.ts).
   return json({ success: true, refundId: payload.id }, 200);
 };

@@ -56,9 +56,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     };
   }
 
-  // ==========================================================================
-  // 1. PAYMENTS_ENABLED GUARD (FAIL-CLOSED)
-  // ==========================================================================
   describe('1. PAYMENTS_ENABLED Guard', () => {
     it('returns 503 when PAYMENTS_ENABLED is missing or not "true"', async () => {
       const { buildRequest } = createSignedRequest(validPayload);
@@ -90,9 +87,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
   });
 
-  // ==========================================================================
-  // 2. STRIPE_WEBHOOK_SECRET MANDATORY IN ALL ENVIRONMENTS
-  // ==========================================================================
   describe('2. Mandatory STRIPE_WEBHOOK_SECRET', () => {
     it('returns 500 when STRIPE_WEBHOOK_SECRET is not configured', async () => {
       const { buildRequest } = createSignedRequest(validPayload);
@@ -100,7 +94,7 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
 
       const res = await webhookApi.onRequestPost({
         request: req,
-        env: { DB: ctx.d1, PAYMENTS_ENABLED: 'true' } // Missing STRIPE_WEBHOOK_SECRET
+        env: { DB: ctx.d1, PAYMENTS_ENABLED: 'true' }
       });
       const data = await res.json();
 
@@ -124,9 +118,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
   });
 
-  // ==========================================================================
-  // 3. SIGNATURE VERIFICATION & REPLAY TOLERANCE
-  // ==========================================================================
   describe('3. Stripe Signature Verification & Replay Protection', () => {
     const validEnv = () => ({
       DB: ctx.d1,
@@ -168,7 +159,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
 
     it('rejects expired signature timestamp older than 5 minutes (300 seconds) with 401', async () => {
-      // 360 seconds in the past
       const { buildRequest } = createSignedRequest(validPayload, webhookSecret, -360);
       const req = await buildRequest();
 
@@ -181,7 +171,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
 
     it('rejects future signature timestamp drifted > 5 minutes with 401', async () => {
-      // 360 seconds in the future
       const { buildRequest } = createSignedRequest(validPayload, webhookSecret, +360);
       const req = await buildRequest();
 
@@ -234,7 +223,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
       const originalBody = JSON.stringify(validPayload);
       const signature = await computeStripeSignature(originalBody, nowSec, webhookSecret);
 
-      // Hacker modifies 1 character in the body after signature generation
       const tamperedPayload = { ...validPayload, id: 'evt_tampered_id' };
       const tamperedBody = JSON.stringify(tamperedPayload);
 
@@ -256,9 +244,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
   });
 
-  // ==========================================================================
-  // 4. PAYLOAD SCHEMA & MALFORMED REQUESTS
-  // ==========================================================================
   describe('4. Payload Schema Validation', () => {
     const validEnv = () => ({
       DB: ctx.d1,
@@ -302,9 +287,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
   });
 
-  // ==========================================================================
-  // 5. DURABLE INBOX PERSISTENCE & COLLISION RESISTANCE
-  // ==========================================================================
   describe('5. Durable Inbox Persistence & Collision Security (409)', () => {
     const validEnv = () => ({
       DB: ctx.d1,
@@ -326,7 +308,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
       expect(data.success).toBe(true);
       expect(data.received).toBe(true);
 
-      // Verify row in D1
       const inboxRow: any = await ctx.d1.prepare(`
         SELECT * FROM stripe_event_inbox WHERE event_id = ?
       `).bind(eventId).first();
@@ -349,7 +330,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
       expect(res1.status).toBe(202);
       expect(data1.duplicate).toBe(false);
 
-      // Re-send EXACT same payload
       const { buildRequest: build2 } = createSignedRequest(payload);
       const res2 = await webhookApi.onRequestPost({ request: await build2(), env: validEnv() });
       const data2 = await res2.json();
@@ -363,7 +343,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     it('rejects event ID collision with DIFFERENT payload hash with 409 Conflict', async () => {
       const eventId = 'evt_collision_test_target';
 
-      // 1. Initial event ingested
       const payload1 = {
         ...validPayload,
         id: eventId,
@@ -373,7 +352,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
       const res1 = await webhookApi.onRequestPost({ request: await build1(), env: validEnv() });
       expect(res1.status).toBe(202);
 
-      // 2. Attacker / conflicting event with SAME eventId but DIFFERENT payload content
       const payload2 = {
         ...validPayload,
         id: eventId,
@@ -389,9 +367,6 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
     });
   });
 
-  // ==========================================================================
-  // 6. ASYNC BACKGROUND EXECUTION VIA WAITUNTIL
-  // ==========================================================================
   describe('6. Async Background Execution Contract', () => {
     it('schedules processor with waitUntil and never returns settled: true synchronously', async () => {
       const { buildRequest } = createSignedRequest(validPayload);
@@ -416,10 +391,8 @@ describe('Durable Commerce P2: /api/payments/webhook Ingestion & Invariants', ()
 
       expect(res.status).toBe(202);
       expect(data.received).toBe(true);
-      // Explicit invariant: never claim settled synchronously
       expect(data.settled).toBeUndefined();
 
-      // waitUntil was invoked
       expect(waitUntilMock).toHaveBeenCalledTimes(1);
       expect(scheduledPromise).not.toBeNull();
     });

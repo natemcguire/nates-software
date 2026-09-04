@@ -1,11 +1,5 @@
-// Cryptographic License Generation, SHA-256 Hashing, and AES-256-GCM Secret Management
-// Produces tamper-resistant, versioned encrypted license secrets at rest.
-
 import { EncryptedSecretPayload, LicenseCryptoError } from './types';
 
-/**
- * Encodes Uint8Array to standard base64 string.
- */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
@@ -14,9 +8,6 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/**
- * Decodes base64 string to Uint8Array.
- */
 export function base64ToBytes(base64: string): Uint8Array {
   try {
     const binary = atob(base64.trim());
@@ -30,18 +21,11 @@ export function base64ToBytes(base64: string): Uint8Array {
   }
 }
 
-/**
- * Helper to generate a fresh 256-bit (32-byte) base64 encryption key.
- */
 export function generateBase64EncryptionKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return bytesToBase64(bytes);
 }
 
-/**
- * Generates a cryptographically random license key with recognizable application prefix.
- * Format: `NSW-<APP_PREFIX>-<8 x HEX4>` with 128 bits of entropy.
- */
 export function generateLicenseKey(appId?: string): string {
   const rawPrefix = (appId || 'SW').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   const prefix = (rawPrefix.length >= 2 ? rawPrefix.slice(0, 2) : 'SW').padEnd(2, 'X');
@@ -58,9 +42,6 @@ export function generateLicenseKey(appId?: string): string {
   return `NSW-${prefix}-${groups.join('-')}`;
 }
 
-/**
- * Extracts the last 4 characters of a license key.
- */
 export function getLicenseKeyLast4(licenseKey: string): string {
   if (typeof licenseKey !== 'string' || licenseKey.length < 4) {
     throw new LicenseCryptoError('License key must be at least 4 characters');
@@ -68,10 +49,6 @@ export function getLicenseKeyLast4(licenseKey: string): string {
   return licenseKey.slice(-4);
 }
 
-/**
- * Computes the SHA-256 hex hash of a license key.
- * Always produces a 64-character lowercase hex string.
- */
 export async function hashLicenseKey(licenseKey: string): Promise<string> {
   if (typeof licenseKey !== 'string' || !licenseKey.trim()) {
     throw new LicenseCryptoError('License key is required for hashing');
@@ -83,10 +60,6 @@ export async function hashLicenseKey(licenseKey: string): Promise<string> {
     .join('');
 }
 
-/**
- * Parses and validates the versioned AES-256 key map from LICENSE_ENCRYPTION_KEYS_JSON.
- * Every key must be exactly 32 bytes (256 bits).
- */
 export function parseEncryptionKeys(keysJson: string | undefined): Map<number, Uint8Array> {
   if (!keysJson || typeof keysJson !== 'string' || !keysJson.trim()) {
     throw new LicenseCryptoError('LICENSE_ENCRYPTION_KEYS_JSON is required and cannot be empty');
@@ -130,9 +103,6 @@ export function parseEncryptionKeys(keysJson: string | undefined): Map<number, U
   return keyMap;
 }
 
-/**
- * Encrypts a license key with AES-256-GCM using the active key version.
- */
 export async function encryptLicenseSecret(
   licenseKey: string,
   env: {
@@ -158,7 +128,7 @@ export async function encryptLicenseSecret(
     throw new LicenseCryptoError(`Active key version ${activeVersion} not found in LICENSE_ENCRYPTION_KEYS_JSON`);
   }
 
-  const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV recommended for AES-GCM
+  const iv = crypto.getRandomValues(new Uint8Array(12));
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
     keyBytes as unknown as BufferSource,
@@ -182,9 +152,6 @@ export async function encryptLicenseSecret(
   };
 }
 
-/**
- * Decrypts a license secret using the key version specified in the secret record.
- */
 export async function decryptLicenseSecret(
   secret: {
     ciphertextBase64: string;

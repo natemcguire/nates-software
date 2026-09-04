@@ -1,14 +1,3 @@
-/**
- * SLOPSHOP TypeScript Compiler AST Parser & Validation Engine
- * 
- * Uses the installed TypeScript compiler parser (ts.createSourceFile / AST visitor)
- * rather than regular expressions to:
- * 1. Validate JS/TS/TSX/JSX syntax strictly and report exact diagnostic lines & columns.
- * 2. Extract top-level exports, declarations, and imports from AST structures.
- * 3. Detect duplicate export identifier collisions and conflicting signatures.
- * 4. Verify structural integrity of code modifications before writing to disk.
- */
-
 import ts from 'typescript';
 import type { FileModification, ValidationError } from './slopshopPipeline.ts';
 import { normalizeRelativePath } from './slopshopPipeline.ts';
@@ -71,9 +60,6 @@ export interface AstTransformResult {
   readonly replacedRange?: { readonly start: number; readonly end: number };
 }
 
-/**
- * Determine TypeScript ScriptKind from file path
- */
 export function getScriptKindForPath(filePath: string): ts.ScriptKind {
   const lower = filePath.toLowerCase();
   if (lower.endsWith('.tsx')) return ts.ScriptKind.TSX;
@@ -84,24 +70,18 @@ export function getScriptKindForPath(filePath: string): ts.ScriptKind {
   return ts.ScriptKind.Unknown;
 }
 
-/**
- * Checks whether a file path has an extension parseable by TypeScript
- */
 export function isTypeScriptParseable(filePath: string): boolean {
   const kind = getScriptKindForPath(filePath);
   return kind !== ts.ScriptKind.Unknown;
 }
 
-/**
- * Parse code content into a TypeScript SourceFile AST
- */
 export function parseSourceToAst(filePath: string, content: string): ts.SourceFile {
   const scriptKind = getScriptKindForPath(filePath);
   return ts.createSourceFile(
     filePath,
     content,
     ts.ScriptTarget.Latest,
-    true, // setParentNodes
+    true,
     scriptKind
   );
 }
@@ -124,7 +104,6 @@ function exportedNamesForStatement(statement: ts.Statement): string[] {
   return [];
 }
 
-/** Apply a bounded transform by locating syntax nodes, then reparse the complete result. */
 export function transformSourceWithAst(filePath: string, source: string, transform: AstTransform): AstTransformResult {
   if (!isTypeScriptParseable(filePath)) throw new Error(`AST transforms require a JavaScript or TypeScript target: ${filePath}`);
   const sourceValidation = parseAndValidateSource(filePath, source);
@@ -153,9 +132,6 @@ export function transformSourceWithAst(filePath: string, source: string, transfo
   return { content, replacedRange };
 }
 
-/**
- * Extract syntax diagnostic errors from a parsed SourceFile
- */
 export function extractSyntaxDiagnostics(sourceFile: ts.SourceFile, filePath: string): AstSyntaxError[] {
   const diagnostics: AstSyntaxError[] = [];
   const parseDiagnostics = (sourceFile as any).parseDiagnostics as ts.Diagnostic[] | undefined;
@@ -211,9 +187,6 @@ function extractBindingIdentifiers(bindingName: ts.BindingName): string[] {
   return results;
 }
 
-/**
- * Extract top-level exports and detect export collisions using TypeScript AST visitor
- */
 export function extractExportsFromAst(
   sourceFile: ts.SourceFile,
   filePath: string
@@ -230,7 +203,6 @@ export function extractExportsFromAst(
     const existing = exportNames.get(symbol.name);
     if (existing) {
       existing.count += 1;
-      // If symbol is not default export and not overload signature, flag collision
       if (symbol.name !== 'default') {
         collisions.push({
           code: 'EXPORT_COLLISION',
@@ -261,7 +233,6 @@ export function extractExportsFromAst(
     const isDefault = hasDefaultModifier(statement);
     const { line, character } = sourceFile.getLineAndCharacterOfPosition(statement.getStart(sourceFile));
 
-    // 1. Function Declaration: export function foo() {} / export default function() {}
     if (ts.isFunctionDeclaration(statement)) {
       if (isExported || isDefault) {
         const name = isDefault && !statement.name ? 'default' : (statement.name?.text || 'default');
@@ -275,7 +246,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 2. Class Declaration: export class Foo {} / export default class {}
     else if (ts.isClassDeclaration(statement)) {
       if (isExported || isDefault) {
         const name = isDefault && !statement.name ? 'default' : (statement.name?.text || 'default');
@@ -289,7 +259,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 3. Variable Statement: export const a = 1, b = 2; export const { x, y } = obj;
     else if (ts.isVariableStatement(statement)) {
       if (isExported) {
         for (const decl of statement.declarationList.declarations) {
@@ -308,7 +277,6 @@ export function extractExportsFromAst(
         }
       }
     }
-    // 4. Type Alias Declaration: export type Foo = string;
     else if (ts.isTypeAliasDeclaration(statement)) {
       if (isExported) {
         recordExport({
@@ -321,7 +289,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 5. Interface Declaration: export interface Foo {}
     else if (ts.isInterfaceDeclaration(statement)) {
       if (isExported) {
         recordExport({
@@ -334,7 +301,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 6. Enum Declaration: export enum Foo {}
     else if (ts.isEnumDeclaration(statement)) {
       if (isExported) {
         recordExport({
@@ -346,7 +312,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 7. Module / Namespace Declaration: export namespace Foo {}
     else if (ts.isModuleDeclaration(statement)) {
       if (isExported) {
         recordExport({
@@ -358,7 +323,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 8. Export Declaration: export { a, b as c }; export * from './mod'; export type { T };
     else if (ts.isExportDeclaration(statement)) {
       if (statement.exportClause) {
         if (ts.isNamedExports(statement.exportClause)) {
@@ -385,7 +349,6 @@ export function extractExportsFromAst(
           });
         }
       } else if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
-        // export * from './other'
         recordExport({
           file: filePath,
           name: `* from ${statement.moduleSpecifier.text}`,
@@ -395,7 +358,6 @@ export function extractExportsFromAst(
         });
       }
     }
-    // 9. Export Assignment: export default expr; export = expr;
     else if (ts.isExportAssignment(statement)) {
       recordExport({
         file: filePath,
@@ -411,9 +373,6 @@ export function extractExportsFromAst(
   return { exports, collisions };
 }
 
-/**
- * Extract imports from AST
- */
 export function extractImportsFromAst(sourceFile: ts.SourceFile, filePath: string): AstImportSymbol[] {
   const imports: AstImportSymbol[] = [];
 
@@ -451,15 +410,11 @@ export function extractImportsFromAst(sourceFile: ts.SourceFile, filePath: strin
   return imports;
 }
 
-/**
- * Parse and validate a single source file with the TypeScript compiler parser
- */
 export function parseAndValidateSource(filePath: string, content: string): AstValidationResult {
   const normRes = normalizeRelativePath(filePath);
   const normalizedPath = normRes.normalized || filePath;
 
   if (!isTypeScriptParseable(normalizedPath)) {
-    // Non-TS/JS file (e.g. Markdown, CSS, SQL, text) — not parsed as TypeScript AST
     return {
       valid: true,
       syntaxErrors: [],
@@ -496,9 +451,6 @@ export function parseAndValidateSource(filePath: string, content: string): AstVa
   };
 }
 
-/**
- * Validate an array of file modifications using TypeScript compiler parser AST
- */
 export function validateTypeScriptModifications(
   modifications: readonly FileModification[]
 ): AstValidationResult {

@@ -1,25 +1,3 @@
-// Standalone Cloudflare Scheduled Worker — Commerce Drain (P4)
-//
-// Cloudflare Pages Functions cannot run `cron` triggers, so the durable commerce
-// state machine (stripe_event_inbox + commerce_transfer_outbox) needs a separate
-// scheduled Worker to re-drive rows that were stranded by a transient failure.
-//
-// This Worker does NOT reimplement any Stripe calls or the claim/lease/backoff
-// scheme. It is a thin scheduled caller over the existing commerce library:
-//   - Inbox re-drive: src/lib/commerce/eventProcessor.ts `processStripeInboxEvent`
-//     (same function the webhook invokes from `waitUntil`). That function claims
-//     the row itself via `claimInboxEvent`, so this Worker never touches the
-//     lease columns directly — a concurrent webhook delivery and this cron tick
-//     race safely on the existing conditional UPDATE.
-//   - Payout drain (gated): src/lib/commerce/transferWorker.ts `processTransferBatch`
-//     (same function functions/api/payments/process-transfers.ts calls). It fails
-//     closed on its own via `validatePayoutWorkerConfig` if PAYOUTS_ENABLED isn't
-//     'true', so this Worker also short-circuits before calling it.
-//   - Recovery drain (gated): src/lib/commerce/recoveryWorker.ts `processRecoveryBatch`
-//     reverses already-completed transfers for pending commerce_recovery_obligations
-//     (opened by refundProcessor.ts and disputeProcessor.ts). Same PAYOUTS_ENABLED
-//     gate as the transfer drain — reversing a payout makes no sense while payouts
-//     themselves are off, and it keeps both money-movement paths fail-closed together.
 
 import { processStripeInboxEvent } from '../../../src/lib/commerce/eventProcessor';
 import { processTransferBatch } from '../../../src/lib/commerce/transferWorker';
@@ -44,11 +22,8 @@ export interface Env {
   LICENSE_ACTIVE_KEY_VERSION?: string;
   PAYOUTS_ENABLED?: string;
   PAYOUT_WORKER_SECRET?: string;
-  // Bounded batch size per tick for the inbox re-drive path. Optional; defaults below.
   DRAIN_INBOX_BATCH_SIZE?: string;
-  // Bounded batch size per tick for the transfer outbox drain. Optional; defaults below.
   DRAIN_TRANSFER_BATCH_SIZE?: string;
-  // Bounded batch size per tick for the recovery (reversal) drain. Optional; defaults below.
   DRAIN_RECOVERY_BATCH_SIZE?: string;
 }
 
@@ -105,14 +80,6 @@ function parseBatchSize(raw: string | undefined, fallback: number, max: number):
   return Math.min(parsed, max);
 }
 
-/**
- * Finds `stripe_event_inbox` rows that are due for re-drive: still in a
- * claimable status (`received` or `retryable_failure`) whose backoff window
- * has elapsed. This mirrors the same condition `claimInboxEvent` itself
- * enforces (see src/lib/commerce/stripeInbox.ts) — it is a read-only
- * candidate list, not a second claim/lease implementation. The actual claim
- * still happens exclusively inside `processStripeInboxEvent`.
- */
 async function findDueInboxEventIds(db: D1Database, limit: number): Promise<string[]> {
   const rows = await db.prepare(`
     SELECT event_id
@@ -126,12 +93,6 @@ async function findDueInboxEventIds(db: D1Database, limit: number): Promise<stri
   return (rows.results || []).map(r => r.event_id);
 }
 
-/**
- * Re-drives stranded `stripe_event_inbox` rows by invoking the SAME
- * `processStripeInboxEvent` state machine the webhook handler uses. Always
- * runs (not gated behind PAYOUTS_ENABLED) — fulfillment must not depend on
- * payouts being commissioned.
- */
 export async function runInboxDrain(env: Env, options?: { limit?: number }): Promise<InboxDrainSummary> {
   const base: InboxDrainSummary = {
     ran: false,
@@ -176,7 +137,6 @@ export async function runInboxDrain(env: Env, options?: { limit?: number }): Pro
         summary.errorCount++;
       }
     } catch (err: any) {
-      // A single row's processor throwing must not abort the rest of the batch.
       summary.processedCount++;
       summary.errorCount++;
       console.error(`[drain-worker] inbox re-drive threw for event ${eventId}:`, err?.message || err);
@@ -186,13 +146,6 @@ export async function runInboxDrain(env: Env, options?: { limit?: number }): Pro
   return summary;
 }
 
-/**
- * Drains the transfer outbox using the SAME `processTransferBatch` function
- * the /api/payments/process-transfers endpoint calls. Only runs when
- * `PAYOUTS_ENABLED === 'true'`; otherwise a clean no-op (payouts stay off
- * until commissioned). `processTransferBatch` also fails closed internally
- * via `validatePayoutWorkerConfig`, so this is a belt-and-suspenders gate.
- */
 export async function runTransferDrain(env: Env, options?: { limit?: number }): Promise<TransferDrainSummary> {
   const base: TransferDrainSummary = {
     ran: false,
@@ -231,15 +184,6 @@ export async function runTransferDrain(env: Env, options?: { limit?: number }): 
   }
 }
 
-/**
- * Drains commerce_recovery_obligations using the SAME `processRecoveryBatch`
- * function from src/lib/commerce/recoveryWorker.ts — reverses already-completed
- * transfers for refund/dispute clawbacks. Only runs when `PAYOUTS_ENABLED ===
- * 'true'`, the same gate as the transfer drain: reversing a payout makes no
- * sense while payouts themselves are off. `processRecoveryBatch` also fails
- * closed internally via `validatePayoutWorkerConfig`, so this is a
- * belt-and-suspenders gate.
- */
 export async function runRecoveryDrain(env: Env, options?: { limit?: number }): Promise<RecoveryDrainSummary> {
   const base: RecoveryDrainSummary = {
     ran: false,
@@ -280,11 +224,6 @@ export async function runRecoveryDrain(env: Env, options?: { limit?: number }): 
   }
 }
 
-/**
- * Executes one full drain tick: inbox re-drive (always) then payout drain and
- * recovery drain (both gated). Structured, quiet logging — one line per tick,
- * one line per sub-path only when it actually ran or had something to report.
- */
 export async function runDrainTick(env: Env): Promise<DrainTickResult> {
   const startedAt = Date.now();
 
@@ -333,9 +272,6 @@ export async function runDrainTick(env: Env): Promise<DrainTickResult> {
   return { inbox, transfers, recovery };
 }
 
-// Minimal local shapes for the Workers runtime cron contract. The repo does not
-// depend on @cloudflare/workers-types, so these are declared locally rather than
-// relying on ambient globals that aren't installed.
 export interface DrainScheduledEvent {
   cron: string;
   scheduledTime: number;
@@ -352,9 +288,6 @@ export default {
     }));
   },
 
-  // Not routed in production (no HTTP route is configured for this Worker),
-  // but a manual fetch handler is useful for local `wrangler dev` smoke tests
-  // and keeps the module a valid Worker export.
   async fetch(_request: Request, env: Env): Promise<Response> {
     const result = await runDrainTick(env);
     return Response.json(result);

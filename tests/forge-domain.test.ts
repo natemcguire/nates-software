@@ -54,7 +54,6 @@ describe('canonical forge domain invariants', () => {
     expect(isValidRepositorySlug('wallart_pro.v2')).toBe(true);
     expect(isValidRepositorySlug('app123')).toBe(true);
 
-    // Uppercase rejected
     expect(isValidRepositorySlug('App123')).toBe(false);
     expect(validateRepositorySlug('App123').valid).toBe(false);
     expect(isValidRepositorySlug('MyRepo')).toBe(false);
@@ -75,7 +74,7 @@ describe('canonical forge domain invariants', () => {
     expect(validateGitOid(oid).valid).toBe(true);
     expect(validateGitOid(sha256Oid).valid).toBe(true);
 
-    expect(isValidGitOid('5c030af')).toBe(false); // short SHA rejected
+    expect(isValidGitOid('5c030af')).toBe(false);
     expect(validateGitOid('5c030af').valid).toBe(false);
     expect(isValidGitOid('not-a-sha-hash')).toBe(false);
     expect(validateGitOid('not-a-sha-hash').valid).toBe(false);
@@ -170,29 +169,23 @@ describe('canonical forge domain invariants', () => {
       allowDelete: false
     };
 
-    // Pattern matches
     expect(refPatternMatches(broadAllow.refPattern, 'refs/heads/topic')).toBe(true);
     expect(refPatternMatches(specificDeny.refPattern, 'refs/heads/release/1.0')).toBe(true);
     expect(refPatternMatches(specificDeny.refPattern, 'refs/heads/feature/xyz')).toBe(false);
 
-    // Overlapping: broad allow + specific deny -> specific deny wins regardless of array/D1 row order
     expect(selectRefPolicy([broadAllow, specificDeny], 'refs/heads/release/1.0')).toEqual(specificDeny);
     expect(selectRefPolicy([specificDeny, broadAllow], 'refs/heads/release/1.0')).toEqual(specificDeny);
 
-    // Exact match wins over prefix wildcard regardless of array order
     expect(selectRefPolicy([broadAllow, exactMain], 'refs/heads/main')).toEqual(exactMain);
     expect(selectRefPolicy([exactMain, broadAllow], 'refs/heads/main')).toEqual(exactMain);
 
-    // Exact match on release branch wins over release wildcard and broad wildcard
     expect(selectRefPolicy([broadAllow, specificDeny, exactRelease10], 'refs/heads/release/1.0')).toEqual(exactRelease10);
     expect(selectRefPolicy([exactRelease10, broadAllow, specificDeny], 'refs/heads/release/1.0')).toEqual(exactRelease10);
 
-    // Non-overlapping case: single matching policy honored
     expect(selectRefPolicy([specificDeny], 'refs/heads/release/2.0')).toEqual(specificDeny);
     expect(selectRefPolicy([specificDeny], 'refs/heads/feature/foo')).toBeNull();
     expect(selectRefPolicy([broadAllow], 'refs/heads/feature/foo')).toEqual(broadAllow);
 
-    // Conservative tie-breaking when patterns are identical: deny wins over allow
     const duplicatePatternAllow = { ...broadAllow, refPattern: 'refs/heads/feature/*' };
     const duplicatePatternDeny = { ...specificDeny, refPattern: 'refs/heads/feature/*' };
     expect(selectRefPolicy([duplicatePatternAllow, duplicatePatternDeny], 'refs/heads/feature/abc')).toEqual(duplicatePatternDeny);
@@ -217,19 +210,16 @@ describe('canonical forge domain invariants', () => {
       minimumApprovals: 0
     };
 
-    // Equal specificity: 'main' vs 'refs/heads/main' -> deny wins for BOTH force-push and delete
     const result = selectRefPolicy([policyA, policyB], 'refs/heads/main');
     expect(result).not.toBeNull();
     expect(result?.allowForcePush).toBe(false);
     expect(result?.allowDelete).toBe(false);
 
-    // Reversed input order produces identical deny-wins result
     const resultReversed = selectRefPolicy([policyB, policyA], 'refs/heads/main');
     expect(resultReversed).not.toBeNull();
     expect(resultReversed?.allowForcePush).toBe(false);
     expect(resultReversed?.allowDelete).toBe(false);
 
-    // Strictest requirements also win in equal-specificity merge
     const policyC = {
       refPattern: 'main',
       allowForcePush: true,
@@ -269,7 +259,6 @@ describe('canonical forge domain invariants', () => {
     expect(isValidRefPolicyEntry({ ...completeEntry, allowForcePush: 1, allowDelete: false })).toBe(true);
     expect(isValidRefPolicyEntry({ ...completeEntry, requireSignedCommits: 1, requirePassingBuild: true, minimumApprovals: 2 })).toBe(true);
 
-    // Incomplete entries (missing any required column) must fail closed
     expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/main' })).toBe(false);
     expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: true, allowDelete: false })).toBe(false);
     expect(isValidRefPolicyEntry({ refPattern: 'refs/heads/*', allowForcePush: 1, allowDelete: 0 })).toBe(false);
@@ -280,7 +269,6 @@ describe('canonical forge domain invariants', () => {
     expect(isValidRefPolicyEntry({ ...completeEntry, requirePassingBuild: undefined })).toBe(false);
     expect(isValidRefPolicyEntry({ ...completeEntry, minimumApprovals: undefined })).toBe(false);
 
-    // Malformed entries
     expect(isValidRefPolicyEntry(null)).toBe(false);
     expect(isValidRefPolicyEntry({})).toBe(false);
     expect(isValidRefPolicyEntry({ ...completeEntry, refPattern: '' })).toBe(false);
@@ -293,7 +281,6 @@ describe('canonical forge domain invariants', () => {
     expect(isValidRefPolicyEntry({ ...completeEntry, minimumApprovals: -1 })).toBe(false);
     expect(isValidRefPolicyEntry({ ...completeEntry, minimumApprovals: NaN })).toBe(false);
 
-    // Lists
     expect(isValidRefPolicies([])).toBe(true);
     expect(isValidRefPolicies([completeEntry])).toBe(true);
     expect(isValidRefPolicies([{ refPattern: 'refs/heads/main' }])).toBe(false);

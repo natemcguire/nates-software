@@ -5,12 +5,6 @@ import {
   CommerceValidationError,
 } from '../src/lib/commerceDomain';
 
-// NOTE: This file previously covered the dropped 70/20/10 + 90/10 fixed-split
-// allocation engine (`validateAncestors`, `fetchRepositoryAncestry`, `MAKER_FLOOR_BPS`,
-// `COMMERCE_BASIS_POINTS.ROOT_*`/`FORK_*`), all removed under the "Shareware, Restored"
-// money model (additive frozen liens — see src/lib/commerceDomain.ts,
-// tests/money-model-additive-liens.test.ts, tests/money-model-fork-lien-capture.test.ts).
-// Only the still-valid money/currency primitive validation remains here.
 describe('Durable Commerce Domain Logic & Allocation Engine', () => {
   describe('1. Gross Cents & Money Validation', () => {
     it.each([1, 10, 1500, 2000, 2500, 100000, Number.MAX_SAFE_INTEGER])(

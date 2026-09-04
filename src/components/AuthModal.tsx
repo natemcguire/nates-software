@@ -13,7 +13,6 @@ export const AuthModal: React.FC = () => {
     setTab(authModalTab);
   }, [authModalTab, isAuthModalOpen]);
 
-  // Form Fields
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -58,7 +57,6 @@ export const AuthModal: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4 font-tahoma text-xs">
       <div className="w-full max-w-md bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1">
-        {/* Title Bar */}
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5">
             <Lock size={13} className="text-yellow-300" />
@@ -72,7 +70,6 @@ export const AuthModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Tab Navigation */}
         <div className="flex gap-1 border-b border-gray-400 p-2 pb-0 bg-gray-200">
           <button
             onClick={() => { playClickSound(); setTab('login'); setErrorMsg(null); }}
@@ -96,7 +93,6 @@ export const AuthModal: React.FC = () => {
           </button>
         </div>
 
-        {/* Benefit Line & Contextual Action Header */}
         <div className="p-3 bg-w95-gray border-b border-gray-300 space-y-2">
           <p className="text-gray-700 text-xs leading-normal">
             Create an account to keep your forks, vote on drops, and get paid when you sell.
@@ -113,7 +109,6 @@ export const AuthModal: React.FC = () => {
           )}
         </div>
 
-        {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-4 space-y-3 bg-w95-gray">
           {errorMsg && (
             <div className="bg-red-100 border border-red-400 text-red-800 p-2 rounded flex items-center gap-2 font-mono text-[11px]">

@@ -1,4 +1,3 @@
-// POST /api/fork - Thin wrapper for the canonical GITSMITH fork endpoint
 import { onRequestPost as gitPost } from './git';
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {

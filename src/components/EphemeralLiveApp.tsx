@@ -11,13 +11,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
   const isVerifiedActive = (app.deploymentState === 'active') && Boolean(app.activeDeploymentId);
   const deploymentState: AppDeploymentState = app.deploymentState || 'draft';
 
-  // The live URL comes from the catalog: binaries.web for static R2 apps, or the app's
-  // real host (<hostname>.nates-software.com) for active Worker/container apps — the
-  // /api/drops read model now resolves both into liveUrl. We only iframe a well-formed
-  // URL. We deliberately do NOT fall back to a bare `/serve/<id>/index.html` path: that
-  // path only has bytes for static R2 apps, so for a container/Worker app it 404s and
-  // would render a blank iframe. When there's no resolved live URL, fall through to the
-  // honest deployment surface instead of a broken frame.
   const configuredLiveUrl = app.liveAppUrl || app.liveUrl || '';
   const isValidUrl = /^https?:\/\//i.test(configuredLiveUrl) || configuredLiveUrl.startsWith('/serve/');
   const liveUrl = isValidUrl ? configuredLiveUrl : undefined;
@@ -29,9 +22,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
     deploymentError: app.deploymentError
   });
 
-  // The stored deploymentError can be raw multi-line build stderr (e.g. a
-  // pip/vinext trace). Show only the first meaningful line, capped, so the
-  // diagnostic stays useful without dumping a build stack trace to a visitor.
   const displayError = (app.deploymentError || '')
     .split('\n')
     .map(l => l.trim())
@@ -90,7 +80,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
 
   return (
     <div className="h-full flex flex-col bg-[#ece9d8] font-tahoma text-xs overflow-hidden" data-testid="ephemeral-live-app-container">
-      {/* Top Header Bar */}
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2 shadow-sm select-none">
         <div className="flex items-center gap-2">
           <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
@@ -115,7 +104,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
         </div>
       </div>
 
-      {/* Main Viewport */}
       <div className="flex-1 bg-white overflow-hidden flex flex-col">
         {isVerifiedActive && liveUrl ? (
           <div className="flex-1 bg-white relative">
@@ -127,10 +115,8 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
             />
           </div>
         ) : (
-          /* HONEST DEPLOYMENT ERROR & EVIDENCE SURFACE */
           <div className="flex-1 bg-[#ece9d8] p-6 sm:p-10 flex flex-col items-center justify-center text-center font-tahoma overflow-y-auto" data-testid="honest-deployment-surface">
             <div className="bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black p-6 max-w-xl w-full shadow-lg text-left">
-              {/* Window Title Bar */}
               <div className="bg-gradient-to-r from-[#000080] to-[#1084d0] text-white px-3 py-1.5 flex items-center justify-between mb-4 select-none font-bold text-xs">
                 <div className="flex items-center gap-2">
                   <span>{deploymentState === 'failed' ? '🚫' : '⚠️'}</span>
@@ -153,7 +139,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 </div>
               </div>
 
-              {/* Monospace Diagnostics & Evidence */}
               <div className="bg-[#0f172a] text-emerald-400 border border-gray-700 p-3.5 rounded font-mono text-[11px] mb-4 space-y-1 overflow-x-auto shadow-inner" data-testid="deployment-evidence-box">
                 <div className="text-gray-400 border-b border-gray-800 pb-1 mb-1.5 font-bold flex justify-between">
                   <span>[RIG & GITSMITH LIFECYCLE EVIDENCE]</span>
@@ -177,7 +162,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 )}
               </div>
 
-              {/* Remediation & Next Steps */}
               <div className="bg-yellow-50 border border-yellow-300 p-3 rounded text-[11px] text-gray-800 mb-4">
                 <div className="font-bold text-yellow-900 mb-1 flex items-center gap-1.5">
                   <FileCode size={13} />
@@ -194,7 +178,6 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 </ul>
               </div>
 
-              {/* Quick Actions */}
               <div className="flex items-center justify-end gap-2 flex-wrap">
                 <a
                   href={`https://gitsmith.nates-software.com?repo=${app.id}`}

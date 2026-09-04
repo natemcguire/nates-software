@@ -1,38 +1,3 @@
-// ACCEPTANCE TEST — buy → own → fork → ancestor-payout, fully offline.
-//
-// This is the definition-of-done proof for the core marketplace loop. It runs
-// entirely against the local D1 test harness with a MOCKED Stripe (no network,
-// no real keys, no prod money movement) and is part of `npm test`.
-//
-// It drives the REAL production code paths and asserts their invariants — it
-// does not reimplement commerce logic:
-//   - functions/api/payments/create-intent.ts  (snapshot price + allocations, create PaymentIntent)
-//   - src/lib/commerce/eventProcessor.ts        (authoritative fulfillment state machine)
-//   - src/lib/commerce/stripeInbox.ts           (durable event inbox)
-//   - src/lib/commerceDomain.ts                 (calculateAllocations, via create-intent)
-//
-// Stripe is mocked two ways, both offline:
-//   1. create-intent calls the global `fetch` to POST a PaymentIntent — we mock
-//      globalThis.fetch to return a deterministic pi_… id + client_secret.
-//   2. processStripeInboxEvent re-fetches the authoritative PaymentIntent — we
-//      pass its `stripeFetchOverride` option (the commerce layer's built-in
-//      seam) so the GET returns a 'succeeded' intent matching the durable order.
-//
-// The chain proved here, under the "Shareware, Restored" additive frozen-lien
-// money model (see docs/superpowers/specs/2026-09-02-shareware-restored-money-model-design.md):
-//   BUY   — buyer creates an order for a root app; a signed 'succeeded' webhook
-//           is processed and the order is fulfilled. Root sale => platform 10%
-//           flat fee, seller keeps the remainder (no liens).
-//   OWN   — exactly one license (+ encrypted secret) is minted to the buyer, and
-//           the buyer's private shelf projection shows it.
-//   FORK  — a downstream repo is forked from the root repo (repository_forks +
-//           canonical lineage), and a frozen ancestor lien is captured onto the
-//           fork edge (repository_fork_liens — see migration 0038).
-//   PAYOUT— a second buyer purchases the forked app; fulfillment queues a
-//           pending transfer_outbox row for EACH payable recipient: the fork
-//           seller AND the upstream ancestor (root maker), off their frozen
-//           lien. 'platform' is never paid out via Connect — it's the house.
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import * as createIntentApi from '../functions/api/payments/create-intent';
@@ -46,11 +11,9 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
   let ctx: TestD1Context;
   const originalFetch = globalThis.fetch;
 
-  // Deterministic AES-256 key map for license secret encryption at rest.
   const keyV1 = generateBase64EncryptionKey();
   const licenseKeysJson = JSON.stringify({ '1': keyV1 });
 
-  // Env for the create-intent endpoint (payments enabled + Stripe keys present).
   function checkoutEnv() {
     return {
       DB: ctx.d1,
@@ -60,7 +23,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     };
   }
 
-  // Env for the fulfillment processor (Stripe re-fetch + license crypto + livemode).
   function fulfillmentEnv() {
     return {
       DB: ctx.d1,
@@ -80,8 +42,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
-
-  // ---- Fixtures -------------------------------------------------------------
 
   async function seedUser(id: string) {
     await ctx.d1.prepare(`
@@ -122,10 +82,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     `).bind(opts.appId, opts.repoId, opts.sellerId, opts.priceCents, opts.royaltyBps ?? 0).run();
   }
 
-  // Immutable fork-origin record (repository_forks) plus the frozen ancestor
-  // lien captured onto the fork edge at fork-confirm time (repository_fork_liens,
-  // migration 0038). fetchFrozenLiens reads this table directly at buy time —
-  // liens are frozen once, not re-derived by walking the ancestry chain.
   async function seedFork(opts: {
     childRepoId: string;
     parentRepoId: string;
@@ -160,10 +116,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     `).bind(opts.id, opts.holderOfRepositoryId, opts.ancestorRepositoryId, opts.ancestorUserId, opts.bps, opts.depth).run();
   }
 
-  // ---- Mocked Stripe --------------------------------------------------------
-
-  // create-intent POSTs to /v1/payment_intents via globalThis.fetch. Return a
-  // deterministic id + client_secret so the durable order gets a stable PI id.
   function mockCreateIntentStripe(paymentIntentId: string) {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -171,8 +123,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     } as any);
   }
 
-  // processStripeInboxEvent GETs /v1/payment_intents/{id} via stripeFetchOverride.
-  // Return an authoritative 'succeeded' intent that matches the durable order.
   function stripeGetSucceeded(order: {
     paymentIntentId: string;
     orderId: string;
@@ -191,8 +141,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
       })
     } as any);
   }
-
-  // ---- Helpers to drive a full buy → fulfill for one app -------------------
 
   async function createOrder(opts: {
     appId: string;
@@ -275,9 +223,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     return results as any[];
   }
 
-  // ==========================================================================
-  // 1. BUY → OWN  (root app, no liens: platform flat 10% / seller keeps the rest)
-  // ==========================================================================
   it('BUY → OWN: a root purchase fulfills the order, mints exactly one license + encrypted secret to the buyer, and queues a seller payout with conserved allocations', async () => {
     await seedUser('usr_root_maker');
     await seedUser('usr_buyer_a');
@@ -291,9 +236,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
       paymentIntentId: 'pi_acc_root'
     });
 
-    // --- Allocation conservation: sum(allocations) === gross_cents ----------
-    // $15.00 root sale, no liens: platform_base = floor(0.10*1500) = 150,
-    // seller keeps the remainder R = 1350. No ancestor rows (isRoot).
     const allocs = await allocationsFor(order.orderId);
     expect(allocs).toEqual([
       { sequence: 1, role: 'seller', recipientUserId: 'usr_root_maker', amountCents: 1350 },
@@ -301,20 +243,17 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     ]);
     expect(allocs.reduce((s, a) => s + a.amountCents, 0)).toBe(order.grossCents);
 
-    // --- Fulfill via mocked signed webhook ---------------------------------
     const result = await deliverAndProcessWebhook(order, 'evt_acc_root');
     expect(result.success).toBe(true);
     expect(result.status).toBe('fulfilled');
-    expect(result.outboxCount).toBe(1); // seller only; platform (house) never paid out via Connect
+    expect(result.outboxCount).toBe(1);
 
-    // INVARIANT: order fulfilled
     const fulfilled: any = await ctx.d1.prepare(`
       SELECT status, fulfilled_at FROM commerce_orders WHERE id = ?
     `).bind(order.orderId).first();
     expect(fulfilled.status).toBe('fulfilled');
     expect(fulfilled.fulfilled_at).toBeTruthy();
 
-    // INVARIANT: exactly one license, owned by the buyer
     const licenses: any = await ctx.d1.prepare(`
       SELECT id, app_id, owner_user_id, license_key_hash, license_key_last4, status
       FROM commerce_licenses WHERE order_id = ?
@@ -326,7 +265,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(license.license_key_hash).toHaveLength(64);
     expect(license.status).toBe('active');
 
-    // INVARIANT: exactly one encrypted secret at rest (AES-256-GCM)
     const secrets: any = await ctx.d1.prepare(`
       SELECT algorithm, key_version, ciphertext_base64, iv_base64
       FROM commerce_license_secrets WHERE license_id = ?
@@ -336,13 +274,11 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(secrets.results![0].ciphertext_base64).toBeTruthy();
     expect(secrets.results![0].iv_base64).toBeTruthy();
 
-    // INVARIANT: one pending seller payout obligation (destination = seller)
     const outbox = await outboxFor(order.orderId);
     expect(outbox).toEqual([
       { destinationUserId: 'usr_root_maker', amountCents: 1350, status: 'pending' }
     ]);
 
-    // OWN: the buyer's private shelf projection now shows the owned title
     const shelfReq = new Request('http://localhost/api/shelf', {
       headers: { 'Authorization': 'Bearer tok_buyer_a' }
     });
@@ -355,9 +291,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(shelfData.shelf[0].licenseKeyLast4).toBe(license.license_key_last4);
   });
 
-  // ==========================================================================
-  // 2. IDEMPOTENCY — no double fulfillment on webhook replay
-  // ==========================================================================
   it('IDEMPOTENT REPLAY: re-processing the same succeeded event does not mint a second license or a second payout obligation', async () => {
     await seedUser('usr_root_maker');
     await seedUser('usr_buyer_a');
@@ -375,34 +308,19 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(first.success).toBe(true);
     expect(first.status).toBe('fulfilled');
 
-    // Replay the exact same event (duplicate delivery / racing worker)
     const replay = await processStripeInboxEvent(ctx.d1, fulfillmentEnv(), 'evt_acc_root', {
       stripeFetchOverride: stripeGetSucceeded(order)
     });
     expect(replay.success).toBe(true);
     expect(replay.duplicate).toBe(true);
 
-    // INVARIANT: still exactly one license and one outbox row in total
     const licenses: any = await ctx.d1.prepare(`SELECT id FROM commerce_licenses WHERE order_id = ?`).bind(order.orderId).all();
     expect(licenses.results).toHaveLength(1);
     const outbox = await outboxFor(order.orderId);
     expect(outbox).toHaveLength(1);
   });
 
-  // ==========================================================================
-  // 3. FORK → ANCESTOR PAYOUT
-  //    Root repo (usr_root_maker) --forked--> fork repo (usr_fork_maker), with
-  //    a frozen 10% ancestor lien captured onto the fork edge at fork-confirm
-  //    time (repository_fork_liens — see migration 0038 / src/lib/royaltyLiens.ts).
-  //    A $20.00 (2000c) purchase of the forked app settles additively:
-  //      platform_base = floor(0.10 * 2000)            = 200c
-  //      R             = 2000 - 200                     = 1800c
-  //      ancestor (10% of R, root maker's frozen lien)  = floor(0.10*1800) = 180c
-  //      seller (fork maker) keeps R - ancestor          = 1800 - 180 = 1620c
-  //      conservation: 200 + 180 + 1620 = 2000c
-  // ==========================================================================
   it('FORK → ANCESTOR PAYOUT: purchasing a forked app pays its frozen ancestor lien AND queues a pending ancestor payout obligation, alongside the seller payout', async () => {
-    // Ownership loop from step 1 so the fork has a real parent + license history.
     await seedUser('usr_root_maker');
     await seedUser('usr_fork_maker');
     await seedUser('usr_buyer_a');
@@ -410,7 +328,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
 
     await seedApp({ appId: 'acc-root', repoId: 'repo-acc-root', sellerId: 'usr_root_maker', priceCents: 1500, royaltyBps: 1000 });
 
-    // FORK: a downstream app forked from the root repo, owned by the fork maker.
     await seedApp({ appId: 'acc-fork', repoId: 'repo-acc-fork', sellerId: 'usr_fork_maker', priceCents: 2000 });
     await seedFork({
       childRepoId: 'repo-acc-fork',
@@ -420,8 +337,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
       depth: 1
     });
 
-    // The root maker's 10% royalty rate is frozen onto the fork edge at
-    // fork-confirm time — a real lien row, not a live re-derivation.
     await seedFrozenLien({
       id: 'fl_acc_1',
       holderOfRepositoryId: 'repo-acc-fork',
@@ -441,7 +356,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     });
     expect(order.grossCents).toBe(2000);
 
-    // INVARIANT: an 'ancestor' allocation row is emitted with conserved cents.
     const allocs = await allocationsFor(order.orderId);
     const byRole = Object.fromEntries(allocs.map(a => [a.role, a]));
 
@@ -449,25 +363,19 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
     expect(byRole.seller).toMatchObject({ recipientUserId: 'usr_fork_maker', amountCents: 1620 });
     expect(byRole.platform).toMatchObject({ recipientUserId: null, amountCents: 200 });
 
-    // Conservation of cents across the full split.
     expect(allocs.reduce((s, a) => s + a.amountCents, 0)).toBe(order.grossCents);
 
-    // Fulfill the forked purchase.
     const result = await deliverAndProcessWebhook(order, 'evt_acc_fork');
     expect(result.success).toBe(true);
     expect(result.status).toBe('fulfilled');
-    // seller + ancestor => 2 payout obligations ('platform' is the house — never paid via Connect)
     expect(result.outboxCount).toBe(2);
 
-    // INVARIANT: a pending payout obligation is queued for EACH payable
-    // recipient — the fork seller AND the upstream ancestor lien-holder.
     const outbox = await outboxFor(order.orderId);
     expect(outbox).toEqual([
       { destinationUserId: 'usr_fork_maker', amountCents: 1620, status: 'pending' },
       { destinationUserId: 'usr_root_maker', amountCents: 180, status: 'pending' }
     ]);
 
-    // Explicit, isolated assertion on the ancestor payout obligation.
     const ancestorPayout: any = await ctx.d1.prepare(`
       SELECT destination_user_id AS destinationUserId, amount_cents AS amountCents, status
       FROM commerce_transfer_outbox
@@ -480,7 +388,6 @@ describe('ACCEPTANCE: buy → own → fork → contributor-payout (offline, mock
       status: 'pending'
     });
 
-    // The buyer of the fork owns exactly one license for the forked app.
     const forkLicense: any = await ctx.d1.prepare(`
       SELECT app_id, owner_user_id FROM commerce_licenses WHERE order_id = ?
     `).bind(order.orderId).all();

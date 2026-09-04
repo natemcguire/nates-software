@@ -1,6 +1,3 @@
-// Local/Dev HTTP Gateway Server for GITSMITH
-// Serves /healthz, /readyz, authoritative CAS ref endpoint, and dispatcher controls.
-
 import * as http from 'node:http';
 import type { GatewayConfig } from './types.ts';
 import { GitsmithGatewayService } from './gatewayService.ts';
@@ -23,7 +20,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
-    // 1. GET /healthz - Liveness probe
     if (req.method === 'GET' && url.pathname === '/healthz') {
       const health = healthChecker.getHealth();
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -31,7 +27,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // 2. GET /readyz - Readiness probe
     if (req.method === 'GET' && url.pathname === '/readyz') {
       const readiness = await healthChecker.getReadiness(config, dispatcher, true);
       const status = readiness.ready ? 200 : 503;
@@ -40,7 +35,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // 3. Helper to read JSON request body
     const readJsonBody = async (): Promise<any> => {
       return new Promise((resolve, reject) => {
         let raw = '';
@@ -65,7 +59,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       });
     };
 
-    // 4. Authenticate gateway operations
     const verifyToken = (): boolean => {
       const authHeader = req.headers['authorization'] || '';
       const customHeader = req.headers['x-gitsmith-gateway-token'] || '';
@@ -78,7 +71,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return constantTimeTokenCompare(token, config.gatewayToken);
     };
 
-    // Authenticated immutable source export for RIG and deploy workers.
     if ((req.method === 'GET' || req.method === 'POST') && (url.pathname === '/api/gateway/archive' || url.pathname === '/v1/archive')) {
       if (!verifyToken()) {
         res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -110,7 +102,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // Authenticated commit inspection & verification for deploy pipeline
     if (
       (req.method === 'POST' || req.method === 'GET') &&
       (url.pathname === '/api/gateway/verify-commit' || url.pathname === '/v1/verify-commit' || url.pathname === '/api/gateway/tree' || url.pathname === '/v1/tree')
@@ -165,7 +156,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // Authenticated diff export for PR reviews
     if (req.method === 'GET' && url.pathname === '/api/gateway/diff') {
       if (!verifyToken()) {
         res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -189,7 +179,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // Authenticated blob/raw file reading for spec/image rendering
     if (
       (req.method === 'GET' || req.method === 'POST') &&
       (url.pathname === '/api/gateway/blob' || url.pathname === '/v1/blob' || url.pathname === '/api/gateway/raw' || url.pathname === '/v1/raw')
@@ -289,7 +278,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // 5. POST /api/gateway/cas - Authoritative CAS ref update
     if (req.method === 'POST' && url.pathname === '/api/gateway/cas') {
       if (!verifyToken()) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -310,7 +298,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // 6. POST /api/gateway/dispatch - Trigger outbox dispatch batch
     if (req.method === 'POST' && url.pathname === '/api/gateway/dispatch') {
       if (!verifyToken()) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -329,7 +316,6 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       return;
     }
 
-    // 404 fallback
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, error: 'Not found' }));
   });

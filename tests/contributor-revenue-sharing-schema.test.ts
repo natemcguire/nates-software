@@ -72,7 +72,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('rejects pending row with non-null timestamps (#4)', async () => {
-      // Pending with activated_at
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -81,7 +80,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Pending with revoked_at
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -92,7 +90,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('rejects active row without activated_at or with revoked_at (#4)', async () => {
-      // Active without activated_at
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -101,7 +98,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Active with revoked_at
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -112,7 +108,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('rejects revoked row without revoked_at or with activated_at (#4)', async () => {
-      // Revoked without revoked_at
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -121,7 +116,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Revoked with activated_at
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -210,7 +204,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
           ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_del_pend').run()
         ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
 
-        // Attempt second insert with same merge_attempt_id -> must fail UNIQUE check because original row is preserved
         await expect(
           ctx.d1.prepare(`
             INSERT INTO contributor_shares (
@@ -233,7 +226,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
           ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_del_act').run()
         ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
 
-        // Attempt second insert with same merge_attempt_id -> must fail UNIQUE check
         await expect(
           ctx.d1.prepare(`
             INSERT INTO contributor_shares (
@@ -256,7 +248,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
           ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_del_rev').run()
         ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
 
-        // Attempt second insert with same merge_attempt_id -> must fail UNIQUE check
         await expect(
           ctx.d1.prepare(`
             INSERT INTO contributor_shares (
@@ -288,37 +279,31 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('economics-immutable trigger prevents modification of economic columns and provenance (#3)', async () => {
-      // basis_points
       await expect(
         ctx.d1.prepare('UPDATE contributor_shares SET basis_points = 2000 WHERE id = ?')
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // contributor_user_id
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET contributor_user_id = 'usr_josh' WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // granted_by_user_id
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET granted_by_user_id = 'usr_josh' WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // repository_id
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET repository_id = 'repo_other' WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // merge_attempt_id
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET merge_attempt_id = 'att_new' WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // merge_job_id (#3)
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET merge_job_id = 'mj_rewritten' WHERE id = ?")
           .bind('cs_trig').run()
@@ -329,7 +314,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // merge_approval_id (#3)
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET merge_approval_id = 'map_rewritten' WHERE id = ?")
           .bind('cs_trig').run()
@@ -382,17 +366,14 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('status forward-only trigger blocks active -> revoked and active -> pending', async () => {
-      // Activate share first
       await ctx.d1.prepare("UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind('cs_trig').run();
 
-      // Attempt active -> revoked
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // Attempt active -> pending
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending', activated_at = NULL WHERE id = ?")
           .bind('cs_trig').run()
@@ -400,17 +381,14 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('status forward-only trigger blocks revoked -> active and revoked -> pending', async () => {
-      // Revoke share first
       await ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked', revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind('cs_trig').run();
 
-      // Attempt revoked -> active
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'active', activated_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // Attempt revoked -> pending
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending', revoked_at = NULL WHERE id = ?")
           .bind('cs_trig').run()
@@ -418,23 +396,19 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('freezes timestamps once set (#4)', async () => {
-      // Activate share first
       await ctx.d1.prepare("UPDATE contributor_shares SET status = 'active', activated_at = '2026-08-31 12:00:00' WHERE id = ?")
         .bind('cs_trig').run();
 
-      // Rewriting activated_at on active share must fail
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET activated_at = '2026-08-31 13:00:00' WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // Nulling activated_at on active share must fail
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET activated_at = NULL WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // Setting revoked_at on active share must fail (#4)
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
@@ -442,13 +416,11 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('rejects setting timestamps on a pending share without status transition (#4)', async () => {
-      // Setting activated_at while keeping status = pending
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET activated_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // Setting revoked_at while keeping status = pending
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?")
           .bind('cs_trig').run()
@@ -475,28 +447,24 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
     });
 
     it('accepts maker, ancestor, protocol_pool, and contributor rows with valid recipient constraints', async () => {
-      // Maker
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
         ) VALUES ('coa_m', 'cord_full_test', 0, 'maker', 'usr_nate', 'repo_ord_test', 7000, 2100)
       `).run();
 
-      // Ancestor
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, source_repository_id, lineage_depth, basis_points, amount_cents
         ) VALUES ('coa_a', 'cord_full_test', 1, 'ancestor', 'usr_josh', 'repo_ord_test', 1, 1000, 300)
       `).run();
 
-      // Contributor
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
         ) VALUES ('coa_c', 'cord_full_test', 2, 'contributor', 'usr_sam', 'repo_ord_test', 1000, 300)
       `).run();
 
-      // Protocol Pool (requires recipient_user_id IS NULL)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
@@ -565,7 +533,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         ) VALUES ('coa_out_c', 'cord_full_test', 0, 'contributor', 'usr_sam', 1000, 300)
       `).run();
 
-      // Valid matching outbox row
       await ctx.d1.prepare(`
         INSERT INTO commerce_transfer_outbox (
           id, order_id, allocation_id, destination_user_id, amount_cents, currency
@@ -577,7 +544,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       expect(outbox?.destination_user_id).toBe('usr_sam');
       expect(outbox?.amount_cents).toBe(300);
 
-      // Mismatched destination user
       await expect(
         ctx.d1.prepare(`
           INSERT INTO commerce_transfer_outbox (
@@ -586,7 +552,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         `).run()
       ).rejects.toThrow(/commerce outbox requires matching fulfilled allocation/);
 
-      // Mismatched amount
       await expect(
         ctx.d1.prepare(`
           INSERT INTO commerce_transfer_outbox (
@@ -614,7 +579,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         VALUES ('evt_rec_c', 'charge.refund.updated', 0, '{}', ?)
       `).bind('c'.repeat(64)).run();
 
-      // Valid matching recovery obligation
       await ctx.d1.prepare(`
         INSERT INTO commerce_recovery_obligations (
           id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
@@ -629,7 +593,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         .bind('cro_c_valid').first<any>();
       expect(obligation?.amount_cents).toBe(300);
 
-      // Amount exceeding frozen allocation amount must fail
       await expect(
         ctx.d1.prepare(`
           INSERT INTO commerce_recovery_obligations (
@@ -645,22 +608,17 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
   });
 
   describe('5. Migration 0030: cap-guard and no-strand triggers', () => {
-    // These DB-level triggers remain live schema (contributor_shares and
-    // repositories.grantable_bps are historical-data columns, not removed)
-    // even though the grant-CREATION API surface has been retired.
     it('contributor_shares_cap_guard: DB trigger aborts direct insert that exceeds repository grantable_bps', async () => {
       await ctx.d1.prepare(`INSERT OR IGNORE INTO users (id, username, display_name) VALUES ('usr_alice', 'alice', 'Alice')`).run();
       await ctx.d1.prepare(`INSERT INTO repositories
         (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
         VALUES ('repo-trig-cap','dronehunter','usr_nate','nate/trig-cap','private','refs/heads/main','repositories/repo-trig-cap','active',1000)`).run();
 
-      // First direct insert of 600 bps succeeds
       await ctx.d1.prepare(`
         INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
         VALUES ('cs_trig_1', 'repo-trig-cap', 'usr_sam', 'usr_nate', 600, 'pending')
       `).run();
 
-      // Second direct insert of 500 bps (total 1100 > 1000) is aborted by DB trigger
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
@@ -668,7 +626,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         `).run()
       ).rejects.toThrow(/contributor share exceeds available repository grantable pool or repository does not exist/);
 
-      // Third direct insert of 400 bps (total 600 + 400 = 1000 <= 1000) succeeds
       await ctx.d1.prepare(`
         INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
         VALUES ('cs_trig_3', 'repo-trig-cap', 'usr_alice', 'usr_nate', 400, 'pending')
@@ -679,7 +636,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
       `).first();
       expect(total.s).toBe(1000);
 
-      // Insert for non-existent repository is aborted by DB trigger
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status)
@@ -694,7 +650,6 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status,grantable_bps)
         VALUES ('repo-trig-strand','dronehunter','usr_nate','nate/trig-strand','private','refs/heads/main','repositories/repo-trig-strand','active',2500)`).run();
 
-      // Commit 1500 bps in active and pending shares
       await ctx.d1.prepare(`
         INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points, status, activated_at)
         VALUES ('cs_strand_1', 'repo-trig-strand', 'usr_sam', 'usr_nate', 1000, 'active', CURRENT_TIMESTAMP)
@@ -704,17 +659,14 @@ describe('Migration 0029: Contributor Revenue Sharing Schema & Invariants', () =
         VALUES ('cs_strand_2', 'repo-trig-strand', 'usr_alice', 'usr_nate', 500, 'pending')
       `).run();
 
-      // Attempting to lower grantable_bps to 1400 (< 1500 committed) is aborted by DB trigger
       await expect(
         ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 1400 WHERE id = 'repo-trig-strand'`).run()
       ).rejects.toThrow(/repository grantable_bps cannot be lowered below committed grants/);
 
-      // Lowering to exactly 1500 (= 1500 committed) succeeds
       await ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 1500 WHERE id = 'repo-trig-strand'`).run();
       const updated: any = await ctx.d1.prepare(`SELECT grantable_bps FROM repositories WHERE id = 'repo-trig-strand'`).first();
       expect(updated.grantable_bps).toBe(1500);
 
-      // Raising to 3000 succeeds
       await ctx.d1.prepare(`UPDATE repositories SET grantable_bps = 3000 WHERE id = 'repo-trig-strand'`).run();
       const raised: any = await ctx.d1.prepare(`SELECT grantable_bps FROM repositories WHERE id = 'repo-trig-strand'`).first();
       expect(raised.grantable_bps).toBe(3000);

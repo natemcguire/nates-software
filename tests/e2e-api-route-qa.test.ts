@@ -17,10 +17,7 @@ import { resolveAppRoute } from '../src/App';
 
 describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
-  // 1. Data Integrity & Invariants (No Mock Leakage)
   describe('1. Data Integrity & App Catalog Invariants', () => {
-    // (The former "INITIAL_APPS contains exactly 4 shareware titles" test was removed with
-    // the fabricated INITIAL_APPS fixture — the catalog is now sourced exclusively from D1.)
     it('should have matching GITSMITH repositories with valid owners and files', () => {
       expect(GITSMITH_REPOS.length).toBe(4);
       GITSMITH_REPOS.forEach(repo => {
@@ -36,7 +33,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 2. Authentication API (/api/auth)
   describe('2. Authentication API (/api/auth)', () => {
     it('should reject registration with invalid or reserved usernames', async () => {
       const mockEnv = {};
@@ -78,7 +74,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 3. Chat & IRC API (/api/chat)
   describe('3. IRC Chat API (/api/chat)', () => {
     it('should fail closed when chat storage is unavailable', async () => {
       const mockEnv = {};
@@ -107,7 +102,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 4. Hotwire Drops & Syndication API (/api/drops, /api/feed)
   describe('4. Hotwire Drops & RSS Feed API', () => {
     it('should handle drops query with default fallback response', async () => {
       const mockEnv = {};
@@ -133,7 +127,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 5. Git Forge & CAS Merge API (/api/git)
   describe('5. GITSMITH Bare Forge API (/api/git)', () => {
     it('should return Git forge protocol invariants on status query', async () => {
       const mockEnv = {};
@@ -147,7 +140,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 6. Upvote & Rate Limiting API (/api/upvote)
   describe('6. Upvoting API (/api/upvote)', () => {
     it('should reject upvote when appId is missing', async () => {
       const mockEnv = {};
@@ -166,7 +158,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
 
 
 
-  // 8.5 Profile, Shelf, Inbox, & Comments APIs
   describe('8.5 Profile, Shelf, Inbox, & Comments APIs', () => {
     it('should query profile and handle user lookup', async () => {
       const mockEnv = {};
@@ -211,17 +202,12 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
   });
 
-  // 9. Standalone Subdomain & Production Route Resolution (Testing src/App.tsx)
   describe('9. Production Subdomain & Route Resolution (src/App.tsx)', () => {
     it('should accurately resolve all registered subdomains via resolveAppRoute', () => {
       expect(resolveAppRoute('chat.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'chat', title: 'CHAT IRC CHATROOM (#lounge)' });
       expect(resolveAppRoute('gitsmith.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'gitsmith', title: 'GITSMITH FORGE' });
       expect(resolveAppRoute('hotwire.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'hotwire', title: 'HOTWIRE DAILY DROPS' });
-      // EDITORIAL was removed from launch nav/routing (sample-only content); the
-      // `editorial` subdomain no longer resolves to a first-party view.
       expect(resolveAppRoute('slopshop.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'slopshop', title: 'SLOPSHOP LOCAL AI AGENT LAUNCHPAD' });
-      // RIG.EXE was removed as an app (task #41); 'rig' stays a RESERVED standalone_view
-      // (never a tenant app) resolving to an "infrastructure" notice, so the host can't be claimed.
       expect(resolveAppRoute('rig.nates-software.com', '/')).toEqual({ type: 'standalone_view', id: 'rig', title: 'RIG — INFRASTRUCTURE' });
       expect(resolveAppRoute('dronehunter.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'dronehunter', title: 'DroneHunter 95' });
       expect(resolveAppRoute('certified-mailer.nates-software.com', '/')).toEqual({ type: 'standalone_app', id: 'certified-mailer', title: 'Certified Mailer' });
@@ -230,7 +216,6 @@ describe('Comprehensive End-to-End API & Route QA Suite', () => {
     });
 
     it('should accurately resolve all direct root path routes via resolveAppRoute', () => {
-      // EDITORIAL removed from launch: /editorial and /lab no longer resolve to a view.
       expect(resolveAppRoute('nates-software.com', '/editorial')).toEqual({ type: 'desktop' });
       expect(resolveAppRoute('nates-software.com', '/inbox')).toEqual({ type: 'standalone_view', id: 'inbox', title: 'AGENT INBOX' });
       expect(resolveAppRoute('nates-software.com', '/white-papers')).toEqual({ type: 'standalone_view', id: 'white-papers', title: 'ARCHITECTURAL WHITE PAPERS' });

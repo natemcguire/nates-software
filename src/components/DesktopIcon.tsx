@@ -11,20 +11,14 @@ export interface DesktopIconProps {
   onPositionChange?: (newPos: { x: number; y: number }) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
   onOpen?: () => void;
-  /** Intro-sequence class (hidden / reveal) applied to the icon root. */
   introClassName?: string;
-  /** Per-icon stagger delay (ms) for the reveal animation. */
   introDelayMs?: number;
-  /** Dim the icon (grayscale) to mark it as not-yet-ready (still clickable). The
-   *  shared "Coming Soon" header above the cluster labels the group; no per-icon badge. */
   comingSoon?: boolean;
-  /** Play the canvas voxel-assembly reveal on the glyph (intro sequence). */
   voxelReveal?: boolean;
-  /** Random start delay (ms) before this icon's voxel reveal begins. */
   voxelDelayMs?: number;
 }
 
-const DRAG_THRESHOLD = 5; // Pixels of movement required to distinguish dragging from a click
+const DRAG_THRESHOLD = 5;
 
 export const DesktopIcon: React.FC<DesktopIconProps> = ({
   icon,
@@ -61,7 +55,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   }, [position?.x, position?.y]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return; // Only drag on primary mouse button / touch
+    if (e.button !== 0) return;
     e.stopPropagation();
 
     dragRef.current = {
@@ -75,7 +69,6 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
-      // Ignore if setPointerCapture is unsupported
     }
   };
 
@@ -94,7 +87,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
     if (dragRef.current.hasMoved) {
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
       const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
-      const iconWidth = 128; // w-32 = 128px
+      const iconWidth = 128;
       const iconHeight = 90;
       const taskbarHeight = 40;
 
@@ -118,7 +111,6 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ignore
     }
 
     dragRef.current = null;
@@ -136,7 +128,6 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ignore
     }
     dragRef.current = null;
     setIsDragging(false);
@@ -149,8 +140,6 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
         top: `${currentPos.y}px`,
         zIndex: isDragging ? 35 : 10,
         touchAction: 'none',
-        // Smoothly fly to a new position (e.g. WHAT_IS_THIS moving from screen-center
-        // to its grid spot when the intro reveal starts). Disabled while dragging.
         transition: isDragging ? 'none' : 'left 0.6s cubic-bezier(0.22,1,0.36,1), top 0.6s cubic-bezier(0.22,1,0.36,1)',
         ...(introDelayMs !== undefined ? ({ '--reveal-delay': `${introDelayMs}ms` } as React.CSSProperties) : {})
       }
@@ -179,9 +168,6 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
       >
         {label}
       </div>
-      {/* Per-icon "SOON" badge removed — the coming-soon cluster now has a single
-          shared "Coming Soon" header rendered above it (see App.tsx). The grayscale
-          dim on the glyph/label still marks these as not-yet-ready. */}
       {badge && (
         <span className="absolute top-1 right-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full border border-white shadow">
           {badge}

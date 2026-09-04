@@ -1,8 +1,3 @@
-// Tests for GET /api/product-readiness — the single authoritative,
-// server-computed projection of whether an app is genuinely
-// buyable/forkable/deployable. Must never fabricate readiness: every field
-// is a direct read of an existing row, and 'overall' fails closed.
-
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as readinessApi from '../functions/api/product-readiness';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
@@ -154,8 +149,6 @@ describe('GET /api/product-readiness', () => {
 
   it('never fabricates deployment.active=true from a hostname alone (fail-closed)', async () => {
     await seedUser('usr_maker');
-    // hostname is backfilled/present but deployment_state never left draft —
-    // e.g. a catalog placeholder that has a routing label but nothing built.
     await seedListing('fake-live-app', { deploymentState: 'draft', hostname: 'fake-live-app' });
 
     const req = new Request('http://localhost/api/product-readiness?appId=fake-live-app');
@@ -198,7 +191,6 @@ describe('GET /api/product-readiness', () => {
 
     const dronehunter = data.readiness.find((r: any) => r.appId === 'dronehunter');
     expect(dronehunter).toBeTruthy();
-    // dronehunter ships an active commerce_products row with no linked repository in the base schema
     expect(dronehunter.overall).toBe('buyable');
     expect(dronehunter.product.active).toBe(true);
   });

@@ -1,6 +1,3 @@
-// Health and Readiness Check System for GITSMITH Gateway
-// Truthfully distinguishes between 'configured' and 'active' state.
-
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { GatewayConfig, GatewayHealthStatus, GatewayReadinessStatus } from './types.ts';
@@ -34,10 +31,8 @@ export class GatewayHealthChecker {
   ): Promise<GatewayReadinessStatus> {
     const fetchImpl = fetchOverride || globalThis.fetch;
 
-    // 1. Probe Git binary capabilities
     const gitCaps = checkGitCapabilities();
 
-    // 2. Probe Storage configuration and filesystem writability
     let storageConfigured = false;
     let storageExists = false;
     let storageWritable = false;
@@ -59,7 +54,6 @@ export class GatewayHealthChecker {
       storageError = 'reposRoot is not configured.';
     }
 
-    // 3. Probe Control Plane configuration and connectivity
     let cpConfigured = false;
     let cpReachable = false;
     let cpError: string | undefined;
@@ -94,17 +88,12 @@ export class GatewayHealthChecker {
       cpError = 'controlPlaneUrl or gatewayToken is not configured.';
     }
 
-    // 4. Probe Dispatcher stats
     const dispatcherStats = dispatcher ? dispatcher.getStats() : { running: false, processedCount: 0, lastPolledAt: null };
 
-    // Provisioning readiness and end-user Git transport readiness are distinct.
-    // The current gateway may safely own bare storage and outbox work without
-    // claiming that makers can clone or push over SSH.
     const transportConfigured = config.sshEnabled === true && Boolean(config.sshHost?.trim());
     const transportActive = transportConfigured && this.transportStatus.active;
     const transportError = transportActive ? undefined : (this.transportStatus.error || 'SSH transport is not active.');
 
-    // Truthful distinction between configured and active
     const isConfigured = storageConfigured && cpConfigured && Boolean(config.gatewayToken);
     const isActive =
       isConfigured &&

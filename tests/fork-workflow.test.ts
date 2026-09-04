@@ -17,7 +17,6 @@ const oid1 = 'a'.repeat(40);
 const oid2 = 'b'.repeat(40);
 
 describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
-  // Step 1 & 4: Repository and ref schema + Lineage edges pinned to immutable commits
   it('Step 1 & 4: should validate immutable fork origins and reject invalid or self-referential forks', () => {
     const validOrigin = {
       childRepositoryId: 'usr_josh/dronehunter-mod',
@@ -32,7 +31,6 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     const errors = validateForkOrigin(validOrigin);
     expect(errors.length).toBe(0);
 
-    // Reject self fork
     const selfForkErrors = validateForkOrigin({
       ...validOrigin,
       childRepositoryId: 'usr_nate/dronehunter'
@@ -40,7 +38,6 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     expect(selfForkErrors).toContain('A repository cannot fork itself.');
   });
 
-  // Step 2: Git transport must be provided by a real gateway, not simulated by D1.
   it('Step 2: should reject partial Git Smart HTTP at the control-plane boundary', async () => {
     const mockEnv = {
       DB: {
@@ -62,12 +59,7 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     expect(body.error).toContain('GITSMITH gateway');
   });
 
-  // Step 3: slop clone, fork, and push with truthful failure handling
   it('Step 3: should create a structured local fork without contacting the remote gateway', async () => {
-    // Seed a portable local source repo named `dronehunter` (so the derived
-    // worktree name is slop-dronehunter-*) and fork it by direct path. This
-    // avoids depending on a machine-local nate/dronehunter checkout, which
-    // exists on a dev box but not on a fresh CI runner.
     const srcRoot = join(tmpdir(), `slopfix-fw-${Date.now().toString(36)}`);
     const src = join(srcRoot, 'dronehunter');
     mkdirSync(src, { recursive: true });
@@ -86,7 +78,6 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     }
   }, 15_000);
 
-  // Step 5: Merge-job state machine transitions
   it('Step 5: should enforce strict merge-job state machine transitions', () => {
     const job = createMergeJob({
       targetRepositoryId: 'dronehunter',
@@ -97,14 +88,12 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
 
     expect(job.status).toBe('queued');
 
-    // Valid transitions
     const prepJob = transitionMergeJob(job, 'preparing');
     expect(prepJob.status).toBe('preparing');
 
     const runJob = transitionMergeJob(prepJob, 'running');
     expect(runJob.status).toBe('running');
 
-    // Step 7: Preview artifacts and explicit approval
     const previewJob = transitionMergeJob(runJob, 'preview_ready', {
       previewUrl: 'https://preview-radar.nates-software.com',
       evidenceDigest: 'sha256:8f4a21e901'
@@ -118,21 +107,17 @@ describe('Real Fork Workflow (8-Step Canonical Execution)', () => {
     const landedJob = transitionMergeJob(landJob, 'landed');
     expect(landedJob.status).toBe('landed');
 
-    // Reject illegal transition (e.g. landed -> running)
     expect(canTransitionMergeJob('landed', 'running')).toBe(false);
     expect(() => transitionMergeJob(landedJob, 'running')).toThrow();
   });
 
-  // Step 8: CAS ref landing against real remote head
   it('Step 8: should validate CAS compare-and-swap update against real remote head', () => {
-    // Current remote head is oid1, expected old is oid1 -> OK
     expect(isCasRefUpdateValid({
       currentOid: oid1,
       expectedOldOid: oid1,
       newOid: oid2
     })).toBe(true);
 
-    // Stale head: current remote is oid2, expected old is oid1 -> REJECT
     expect(isCasRefUpdateValid({
       currentOid: oid2,
       expectedOldOid: oid1,

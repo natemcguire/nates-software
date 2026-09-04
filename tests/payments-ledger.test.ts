@@ -101,7 +101,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
       await seedTestUsersAndApps();
       await createSession('usr_seller_a', 'token_alice');
 
-      // Create an order
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -114,7 +114,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
         )
       `).run();
 
-      // Create allocations (maker 90%, protocol_pool 10%)
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
@@ -123,7 +123,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
           ('alloc_101_pool', 'ord_101', 1, 'protocol_pool', NULL, 1000, 200)
       `).run();
 
-      // Create transfer outbox for maker (succeeded / settled)
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_transfer_outbox (
           id, order_id, allocation_id, destination_user_id, amount_cents, currency,
@@ -174,7 +174,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
       await seedTestUsersAndApps();
       await createSession('usr_seller_a', 'token_alice');
 
-      // Fulfilled order with pending transfer
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -204,7 +204,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
         )
       `).run();
 
-      // Non-fulfilled order (e.g. requires_payment)
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -240,7 +240,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
       await createSession('usr_seller_a', 'token_alice');
       await createSession('usr_seller_b', 'token_bob');
 
-      // Order for Alice
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -265,7 +265,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
         ) VALUES ('xfer_a1', 'ord_alice_1', 'alloc_a1', 'usr_seller_a', 1800, 'usd', 'succeeded')
       `).run();
 
-      // Bob makes request
+
       const reqBob = new Request('http://localhost/api/payments/ledger', {
         method: 'GET',
         headers: { 'Authorization': 'Bearer token_bob' }
@@ -278,7 +278,7 @@ describe('Scoped Seller Ledger Endpoint (functions/api/payments/ledger)', () => 
       expect(dataBob.orders).toEqual([]);
       expect(dataBob.summary.totalOrders).toBe(0);
 
-      // Alice makes request
+
       const reqAlice = new Request('http://localhost/api/payments/ledger', {
         method: 'GET',
         headers: { 'Authorization': 'Bearer token_alice' }

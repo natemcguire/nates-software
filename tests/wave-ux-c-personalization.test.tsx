@@ -65,10 +65,6 @@ describe('WAVE-UX-C Personalization & Ownership Gating', () => {
     });
   });
 
-  // Item 4: RIG (#15) — the RigRuntimeView HUD was removed (task #41); RIG is now
-  // an invisible engine (deploy pipeline / SLOPSHOP live-run), so there is no
-  // fleet-personalization HUD to assert on. Tests deleted with the component.
-
   describe('Item 5: HOTWIRE (#9, C2, E1) — HotwireView clarity, timezone note, and mine filter', () => {
     it('displays definition banner, local time countdown, and Mine filter tab when logged in', () => {
       const authCtx = createMockAuthContext(mockUser);
@@ -82,12 +78,9 @@ describe('WAVE-UX-C Personalization & Ownership Gating', () => {
         </AuthContext.Provider>
       );
 
-      // Definition banner
       expect(html).toContain('Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.');
-      // Local time & UTC note
       expect(html).toContain('local');
       expect(html).toContain('12:01 AM UTC');
-      // Mine filter tab
       expect(html).toContain('Mine');
     });
 

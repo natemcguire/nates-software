@@ -1,6 +1,4 @@
-// Shared Session Authentication & Authorization Layer
-// Strictly validates active sessions against Cloudflare D1 user_sessions.
-// Zero backdoor tokens or hardcoded bypasses in production.
+
 
 import { extractSessionToken, hashSessionToken, isSameOriginMutation } from './_session';
 
@@ -16,7 +14,7 @@ export interface AuthenticatedUser {
 export async function getSessionUser(request: Request, env: any): Promise<AuthenticatedUser | null> {
   const { token } = extractSessionToken(request);
 
-  // Strictly enforce test-only scope for mock runner
+  
   const isTestEnvironment = typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST);
 
   if (!token) return null;
@@ -44,7 +42,7 @@ export async function getSessionUser(request: Request, env: any): Promise<Authen
     } catch {}
   }
 
-  // Only permit simulated test tokens inside the isolated Vitest test runner
+  
   if (isTestEnvironment && (token.startsWith('test_token_') || token === 'valid_test_token')) {
     return {
       id: 'usr_nate',

@@ -1,7 +1,3 @@
-// GITSMITH control-plane API. Git object transfer and authoritative ref CAS
-// belong to a real Git gateway. D1 stores the query projection, immutable fork
-// lineage, access policy, and durable work queue.
-
 import * as path from 'node:path';
 import { getSessionUser, requireAuth } from './_auth';
 import { hashSessionToken } from './_session';
@@ -108,7 +104,6 @@ async function verifyGatewayAuth(request: Request, env: any, db?: D1Database | n
     };
   }
 
-  // Never allow user session tokens to act as gateway tokens
   let isUserToken = token === 'valid_test_token' || token.startsWith('test_token_') || token.startsWith('usr_') || token.startsWith('session_');
   if (!isUserToken && db) {
     try {
@@ -168,7 +163,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     );
   }
 
-  // Diff API endpoint for PRs and repository ref comparisons
   if (url.searchParams.get('action') === 'diff') {
     const db = dbFrom(env);
     if (!db) return failure('Forge database binding is unavailable.');
@@ -266,7 +260,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   try {
     const user = await getSessionUser(request, env);
 
-    // 1. Single Repository Detail Query (by ID or owner + slug or slug alone)
     if (repositoryId || (ownerParam && slugParam) || (slugParam && !isListExplicit)) {
       let repository: any = null;
       if (repositoryId) {
@@ -354,7 +347,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       });
     }
 
-    // 2. Repository Collection Query (Public collection must NOT enumerate unlisted repositories)
     let repos: any;
     if (user) {
       repos = await db.prepare(`
@@ -441,14 +433,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
   const action = String(body?.action || '');
 
-  // 1. Explicit 501 rejection for user ref-update/push/cas attempts
   if (['ref-update', 'push', 'cas'].includes(action)) {
     return failure('Ref mutation is accepted only from the authenticated GITSMITH gateway.', 501);
   }
 
-  // =========================================================================
-  // GATEWAY-AUTHENTICATED ACTIONS (Strictly requires valid Gateway Bearer Token)
-  // =========================================================================
   if (action === 'gateway-identify-ssh-key') {
     const gwAuth = await verifyGatewayAuth(request, env, db);
     if (!gwAuth.authorized) return gwAuth.errorResponse!;
@@ -530,16 +518,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
       const refPolicies = policies.results;
 
-      // This is the pre-push identity/authorization check only: it verifies the SSH key
-      // is registered and the resulting role can read/write this repository, then hands
-      // back the raw repository_ref_policies rows so the caller (the GITSMITH SSH
-      // transport / gateway daemon) has them on hand before the push begins. It does not
-      // itself evaluate per-ref policy (protected-ref deletion, force-push, signed
-      // commits, min approvals, etc.) — that evaluation happens once the actual ref
-      // updates are known, in the gateway-check-ref-policy action below, which is the
-      // synchronous pre-receive-time decision point. Splitting it this way lets an
-      // unauthorized actor be rejected immediately without a round trip per ref.
-
       return Response.json({
         success: true,
         actorUserId: (actor as any).id,
@@ -607,25 +585,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
       const refPolicies = policies.results;
 
-      // Enforced in this control plane right now (below, per ref update): write
-      // authorization already checked above; default-branch and any repository_ref_policies
-      // ref_pattern match is treated as protected; deletion of a protected ref is rejected
-      // unless its policy row sets allow_delete; a non-fast-forward update to a protected
-      // ref is rejected unless its policy row sets allow_force_push; most-specific matching
-      // policy wins via selectRefPolicy (ties resolved deny-first).
-      //
-      // require_signed_commits, require_passing_build, and minimum_approvals are stored and
-      // read from repository_ref_policies here, but this control-plane HTTP endpoint has no
-      // way to cryptographically verify a commit signature, observe CI/build results, or
-      // count PR approvals for the specific push in flight — so rather than approximate
-      // that, any protected ref whose matching policy sets one of those three flags is
-      // rejected outright (fail-closed) below. Real enforcement of those three requires the
-      // GITSMITH gateway daemon's synchronous pre-receive hook, which runs in the same
-      // process as the push and is the authoritative boundary: it re-fetches this same
-      // ref-policy decision, additionally verifies commit signatures against registered
-      // keys, checks CI/build status, and counts recorded approvals before it will let
-      // refs move. This endpoint is the control-plane's fail-closed opinion the daemon
-      // consults; it is deliberately conservative where it cannot verify something itself.
       const updates: Array<{ refName: string; oldOid?: string | null; newOid?: string | null; isFastForward?: boolean; isDelete?: boolean }> =
         Array.isArray(body.updates)
           ? body.updates
@@ -766,7 +725,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }
       }
 
-      // Check Idempotency Key in repository_ref_events
       const existingEvent = await db.prepare(`
         SELECT id, repository_id AS repositoryId, ref_name AS refName,
                old_oid AS oldOid, new_oid AS newOid, expected_old_oid AS expectedOldOid,
@@ -806,7 +764,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const refOutboxEventId = `evt_${crypto.randomUUID()}`;
       const statements: any[] = [];
 
-      // 1. Conditional INSERT ... SELECT guarded by exact current ref state
       if (operation === 'create') {
         statements.push(db.prepare(`
           INSERT OR IGNORE INTO repository_ref_events (
@@ -879,7 +836,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         `).bind(repositoryId, refName, refEventId));
       }
 
-      // 2. Outbox event ONLY WHERE event was successfully inserted
       statements.push(db.prepare(`
         INSERT INTO forge_outbox_events (id, aggregate_type, aggregate_id, event_type, payload, attempts, created_at)
         SELECT ?, 'ref', ?, 'repository.ref_projected', ?, 0, CURRENT_TIMESTAMP
@@ -892,7 +848,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         refEventId
       ));
 
-      // 3. Activate repository if provisioning ONLY WHERE event was successfully inserted
       let previousStatus = (repo as any).status;
       if (previousStatus === 'provisioning') {
         statements.push(db.prepare(`
@@ -920,7 +875,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const batchResults = await db.batch(statements);
       const eventChanges = batchResults[0]?.meta?.changes ?? 0;
 
-      // Check atomic guard miss: if event insert recorded 0 changes, CAS check failed in SQL
       if (eventChanges === 0) {
         const racedEvent = await db.prepare(`
           SELECT id, ref_name AS refName, old_oid AS oldOid, new_oid AS newOid,
@@ -961,7 +915,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         `).bind(repositoryId, refName).first();
         const currentD1Oid = currentRefRow ? String((currentRefRow as any).commitOid) : null;
 
-        // Record forge_reconciliation_issues oid_mismatch row
         const reconId = `recon_${crypto.randomUUID()}`;
         await db.prepare(`
           INSERT INTO forge_reconciliation_issues (
@@ -976,7 +929,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure(`CAS check failed: expected old OID ${targetExpectedOldOid}, but current projection OID is ${currentD1Oid ?? 'null'}.`, 409);
       }
 
-      // Fetch the updated ref row to report truthful version
       const updatedRefRow = await db.prepare(`
         SELECT commit_oid AS commitOid, version
         FROM repository_refs WHERE repository_id = ? AND ref_name = ?
@@ -1015,7 +967,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (!childRepositoryId || !parentRepositoryId) return failure('childRepositoryId and parentRepositoryId are required.', 400);
     if (!idempotencyKey) return failure('idempotencyKey is required.', 400);
 
-    // Enforce parentCommitOid === childInitialCommitOid
     if (parentCommitOid !== childInitialCommitOid) {
       return failure('Child initial commit OID must match parent commit OID at fork snapshot.', 400);
     }
@@ -1023,7 +974,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (!pOidVal.valid) return failure(pOidVal.error!, 400);
 
     try {
-      // Check idempotent replay first
       const existingFork = await db.prepare(`
         SELECT child_repository_id AS childRepositoryId, parent_repository_id AS parentRepositoryId,
                parent_ref_name AS parentRefName, parent_commit_oid AS parentCommitOid,
@@ -1049,7 +999,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure('Fork origin already exists with conflicting lineage.', 409);
       }
 
-      // Check child and parent repositories
       const child = await db.prepare(`
         SELECT id, owner_user_id AS ownerUserId, default_ref AS defaultRef, status
         FROM repositories WHERE id = ?
@@ -1067,7 +1016,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure(`Parent repository must be active to confirm fork (current: ${(parent as any).status}).`, 409);
       }
 
-      // Load pending repository.fork_requested outbox event for child
       const pendingOutbox = await db.prepare(`
         SELECT payload FROM forge_outbox_events
         WHERE aggregate_id = ? AND aggregate_type = 'fork' AND event_type = 'repository.fork_requested'
@@ -1085,7 +1033,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure('Malformed pinned fork request payload.', 500);
       }
 
-      // Require confirmation parent/ref/OID to match the server-pinned request
       if (pinnedPayload.parentRepositoryId !== parentRepositoryId) {
         return failure('Confirmation parent repository does not match pinned fork request.', 409);
       }
@@ -1099,7 +1046,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure('Confirmation child initial commit OID does not match pinned fork request.', 409);
       }
 
-      // Derive lineage root and depth SOLELY from pinned payload
       const derivedLineageRootId = String(pinnedPayload.lineageRootRepositoryId);
       const derivedDepth = Number(pinnedPayload.depth);
 
@@ -1124,12 +1070,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const forkOutboxEventId = `evt_${crypto.randomUUID()}`;
       const refEventId = `revt_${crypto.randomUUID()}`;
 
-      // Capture frozen royalty liens onto the child at the moment the fork is
-      // confirmed (Task B2). The child inherits ALL of the parent's own
-      // liens (depth+1) plus a new lien for the parent itself at the
-      // parent's own listing royalty_bps (depth 1). Liens are immutable once
-      // written (migration 0038 triggers), so this must happen exactly once,
-      // atomically with the lineage edge below.
       const parentListingRow = await db.prepare(`
         SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId
         FROM commerce_products WHERE repository_id = ?
@@ -1163,7 +1103,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ));
 
       await db.batch([
-        // 1. Immutable fork edge
         db.prepare(`
           INSERT INTO repository_forks (
             child_repository_id, parent_repository_id, forked_by_user_id,
@@ -1174,24 +1113,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           childRepositoryId, parentRepositoryId, forkUserId, parentRefName,
           parentCommitOid, childInitialCommitOid, derivedLineageRootId, derivedDepth
         ),
-        // 2. Seed child initial ref
         db.prepare(`
           INSERT INTO repository_refs (repository_id, ref_name, commit_oid, version, updated_by_user_id, updated_at)
           VALUES (?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
         `).bind(childRepositoryId, childRefName, childInitialCommitOid, forkUserId),
-        // 3. Ref creation event
         db.prepare(`
           INSERT INTO repository_ref_events (
             id, repository_id, ref_name, old_oid, new_oid, expected_old_oid,
             operation, actor_user_id, idempotency_key, signature_verified, created_at
           ) VALUES (?, ?, ?, NULL, ?, NULL, 'create', ?, ?, 1, CURRENT_TIMESTAMP)
         `).bind(refEventId, childRepositoryId, childRefName, childInitialCommitOid, forkUserId, idempotencyKey),
-        // 4. Activate child repository
         db.prepare(`
           UPDATE repositories SET status = 'active', updated_at = CURRENT_TIMESTAMP
           WHERE id = ? AND status = 'provisioning'
         `).bind(childRepositoryId),
-        // 5. Outbox confirmation event
         db.prepare(`
           INSERT INTO forge_outbox_events (id, aggregate_type, aggregate_id, event_type, payload, attempts, created_at)
           VALUES (?, 'fork', ?, 'repository.fork_confirmed', ?, 0, CURRENT_TIMESTAMP)
@@ -1203,8 +1138,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
             depth: derivedDepth, actorUserId: forkUserId, status: 'active'
           })
         ),
-        // 6. Frozen royalty liens captured onto the child (Task B2) — written
-        // atomically with the lineage edge above, immutable thereafter.
         ...lienStatements
       ]);
 
@@ -1275,7 +1208,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure(`Repository must be in provisioning status to confirm (current: ${(repo as any).status}).`, 409);
       }
 
-      // Validate pinned provisioning request event
       const pendingOutbox = await db.prepare(`
         SELECT payload FROM forge_outbox_events
         WHERE aggregate_id = ? AND aggregate_type = 'repository' AND event_type = 'repository.provisioning_requested'
@@ -1768,9 +1700,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  // =========================================================================
-  // USER SESSION-AUTHENTICATED ACTIONS
-  // =========================================================================
   const auth = await requireAuth(request, env);
   if (auth.errorResponse) return auth.errorResponse;
   const actor = auth.user!;
@@ -1782,7 +1711,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  // --- Action: create-repository ---
   if (action === 'create-repository') {
     const slug = String(body.slug || '').trim();
     const appId = body.appId ? String(body.appId).trim() : null;
@@ -1797,7 +1725,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     if (!refVal.valid) return failure(refVal.error!, 400);
 
     try {
-      // Idempotency: Check if repository already exists for (owner_user_id, slug)
       const existing = await db.prepare(`
         SELECT id, app_id AS appId, owner_user_id AS ownerUserId, slug,
                visibility, object_format AS objectFormat, default_ref AS defaultRef,
@@ -1810,7 +1737,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return Response.json({ success: true, repository: existing, idempotent: true }, { status: 200 });
       }
 
-      // Generate server-side immutable ID (do not trust client ID)
       const id = `repo_${crypto.randomUUID()}`;
       const storageKey = buildRepositoryStorageKey(id);
       const outboxEventId = `evt_${crypto.randomUUID()}`;
@@ -1867,7 +1793,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  // --- Action: fork (Phase 1: Session-authenticated fork request) ---
   if (action === 'fork') {
     let rawParentId = String(body.parentRepositoryId || body.parentSlug || body.parent || body.slug || body.appId || '').trim();
     if (/^(ssh|https?|file):\/\//.test(rawParentId)) {
@@ -1958,7 +1883,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       if (!parent) return failure('Parent repository not found.', 404);
       const parentRepositoryId = (parent as any).id;
 
-      // Cross-validate appId ↔ parentRepositoryId
       if (body.appId) {
         const rawAppId = String(body.appId).trim();
         if (rawAppId) {
@@ -1996,13 +1920,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure('Parent repository is not accessible.', 403);
       }
 
-      // Σr <= 100% gate (Task B3): compute the prospective inherited lien set
-      // the child WOULD get if this fork is confirmed, using the same pure
-      // buildInheritedLiens math Phase 2 (gateway-confirm-fork) uses to
-      // actually write the liens. This is dry/read-only — no rows are
-      // written here. If the prospective sum exceeds 100%, reject the fork
-      // request outright, before any provisioning (repository row, member
-      // row, or outbox event) is created.
       const gateParentListingRow = await db.prepare(`
         SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId
         FROM commerce_products WHERE repository_id = ?
@@ -2023,7 +1940,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         gateParentListingBps,
         parentRepositoryId,
         gateParentOwnerUserId,
-        'prospective_child' // dry run: no real child repository id exists yet
+        'prospective_child'
       );
 
       try {
@@ -2042,7 +1959,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         return failure('Parent commit OID is invalid.', 409);
       }
 
-      // Idempotency: Check if pending or confirmed child repository already exists with same (owner_user_id, slug)
       const existingChild = await db.prepare(`
         SELECT id, app_id AS appId, owner_user_id AS ownerUserId, slug,
                visibility, object_format AS objectFormat, default_ref AS defaultRef,
@@ -2051,7 +1967,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       `).bind(actor.id, childSlug).first();
 
       if (existingChild) {
-        // Check if already confirmed
         const existingFork = await db.prepare(`
           SELECT parent_repository_id AS parentRepositoryId, depth,
                  lineage_root_repository_id AS lineageRootRepositoryId, parent_commit_oid AS parentCommitOid
@@ -2074,7 +1989,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }, { status: 200 });
         }
 
-        // Check if pending fork request in outbox
         const pendingOutbox = await db.prepare(`
           SELECT payload FROM forge_outbox_events
           WHERE aggregate_id = ? AND aggregate_type = 'fork' AND event_type = 'repository.fork_requested'

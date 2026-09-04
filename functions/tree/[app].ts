@@ -1,17 +1,7 @@
-// Cloudflare Pages Function: GET /tree/:app  (and /tree/:app.svg-style embed)
-//
-// The REAL embeddable lineage tree — the viral object. Returns a self-contained HTML
-// page (safe to <iframe> into a README, a landing page, or share as a link) that renders
-// the live fork family for :app straight from D1 via the same read model the JSON API
-// uses. No client JS fetch, no external assets — the HTML ships the data inline, so an
-// embed can't be blocked by a CSP or a slow API. Modern/premium look on purpose: this is
-// an outward-facing artifact, deliberately unlike the retro desktop.
-
 import { fetchLineageTree, resolveRepositoryIdForApp, LineageTree, LineageTreeNode } from '../../src/lib/lineageDomain';
 
 const SAFE_ID = /^[a-zA-Z0-9_-]{1,128}$/;
 
-// Escape untrusted text (handles/app ids are user-controlled) before it enters HTML.
 function esc(s: string | null | undefined): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -23,8 +13,6 @@ function esc(s: string | null | undefined): string {
 
 function dollars(cents: number): string {
   const n = Math.max(0, Math.round(cents)) / 100;
-  // Whole-dollar amounts read cleaner without cents ($4,820); sub-$100 amounts keep
-  // the exact cents so a first payout shows as $48.20, not $48.2.
   const fractionDigits = Number.isInteger(n) ? 0 : 2;
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
 }
@@ -52,7 +40,6 @@ function renderNode(n: LineageTreeNode, focusRepoId: string | null): string {
 }
 
 function renderTreePage(tree: LineageTree): string {
-  // Group nodes by depth (generation rows), preserving array order within a generation.
   const byDepth = new Map<number, LineageTreeNode[]>();
   for (const n of tree.nodes) {
     if (!byDepth.has(n.depth)) byDepth.set(n.depth, []);
@@ -66,7 +53,6 @@ function renderTreePage(tree: LineageTree): string {
   const rootApp = esc(tree.rootDisplayName || tree.rootAppId || tree.rootRepositoryId);
   const gens = depths.length;
 
-  // Share copy from real stats — an unfurled tree link should say something true.
   const ogTitle = `${rootApp} has ${tree.totalForks} fork${tree.totalForks === 1 ? '' : 's'} — see the lineage tree`;
   const ogDesc = `A fork family on Nate's Software: ${tree.totalNodes} maker${tree.totalNodes === 1 ? '' : 's'}, ${dollars(tree.lineageEarnedCents)} earned across the lineage. Buy once, own forever; when a fork sells, the platform takes a flat 10% and every maker up the tree earns their own frozen royalty.`;
   const ogUrl = `https://nates-software.com/tree/${rootApp}`;
@@ -152,15 +138,11 @@ function renderTreePage(tree: LineageTree): string {
 </body></html>`;
 }
 
-// A 1200x630 "milestone" share card as SVG (the summary_large_image an unfurled tree
-// link renders). SVG is the CF-Functions-native way to generate an image — no headless
-// browser, no external service. Real stats only.
 function renderCardSvg(tree: LineageTree): string {
   const rootApp = esc(tree.rootDisplayName || tree.rootAppId || tree.rootRepositoryId);
   const forks = tree.totalForks;
   const makers = tree.totalNodes;
   const earned = esc(dollars(tree.lineageEarnedCents));
-  // Up to 12 mint bars whose heights ride the fork distribution — a tiny "tree" motif.
   const bars = Array.from({ length: 12 }, (_, i) => {
     const h = 40 + ((i * 37 + forks * 13) % 120);
     const x = 92 + i * 84;
@@ -192,11 +174,6 @@ function renderCardSvg(tree: LineageTree): string {
 export const onRequestGet = async ({ params, request, env }: { params: { app: string }; request: Request; env: any }) => {
   const rawParam = params.app || '';
   const raw = rawParam.replace(/\.(html|svg)$/i, '').replace(/^@/, '');
-  // Trigger the SVG share card by a `.svg` PATH extension (e.g. /tree/dronehunter.svg),
-  // not a query param: Cloudflare Pages infers the content-type from the route path, and
-  // an extensionless function route (like /tree/x?card=svg) gets forced to text/html
-  // regardless of the Response header we set. The .svg suffix makes Pages serve it as an
-  // image. (?card=svg is still accepted as a fallback for callers that use it.)
   const wantsCard =
     /\.svg$/i.test(rawParam) || new URL(request.url).searchParams.get('card') === 'svg';
   const headers = {
@@ -216,10 +193,6 @@ export const onRequestGet = async ({ params, request, env }: { params: { app: st
     if (!raw || !SAFE_ID.test(raw)) return errorPage('Invalid app id.', 400);
     if (!env?.DB) return errorPage('Lineage service is temporarily unavailable.', 503);
 
-    // The path segment can be a friendly app id (dronehunter) OR a repository id
-    // (repo_...). Prefer the app mapping; if there's no app for it, fall back to
-    // treating the segment as a repository id directly, so /tree/repo_… also works
-    // (forge repos that aren't linked to an app_listing have app_id = NULL).
     const repoId = (await resolveRepositoryIdForApp(env.DB, raw)) || raw;
 
     const tree = await fetchLineageTree(env.DB, repoId);

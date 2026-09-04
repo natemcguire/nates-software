@@ -1,8 +1,3 @@
-/**
- * Nate's Software Suite — Terminal Gateway Frontend Client
- * Bi-directional WebSocket client for connecting to real ephemeral PTY gateways.
- */
-
 export interface TerminalCapabilities {
   gatewayVersion: string;
   provider: string;
@@ -60,16 +55,13 @@ export interface TerminalClientCallbacks {
 export function getDefaultGatewayUrl(): string {
   if (typeof window === 'undefined') return 'http://localhost:4000';
 
-  // Explicit environment override if configured in Vite
   const envUrl = (import.meta as any).env?.VITE_TERMINAL_GATEWAY_URL;
   if (envUrl && typeof envUrl === 'string') return envUrl;
 
-  // Local development default
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     return 'http://localhost:4000';
   }
 
-  // Production fallback relative path or host
   return `${window.location.protocol}//${window.location.host}`;
 }
 
@@ -183,7 +175,6 @@ export class TerminalClient {
       this.ws = new WebSocket(wsEndpoint, ['nsw-terminal-v1', `nsw-ticket.${ticketData.ticket}`]);
 
       this.ws.onopen = () => {
-        // Connected; waiting for session_ready frame
       };
 
       this.ws.onmessage = (event) => {
@@ -223,7 +214,6 @@ export class TerminalClient {
             return;
           }
         } catch {
-          // Plain text output fallback
           this.callbacks.onOutput?.(text);
         }
       };

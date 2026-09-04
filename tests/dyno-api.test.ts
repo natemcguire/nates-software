@@ -20,7 +20,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
     ctx = await createTestD1Database({ foreignKeys: true });
   });
 
-  // Helper to generate a valid completed run payload
   function generateValidRunPayload(overrideScore?: number) {
     const runId = `run_test_${Date.now()}`;
     const timestamp = new Date().toISOString();
@@ -238,7 +237,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
 
   describe('POST /api/dyno Ingestion & Deterministic Validation Contracts', () => {
     it('should reject unauthenticated submissions with 401 when no session exists', async () => {
-      // Clear test environment flag temporarily to test strict production auth check
       const origEnv = process.env.NODE_ENV;
       const origVitest = (process.env as any).VITEST;
       delete (process.env as any).NODE_ENV;
@@ -338,7 +336,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
     });
 
     it('should reject fabricated/tampered scores where overall_score does not match attempt evidence', async () => {
-      // Fabricate score of 995 when attempts evidence only achieves ~600 pts
       const payload = generateValidRunPayload(995);
 
       const req = new Request('http://localhost/api/dyno', {
@@ -377,7 +374,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       expect(postData.runId).toBe(payload.run.id);
       expect(postData.score).toBe(payload.expectedScore);
 
-      // Verify canonical tables in D1
       const runInDb = await ctx.d1.prepare('SELECT * FROM dyno_runs WHERE id = ?').bind(payload.run.id).first();
       expect(runInDb).not.toBeNull();
       expect((runInDb as any).overall_score).toBe(payload.expectedScore);
@@ -389,8 +385,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       const gradersInDb = await ctx.d1.prepare('SELECT * FROM dyno_grader_results WHERE task_attempt_id = ?').bind(payload.attempts[0].attempt.id).all();
       expect(gradersInDb.results?.length).toBeGreaterThan(0);
 
-      // Client-submitted evidence remains unverified and cannot self-promote
-      // onto the public leaderboard.
       const lbReq = new Request('http://localhost/api/dyno', { method: 'GET' });
       const lbRes = await dynoApi.onRequestGet({ request: lbReq, env: { DB: ctx.d1 } });
       const lbData = await lbRes.json();
@@ -403,7 +397,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       const publicDetailRes = await dynoApi.onRequestGet({ request: publicDetailReq, env: { DB: ctx.d1 } });
       expect(publicDetailRes.status).toBe(404);
 
-      // The authenticated owner can inspect the complete self-reported bundle.
       const detailReq = new Request(`http://localhost/api/dyno?runId=${payload.run.id}`, {
         headers: { Authorization: 'Bearer test_token_nate' }
       });
@@ -468,7 +461,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
     it('should keep badge unscored for self-reported runs', async () => {
       const payload = generateValidRunPayload();
 
-      // Submit run to populate D1
       const postReq = new Request('http://localhost/api/dyno', {
         method: 'POST',
         headers: {
@@ -481,7 +473,6 @@ describe('DYNO Canonical API & Ingestion Pipeline (/api/dyno)', () => {
       const postRes = await dynoApi.onRequestPost({ request: postReq, env: { DB: ctx.d1 } });
       expect(postRes.status).toBe(200);
 
-      // Query badge with .svg suffix and @ prefix
       const res1 = await badgeGet({ params: { user: 'nate.svg' }, env: { DB: ctx.d1 } });
       expect(res1.status).toBe(200);
       const svgText1 = await res1.text();

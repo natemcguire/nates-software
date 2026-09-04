@@ -148,7 +148,6 @@ function selectRefPolicy(policies, refName) {
 
   if (topTier.length === 1) return topTier[0];
 
-  // For EQUAL specificity, combine conservatively PER OPERATION (deny wins)
   const allowForcePush = topTier.every(p => Boolean(p.allowForcePush));
   const allowDelete = topTier.every(p => Boolean(p.allowDelete));
   const requireSignedCommits = topTier.some(p => Boolean(p.requireSignedCommits));
@@ -293,7 +292,6 @@ async function main() {
     });
   }
 
-  // Live policy re-check against control plane at pre-receive time (prevents TOCTOU)
   const endpoint = policy.controlPlaneUrl.replace(/\\/$/, '') + '/api/git';
   let response;
   try {
@@ -358,12 +356,7 @@ async function main() {
     return;
   }
 
-  // Note: The sub-second in-process window between the live policy check and
-  // receive-pack's ref write is a known, accepted limitation (policy mutation is
-  // a rare admin action; closing it requires policy-revision binding, deferred).
-  // This is deliberate scope, not an oversight.
 
-  // Double check the live policies locally for defense-in-depth
   const liveDefaultRef = normalizeRef(data.defaultRef);
   const liveRefPolicies = data.refPolicies;
 
@@ -516,10 +509,6 @@ main().catch(err => {
         fs.writeFileSync(policyFile, JSON.stringify(policyData), { mode: 0o600 });
       }
 
-      // Note: The sub-second in-process window between the live policy check and
-      // receive-pack's ref write is a known, accepted limitation (policy mutation is
-      // a rare admin action; closing it requires policy-revision binding, deferred).
-      // This is deliberate scope, not an oversight.
       const args = operation === 'write'
         ? ['-c', `core.hooksPath=${hookDir}`, 'receive-pack', resolved.resolvedPath]
         : ['upload-pack', resolved.resolvedPath];
@@ -532,9 +521,6 @@ main().catch(err => {
         }
       });
       channel.pipe(child.stdin);
-      // Keep the SSH channel open until the child exit status and any durable
-      // projection receipt have been recorded. A default pipe would end the
-      // channel before we can send SSH_MSG_CHANNEL_REQUEST(exit-status).
       child.stdout.pipe(channel, { end: false });
       child.stderr.pipe(channel.stderr);
       child.on('error', () => {
@@ -574,11 +560,7 @@ main().catch(err => {
     if (this.config.sshEnabled !== true) return;
     if (!this.config.sshHost?.trim()) throw new Error('GITSMITH_SSH_HOST is required when SSH transport is enabled.');
     const hostKey = this.ensureHostKey();
-    // ssh2 prepends the RFC 4253 `SSH-2.0-` protocol marker.
     this.server = new Server({ hostKeys: [hostKey], ident: 'GITSMITH' }, client => {
-      // Probes such as ssh-keyscan intentionally try several incompatible
-      // algorithm sets and reset rejected sockets. Those are per-connection
-      // failures, not process-level transport failures.
       client.on('error', () => {});
       client.on('authentication', (ctx: AuthContext) => {
         if (ctx.method !== 'publickey' || ctx.username !== 'git') return ctx.reject();
@@ -589,9 +571,6 @@ main().catch(err => {
           const parsedKey = utils.parseKey(`${keyType} ${keyBase64}`);
           if (parsedKey instanceof Error || Array.isArray(parsedKey)) return ctx.reject();
           if (ctx.signature && (!ctx.blob || parsedKey.verify(ctx.blob, ctx.signature, ctx.hashAlgo) !== true)) return ctx.reject();
-          // A signature-less request is the SSH public-key offer probe. ssh2
-          // turns accept() into PK_OK and invokes authentication again with a
-          // signature; only the signed request establishes an identity.
           if (ctx.signature) this.identities.set(client, identity);
           ctx.accept();
         }).catch(() => ctx.reject());

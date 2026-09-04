@@ -8,10 +8,6 @@ import {
 import { attemptFirstPartySSO } from '../src/lib/firstPartySSO';
 import { onRequestGet as ssoGet } from '../functions/api/sso';
 
-// The trust boundary is the ENTIRE point of task #38: login may persist across
-// first-party VIEW hosts, but the session token must never be reachable by
-// tenant app hosts (attacker-controlled bytes). These tests lock that boundary.
-
 const TENANT_HOSTS = [
   'dronehunter.nates-software.com',
   'certified-mailer.nates-software.com',
@@ -36,7 +32,6 @@ describe('First-party SSO trust boundary (#38)', () => {
     });
 
     it('rejects trailing-dot and case bypass attempts by normalizing first', () => {
-      // Absolute-FQDN trailing dot and uppercase are classic allowlist bypasses.
       expect(isFirstPartyHost('DRONEHUNTER.nates-software.com')).toBe(false);
       expect(isFirstPartyHost('dronehunter.nates-software.com.')).toBe(false);
       expect(isFirstPartyHost('GITSMITH.NATES-SOFTWARE.COM')).toBe(true);
@@ -58,7 +53,6 @@ describe('First-party SSO trust boundary (#38)', () => {
   describe('authorize refuses to mint a ticket for a tenant return_to', () => {
     const makeEnv = () => ({
       DB: {
-        // A valid apex session exists, so ONLY the return_to check can stop it.
         prepare: () => ({
           bind: () => ({
             first: async () => ({ user_id: 'usr_victim' }),
@@ -74,7 +68,6 @@ describe('First-party SSO trust boundary (#38)', () => {
         { headers: { Cookie: 'nsw_session=validtoken' } }
       );
       const res = await ssoGet({ request: req, env: makeEnv() });
-      // Must bounce home with forbidden_return, NOT redirect to the tenant host.
       expect(res.status).toBe(302);
       const loc = res.headers.get('Location') || '';
       expect(loc).not.toContain(tenant);
@@ -169,7 +162,6 @@ describe('First-party SSO trust boundary (#38)', () => {
       expect(first).toBe(true);
       expect(win.location.href).toContain('https://nates-software.com/api/sso?action=authorize&return_to=');
       expect(win.location.href).toContain('gitsmith.nates-software.com');
-      // Second call (same tab) is suppressed by the sessionStorage guard → no loop.
       win.location.href = 'https://gitsmith.nates-software.com/';
       const second = attemptFirstPartySSO({ win, host: 'gitsmith.nates-software.com' });
       expect(second).toBe(false);
@@ -179,9 +171,6 @@ describe('First-party SSO trust boundary (#38)', () => {
 
   describe('client and server allowlists stay in sync', () => {
     it('every client-inherit host is a server first-party host (minus the apex)', () => {
-      // The client inherit list must be a strict subset of the server list, and
-      // must exclude the broker. Reconstruct the client set from its module by
-      // exercising the trigger on each server host.
       const serverInheritable = [...FIRST_PARTY_SSO_HOSTS].filter(h => h !== SSO_BROKER_HOST);
       for (const h of serverInheritable) {
         const store: Record<string, string> = {};
@@ -192,8 +181,6 @@ describe('First-party SSO trust boundary (#38)', () => {
             setItem: (k: string, v: string) => { store[k] = v; },
           } as any,
         };
-        // www is in the server set but is an apex alias, not an inherit target —
-        // allow either behavior, but a tenant host must never inherit (covered above).
         const fired = attemptFirstPartySSO({ win, host: h });
         if (h !== 'www.nates-software.com') {
           expect(fired).toBe(true);

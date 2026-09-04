@@ -41,10 +41,6 @@ const renderSlopshop = (user: AuthUser | null = mockUser) => {
   );
 };
 
-// Source of the component, for assertions that need to see the full set of stage
-// handlers (fabricated-success strings can appear on branches that never render in
-// the initial SSR pass, e.g. inside async fetch callbacks — those still must not exist
-// unconditionally / without a real backend confirmation gating them).
 const componentSourcePath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   '../src/views/SlopshopView.tsx'
@@ -55,7 +51,6 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
   it('renders the 5-stage loop rail with correct names, subtitles, and back labels', () => {
     const html = renderSlopshop();
 
-    // 5 Stages
     expect(html).toContain('Fork');
     expect(html).toContain('Copy an app to your namespace');
     expect(html).toContain('via GITSMITH forge');
@@ -80,13 +75,11 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
   it('renders the 2-column work area: terminal on the left and RIG run panel on the right', () => {
     const html = renderSlopshop();
 
-    // Left Column: Terminal Panel
     expect(html).toContain('Terminal —');
     expect(html).toContain('(your fork)');
     expect(html).toContain('Nate&#x27;s Software Command Guide &amp; Emulator');
     expect(html).toContain('Local mode is a browser command emulator');
 
-    // Right Column: Run Panel (RIG folded in)
     expect(html).toContain('Run — your fork, live');
     expect(html).toContain('not running — do the Run step');
     expect(html).toContain('port');
@@ -118,11 +111,9 @@ describe('SlopshopView Approved One-Loop Dev Environment UX', () => {
   it('renders dynamic primary actions and 3-cell status bar', () => {
     const html = renderSlopshop();
 
-    // Initial Stage 0 (Fork) Actions
     expect(html).toContain('Fork nate/dronehunter');
     expect(html).toContain('Pick another app');
 
-    // Status bar cells
     expect(html).toContain('Step 1 of 5 · Fork');
     expect(html).toContain('Fork copies the app to your namespace. GITSMITH is the git backend.');
     expect(html).toContain('GITSMITH:');
@@ -142,12 +133,8 @@ describe('SlopshopView Honesty: no fabricated success anywhere', () => {
   it('does not print a canned "worktree ready" / fork success line before any fork has run', () => {
     const html = renderSlopshop();
 
-    // The old boot transcript unconditionally claimed a worktree was ready. Nothing has
-    // executed at mount time, so no such success claim may render.
     expect(html).not.toContain('worktree ready at');
     expect(html).not.toContain('✓ forked');
-    // The seeded terminal transcript must be clearly labeled as an inert example, not a
-    // record of something that already happened.
     expect(html).toContain('nothing has run yet');
   });
 
@@ -161,15 +148,9 @@ describe('SlopshopView Honesty: no fabricated success anywhere', () => {
   it('the Help claim about fabrication accurately describes which stages are real vs honest-status-only', () => {
     const html = renderSlopshop();
 
-    // Must NOT repeat the old blanket, unverifiable claim anywhere, including inside
-    // the (unrendered until clicked) Help alert text baked into the component source.
     expect(html).not.toContain('Zero fabricated commits, test proofs, or fake runs.');
     expect(componentSource).not.toContain('Zero fabricated commits, test proofs, or fake runs.');
 
-    // The Help alert text is only materialized on click (via showAlert), so it never
-    // appears in the static SSR markup. Assert its content directly from source: it
-    // must describe reality — Fork and Run hit real backends; Slop/Push/Publish are
-    // honest status/command panels, not executors.
     const helpTextMatch = componentSource.match(/showAlert\(\s*"SLOPSHOP is the one-loop[\s\S]*?"\s*,\s*'SLOPSHOP Help'/);
     expect(helpTextMatch, 'Help alert text should be present in source').toBeTruthy();
     const helpText = helpTextMatch![0];
@@ -187,15 +168,11 @@ describe('SlopshopView Honesty: no fabricated success anywhere', () => {
     expect(forkStageMatch, 'Fork stage block should be present').toBeTruthy();
     const forkBlock = forkStageMatch![0];
 
-    // The real backend call must exist.
     expect(forkBlock).toContain("fetch('/api/git'");
     expect(forkBlock).toContain("action: 'fork'");
 
-    // Success text must be gated behind an actual confirmed response.
     expect(forkBlock).toContain('res.ok && data?.success');
 
-    // There must be no fallback branch (catch / else / failure path) that also prints a
-    // "✓ forked" / "✓ configured" success line — that was the original fabrication bug.
     const successLineCount = (forkBlock.match(/✓ forked|✓ configured/g) || []).length;
     expect(successLineCount).toBe(1);
   });
@@ -210,7 +187,6 @@ describe('SlopshopView Honesty: no fabricated success anywhere', () => {
     expect(runBlock).toContain('createRigInstance');
     expect(runBlock).toContain("lifecycle === 'healthy'");
 
-    // No unconditional setTimeout-based fake success independent of the gateway result.
     expect(runBlock).not.toContain("setRunState('healthy');\n          setRunPort('3004');");
   });
 
@@ -259,9 +235,6 @@ describe('SlopshopView Honesty: no fabricated success anywhere', () => {
 
 describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops publish (E1b)', () => {
   it('renders a royalty-percent input inside the price modal, in addition to the price input', () => {
-    // The modal itself only mounts its JSX when modalType === 'price', which is not the
-    // initial state (curStage 0 = Fork), so assert against source (same technique the
-    // Honesty block above uses for click-gated branches like the Help alert text).
     const priceModalMatch = componentSource.match(
       /\{modalType === 'price' &&[\s\S]*?\n {6}\)\}/
     );
@@ -275,8 +248,6 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
   });
 
   it('source: royalty percent is converted to clamped integer basis points before publishing', () => {
-    // Blank -> 0 (Number('') is 0, but must not be NaN if a stray non-numeric value slips
-    // through), and the pct->bps conversion must round and clamp to [0, 10000].
     const derivationMatch = componentSource.match(
       /const pct = Number\(publishRoyaltyPct\);\s*\n\s*const royaltyBps = [^\n]+/
     );
@@ -290,15 +261,10 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
   });
 
   it('source: Save/Publish wires a real authenticated POST to /api/drops with royaltyBps and the required publish fields', () => {
-    // Must be a genuine same-origin fetch, not a fake success — mirrors the pattern used
-    // by SetupWizardView's real /api/auth POST.
     expect(componentSource).toMatch(/fetch\(\s*['"]\/api\/drops['"]/);
     expect(componentSource).toMatch(/method:\s*['"]POST['"]/);
     expect(componentSource).toContain("credentials: 'same-origin'");
 
-    // The body sent to /api/drops must be a real, valid publish payload: it needs at
-    // least id/name/version/price (drops.ts requires name + semver version, and
-    // parseAndValidatePrice needs a price) plus royaltyBps (E1a's new field).
     const drropsCallMatch = componentSource.match(/fetch\(\s*['"]\/api\/drops['"][\s\S]*?\}\)\s*;/);
     expect(drropsCallMatch, '/api/drops fetch call should be present').toBeTruthy();
     const dropsCall = drropsCallMatch![0];
@@ -317,18 +283,12 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
 
     expect(publishHandlerRegion).toMatch(/fetch\(\s*['"]\/api\/drops['"]/);
 
-    // Success path must be gated on the response actually being ok AND the server
-    // confirming success — checked as a guard clause that throws/bails before the
-    // success showAlert can ever run on a bad response.
     expect(publishHandlerRegion).toMatch(/!res\.ok/);
     expect(publishHandlerRegion).toMatch(/data\?\.success/);
     expect(publishHandlerRegion).toMatch(/showAlert\(/);
 
-    // On failure it must show the REAL error, never claim success regardless of outcome.
     expect(publishHandlerRegion).toMatch(/data\?\.error|data\.error/);
 
-    // The success showAlert call must textually appear AFTER the ok/success guard
-    // clause in source order — i.e. it is unreachable unless the guard passed.
     const guardIdx = publishHandlerRegion.indexOf('!res.ok');
     const successAlertIdx = publishHandlerRegion.indexOf("'Published'");
     expect(guardIdx).toBeGreaterThan(-1);
@@ -336,9 +296,6 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
   });
 
   it('source: publish handler never claims success unconditionally right after the fetch call (no fabricated success)', () => {
-    // Guard against the old style of pattern where a success alert/line fires
-    // regardless of response status. The line immediately following the /api/drops
-    // fetch call must not be an unconditional success claim.
     const idx = componentSource.indexOf("fetch('/api/drops'");
     const idx2 = idx === -1 ? componentSource.indexOf('fetch(\"/api/drops\"') : idx;
     expect(idx2, '/api/drops fetch call should exist in source').toBeGreaterThan(-1);
@@ -351,11 +308,8 @@ describe('SlopshopView Set-Listing-Price modal: royalty input + real /api/drops 
     expect(priceModalMatch, 'price modal JSX block should be present').toBeTruthy();
     const priceModalBlock = priceModalMatch![0];
 
-    // Platform 10% computed from the live price input.
     expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.1\b/);
-    // Seller remainder computed as 90% of price (before any upstream liens).
     expect(priceModalBlock).toMatch(/publishPrice\)\s*\|\|\s*0\)\s*\*\s*0\.9\b/);
-    // The maker's own chosen royalty rate is echoed back as what THEY will earn.
     expect(priceModalBlock).toMatch(/publishRoyaltyPct/);
 
     expect(priceModalBlock).not.toMatch(/\*\s*0\.7\b/);

@@ -75,7 +75,7 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       const mockDb = {
         prepare: (_query: string) => ({
           bind: (..._args: any[]) => ({
-            first: async () => null, // no collision
+            first: async () => null,
             run: async () => ({ success: true })
           })
         })
@@ -317,7 +317,7 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
 
       const res = await authApi.onRequestPost({
         request: req,
-        env: { DB: ctx.d1 } // no OWNER_BOOTSTRAP_TOKEN
+        env: { DB: ctx.d1 }
       });
       expect(res.status).toBe(403);
       const data = await res.json();
@@ -377,14 +377,13 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
     });
 
     it('should successfully claim credentials for seeded nate account, clear fake ssh key, hash with PBKDF2, and allow normal login', async () => {
-      // 1. Check initial state of seeded nate user in D1
+
       const initialUser: any = await ctx.d1.prepare('SELECT * FROM users WHERE username = ?').bind('nate').first();
       expect(initialUser).not.toBeNull();
       expect(initialUser.password_hash).toBe('seeded_super_admin');
       expect(initialUser.ssh_public_key).toContain('ssh-ed25519');
       expect(initialUser.role).toBe('super_admin');
 
-      // 2. Claim credentials with valid bootstrap token
       const claimPassword = 'NatesOwnerRealPassword2026!';
       const claimReq = new Request('http://localhost/api/auth?action=claim-credentials', {
         method: 'POST',
@@ -411,23 +410,19 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(claimData.token).toBeTruthy();
       expect(claimRes.headers.get('Set-Cookie')).toContain('nsw_session=');
 
-      // 3. Verify user in D1 was updated: real PBKDF2 hash, new salt, ssh_public_key cleared to NULL
       const updatedUser: any = await ctx.d1.prepare('SELECT * FROM users WHERE username = ?').bind('nate').first();
       expect(updatedUser.password_hash).not.toBe('seeded_super_admin');
-      expect(updatedUser.password_hash.length).toBe(64); // 256-bit hex
+      expect(updatedUser.password_hash.length).toBe(64);
       expect(updatedUser.salt).not.toBe('salt_nate');
       expect(updatedUser.ssh_public_key).toBeNull();
 
-      // Verify that the stored hash matches PBKDF2 with the new salt
       const expectedHash = await authApi.hashPassword(claimPassword, updatedUser.salt);
       expect(updatedUser.password_hash).toBe(expectedHash);
 
-      // Verify session was inserted into user_sessions
       const sessionInDb: any = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE user_id = ?').bind(updatedUser.id).first();
       expect(sessionInDb).not.toBeNull();
       expect(sessionInDb.token_hash).toBe(await hashSessionToken(claimData.token));
 
-      // 4. Verify idempotency/safety: second claim attempt must be REFUSED
       const secondClaimReq = new Request('http://localhost/api/auth?action=claim-credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -447,7 +442,6 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(secondClaimData.success).toBe(false);
       expect(secondClaimData.error).toContain('already been claimed');
 
-      // 5. Verify normal login now succeeds with the claimed password
       const loginReq = new Request('http://localhost/api/auth?action=login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -466,7 +460,6 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(loginData.user.role).toBe('super_admin');
       expect(loginData.user.isSuperAdmin).toBe(true);
 
-      // 6. Verify login fails with incorrect password
       const badLoginReq = new Request('http://localhost/api/auth?action=login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -527,7 +520,7 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
     });
 
     it('should reject cookie-authenticated create-cli-token requests if cross-origin (CSRF protection)', async () => {
-      // First create a session
+
       const rawToken = authApi.generateSessionToken();
       const tokenHash = await hashSessionToken(rawToken);
       await ctx.d1.prepare(`
@@ -552,7 +545,7 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
     });
 
     it('should mint a 90-day CLI token for authenticated user and validate round-trip with GET /api/auth', async () => {
-      // 1. Seed an active session for @nate
+
       const rawWebToken = authApi.generateSessionToken();
       const webTokenHash = await hashSessionToken(rawWebToken);
       await ctx.d1.prepare(`
@@ -560,7 +553,6 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
         VALUES (?, 'usr_nate', ?)
       `).bind(webTokenHash, Date.now() + 3600 * 1000).run();
 
-      // 2. Request CLI token with valid same-origin web session
       const mintReq = new Request('http://localhost/api/auth?action=create-cli-token', {
         method: 'POST',
         headers: {
@@ -581,11 +573,9 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(mintData.user.username).toBe('nate');
       expect(mintData.user.id).toBe('usr_nate');
 
-      // Verify long expiry (~90 days)
       const expectedMinExpiry = Date.now() + 89 * 24 * 3600 * 1000;
       expect(mintData.expiresAt).toBeGreaterThan(expectedMinExpiry);
 
-      // 3. Verify the CLI token is stored in D1 as a hash, never plaintext
       const cliTokenHash = await hashSessionToken(mintData.token);
       const storedSession: any = await ctx.d1.prepare(`
         SELECT * FROM user_sessions WHERE token_hash = ?
@@ -593,7 +583,6 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       expect(storedSession).not.toBeNull();
       expect(storedSession.user_id).toBe('usr_nate');
 
-      // 4. Validate CLI token with GET /api/auth using Bearer header
       const validateReq = new Request('http://localhost/api/auth', {
         method: 'GET',
         headers: {
@@ -614,14 +603,13 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
     });
 
     it('should revoke minted CLI token when logout is called with that token', async () => {
-      // 1. Seed user and session
+
       const rawWebToken = authApi.generateSessionToken();
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
         VALUES (?, 'usr_nate', ?)
       `).bind(await hashSessionToken(rawWebToken), Date.now() + 3600 * 1000).run();
 
-      // 2. Mint CLI token
       const mintReq = new Request('http://localhost/api/auth?action=create-cli-token', {
         method: 'POST',
         headers: {
@@ -633,7 +621,6 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       const mintData = await mintRes.json();
       const cliToken = mintData.token;
 
-      // 3. Logout with CLI token
       const logoutReq = new Request('http://localhost/api/auth?action=logout', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${cliToken}` }
@@ -641,7 +628,6 @@ describe('Real Production Authentication & Security API Tests (/api/auth)', () =
       const logoutRes = await authApi.onRequestPost({ request: logoutReq, env: { DB: ctx.d1 } });
       expect((await logoutRes.json()).success).toBe(true);
 
-      // 4. Validate GET /api/auth returns authenticated: false
       const validateReq = new Request('http://localhost/api/auth', {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${cliToken}` }

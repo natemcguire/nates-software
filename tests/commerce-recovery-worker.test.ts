@@ -1,8 +1,3 @@
-// Tests for the recovery-execution worker (src/lib/commerce/recoveryWorker.ts),
-// which consumes commerce_recovery_obligations opened by refundProcessor.ts /
-// disputeProcessor.ts and reverses already-completed Stripe transfers. Mirrors
-// the test shape of tests/commerce-transfer-worker.test.ts.
-
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import {

@@ -1,8 +1,3 @@
-// POST /api/payments/webhook
-// Durable Stripe Webhook Ingestion Endpoint (P2 Architecture)
-// Verifies Stripe v1 HMAC signatures, persists raw verified events to stripe_event_inbox,
-// schedules background processing via context.waitUntil, and returns HTTP 202 Accepted.
-
 import {
   hashPayload,
   recordInboxEvent,
@@ -11,13 +6,11 @@ import {
   InboxCollisionError
 } from '../../../src/lib/commerce';
 
-// Re-export processor for direct unit & integration testing
 export { processStripeInboxEvent };
 
 export const onRequestPost = async (context: { request: Request; env: any; waitUntil?: (p: Promise<any>) => void }) => {
   const { request, env, waitUntil } = context;
 
-  // 1. Mandatory fail-closed guard: payments disabled in production until durable commerce is fully commissioned
   if (env?.PAYMENTS_ENABLED !== 'true') {
     return Response.json(
       { success: false, error: 'Payment settlement is not enabled.' },
@@ -25,7 +18,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 2. Stripe webhook secret is mandatory in all environments (including tests)
   const webhookSecret = env?.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret || typeof webhookSecret !== 'string' || !webhookSecret.trim()) {
     return Response.json(
@@ -34,7 +26,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 3. Reject missing or empty signature header
   const sigHeader = request.headers.get('stripe-signature');
   if (!sigHeader || !sigHeader.trim()) {
     return Response.json(
@@ -43,7 +34,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 4. Verify raw-body Stripe v1 HMAC with constant-time comparison and 5-minute tolerance
   const rawBody = await request.text();
   if (new TextEncoder().encode(rawBody).byteLength > 1_048_576) {
     return Response.json(
@@ -59,7 +49,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 5. Parse and validate JSON payload schema
   let event: any;
   try {
     event = JSON.parse(rawBody);
@@ -84,7 +73,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 6. Idempotently persist verified event into stripe_event_inbox
   const payloadSha256 = await hashPayload(rawBody);
   const eventId = String(event.id).trim();
   const eventType = String(event.type).trim();
@@ -121,7 +109,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 7. Schedule background processor asynchronously; never claim settled synchronously
   if (typeof waitUntil === 'function') {
     waitUntil(
       processStripeInboxEvent(env.DB, env, eventId).catch((procErr: any) => {
@@ -130,7 +117,6 @@ export const onRequestPost = async (context: { request: Request; env: any; waitU
     );
   }
 
-  // 8. Return HTTP 202 Accepted
   return Response.json(
     {
       success: true,

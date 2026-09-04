@@ -15,13 +15,8 @@ export const TerminalView: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const gateway = useTerminalGateway();
 
-  // Mode: 'gateway' (real PTY) or 'local' (browser command emulator)
   const [activeMode, setActiveMode] = useState<'gateway' | 'local'>('gateway');
 
-  // Follow-up Note (Low Priority, TERMINAL #3):
-  // Shell history persistence across browser sessions/reloads is deferred to a future iteration.
-
-  // Browser Command Guide & Emulator State (Canned Responses)
   const [history, setHistory] = useState<TerminalLine[]>([
     { text: "Nate's Software Command Guide & Emulator v2.5.0", type: 'system' },
     { text: "Local mode is a browser command emulator with canned responses. It has no filesystem or process execution.", type: 'system' },
@@ -35,7 +30,6 @@ export const TerminalView: React.FC = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const xtermHostRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll local history
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history]);
@@ -83,7 +77,6 @@ export const TerminalView: React.FC = () => {
     };
   }, [gateway.isConnected, gateway.sessionInfo?.sessionId]);
 
-  // Handle Local Console Input
   const handleLocalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       executeLocalCommand(localInputVal.trim());
@@ -116,7 +109,6 @@ export const TerminalView: React.FC = () => {
     const parts = cmd.split(' ');
     const root = parts[0]?.toLowerCase();
 
-    // 1. SLOP CLI Direct Command Bridge
     if (root === 'slop') {
       const slopArgs = parts.slice(1);
       if (slopArgs[0]?.toLowerCase() === 'fork') {
@@ -148,7 +140,6 @@ export const TerminalView: React.FC = () => {
       return;
     }
 
-    // 2. Builtin DOS/UNIX Commands
     switch (root) {
       case 'help':
         newLines.push(
@@ -365,7 +356,6 @@ export const TerminalView: React.FC = () => {
       );
     }
 
-    // Checking / Probing state or initial unprobed state
     return (
       <div className="bg-zinc-900/90 border border-zinc-700 text-zinc-300 p-2 mb-2 rounded text-[11px] flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -389,7 +379,6 @@ export const TerminalView: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-black text-green-400 font-mono text-xs p-3 overflow-hidden select-text">
-      {/* Top terminal badge & controls */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-green-900/60 text-[11px] text-green-600 select-none">
         <div className="flex items-center gap-1.5">
           <TerminalIcon size={13} className="text-green-500" />
@@ -401,7 +390,6 @@ export const TerminalView: React.FC = () => {
         <div className="flex items-center gap-2">
           {isolationBadge()}
 
-          {/* Mode Switcher */}
           <button
             onClick={() => {
               playClickSound();
@@ -418,10 +406,8 @@ export const TerminalView: React.FC = () => {
         </div>
       </div>
 
-      {/* Gateway Offline / Readiness Banner before session open */}
       {renderGatewayStatusBanner()}
 
-      {/* Ephemeral Workspace Session Header if Connected */}
       {activeMode === 'gateway' && gateway.isConnected && gateway.sessionInfo && (
         <div className="bg-green-950/40 border border-green-900/80 text-green-300 p-1.5 mb-2 rounded text-[10px] flex flex-wrap items-center justify-between">
           <div>
@@ -438,11 +424,9 @@ export const TerminalView: React.FC = () => {
         </div>
       )}
 
-      {/* Terminal View Body */}
       {activeMode === 'gateway' && gateway.isConnected ? (
         <div ref={xtermHostRef} className="flex-1 min-h-0 overflow-hidden bg-black" aria-label="Interactive ephemeral Linux terminal" />
       ) : (
-        /* Fallback Local Command Console */
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 font-mono">
             {history.map((line, idx) => (
@@ -468,7 +452,6 @@ export const TerminalView: React.FC = () => {
             <div ref={bottomRef} />
           </div>
 
-          {/* Local Input Prompt */}
           <div className="flex items-center gap-2 pt-2 border-t border-green-900/60 mt-1">
             <span className="text-green-500 font-bold shrink-0">$</span>
             <input

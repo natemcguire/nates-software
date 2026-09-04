@@ -22,9 +22,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     ctx = await createTestD1Database({ foreignKeys: true });
   });
 
-  // ==========================================================================
-  // 1. AUTHENTICATION API CONTRACTS (/api/auth)
-  // ==========================================================================
   describe('1. Authentication API Error & Persistence Contracts (/api/auth)', () => {
     it('should reject registration with 400 when username or password are missing', async () => {
       const req = new Request('http://localhost/api/auth?action=register', {
@@ -71,7 +68,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
 
     it('should enforce unique usernames in D1 and return 409 conflict on duplicate registration', async () => {
-      // 'nate' is already seeded in D1 users table
+
       const req = new Request('http://localhost/api/auth?action=register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,13 +102,11 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data.authenticated).toBe(true);
       expect(data.token).toBeTruthy();
 
-      // Verify row exists in real D1 users table
       const userInDb = await ctx.d1.prepare('SELECT * FROM users WHERE username = ?').bind('alice_maker').first();
       expect(userInDb).not.toBeNull();
       expect((userInDb as any)?.display_name).toBe('Alice Maker');
       expect((userInDb as any)?.password_hash).toBeTruthy();
 
-      // Verify session exists in real D1 user_sessions table
       const sessionInDb = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token_hash = ?').bind(await hashSessionToken(data.token)).first();
       expect(sessionInDb).not.toBeNull();
       expect((sessionInDb as any)?.user_id).toBe((userInDb as any)?.id);
@@ -130,7 +125,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data1.success).toBe(false);
       expect(data1.error).toBe('Invalid username or password');
 
-      // Register real user first, then login with bad password
       const regReq = new Request('http://localhost/api/auth?action=register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -160,7 +154,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
 
     it('should verify authenticated session token against real D1 user_sessions', async () => {
-      // Register carol
+
       const regReq = new Request('http://localhost/api/auth?action=register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -169,7 +163,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const regRes = await authApi.onRequestPost({ request: regReq, env: { DB: ctx.d1 } });
       const regData = await regRes.json();
 
-      // Verify token
       const meReq = new Request('http://localhost/api/auth?action=me', {
         method: 'GET',
         headers: { Authorization: `Bearer ${regData.token}` }
@@ -183,7 +176,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
 
     it('should purge session from D1 upon logout', async () => {
-      // Register user
+
       const regReq = new Request('http://localhost/api/auth?action=register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -192,12 +185,10 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const regRes = await authApi.onRequestPost({ request: regReq, env: { DB: ctx.d1 } });
       const regData = await regRes.json();
 
-      // Verify session exists
       const tokenHash = await hashSessionToken(regData.token);
       const sessionBefore = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token_hash = ?').bind(tokenHash).first();
       expect(sessionBefore).not.toBeNull();
 
-      // Logout
       const logoutReq = new Request('http://localhost/api/auth?action=logout', {
         method: 'POST',
         headers: { Authorization: `Bearer ${regData.token}` }
@@ -206,15 +197,11 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const logoutData = await logoutRes.json();
       expect(logoutData.success).toBe(true);
 
-      // Verify session purged from D1
       const sessionAfter = await ctx.d1.prepare('SELECT * FROM user_sessions WHERE token_hash = ?').bind(tokenHash).first();
       expect(sessionAfter).toBeNull();
     });
   });
 
-  // ==========================================================================
-  // 2. UPVOTE API CONTRACTS & IDEMPOTENCY (/api/upvote)
-  // ==========================================================================
   describe('2. Upvoting API Failure & Idempotency Contracts (/api/upvote)', () => {
     it('should reject upvote with 400 when appId is missing', async () => {
       const req = new Request('http://localhost/api/upvote', {
@@ -264,11 +251,9 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data1.alreadyVoted).toBe(false);
       expect(data1.upvotes).toBe(startCount + 1);
 
-      // Verify D1 table was updated
       const updatedApp = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('dronehunter').first();
       expect((updatedApp as any).upvotes).toBe(startCount + 1);
 
-      // Second vote from the same authenticated account -> idempotent no-op
       const req2 = new Request('http://localhost/api/upvote', {
         method: 'POST',
         headers: {
@@ -285,21 +270,17 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data2.alreadyVoted).toBe(true);
       expect(data2.upvotes).toBe(startCount + 1);
 
-      // Verify count in D1 was NOT incremented again
       const finalApp = await ctx.d1.prepare('SELECT upvotes FROM app_listings WHERE id = ?').bind('dronehunter').first();
       expect((finalApp as any).upvotes).toBe(startCount + 1);
     });
   });
 
-  // ==========================================================================
-  // 3. GIT FORGE & CAS MERGE CONTRACTS (/api/git)
-  // ==========================================================================
   describe('3. GITSMITH control-plane boundary contracts (/api/git)', () => {
     it('should reject unsupported control-plane actions', async () => {
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
-        body: JSON.stringify({ appId: 'dronehunter' }) // missing ref and newSha
+        body: JSON.stringify({ appId: 'dronehunter' })
       });
 
       const res = await gitApi.onRequestPost({ request: req, env: { DB: ctx.d1 } });
@@ -316,7 +297,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
         body: JSON.stringify({
           action: 'ref-update',
           repositoryId: 'dronehunter',
-          ref: 'heads/main', // missing refs/ prefix
+          ref: 'heads/main',
           newSha: '1111111111111111111111111111111111111111'
         })
       });
@@ -367,7 +348,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
 
     it('should not treat a stale D1 projection as authoritative CAS state', async () => {
-      // Seeded SHA for dronehunter refs/heads/main is '5c030af'
+
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
@@ -375,7 +356,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
           action: 'cas',
           repositoryId: 'dronehunter',
           ref: 'refs/heads/main',
-          expectedOldSha: '0000000000000000000000000000000000000000', // Mismatch! Real remote is 5c030af
+          expectedOldSha: '0000000000000000000000000000000000000000',
           newSha: '3333333333333333333333333333333333333333'
         })
       });
@@ -397,7 +378,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
           action: 'cas',
           repositoryId: 'dronehunter',
           ref: 'refs/heads/main',
-          expectedOldSha: '5c030af', // matches seeded remote HEAD
+          expectedOldSha: '5c030af',
           newSha,
           committer: 'nate'
         })
@@ -408,11 +389,9 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const data = await res.json();
       expect(data.success).toBe(false);
 
-      // Verify D1 ref table was updated
       const refInDb = await ctx.d1.prepare('SELECT sha FROM git_refs WHERE repo_id = ? AND ref = ?').bind('dronehunter', 'refs/heads/main').first();
       expect((refInDb as any).sha).toBe('5c030af');
 
-      // Verify D1 commit table has new commit row
       const commitInDb = await ctx.d1.prepare('SELECT * FROM git_commits WHERE sha = ?').bind(newSha).first();
       expect(commitInDb).toBeNull();
     });
@@ -430,9 +409,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
   });
 
-  // ==========================================================================
-  // 4. SHELF & LICENSE PERSISTENCE CONTRACTS (/api/shelf)
-  // ==========================================================================
   describe('4. Shelf & License API Failure & Persistence Contracts (/api/shelf)', () => {
     it('should ignore legacy seeded shelf items because commerce licenses are canonical', async () => {
       const req = new Request('http://localhost/api/shelf', {
@@ -473,14 +449,9 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
   });
 
-  // ==========================================================================
-  // 5. COMMENTS ENGINE CONTRACTS (/api/comments)
-  // ==========================================================================
   describe('5. Comments Engine Error & Query Contracts (/api/comments)', () => {
     it('should query comments from D1 filtered by appId with user join', async () => {
-      // Migration 0036's honesty pass deletes the fabricated 0001-seeded
-      // testimonial comments (c101-c103), so this test seeds its own real
-      // comments to exercise the appId filter + user join.
+
       await ctx.d1.prepare(`
         INSERT INTO comments (id, app_id, user_id, text, upvotes)
         VALUES ('c_test_1', 'dronehunter', 'usr_josh', 'The phosphor radar sweep is incredible.', 3)
@@ -536,16 +507,12 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       const data = await res.json();
       expect(data.success).toBe(true);
 
-      // Verify row in D1
       const commentInDb = await ctx.d1.prepare('SELECT * FROM comments WHERE id = ?').bind(data.commentId).first();
       expect(commentInDb).not.toBeNull();
       expect((commentInDb as any).text).toBe('Incredible phosphor radar sweep animation!');
     });
   });
 
-  // ==========================================================================
-  // 6. INBOX & PROFILE CONTRACTS (/api/inbox, /api/profile)
-  // ==========================================================================
   describe('6. Inbox & Profile Error & Persistence Contracts', () => {
     it('should query public maker profile from D1, returning 404 for non-existent user', async () => {
       const reqValid = new Request('http://localhost/api/profile?username=nate', { method: 'GET' });
@@ -555,7 +522,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(dataValid.success).toBe(true);
       expect(dataValid.user.username).toBe('nate');
       expect(dataValid.publishedApps).toBeDefined();
-      // Shelf is private and not exposed on public profile
+
       expect(dataValid.shelf).toBeUndefined();
 
       const reqInvalid = new Request('http://localhost/api/profile?username=nonexistent_ghost', { method: 'GET' });
@@ -585,7 +552,7 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
 
     it('should refuse to impersonate a Git merge by flipping an inbox row', async () => {
-      // Seed an inbox message for usr_nate
+
       const msgId = 'inbox_msg_test_1';
       await ctx.d1.prepare(`
         INSERT INTO inbox_messages (id, user_id, title, preview, content, feature_ref, unread, is_merged)
@@ -610,9 +577,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
   });
 
-  // ==========================================================================
-  // 7. DROPS & DYNO CONTRACTS (/api/drops, /api/dyno)
-  // ==========================================================================
   describe('7. Hotwire Drops & Dyno Benchmarking Persistence Contracts', () => {
     it('should reject drop publishing with 400 for domain validation errors (e.g. empty name)', async () => {
       const req = new Request('http://localhost/api/drops', {
@@ -679,9 +643,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
   });
 
-  // ==========================================================================
-  // 8. PAYMENT COMMISSIONING BOUNDARY
-  // ==========================================================================
   describe('8. Payment Commissioning Boundary', () => {
     it('should reject create-intent with 400 when appId is missing', async () => {
       const req = new Request('http://localhost/api/payments/create-intent', {
@@ -768,28 +729,8 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
     });
   });
 
-  // ==========================================================================
-  // 9. GENUINE GAPS PROVEN & DOCUMENTED (CONTRACT TESTS)
-  // ==========================================================================
   describe('9. Genuine Gaps Proven & Documented (Error Swallowing & Simulated Success)', () => {
-    /**
-     * PROVEN GAP 1: Production Webhook SQL Column Mismatch & Swallowed Batch Failure
-     *
-     * In `functions/api/payments/webhook.ts` lines 236-239:
-     * The SQL statement:
-     *   INSERT INTO transfers_ledger (id, order_id, destination_user_id, destination_stripe_account, amount_cents, role, stripe_transfer_id)
-     *   VALUES (?, ?, ?, ?, 'maker', ?)
-     * defines 7 column names but supplies only 6 value placeholders (amount_cents was omitted in VALUES clause).
-     *
-     * SQLite rejects this query with error: `6 values for 7 columns`.
-     * Because lines 273-275 wrap the D1 batch in:
-     *   catch (err: any) { console.error('[D1 WEBHOOK SETTLEMENT FAILED]', err.message); }
-     * and continues to line 278:
-     *   return Response.json({ success: true, settled: true, ... });
-     *
-     * The API reports simulated success to webhook callers, but D1 rolls back the entire batch!
-     * As a result, orders remain 'pending', 0 licenses are minted, and 0 shelf items are added.
-     */
+
     it('prevents the known webhook settlement failure path while payments are disabled', async () => {
       const buyerId = 'usr_nate';
       const piId = 'pi_gap_prove_1';
@@ -822,23 +763,18 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(res.status).toBe(503);
       expect(data.success).toBe(false);
 
-      // PROOF OF GAP: D1 database batch failed and rolled back!
-      // Order status was NEVER updated to 'completed'
       const order = await ctx.d1.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first();
-      expect((order as any).status).toBe('pending'); // Should be 'completed' if settlement succeeded
+      expect((order as any).status).toBe('pending');
 
-      // No license was minted
       const licenses = await ctx.d1.prepare('SELECT * FROM licenses WHERE order_id = ?').bind(orderId).all();
       expect(licenses.results?.length).toBe(0);
 
-      // No transfer ledger entry was persisted
       const transfers = await ctx.d1.prepare('SELECT * FROM transfers_ledger WHERE order_id = ?').bind(orderId).all();
       expect(transfers.results?.length).toBe(0);
     });
 
     it.skip('CONTRACT GAP: Webhook API should execute valid D1 batch settlement and return honest 500 when batch fails', async () => {
-      // Documenting expected contract behavior:
-      // When database transaction fails, API should NOT return { success: true, settled: true }
+
       const req = new Request('http://localhost/api/payments/webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -896,15 +832,6 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(data.success).toBe(false);
     });
 
-    /**
-     * PROVEN GAP 3: Git Forge CAS App-Listing Auto-Provisioning Foreign Key Violation
-     *
-     * In `functions/api/git.ts` lines 314-326:
-     * When pushing to a new repoId that doesn't have an `app_listings` entry, it attempts:
-     * `INSERT INTO app_listings (...) VALUES (?, ..., 'usr_' || committer)`.
-     * If the committer user does not exist in `users`, the insert fails foreign key constraint,
-     * but is caught in `try { ... } catch {}`.
-     */
     it('proves that the control plane no longer auto-provisions listings from caller-controlled committers', async () => {
       const unknownAppId = 'app_auto_prov_test';
       const unknownCommitter = 'ghostcommitter_123';
@@ -928,13 +855,12 @@ describe('API Failure Behavior, Unswallowed Errors & Persistence Contracts', () 
       expect(res.status).toBe(501);
       expect(data.success).toBe(false);
 
-      // PROOF: App listing was NOT provisioned because creator_id 'usr_ghostcommitter_123' does not exist in users table
       const appInDb = await ctx.d1.prepare('SELECT * FROM app_listings WHERE id = ?').bind(unknownAppId).first();
       expect(appInDb).toBeNull();
     });
 
     it.skip('CONTRACT GAP: Git Forge should require valid registered user for app auto-provisioning', async () => {
-      // Documenting expected contract behavior:
+
       const req = new Request('http://localhost/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

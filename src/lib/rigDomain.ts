@@ -1,15 +1,3 @@
-/**
- * RIG.EXE Domain Logic — Runtime-Agnostic Immutable Specifications & Explicit Observed State
- *
- * Invariants:
- * 1. Runtime-agnostic immutable specs (RigSpec) separate from explicit observed state (RigObservedState).
- * 2. Strict 9-state lifecycle: queued, building, starting, healthy, degraded, crashed, oom, expired, stopped.
- * 3. Runtime freedom: process, docker, wasm, custom, simulation adapters with build/start/health commands.
- * 4. Storage freedom: generic storage mounts (none, volume, sqlite, directory, ephemeral, block) with persistence policy.
- * 5. Resource limits (memory cap, CPU) and TTL/expiry tracking.
- * 6. Explicit truth/source marker ('demo' vs 'provider') with zero fabricated claims.
- */
-
 export type RigLifecycleState =
   | 'queued'
   | 'building'
@@ -168,7 +156,6 @@ export interface RigInstance {
   readonly observed: RigObservedState;
 }
 
-// Backwards-compatibility interface for existing consumers
 export interface RigContainer {
   readonly id: string;
   readonly appId: string;
@@ -184,11 +171,6 @@ export interface RigContainer {
   readonly portalUrl?: string;
 }
 
-// (A fabricated INITIAL_FLEET demo fixture — fake sam/retro-calc, nate/sailtrack with
-// byte-exact sqlite sizes — used to live here with zero importers. Removed pre-launch;
-// the RIG fleet is sourced from live state, not a hardcoded demo.)
-
-// Legal State Transitions
 export const LEGAL_RIG_TRANSITIONS: Readonly<Record<RigLifecycleState, readonly RigLifecycleState[]>> = {
   queued: ['building', 'starting', 'crashed', 'stopped'],
   building: ['starting', 'crashed', 'oom', 'stopped'],
@@ -329,7 +311,6 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
     errors.push('Rig spec createdAt must be a valid date timestamp string.');
   }
 
-  // Runtime config validation
   if (typeof s.runtime !== 'object' || s.runtime === null) {
     errors.push('Rig spec must contain a runtime configuration object.');
   } else {
@@ -365,7 +346,6 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
     }
   }
 
-  // Resource limits validation
   if (typeof s.resources !== 'object' || s.resources === null) {
     errors.push('Rig spec must contain a resources configuration object.');
   } else {
@@ -381,7 +361,6 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
     }
   }
 
-  // Storage validation
   const validatedStorage: RigStorageMount[] = [];
   if (s.storage !== undefined) {
     if (!Array.isArray(s.storage)) {
@@ -436,7 +415,6 @@ export function validateRigSpec(spec: unknown): RigValidationResult<RigSpec> {
   };
 }
 
-// Backwards-compatible validator for RigContainer
 export function validateRigContainer(container: unknown): RigValidationResult<RigContainer> {
   const errors: string[] = [];
 

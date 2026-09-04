@@ -1,19 +1,13 @@
-// Stripe Connect Transfer Execution Worker (Commerce P3)
-// Implements atomic conditional lease claims, destination Stripe account resolution & snapshotting,
-// deterministic attempt recording with canonical SHA-256 request hashing,
-// strict HTTP status classification, exponential bounded backoff, 23-hour idempotency cutoff,
-// and durable reconciliation.
-
 import { hashPayload } from './stripeInbox';
 import {
   CommerceError,
   OutboxTransferStatus
 } from './types';
 
-export const STRIPE_IDEMPOTENCY_SAFETY_WINDOW_SECONDS = 23 * 3600; // 82,800 seconds (23 hours)
+export const STRIPE_IDEMPOTENCY_SAFETY_WINDOW_SECONDS = 23 * 3600;
 export const DEFAULT_LEASE_DURATION_SECONDS = 60;
 export const DEFAULT_BASE_BACKOFF_SECONDS = 30;
-export const MAX_BACKOFF_SECONDS = 3600; // 1 hour cap
+export const MAX_BACKOFF_SECONDS = 3600;
 
 export class TransferWorkerError extends CommerceError {
   public statusCode: number;
@@ -74,10 +68,6 @@ export interface ProcessBatchResult {
   results: ProcessTransferResult[];
 }
 
-/**
- * Calculates exponential bounded backoff seconds based on attempt number.
- * Backoff schedule: 30s, 60s, 120s, 240s, 480s, 960s, 1920s, 3600s (capped).
- */
 export function calculateBackoffSeconds(
   attemptNumber: number,
   baseSeconds = DEFAULT_BASE_BACKOFF_SECONDS,
@@ -91,10 +81,6 @@ export function calculateBackoffSeconds(
   return Math.min(Math.max(calculated, baseSeconds), maxSeconds);
 }
 
-/**
- * Validates payout worker runtime configuration.
- * Fails closed before any database claims if configuration is missing or disabled.
- */
 export function validatePayoutWorkerConfig(env: any): { valid: boolean; error?: string; statusCode?: number } {
   if (env?.PAYOUTS_ENABLED !== 'true') {
     return {
@@ -116,10 +102,6 @@ export function validatePayoutWorkerConfig(env: any): { valid: boolean; error?: 
   return { valid: true };
 }
 
-/**
- * Builds canonical Stripe /v1/transfers request parameters and URLSearchParams.
- * Deterministic parameter ordering guarantees identical SHA-256 payload across retries.
- */
 export function buildStripeTransferPayload(
   outbox: {
     id: string;
@@ -145,12 +127,6 @@ export function buildStripeTransferPayload(
   };
 }
 
-/**
- * Atomically claims an outbox row with a conditional finite lease.
- * Succeeds ONLY if exactly one row is updated:
- * 1. Status in ('pending', 'retryable_failure') AND next_attempt_at <= now AND (lease_expires_at IS NULL OR lease_expires_at <= now)
- * 2. OR status = 'processing' AND lease_expires_at IS NOT NULL AND lease_expires_at <= now (expired processing lease).
- */
 export async function claimTransferOutboxRow(
   db: any,
   outboxId: string,
@@ -184,9 +160,6 @@ export async function claimTransferOutboxRow(
   };
 }
 
-/**
- * Releases an outbox claim lease after a transient failure and marks the item retryable with backoff.
- */
 export async function releaseTransferClaim(
   db: any,
   outboxId: string,
@@ -209,9 +182,6 @@ export async function releaseTransferClaim(
   `).bind(errorMsg, httpStatus, stripeRequestId, backoffSeconds, outboxId, claimToken).run();
 }
 
-/**
- * Durably marks a transfer outbox row as terminal failure.
- */
 export async function markTransferTerminalFailure(
   db: any,
   outboxId: string,
@@ -247,25 +217,6 @@ export async function markTransferTerminalFailure(
   }
 }
 
-/**
- * Executes transfer workflow for a single outbox item.
- *
- * Steps:
- * 1. Validate environment configuration (fail closed if PAYOUTS_ENABLED !== 'true').
- * 2. Claim item with finite conditional lease.
- * 3. Enforce 23-hour idempotency cutoff on prior ambiguous attempts (parks terminal).
- * 4. Resolve destination user's Stripe Connect account (requires payouts_enabled=1 and valid acct_ ID).
- * 5. Atomically snapshot destination_stripe_account if null (immutable thereafter).
- * 6. Enforce stripe_idempotency_key === 'transfer:' + outbox.id (never generate retry identity).
- * 7. Persist started commerce_transfer_attempt with canonical request SHA-256 before HTTP call.
- * 8. Execute POST /v1/transfers to Stripe.
- * 9. Process HTTP response:
- *    - 2xx: require valid tr_ ID, atomically mark attempt+outbox succeeded under claim token.
- *    - 429/5xx: record retryable_failure with exponential bounded backoff, release lease.
- *    - other 4xx: record terminal_failure, mark outbox terminal, release lease.
- *    - Network exception: record ambiguous attempt, release outbox as retryable_failure with backoff.
- * 10. If D1 persistence fails after Stripe 2xx success, leave retryable/ambiguous for idempotency reconciliation.
- */
 export async function processTransferOutboxItem(
   db: any,
   env: any,
@@ -276,7 +227,6 @@ export async function processTransferOutboxItem(
     return { success: false, outboxId, error: 'Database service is unavailable' };
   }
 
-  // 1. Mandatory Fail-Closed Configuration Guard
   const configCheck = validatePayoutWorkerConfig(env);
   if (!configCheck.valid) {
     return {
@@ -286,7 +236,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 2. Claim outbox row with conditional finite lease
   let claimToken = options?.claimToken;
   if (!claimToken) {
     const claimRes = await claimTransferOutboxRow(db, outboxId, {
@@ -329,7 +278,6 @@ export async function processTransferOutboxItem(
     claimToken = claimRes.claimToken;
   }
 
-  // 3. Load Outbox Record
   const outbox: any = await db.prepare(`
     SELECT id, order_id, allocation_id, destination_user_id,
            amount_cents, currency, status, attempt_count,
@@ -355,7 +303,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 4. Check 23-Hour Idempotency Safety Window on Prior Ambiguous Attempts
   const priorAmbiguous: any = await db.prepare(`
     SELECT id, attempt_number, outcome, started_at,
            (strftime('%s', 'now') - strftime('%s', started_at)) AS elapsed_seconds
@@ -396,7 +343,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 5. Destination User Validation
   const destinationUserId = outbox.destination_user_id;
   if (!destinationUserId || typeof destinationUserId !== 'string' || !destinationUserId.trim()) {
     const errorMsg = `Transfer outbox row '${outboxId}' has no valid destination_user_id (platform allocations are not transferred out)`;
@@ -411,7 +357,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 6. Resolve Destination User's Stripe Account
   const stripeAccount: any = await db.prepare(`
     SELECT user_id, stripe_account_id, charges_enabled, payouts_enabled, onboarding_status
     FROM stripe_accounts
@@ -462,7 +407,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 7. Atomically Snapshot destination_stripe_account if null (never change once snapshotted)
   let targetStripeAccount = outbox.destination_stripe_account;
   if (!targetStripeAccount) {
     try {
@@ -482,7 +426,6 @@ export async function processTransferOutboxItem(
     targetStripeAccount = resolvedAccountId;
   }
 
-  // 8. Require Persisted stripe_idempotency_key exactly transfer:<outbox-id>
   const expectedIdempotencyKey = `transfer:${outboxId}`;
   let persistedKey = outbox.stripe_idempotency_key;
 
@@ -517,11 +460,9 @@ export async function processTransferOutboxItem(
     }
   }
 
-  // 9. Build Canonical Stripe Request & SHA-256 Hash
   const { requestBodyString } = buildStripeTransferPayload(outbox, targetStripeAccount);
   const requestSha256 = await hashPayload(requestBodyString);
 
-  // 10. Persist Started Attempt Record Before External Call
   const attemptSequence: any = await db.prepare(`
     SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt_number
     FROM commerce_transfer_attempts WHERE outbox_id = ?
@@ -560,7 +501,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 11. External POST /v1/transfers Call to Stripe
   const fetchImpl = options?.stripeFetchOverride || globalThis.fetch;
   let stripeRes: Response;
 
@@ -575,7 +515,6 @@ export async function processTransferOutboxItem(
       body: requestBodyString
     });
   } catch (networkErr: any) {
-    // Network Exceptions are AMBIGUOUS
     const errorMsg = `Network exception during Stripe transfer request: ${networkErr.message}`;
     const backoffSec = calculateBackoffSeconds(attemptNumber);
 
@@ -629,13 +568,9 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // 12. Parse HTTP Status and Stripe Headers
   const httpStatus = stripeRes.status;
   const stripeRequestId = stripeRes.headers.get('request-id') || stripeRes.headers.get('stripe-request-id') || null;
 
-  // =========================================================================
-  // Case A: 2xx Success (Requires valid tr_ ID)
-  // =========================================================================
   if (httpStatus >= 200 && httpStatus < 300) {
     let transferData: any;
     try {
@@ -759,7 +694,6 @@ export async function processTransferOutboxItem(
       };
     }
 
-    // Atomically persist success under claim token
     const successStatements = [
       db.prepare(`
         UPDATE commerce_transfer_outbox
@@ -808,7 +742,6 @@ export async function processTransferOutboxItem(
     try {
       await db.batch(successStatements);
     } catch (batchErr: any) {
-      // D1 Write Failure after Stripe Success: Leave retryable/ambiguous so same idempotency key reconciles
       try {
         await db.prepare(`
           UPDATE commerce_transfer_outbox
@@ -850,9 +783,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // =========================================================================
-  // Case B: 429 & 5xx (Retryable Failures)
-  // =========================================================================
   if (httpStatus === 429 || httpStatus >= 500) {
     const errData: any = await stripeRes.json().catch(() => ({}));
     const errObj = errData?.error || {};
@@ -914,9 +844,6 @@ export async function processTransferOutboxItem(
     };
   }
 
-  // =========================================================================
-  // Case C: Other 4xx (Terminal Failures: 400, 401, 403, 404, 422)
-  // =========================================================================
   const errData: any = await stripeRes.json().catch(() => ({}));
   const errObj = errData?.error || {};
   const errorCode = errObj.code || errObj.type || `http_${httpStatus}`;
@@ -976,10 +903,6 @@ export async function processTransferOutboxItem(
   };
 }
 
-/**
- * Executes batch transfer execution over bounded 1..25 rows sequentially.
- * Reports honest per-status counts. Never accepts economic overrides from caller.
- */
 export async function processTransferBatch(
   db: any,
   env: any,
@@ -1014,7 +937,6 @@ export async function processTransferBatch(
   let skippedCount = 0;
 
   for (let i = 0; i < limit; i++) {
-    // Select next due claimable row
     const claimable: any = await db.prepare(`
       SELECT id FROM commerce_transfer_outbox
       WHERE (
@@ -1026,7 +948,7 @@ export async function processTransferBatch(
     `).first();
 
     if (!claimable) {
-      break; // No more due rows
+      break;
     }
 
     const itemResult = await processTransferOutboxItem(db, env, claimable.id, {

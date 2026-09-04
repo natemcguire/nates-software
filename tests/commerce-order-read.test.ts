@@ -103,7 +103,6 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
       await createSession('usr_buyer_a', 'token_alice');
       await createSession('usr_buyer_b', 'token_bob');
 
-      // Create order belonging to Alice
       const orderId = 'ord_alice_private_123';
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
@@ -117,7 +116,6 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
         )
       `).bind(orderId).run();
 
-      // Bob tries to view Alice's order
       const reqBob = new Request(`http://localhost/api/payments/orders/${orderId}`, {
         method: 'GET',
         headers: { 'Authorization': 'Bearer token_bob' }
@@ -129,7 +127,6 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
       expect(dataBob.success).toBe(false);
       expect(dataBob.error).toBe('Order not found');
 
-      // Alice querying her own order succeeds
       const reqAlice = new Request(`http://localhost/api/payments/orders/${orderId}`, {
         method: 'GET',
         headers: { 'Authorization': 'Bearer token_alice' }
@@ -202,7 +199,6 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
 
       const encrypted = await encryptLicenseSecret(rawLicenseKey, testEnv);
 
-      // Insert fulfilled order
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -218,7 +214,6 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
         )
       `).bind(orderId).run();
 
-      // Insert license
       await ctx.d1.prepare(`
         INSERT INTO commerce_licenses (
           id, order_id, app_id, owner_user_id,
@@ -226,7 +221,6 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
         ) VALUES (?, ?, 'dronehunter', 'usr_buyer_a', ?, ?, 'active', datetime('now'))
       `).bind(licenseId, orderId, licenseHash, licenseLast4).run();
 
-      // Insert encrypted secret
       await ctx.d1.prepare(`
         INSERT INTO commerce_license_secrets (
           license_id, ciphertext_base64, iv_base64, algorithm, key_version, created_at
@@ -245,7 +239,7 @@ describe('Buyer-Scoped Order Status & Receipt Endpoint (functions/api/payments/o
       expect(data.order.status).toBe('fulfilled');
       expect(data.order.license).toBeTruthy();
       expect(data.order.license.id).toBe(licenseId);
-      expect(data.order.license.licenseKey).toBe(rawLicenseKey); // Plaintext decrypted key!
+      expect(data.order.license.licenseKey).toBe(rawLicenseKey);
       expect(data.order.license.licenseKeyLast4).toBe(licenseLast4);
       expect(data.order.license.maskedKey).toBe(`NSW-DR-••••-${licenseLast4}`);
       expect(data.order.license.status).toBe('active');

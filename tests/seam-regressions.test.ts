@@ -3,18 +3,6 @@ import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { hashSessionToken, sessionCookie, isSameOriginMutation } from '../functions/api/_session';
 import * as dropsApi from '../functions/api/drops';
 
-// Regression guards for the ecosystem-seam bugs the integration audit found:
-//   1. PUBLISH cross-user economic write — drops.ts must refuse to link a
-//      repository the caller does not own.
-//   2. ROUTER/INGRESS session seam — the session cookie must be scoped to
-//      .nates-software.com (shared across apex + app subdomains) on real hosts,
-//      host-only on localhost/previews; cross-subdomain cookie mutations within
-//      the ecosystem are same-site, cross-site is still blocked.
-// (Contributor-grant CRUD — including the grantable_bps write these tests
-// used to exercise — was removed when contributors were dropped from the
-// money model; see royalty_bps below for the equivalent per-listing economic
-// write still owned/guarded by drops.ts.)
-
 describe('Seam regression: PUBLISH cross-user repository link', () => {
   let ctx: TestD1Context;
   const env = () => ({
@@ -42,7 +30,6 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
     await user('usr_mallory', 'mallory');
     await session('usr_alice', 'session_alice');
     await session('usr_mallory', 'session_mallory');
-    // Alice owns a repository with a real default-ref commit.
     await ctx.d1.prepare(`
       INSERT INTO repositories (id, owner_user_id, slug, visibility, object_format, default_ref, storage_key, status, grantable_bps)
       VALUES ('repo_alice', 'usr_alice', 'alice-idea', 'public', 'sha1', 'refs/heads/main', 'repositories/repo_alice', 'active', 0)
@@ -50,7 +37,6 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
   });
 
   it("refuses to link a repository the caller does not own", async () => {
-    // Mallory tries to publish a listing that links Alice's repo.
     const req = new Request('http://localhost/api/drops', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer session_mallory', 'Origin': 'http://localhost' },
@@ -65,13 +51,10 @@ describe('Seam regression: PUBLISH cross-user repository link', () => {
     });
     await dropsApi.onRequestPost({ request: req, env: env() });
 
-    // Whatever the exact response, the invariant is: Mallory's publish must NOT
-    // have linked Alice's repo (ownership untouched).
     const repoRow = await ctx.d1.prepare('SELECT owner_user_id FROM repositories WHERE id = ?')
       .bind('repo_alice').first<{ owner_user_id: string }>();
     expect(repoRow?.owner_user_id).toBe('usr_alice');
 
-    // And no listing/product may have bound Alice's repo to Mallory as seller.
     const prod = await ctx.d1.prepare(
       'SELECT seller_user_id FROM commerce_products WHERE repository_id = ?'
     ).bind('repo_alice').first<{ seller_user_id: string }>();
@@ -103,9 +86,6 @@ describe('Seam regression: session cookie is HOST-ONLY (never leaks to tenant su
   const cookieFor = (url: string) => sessionCookie(new Request(url), 'tok123');
 
   it('sets NO Domain attribute — the cookie must never be sent to tenant subdomains', () => {
-    // CRITICAL: tenant apps are served at <app>.nates-software.com (attacker-
-    // controlled). A Domain=.nates-software.com cookie would be exfiltrated to
-    // them (account takeover). The cookie stays host-only, everywhere.
     expect(cookieFor('https://nates-software.com/api/auth')).not.toContain('Domain=');
     expect(cookieFor('https://hotwire.nates-software.com/api/auth')).not.toContain('Domain=');
     expect(cookieFor('http://localhost:3000/api/auth')).not.toContain('Domain=');

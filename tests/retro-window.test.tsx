@@ -34,7 +34,6 @@ describe('RetroWindow Component', () => {
       </RetroWindow>
     );
 
-    // Root window has select-none and user-select:none
     expect(html).toContain('select-none');
     expect(html).toContain('user-select:none');
     expect(html).toContain('draggable="false"');
@@ -44,7 +43,6 @@ describe('RetroWindow Component', () => {
   });
 
   it('wires handleTitlePointerDown and prevents default during title drag', () => {
-    // Verify pointer event handler contracts
     const eventPreventDefault = vi.fn();
     const pointerDownEvent = {
       target: {

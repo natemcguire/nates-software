@@ -91,8 +91,9 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const isRepoActive = app.isRepoActive ?? (app.repoStatus === 'active' || hasCanonicalRepo);
   const canPerformRealFork = hasCanonicalRepo && isRepoActive;
 
-  // Real repo identity derived from canonical projection or honest fallback
   const resolvedRepoSlug = app.repoSlug || (app.repoName ? `${app.author || app.creator || 'nate'}/${app.repoName}` : null);
+  const parentRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
+  const parentRoyaltyPercent = typeof parentRoyaltyBps === 'number' ? parentRoyaltyBps / 100 : null;
   const cliForkTarget = resolvedRepoSlug || `${app.author || app.creator || 'nate'}/${app.id}`;
 
   const getCliCommand = () => {
@@ -176,7 +177,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4 font-tahoma text-xs">
       <div className="w-full max-w-xl bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1">
-        {/* Title Bar */}
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5">
             <Bot size={13} className="text-yellow-300" />
@@ -191,7 +191,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
         </div>
 
         <div className="p-4 bg-w95-gray space-y-3">
-          {/* Success View after Real Fork */}
           {forkResult ? (
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-4 space-y-3">
               <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
@@ -267,12 +266,10 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Fork Explainer Banner */}
               <div className="bg-blue-50 border border-blue-200 text-blue-950 p-2.5 rounded text-xs leading-relaxed">
                 Forking gives you your own private copy of this app's code to change with AI — and if you sell it later, the platform takes a flat 10%, the maker you forked from earns their frozen royalty, and you keep the rest.
               </div>
 
-              {/* Header Metadata */}
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <span className="text-3xl bg-gray-50 p-1 rounded border border-gray-300">
@@ -292,7 +289,11 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 </div>
 
                 <div className="text-right font-mono text-[11px]">
-                  <div className="text-emerald-800 font-bold">Frozen Maker Royalty</div>
+                  <div className="text-emerald-800 font-bold">
+                    {parentRoyaltyPercent !== null
+                      ? `You'll owe @${app.author || app.creator || 'nate'} ${parentRoyaltyPercent}% forever`
+                      : 'Frozen Maker Royalty'}
+                  </div>
                   {resolvedRepoSlug ? (
                     <div className="text-blue-800 font-bold flex items-center gap-1 justify-end">
                       <Network size={11} className="text-blue-600" />
@@ -304,7 +305,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 </div>
               </div>
 
-              {/* Honest Forge Linkage Banner */}
               {!canPerformRealFork ? (
                 <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded text-xs space-y-1 text-amber-900">
                   <div className="font-bold flex items-center gap-1.5 text-amber-950">
@@ -341,7 +341,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 </div>
               )}
 
-              {/* Goal / Prompt Selector */}
               <div>
                 <label className="block text-gray-800 font-bold mb-1">Select AI Coding Goal or Prompt:</label>
                 <div className="space-y-1">
@@ -365,7 +364,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 </div>
               </div>
 
-                {/* Tool Selector Tabs & Command */}
                 <div className="space-y-1">
                   <div className="flex gap-1 border-b border-gray-400 pb-1">
                     {[
@@ -389,7 +387,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                     ))}
                   </div>
 
-                  {/* Terminal Command Output */}
                   <div className="bg-slate-950 text-slate-100 p-2.5 rounded border-2 border-slate-800 font-mono text-xs space-y-2">
                     <div className="text-emerald-300 whitespace-pre-wrap break-all leading-relaxed bg-black/60 p-2 rounded border border-slate-800 select-text">
                       {getCliCommand()}
@@ -426,7 +423,6 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                   </div>
                 </div>
 
-              {/* Action Buttons Footer */}
               <div className="flex items-center justify-between pt-2 border-t border-gray-300 flex-wrap gap-2">
                 <button
                   onClick={handleClose}

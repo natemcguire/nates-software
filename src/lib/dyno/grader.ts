@@ -1,7 +1,3 @@
-// Deterministic Local Grader Engine for DYNO benchmark runner
-// Evaluates file states, hidden test executions, syntax integrity, and rule adherence.
-// Produces canonical DynoGraderResultRecord objects with cryptographic evidence digests.
-
 import {
   DynoGraderSpec,
   DynoGraderResultRecord,
@@ -19,9 +15,6 @@ export interface GradingOutcome {
   readonly graderResults: readonly DynoGraderResultRecord[];
 }
 
-/**
- * Runs a single grader specification against the sandbox.
- */
 export async function evaluateGrader(
   taskAttemptId: string,
   grader: DynoGraderSpec,
@@ -175,9 +168,6 @@ export async function evaluateGrader(
   };
 }
 
-/**
- * Runs all graders for a task against the sandbox and aggregates outcomes.
- */
 export async function gradeTaskAttempt(
   taskAttemptId: string,
   task: DynoFixture,
@@ -191,7 +181,6 @@ export async function gradeTaskAttempt(
   let totalMaxScore = 0;
   let allPassed = true;
 
-  // Run all defined task graders
   for (const grader of task.graders) {
     const res = await evaluateGrader(taskAttemptId, grader, sandbox);
     graderResults.push(res);
@@ -202,12 +191,10 @@ export async function gradeTaskAttempt(
     }
   }
 
-  // Count hidden tests passed vs total
   let hiddenTestsPassed = 0;
   let hiddenTestsTotal = task.hiddenTests.length;
 
   for (const ht of task.hiddenTests) {
-    // Check if there is a matching test_runner result that passed
     const matchingGrader = graderResults.find(g => g.detail.includes(`[PASS] ${ht.name}`));
     if (matchingGrader) {
       hiddenTestsPassed++;

@@ -1,32 +1,3 @@
-// GET /api/product-readiness[?appId=...][&deploy=1]
-// Unified, server-computed product-readiness projection.
-//
-// Today "is this app real" is scattered across commerce_products.status,
-// app_listings, repositories.status, and deployment_state. Sellers, buyers,
-// and the acceptance test all need ONE authoritative honest read instead of
-// re-deriving it (and drifting) in five different places.
-//
-// This endpoint NEVER fabricates readiness. Every field is a direct
-// projection of an existing row; missing rows/relationships fail closed to
-// 'false'/null, and 'overall' is computed deterministically from them below.
-// Public read (no auth) — the projection only exposes fields that are
-// already public on /hotwire and the app listing itself. No seller PII
-// (emails, Stripe account IDs, session data, etc.) is included.
-//
-// Deploy-readiness preflight (Fix 2, RIG spec): when `?appId=` is given
-// together with `&deploy=1`, the projection additionally includes `deploy`,
-// a preflight over the prerequisites the publish/deploy control needs
-// (build substrate config, per-app ECR repository, R2 artifact storage,
-// router binding). This is opt-in and per-app only — it is never computed
-// for the "all apps" catalog sweep, because unlike the rest of this
-// projection it is NOT a pure D1 read: per-app ECR provisioning is never
-// persisted in D1 (functions/api/deploy.ts checks it live against AWS on
-// every deploy attempt — see AGENTS.md notes), so an honest preflight has to
-// make the same live, idempotent AWS call deploy.ts itself relies on. When
-// AWS credentials aren't configured in this environment, the ECR field
-// fails closed to `null` ("not verifiable here") rather than fabricating
-// `true`.
-
 import { getAwsCredentials, createEcrRepository, DEFAULT_AWS_ACCOUNT_ID } from './_aws';
 
 interface ProductReadiness {
@@ -63,25 +34,10 @@ export interface DeployReadiness {
     routerBindable: boolean;
     storageConfigured: boolean;
     buildSubstrateConfigured: boolean;
-    // true/false when live-verifiable against AWS; null when AWS credentials
-    // are not configured in this environment (honestly "not verifiable here",
-    // never fabricated as ready).
     ecrRepositoryProvisioned: boolean | null;
   };
 }
 
-/**
- * Computes the honest overall status from the four sub-projections.
- *
- * - 'buyable': product exists+active AND listing exists. This is the
- *   minimum bar for /api/payments/create-intent to succeed — deployment and
- *   repository are surfaced separately (a buyable app can still be a static
- *   client-side demo with no live hostname, and still be legitimately for sale).
- * - 'forkable': not buyable, but the listing exists and has an active,
- *   linked repository — safe to `slop fork`, just not (yet) for sale.
- * - 'draft': the listing exists but neither buyable nor forkable.
- * - 'unavailable': no listing at all (nothing to show).
- */
 function computeOverall(input: {
   listingExists: boolean;
   productExists: boolean;
@@ -114,9 +70,6 @@ async function buildReadiness(db: any, appId: string): Promise<ProductReadiness>
   const productExists = Boolean(product);
   const productActive = productExists && product.status === 'active';
 
-  // A product's repository_id is authoritative when present; otherwise fall
-  // back to any repository linked to the app so 'forkable' can still be
-  // computed for apps that have a repo but no commerce_products row yet.
   let repositoryId: string | null = product?.repositoryId || null;
   if (!repositoryId) {
     const repoRow: any = await db.prepare(`
@@ -137,9 +90,6 @@ async function buildReadiness(db: any, appId: string): Promise<ProductReadiness>
 
   const deploymentState: string | null = listingExists ? (listing.deploymentState || null) : null;
   const hostname: string | null = listingExists ? (listing.hostname || null) : null;
-  // Fail-closed: a hostname alone never implies an active deployment. Both
-  // the explicit deployment_state === 'active' AND a resolvable hostname
-  // (what "open live" needs) must be true.
   const deploymentActive = deploymentState === 'active' && Boolean(hostname);
 
   const overall = computeOverall({
@@ -175,15 +125,6 @@ async function buildReadiness(db: any, appId: string): Promise<ProductReadiness>
   };
 }
 
-/**
- * Deploy-readiness preflight for the publish/deploy control (Fix 2).
- *
- * Gates what the UI is allowed to offer, NOT what the server enforces —
- * functions/api/deploy.ts keeps its own fail-closed checks unconditionally;
- * this preflight exists purely so the client doesn't lead a user into a dead
- * publish attempt. It fails closed the same way: any prerequisite that can't
- * be confirmed leaves `ready: false` with an honest reason, never `true`.
- */
 async function buildDeployReadiness(db: any, env: any, appId: string, repositoryActive: boolean): Promise<DeployReadiness> {
   const reasons: string[] = [];
 
@@ -195,10 +136,6 @@ async function buildDeployReadiness(db: any, env: any, appId: string, repository
   const repositoryLinked = repositoryActive;
   if (!repositoryLinked) reasons.push('No active repository is linked to this app; there is no source to build.');
 
-  // Router binding: the wildcard router Worker resolves purely from
-  // app_listings.hostname + origin_kind/origin_ref at request time (there is
-  // no separate "router commissioned" row) — a bindable hostname plus a
-  // valid origin_kind is the full honest signal this projection can read.
   const routerBindable = Boolean(listing?.hostname) &&
     ['r2_static', 'worker', 'cf_container', 'fargate_warm'].includes(String(listing?.originKind || ''));
   if (!routerBindable) reasons.push('No routable hostname/origin is configured for this app; the router cannot bind it.');
@@ -208,16 +145,10 @@ async function buildDeployReadiness(db: any, env: any, appId: string, repository
 
   const buildSubstrateConfigured = Boolean(
     env?.AWS_CODEBUILD_DEPLOY_PROJECT || env?.AWS_CODEBUILD_BUILD_PROJECT ||
-    env?.AWS_ACCESS_KEY_ID // presence of any AWS wiring is the closest honest signal without a dedicated CodeBuild project lookup
+    env?.AWS_ACCESS_KEY_ID
   );
   if (!buildSubstrateConfigured) reasons.push('No AWS build substrate (CodeBuild project / credentials) is configured in this environment.');
 
-  // ECR per-app repository: genuinely NOT tracked in D1 — deploy.ts checks
-  // this live against AWS on every attempt (createEcrRepository is
-  // idempotent: it treats "already exists" as success, same call deploy.ts
-  // makes at its ecr_provisioning stage). Mirror that exact call here rather
-  // than fabricating a persisted flag. Only attempted when AWS credentials
-  // are present; otherwise fails closed to null (not verifiable), never true.
   let ecrRepositoryProvisioned: boolean | null = null;
   const creds = getAwsCredentials(env);
   if (creds.accessKeyId && creds.secretAccessKey) {
@@ -259,7 +190,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return Response.json({ success: true, readiness });
     }
 
-    // No appId supplied: project readiness for every app in the catalog.
     const { results } = await env.DB.prepare(`
       SELECT id FROM app_listings ORDER BY created_at ASC, id ASC
     `).all();

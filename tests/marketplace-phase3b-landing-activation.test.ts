@@ -49,17 +49,6 @@ function createRealGitCommit(repoPath: string, message: string, parentOid?: stri
   return commitOid;
 }
 
-// This suite exercises functions/api/git.ts's `gateway-complete-merge` CAS
-// merge-landing action: merge_attempts / merge_jobs / inbox_messages state
-// transitions, idempotent replay, and 409-on-abort behavior. It originally
-// also asserted contributor_shares activation/revocation at the same
-// landing/staling transitions ("Phase 3b — Contributor Share Landing
-// Activation"), but that write was removed from git.ts when contributors
-// were dropped from the money model (grants can never be created, so there
-// is never a pending contributor_shares row to activate/revoke). The CAS
-// landing mechanics below are independent of that removed feature and are
-// not covered elsewhere, so this suite stays — slimmed to drop all
-// contributor_shares seeding/assertions.
 describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
   let tempRoot: string;
   let d1Ctx: TestD1Context;
@@ -87,8 +76,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
   });
 
-  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
-  // (Fix 1, RIG spec) can be satisfied by this pre-existing landing suite.
   const storage = {
     store: new Map<string, Uint8Array>(),
     async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
@@ -99,8 +86,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     }
   };
 
-  // Seeds a passing build_runs row + matching signed R2 evidence bundle for
-  // a merge attempt, so a subsequent 'approve' satisfies the Fix 1 gate.
   async function seedEvidenceBundleForApproval(mergeAttemptId: string) {
     const attempt: any = await d1Ctx.d1.prepare(`
       SELECT ma.id, ma.result_commit_oid AS resultCommitOid, mj.target_repository_id AS repositoryId
@@ -127,10 +112,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
         `node@sha256:${'c'.repeat(64)}`, `sha256:${'d'.repeat(64)}`, r2Key, sha256).run();
   }
 
-  // Auto-fills the reviewer-saw-OID confirmation fields for 'approve' actions from the
-  // merge attempt's current OIDs, unless the test already specified them (so tests that
-  // intentionally probe the evidence gate itself can still override/omit), and seeds a
-  // matching signed evidence bundle so pre-existing tests satisfy the Fix 1 approval gate.
   const postInbox = async (body: any) => {
     let payload = body;
     if (body && typeof body === 'object' && body.action === 'approve' && body.messageId &&
@@ -162,7 +143,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const oldOid = createRealGitCommit(init.repoPath, 'Merge base');
     const resultOid = createRealGitCommit(init.repoPath, 'Approved result', oldOid);
 
-    // Ref is updated to resultOid in Git and projected in D1
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: null,
       newOid: resultOid, operation: 'create', idempotencyKey: 'seed-land'
@@ -200,7 +180,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,aggregate_type,aggregate_id,event_type,payload,attempts)
       VALUES ('evt-p3b-land','merge','attempt-p3b-land','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
 
-    // Call gateway-complete-merge with landed
     const res = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-land',
@@ -216,7 +195,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     expect(data.success).toBe(true);
     expect(data.status).toBe('landed');
 
-    // Verify merge attempts, merge jobs, and inbox messages
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-land').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-land').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('msg-p3b-land').first('is_merged')).toBe(1);
@@ -230,7 +208,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const divergedOid = createRealGitCommit(init.repoPath, 'Diverged concurrent commit', expectedOid);
     const resultOid = createRealGitCommit(init.repoPath, 'Candidate', expectedOid);
 
-    // Git ref diverged to divergedOid
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: null,
       newOid: divergedOid, operation: 'create', idempotencyKey: 'seed-stale'
@@ -268,7 +245,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,aggregate_type,aggregate_id,event_type,payload,attempts)
       VALUES ('evt-p3b-stale','merge','attempt-p3b-stale','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
 
-    // Call gateway-complete-merge with stale
     const res = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-stale',
@@ -284,7 +260,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     expect(data.success).toBe(true);
     expect(data.status).toBe('stale');
 
-    // Verify merge attempts, merge jobs, and inbox messages
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT is_merged FROM inbox_messages WHERE id=?').bind('msg-p3b-stale').first('is_merged')).toBe(0);
@@ -334,7 +309,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,aggregate_type,aggregate_id,event_type,payload,attempts)
       VALUES ('evt-p3b-replay','merge','attempt-p3b-replay','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
 
-    // First completion
     const res1 = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-replay',
@@ -348,7 +322,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const data1: any = await res1.json();
     expect(data1.success).toBe(true);
 
-    // Second completion (idempotent replay)
     const res2 = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-replay',
@@ -374,7 +347,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const baseOid = createRealGitCommit(init.repoPath, 'Base commit');
     const resultOid = createRealGitCommit(init.repoPath, 'PR commit', baseOid);
 
-    // Target ref is at baseOid
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: null,
       newOid: baseOid, operation: 'create', idempotencyKey: 'seed-e2e'
@@ -395,7 +367,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-e2e','usr_nate','usr_sam','Feature PR','Preview','Body',1,'proposal','attempt-p3b-e2e',0)`).run();
 
-    // 1. Owner approves via inbox API
     const approveRes = await postInbox({
       action: 'approve',
       messageId: 'msg-p3b-e2e',
@@ -403,7 +374,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     });
     expect(approveRes.status).toBe(200);
 
-    // 2. Outbox dispatcher processes merge.approved event
     const apiFetch: typeof fetch = async (url, init) => gitApi.onRequestPost({
       request: new Request(url, init),
       env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
@@ -421,7 +391,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const procRes = await dispatcher.processEvent(event);
     expect(procRes.success).toBe(true);
 
-    // 3. Verify landing
     expect(readAuthoritativeRef(tempRoot, storageKey, 'refs/heads/main')).toBe(resultOid);
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-e2e').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-e2e').first('status')).toBe('landed');
@@ -435,7 +404,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const baseOid = createRealGitCommit(init.repoPath, 'Base commit');
     const resultOid = createRealGitCommit(init.repoPath, 'PR candidate', baseOid);
 
-    // Target ref is at baseOid initially
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: null,
       newOid: baseOid, operation: 'create', idempotencyKey: 'seed-e2e-stale'
@@ -456,7 +424,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-p3b-e2e-stale','usr_nate','usr_sam','PR Stale','Preview','Body',1,'proposal','attempt-p3b-e2e-stale',0)`).run();
 
-    // 1. Owner approves
     const approveRes = await postInbox({
       action: 'approve',
       messageId: 'msg-p3b-e2e-stale',
@@ -464,14 +431,12 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     });
     expect(approveRes.status).toBe(200);
 
-    // 2. Someone concurrently updates the target ref in Git before dispatcher lands the merge
     const concurrentOid = createRealGitCommit(init.repoPath, 'Concurrent push on main', baseOid);
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: baseOid,
       newOid: concurrentOid, operation: 'update', idempotencyKey: 'concurrent-push'
     });
 
-    // 3. Outbox dispatcher processes merge.approved event -> CAS detects stale
     const apiFetch: typeof fetch = async (url, init) => gitApi.onRequestPost({
       request: new Request(url, init),
       env: { DB: d1Ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET }
@@ -487,7 +452,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const procRes = await dispatcher.processEvent(event);
     expect(procRes.success).toBe(true);
 
-    // Git ref remains at concurrentOid
     expect(readAuthoritativeRef(tempRoot, storageKey, 'refs/heads/main')).toBe(concurrentOid);
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-e2e-stale').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-e2e-stale').first('status')).toBe('stale');
@@ -539,7 +503,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,aggregate_type,aggregate_id,event_type,payload,attempts)
       VALUES ('evt-p3b-rep-stale','merge','attempt-p3b-rep-stale','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
 
-    // 1st complete-merge (stale)
     const res1 = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-rep-stale',
@@ -552,7 +515,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     expect(res1.status).toBe(200);
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-rep-stale').first('status')).toBe('stale');
 
-    // 2nd complete-merge (replay)
     const res2 = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-rep-stale',
@@ -576,7 +538,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const result1Oid = createRealGitCommit(init.repoPath, 'PR 1', baseOid);
     const result2Oid = createRealGitCommit(init.repoPath, 'PR 2', baseOid);
 
-    // Initial state: target ref at baseOid
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: null,
       newOid: baseOid, operation: 'create', idempotencyKey: 'seed-multi'
@@ -588,7 +549,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     await d1Ctx.d1.prepare(`INSERT INTO repository_refs
       (repository_id,ref_name,commit_oid,version) VALUES (?,'refs/heads/main',?,1)`).bind(repoId, baseOid).run();
 
-    // PR 1 setup
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
       (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
       VALUES ('job-multi-1',?,'refs/heads/main','usr_sam','landing','multi-1')`).bind(repoId).run();
@@ -602,7 +562,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-multi-1','usr_nate','usr_sam','PR 1','P1','C1',0,'proposal','attempt-multi-1',0)`).run();
 
-    // PR 2 setup
     await d1Ctx.d1.prepare(`INSERT INTO merge_jobs
       (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
       VALUES ('job-multi-2',?,'refs/heads/main','usr_josh','landing','multi-2')`).bind(repoId).run();
@@ -616,7 +575,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,user_id,sender_id,title,preview,content,unread,message_kind,merge_attempt_id,is_merged)
       VALUES ('msg-multi-2','usr_nate','usr_josh','PR 2','P2','C2',0,'proposal','attempt-multi-2',0)`).run();
 
-    // Outbox events
     await d1Ctx.d1.prepare(`INSERT INTO forge_outbox_events
       (id,aggregate_type,aggregate_id,event_type,payload,attempts)
       VALUES ('evt-multi-1','merge','attempt-multi-1','merge.approved',?,0)`).bind(JSON.stringify({
@@ -630,7 +588,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       storageKey, targetRef: 'refs/heads/main', expectedTargetOid: baseOid, resultCommitOid: result2Oid, approverUserId: 'usr_nate'
     })).run();
 
-    // PR 1 lands first: update git ref to result1Oid and call complete-merge
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: baseOid,
       newOid: result1Oid, operation: 'update', idempotencyKey: 'land-multi-1'
@@ -648,7 +605,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     });
     expect(land1Res.status).toBe(200);
 
-    // PR 2 goes stale: target ref is at result1Oid, not expected baseOid
     const stale2Res = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-multi-2',
@@ -660,7 +616,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     });
     expect(stale2Res.status).toBe(200);
 
-    // Check isolated state per attempt
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-multi-1').first('status')).toBe('landed');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-multi-2').first('status')).toBe('stale');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-multi-1').first('status')).toBe('landed');
@@ -674,7 +629,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
     const oldOid = createRealGitCommit(init.repoPath, 'Merge base');
     const resultOid = createRealGitCommit(init.repoPath, 'Approved result', oldOid);
 
-    // Target ref is still at oldOid (NOT resultOid)
     updateAuthoritativeRefCas(tempRoot, {
       storageKey, refName: 'refs/heads/main', expectedOldOid: null,
       newOid: oldOid, operation: 'create', idempotencyKey: 'seed-abort'
@@ -712,7 +666,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
       (id,aggregate_type,aggregate_id,event_type,payload,attempts)
       VALUES ('evt-p3b-abort','merge','attempt-p3b-abort','merge.approved',?,0)`).bind(JSON.stringify(payload)).run();
 
-    // Attempting to mark 'landed' when actual ref is still oldOid -> rejected with 409
     const res = await postGit({
       action: 'gateway-complete-merge',
       mergeJobId: 'job-p3b-abort',
@@ -725,7 +678,6 @@ describe('GITSMITH CAS merge-landing (gateway-complete-merge)', () => {
 
     expect(res.status).toBe(409);
 
-    // Verify merge_attempts/merge_jobs remain untouched
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_attempts WHERE id=?').bind('attempt-p3b-abort').first('status')).toBe('approved');
     expect(await d1Ctx.d1.prepare('SELECT status FROM merge_jobs WHERE id=?').bind('job-p3b-abort').first('status')).toBe('landing');
   });

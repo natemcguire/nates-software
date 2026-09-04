@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 
-// These tests drive real git worktree operations via execSync, which is I/O-heavy
-// and can exceed vitest's default 5s timeout when the full suite runs many files
-// in parallel (observed as a flaky timeout on the fork tests under contention).
-// Give the file generous headroom so it's deterministic under load; the work
-// itself completes in ~12s in isolation.
 vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
 import { existsSync, readFileSync, rmSync, mkdirSync, writeFileSync, symlinkSync, statSync, lstatSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -72,20 +67,8 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop fork <slug>', () => {
-    // These tests fork by SLUG (nate/dronehunter, nate/certified-mailer) and
-    // expect a real scaffolded worktree. `handleFork` locates the source repo by
-    // searching a set of paths for `<appId>` — including some absolute dev-machine
-    // paths — so on a dev box it happens to find a local checkout, but on a fresh
-    // CI runner none exist and the fork fails. To make the tests portable and
-    // deterministic (not dependent on machine-local repos), we seed a git repo
-    // with the expected fixture files at a path handleFork searches, relative to
-    // the slop module, for the duration of this describe block.
     const fixtureRepos: string[] = [];
     const seedFixtureRepo = (appId: string, files: Record<string, string>) => {
-      // ../<appId> relative to bin/slop.ts is on handleFork's search list and is
-      // writable on every machine (inside the checkout's parent) — but to avoid
-      // polluting the real tree we use a temp dir and point via the direct-path
-      // escape hatch instead. Return the created repo path.
       const dir = join(tmpdir(), `slopfix-${appId}-${Date.now().toString(36)}-${Math.floor(process.hrtime()[1] % 1e6)}`);
       mkdirSync(dir, { recursive: true });
       execSync(`git -c init.defaultBranch=main init "${dir}"`, { stdio: 'pipe' });
@@ -108,7 +91,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         'assets/drone.png': 'PNG',
         'package.json': JSON.stringify({ name: 'dronehunter' })
       });
-      // Fork the seeded local repo by direct path but assert the dronehunter identity.
       const res = await trackedFork(src);
       expect(res.success).toBe(true);
       expect(res.command).toBe('fork');
@@ -161,13 +143,11 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         expect(existsSync(worktree)).toBe(true);
         expect(existsSync(join(worktree, '.git'))).toBe(true);
 
-        // TRUTHFULNESS GUARANTEE: Never fabricate source into an empty repo!
         expect(existsSync(join(worktree, 'package.json'))).toBe(false);
         expect(existsSync(join(worktree, 'index.html'))).toBe(false);
         expect(existsSync(join(worktree, 'server.mjs'))).toBe(false);
         expect(existsSync(join(worktree, 'README.md'))).toBe(false);
 
-        // Verify publication remote configured
         const remotes = execSync('git remote', { cwd: worktree, encoding: 'utf8' });
         expect(remotes).toContain('slop');
       } finally {
@@ -224,7 +204,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       execSync(`git init "${emptyDronehunterDir}"`, { stdio: 'pipe' });
 
       try {
-        // Without --template: must NOT auto-scaffold just because the repo is named dronehunter
         const resEmpty = await trackedFork(emptyDronehunterDir);
         expect(resEmpty.success).toBe(true);
         expect(resEmpty.data.isEmptyRepo).toBe(true);
@@ -239,7 +218,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         expect(existsSync(join(emptyWorktree, 'server.mjs'))).toBe(false);
         expect(existsSync(join(emptyWorktree, 'README.md'))).toBe(false);
 
-        // With explicit --template dronehunter: must scaffold
         const resScaffolded = await trackedFork([emptyDronehunterDir, '--template=dronehunter']);
         expect(resScaffolded.success).toBe(true);
         expect(resScaffolded.data.templateApplied).toBe('dronehunter');
@@ -446,7 +424,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       writeStoredCredentials({
         sessionToken: 'expired-token-123',
         username: 'nate',
-        expiresAt: Date.now() - 1000 // expired 1s ago
+        expiresAt: Date.now() - 1000
       });
 
       expect(readStoredCredentials()).toBeNull();
@@ -487,7 +465,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
     it('should authenticate with valid --token flag, write credentials file, and return user info', async () => {
       const ctx = await createTestD1Database({ foreignKeys: true });
 
-      // Seed valid session in D1
       const rawToken = generateSessionToken();
       const tokenHash = await hashSessionToken(rawToken);
       const expiresAt = Date.now() + 90 * 24 * 3600 * 1000;
@@ -503,7 +480,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       expect(res.data.username).toBe('nate');
       expect(res.message).toContain('Logged in as @nate');
 
-      // Verify credentials file written
       const creds = readStoredCredentials();
       expect(creds).not.toBeNull();
       expect(creds?.sessionToken).toBe(rawToken);
@@ -638,7 +614,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         });
       }).toThrow(/symbolic link/i);
 
-      // Decoy file remains untouched
       expect(readFileSync(decoyFile, 'utf8')).toBe('sensitive decoy content');
     });
 
@@ -674,7 +649,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
       const fileStat = statSync(credPath);
       const dirStat = statSync(credDir);
 
-      // POSIX permission mask check (0600 file, 0700 dir)
       if (process.platform !== 'win32') {
         expect(fileStat.mode & 0o777).toBe(0o600);
         expect(dirStat.mode & 0o777).toBe(0o700);
@@ -686,7 +660,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
     it('should store the real server session expiry timestamp, not a synthesized 90 days', async () => {
       const ctx = await createTestD1Database({ foreignKeys: true });
       const rawToken = generateSessionToken();
-      // Specific expiry: 14 days in future
       const realExpiry = Date.now() + 14 * 24 * 3600 * 1000;
 
       await ctx.d1.prepare(`
@@ -781,8 +754,6 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   describe('runSlopCli router', () => {
     it('should route all commands cleanly', async () => {
       expect((await runSlopCli(['init', 'test-app'])).success).toBe(true);
-      // Fork a self-seeded local repo (by direct path) so the test is portable
-      // and does not depend on a machine-local nate/dronehunter checkout.
       const routerForkSrc = join(tmpdir(), `slopfix-router-${Date.now().toString(36)}`);
       mkdirSync(routerForkSrc, { recursive: true });
       execSync(`git -c init.defaultBranch=main init "${routerForkSrc}"`, { stdio: 'pipe' });

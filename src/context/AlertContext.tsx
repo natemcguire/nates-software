@@ -86,7 +86,6 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     <AlertContext.Provider value={{ showAlert, showConfirm }}>
       {children}
 
-      {/* Authentic Windows 95 Message Box Modal */}
       {alertState && alertState.isOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px] select-none p-4">
           <div
@@ -94,7 +93,6 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             role="dialog"
             aria-modal="true"
           >
-            {/* Title Bar */}
             <div className="bg-gradient-to-r from-[#000080] via-[#1084d0] to-[#000080] text-white px-3 py-1 flex items-center justify-between font-bold text-sm">
               <span className="truncate">{alertState.title}</span>
               <button
@@ -106,7 +104,6 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               </button>
             </div>
 
-            {/* Message Body */}
             <div className="p-5 flex items-start gap-4 bg-w95-gray">
               <div className="shrink-0 mt-0.5">
                 {getIconElement(alertState.icon)}
@@ -116,7 +113,6 @@ export const AlertProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               </div>
             </div>
 
-            {/* Bottom Buttons */}
             <div className="p-3 bg-w95-gray border-t border-gray-300 flex justify-center gap-3">
               {alertState.isConfirm ? (
                 <>

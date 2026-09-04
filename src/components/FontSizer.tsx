@@ -1,19 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { playClickSound } from '../lib/soundEngine';
 
-/**
- * Win95-styled text-size control. Sets a --font-scale multiplier on the
- * document root (consumed by index.css base font-sizes) and persists the
- * choice to localStorage. Medium = the default 30%-bumped size (1.0x).
- */
-
 const STORAGE_KEY = 'nsw_font_scale';
 
 interface Step {
   id: string;
   scale: number;
   label: string;
-  sizePx: number; // visible size of the "T" glyph on the button
+  sizePx: number;
   title: string;
 }
 
@@ -29,7 +23,6 @@ export function readInitialFontScale(): number {
     const n = raw ? parseFloat(raw) : NaN;
     if (Number.isFinite(n) && STEPS.some((s) => Math.abs(s.scale - n) < 0.001)) return n;
   } catch {
-    /* ignore */
   }
   return 1.0;
 }
@@ -38,14 +31,12 @@ function applyFontScale(scale: number) {
   try {
     document.documentElement.style.setProperty('--font-scale', String(scale));
   } catch {
-    /* ignore */
   }
 }
 
 export const FontSizer: React.FC<{ className?: string }> = ({ className = '' }) => {
   const [scale, setScale] = useState<number>(() => readInitialFontScale());
 
-  // Apply on mount + whenever it changes (restores persisted choice on load).
   useEffect(() => {
     applyFontScale(scale);
   }, [scale]);
@@ -56,7 +47,7 @@ export const FontSizer: React.FC<{ className?: string }> = ({ className = '' }) 
     try {
       localStorage.setItem(STORAGE_KEY, String(next));
     } catch {
-      /* ignore */
+
     }
   };
 

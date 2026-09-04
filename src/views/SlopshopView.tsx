@@ -53,11 +53,9 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   const { user, isAuthenticated, openAuthModal } = useAuth();
   const terminalGateway = useTerminalGateway();
 
-  // Active Stage in the Loop (0: Fork, 1: Slop, 2: Run, 3: Push, 4: Publish)
   const [curStage, setCurStage] = useState<number>(0);
   const [stageDone, setStageDone] = useState<boolean[]>([false, false, false, false, false]);
 
-  // Selected Repository & Feature
   const [selectedAppId, setSelectedAppId] = useState<string>('dronehunter');
   const [selectedAgent, setSelectedAgent] = useState<AgentToolId>('agy');
   const [makerHandle, setMakerHandle] = useState<string>(
@@ -66,28 +64,21 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   const [forgeCoordinates, setForgeCoordinates] = useState<RepoCoordinate[] | null>(null);
   const [, setForkResult] = useState<any | null>(null);
 
-  // Price for Publish
   const [publishPrice, setPublishPrice] = useState<string>('15');
-  // Maker-chosen royalty (%) taken when a downstream fork resells this app. Blank means
-  // 0% — never a hidden default; the maker must opt in to a nonzero royalty.
   const [publishRoyaltyPct, setPublishRoyaltyPct] = useState<string>('');
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
 
-  // Backend States
   const [gitsmithState, setGitsmithState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [rigProviderState, setRigProviderState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
 
-  // Active Coordinate & Presets
   const coordinate: RepoCoordinate =
     forgeCoordinates?.find((item) => item.appId === selectedAppId) || getAppCoordinate(selectedAppId);
   const presets: FeaturePreset[] = getFeaturePresets(selectedAppId);
   const [activePreset, setActivePreset] = useState<FeaturePreset>(presets[0]);
   const [customPrompt, setCustomPrompt] = useState<string>(presets[0]?.prompt || '');
 
-  // Modals
   const [modalType, setModalType] = useState<'pickApp' | 'diff' | 'verification' | 'price' | null>(null);
 
-  // Terminal State
   const [terminalMode, setTerminalMode] = useState<'gateway' | 'local'>('local');
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([
     { text: "Nate's Software Command Guide & Emulator v2.5.0", type: 'system' },
@@ -110,24 +101,20 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
 
-  // Terminal DOM Refs
   const termScrollRef = useRef<HTMLDivElement>(null);
   const xtermHostRef = useRef<HTMLDivElement>(null);
 
-  // RIG Runtime State
   const [runState, setRunState] = useState<'idle' | 'building' | 'starting' | 'healthy' | 'stopped' | 'error'>('stopped');
   const [runPort, setRunPort] = useState<string>('—');
   const [runMem, setRunMem] = useState<string>('—');
   const [runMessage, setRunMessage] = useState<string>('not running — do the Run step');
 
-  // Sync user handle
   useEffect(() => {
     if (user?.username) {
       setMakerHandle(`@${user.username}`);
     }
   }, [user?.username]);
 
-  // Update presets when app changes
   useEffect(() => {
     const newPresets = getFeaturePresets(selectedAppId);
     if (newPresets.length > 0) {
@@ -136,11 +123,9 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
     }
   }, [selectedAppId]);
 
-  // Check GITSMITH and RIG backend readiness on mount
   useEffect(() => {
     const controller = new AbortController();
 
-    // Check GITSMITH Forge
     Promise.all([
       fetch('/api/git?action=gateway-readiness', {
         cache: 'no-store',
@@ -175,7 +160,6 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
         if (error?.name !== 'AbortError') setGitsmithState('unavailable');
       });
 
-    // Check RIG Provider Gateway
     fetch('/api/rig?action=readiness', {
       cache: 'no-store',
       credentials: 'same-origin',
@@ -196,14 +180,12 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
     return () => controller.abort();
   }, []);
 
-  // Auto-scroll local terminal
   useEffect(() => {
     if (termScrollRef.current) {
       termScrollRef.current.scrollTop = termScrollRef.current.scrollHeight;
     }
   }, [terminalLines]);
 
-  // Real PTY Xterm connection
   useEffect(() => {
     if (terminalMode !== 'gateway' || !terminalGateway.isConnected || !xtermHostRef.current) return;
     let disposed = false;
@@ -265,26 +247,20 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   });
   const evidenceChecklist = getEvidenceChecklist(activePreset);
 
-  // Stage Switcher
   const handleSelectStage = (idx: number) => {
     playClickSound();
     setCurStage(idx);
   };
 
-  // Helper to append lines to local terminal
   const appendLines = (lines: TerminalLine[]) => {
     setTerminalLines((prev) => [...prev, ...lines]);
   };
 
-  // Execute stage action. Accepts an optional stage override so callers that just
-  // switched stages (e.g. the terminal's `slop <verb>` commands) don't race React's
-  // async state update and act on a stale `curStage` from closure.
   const handleStagePrimaryAction = async (stageOverride?: number) => {
     playClickSound();
     const activeStage = stageOverride ?? curStage;
 
     if (activeStage === 0) {
-      // FORK STAGE
       if (!isAuthenticated) {
         appendLines([
           { text: `› slop fork ${coordinate.slug}`, type: 'input' },
@@ -367,9 +343,6 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
       }
       return;
     } else if (activeStage === 1) {
-      // SLOP STAGE (Mod with AI) — no in-browser AI agent or gateway is wired here.
-      // This panel cannot actually read/edit files or run an AST splice, so it must not
-      // claim that it did. Show the real command and an honest pending state instead.
       appendLines([
         { text: `› ${activePreset.prompt}`, type: 'input' },
         {
@@ -392,9 +365,6 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
       ]);
       setCurStage(2);
     } else if (activeStage === 2) {
-      // RUN STAGE (RIG folded in)
-      // RIG has a real backend (/api/rig -> provider gateway). Only claim "live" if it
-      // actually confirms a running container; otherwise fail closed with the real command.
       if (!isAuthenticated) {
         appendLines([
           { text: '› slop run', type: 'input' },
@@ -503,10 +473,6 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
         ]);
       }
     } else if (activeStage === 3) {
-      // PUSH STAGE (to GITSMITH) — landing a merge requires a CAS-verified, SSH-signed
-      // commit pushed by the real gateway agent (see functions/api/git.ts
-      // gateway-complete-merge). This browser panel cannot sign or push commits, so it
-      // cannot claim a push happened. Show the real command and an honest status only.
       appendLines([
         { text: '› slop push', type: 'input' },
         {
@@ -529,9 +495,6 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
       ]);
       setCurStage(4);
     } else if (activeStage === 4) {
-      // PUBLISH STAGE — there is no marketplace-listing endpoint wired to this panel
-      // (listings are created via the HOTWIRE drop flow in functions/api/drops.ts).
-      // Do not claim anything went live.
       appendLines([
         { text: `› slop publish --price ${publishPrice}`, type: 'input' },
         {
@@ -558,17 +521,10 @@ This panel shows the real "slop publish" command and the revenue split it would 
     }
   };
 
-  // Set-Listing-Price modal "Save Price" -> a REAL, authenticated POST to /api/drops.
-  // This is the only place in SLOPSHOP that actually creates/updates a marketplace
-  // listing. It must never claim success without a genuinely successful response —
-  // on any non-ok response, the real server error is surfaced instead.
   const handleSavePriceAndPublish = async () => {
     playClickSound();
     const pct = Number(publishRoyaltyPct);
     const royaltyBps = Math.min(10000, Math.max(0, Math.round((Number.isFinite(pct) ? pct : 0) * 100)));
-    // coordinateFromForgeRepository can leave version as the literal placeholder
-    // 'Forge repository' when no known catalog entry exists — /api/drops requires real
-    // semver, so fall back to v1.0.0 rather than sending a value the server will reject.
     const publishVersion = /^v?\d+\.\d+\.\d+$/.test(coordinate.version) ? coordinate.version : 'v1.0.0';
 
     setIsPublishing(true);
@@ -603,7 +559,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
     }
   };
 
-  // Handle command submission in terminal
   const handleCommandSubmit = async (cmd: string) => {
     if (!cmd.trim()) return;
     setCommandHistory((prev) => [...prev, cmd]);
@@ -625,12 +580,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
       const sub = slopArgs[0]?.toLowerCase();
 
       if (sub === 'fork' || sub === 'run' || sub === 'push' || sub === 'publish') {
-        // The local emulator has no filesystem or process execution (see the banner
-        // printed at startup). Route to the real primary-action handler for fork/run,
-        // which is wired to actual backends and fails closed honestly; for push/publish
-        // there is no backend this browser panel can drive, so it just shows the real
-        // command. Pass an explicit stage override so this doesn't race React's async
-        // curStage update.
         newLines.push({
           text: '[NOTICE] Local mode is a browser command emulator with no filesystem or process execution. Routing to the honest stage handler …',
           type: 'system'
@@ -723,8 +672,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         break;
 
       default:
-        // Not a recognized command. There is no in-browser AI agent wired to this
-        // terminal, so it must not fabricate a plan, a diff, or a file count.
         newLines.push(
           {
             text: `[NOTICE] Local mode has no AI agent to run "${cmd}". No files were read or changed.`,
@@ -756,14 +703,10 @@ This panel shows the real "slop publish" command and the revenue split it would 
     playClickSound();
     handleStopRun();
     setTimeout(() => {
-      // Explicit stage override: this reload control lives outside the Run stage's
-      // own action button (e.g. the address bar), so it must not depend on curStage
-      // already being 2 when it fires.
       handleStagePrimaryAction(2);
     }, 400);
   };
 
-  // Forked display name
   const forkedDisplayName = `${makerHandle.replace('@', '')}/${coordinate.appId}`;
 
   return (
@@ -773,7 +716,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         fontFamily: '"MS Sans Serif", Tahoma, Geneva, Verdana, system-ui, sans-serif'
       }}
     >
-      {/* Menu Bar */}
       <div
         className="flex items-center gap-1 px-1 py-0.5 text-xs bg-[#c0c0c0] border-b border-[#808080]"
         style={{
@@ -846,7 +788,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
           <u>H</u>elp
         </span>
 
-        {/* Maker Personalization Indicator */}
         <div className="ml-auto flex items-center gap-1.5 text-[11px] px-2 text-[#3a3a3a]">
           {isAuthenticated ? (
             <span className="text-[#0a7d18] font-bold">{`signed in as @${user?.username}`}</span>
@@ -866,7 +807,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </div>
       </div>
 
-      {/* LOOP RAIL (The Redesign Spine: 5 Stages) */}
       <div
         className="grid grid-cols-5 gap-1.5 p-2 bg-[#d4d0c8] border-b border-[#808080]"
         id="rail"
@@ -925,11 +865,8 @@ This panel shows the real "slop publish" command and the revenue split it would 
         })}
       </div>
 
-      {/* WORK AREA: Two Columns (Terminal Left 1.55fr, Run Panel Right 1fr) */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-[1.55fr_1fr] gap-2 p-1.5 overflow-hidden">
-        {/* LEFT COLUMN: Terminal (The heart of "slop with AI") */}
         <div className="flex flex-col bg-[#c0c0c0] border-2 border-[#ffffff] border-r-[#404040] border-b-[#404040] overflow-hidden">
-          {/* Panel Head */}
           <div
             className="bg-[#d4d0c8] px-2 py-1 font-bold text-xs flex items-center justify-between border-b border-[#808080]"
             style={{ boxShadow: 'inset 0 1px 0 #ffffff' }}
@@ -961,7 +898,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
             </div>
           </div>
 
-          {/* Terminal Screen Body */}
           <div className="flex-1 bg-[#0a0a0a] text-[#d6d6d6] border-2 border-[#808080] border-r-[#ffffff] border-b-[#ffffff] m-1 p-2 overflow-y-auto font-mono text-xs leading-relaxed">
             {terminalMode === 'gateway' && terminalGateway.isConnected ? (
               <div
@@ -996,7 +932,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
             )}
           </div>
 
-          {/* Terminal Command Line Input */}
           <div className="flex items-center gap-1.5 bg-[#0a0a0a] border-2 border-[#808080] border-r-[#ffffff] border-b-[#ffffff] border-t-0 mx-1 mb-1 px-2 py-1">
             <span className="text-[#35d15b] font-mono font-bold text-xs">›</span>
             <input
@@ -1031,9 +966,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Run Panel (RIG folded into SLOPSHOP) */}
         <div className="flex flex-col bg-[#c0c0c0] border-2 border-[#ffffff] border-r-[#404040] border-b-[#404040] overflow-hidden">
-          {/* Panel Head */}
           <div
             className="bg-[#d4d0c8] px-2 py-1 font-bold text-xs flex items-center justify-between border-b border-[#808080]"
             style={{ boxShadow: 'inset 0 1px 0 #ffffff' }}
@@ -1062,7 +995,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
           </div>
 
           <div className="flex-1 flex flex-col p-1 gap-1.5 overflow-hidden">
-            {/* Address Bar */}
             <div
               className="flex items-center gap-1.5 px-2 py-1 bg-[#d4d0c8] border border-[#808080] text-[11px]"
               style={{ boxShadow: 'inset 1px 1px 0 #ffffff' }}
@@ -1082,7 +1014,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
               </button>
             </div>
 
-            {/* Run View Screen */}
             <div
               className={`flex-1 border-2 border-[#808080] border-r-[#ffffff] border-b-[#ffffff] flex flex-col items-center justify-center p-4 relative overflow-hidden text-center ${
                 runState === 'healthy' ? 'bg-white' : 'bg-[#e4e4e4]'
@@ -1114,7 +1045,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
               )}
             </div>
 
-            {/* Metrics Row */}
             <div className="grid grid-cols-3 gap-1.5 text-[10px]">
               <div
                 className="bg-[#d4d0c8] p-1 border border-[#808080]"
@@ -1142,7 +1072,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </div>
       </div>
 
-      {/* LEDGER NOTE: The Money Model (Stated Once) */}
       <div
         className="mx-1.5 p-2 bg-[#d4d0c8] border border-[#808080] flex items-center gap-3 flex-wrap text-xs"
         style={{ boxShadow: 'inset 1px 1px 0 #ffffff' }}
@@ -1179,7 +1108,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </button>
       </div>
 
-      {/* PRIMARY ACTIONS (Dynamic Per Stage) */}
       <div className="flex items-center gap-2 p-1.5 flex-wrap">
         {curStage === 0 && (
           <>
@@ -1283,7 +1211,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </span>
       </div>
 
-      {/* STATUS BAR (3 Cells) */}
       <div className="flex gap-1 p-1 bg-[#c0c0c0] border-t border-[#808080] text-[11px]">
         <div className="px-2 py-0.5 border border-[#808080] bg-[#c0c0c0] text-[#3a3a3a] shrink-0 font-mono">
           {`Step ${curStage + 1} of 5 · ${STAGE_NAMES[curStage]}`}
@@ -1310,7 +1237,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </div>
       </div>
 
-      {/* MODAL: Pick Target App */}
       {modalType === 'pickApp' && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-[#c0c0c0] border-2 border-[#ffffff] border-r-[#404040] border-b-[#404040] shadow-xl w-full max-w-md p-1">
@@ -1371,7 +1297,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </div>
       )}
 
-      {/* MODAL: Open Diff & Manifest */}
       {modalType === 'diff' && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-[#c0c0c0] border-2 border-[#ffffff] border-r-[#404040] border-b-[#404040] shadow-xl w-full max-w-xl p-1">
@@ -1417,7 +1342,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </div>
       )}
 
-      {/* MODAL: Verification Criteria */}
       {modalType === 'verification' && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-[#c0c0c0] border-2 border-[#ffffff] border-r-[#404040] border-b-[#404040] shadow-xl w-full max-w-md p-1">
@@ -1461,7 +1385,6 @@ This panel shows the real "slop publish" command and the revenue split it would 
         </div>
       )}
 
-      {/* MODAL: Set Price */}
       {modalType === 'price' && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-[#c0c0c0] border-2 border-[#ffffff] border-r-[#404040] border-b-[#404040] shadow-xl w-full max-w-sm p-1">

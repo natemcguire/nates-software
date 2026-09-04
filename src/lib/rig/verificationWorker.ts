@@ -108,10 +108,6 @@ export class RigVerificationWorker {
       const resultDigest = digest(JSON.stringify({ commitOid: payload.resultCommitOid, runnerImageDigest: payload.runnerImageDigest,
         toolchainVersion: payload.toolchainVersion, testPolicyVersion: payload.testPolicyVersion,
         exitCode: run.exitCode, outputDigest: digest(run.output) }));
-      // Evidence handed to the control plane so it can assemble one signed,
-      // immutable R2 bundle. The worker never uploads to R2 itself — only the
-      // control plane (which holds env.STORAGE) may write the authoritative
-      // bundle, so a compromised/rogue worker cannot forge evidence.
       const isolationAttestation = {
         containerRuntime: 'docker',
         networkMode: 'bridge',

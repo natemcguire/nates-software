@@ -32,8 +32,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
   let commit3Oid: string;
   let commit4DivergedOid: string;
 
-  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
-  // (Fix 1, RIG spec) can be satisfied by this pre-existing PR-flow suite.
   const storage = {
     store: new Map<string, Uint8Array>(),
     async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
@@ -47,13 +45,11 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
   beforeEach(async () => {
     ctx = await createTestD1Database({ foreignKeys: true });
 
-    // Create a temporary sandbox for real bare git repos
     tempDir = path.join('/tmp', `gitsmith-pr-test-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`);
     reposRoot = path.join(tempDir, 'repos');
     fs.mkdirSync(reposRoot, { recursive: true });
     process.env.GITSMITH_REPOS_ROOT = reposRoot;
 
-    // 1. Initialize bare repository on disk
     const initRes = initBareRepo(reposRoot, {
       storageKey,
       objectFormat: 'sha1',
@@ -62,37 +58,31 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     expect(initRes.success).toBe(true);
     bareRepoPath = initRes.repoPath;
 
-    // 2. Create a temporary work tree to build real commits
     const workTree = path.join(tempDir, 'worktree');
     fs.mkdirSync(workTree, { recursive: true });
     execFileSync('git', ['init', workTree], { stdio: 'pipe' });
     execFileSync('git', ['config', 'user.name', 'Alice Submitter'], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['config', 'user.email', 'alice@nates.software'], { cwd: workTree, stdio: 'pipe' });
 
-    // Commit 1: Initial base commit
     fs.writeFileSync(path.join(workTree, 'README.md'), '# My Cool Project\nInitial release.\n');
     execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['commit', '-m', 'feat: initial commit'], { cwd: workTree, stdio: 'pipe' });
     commit1Oid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
-    // Commit 2: Feature modification
     fs.writeFileSync(path.join(workTree, 'README.md'), '# My Cool Project\nEnhanced release with features.\n');
     fs.writeFileSync(path.join(workTree, 'feature.ts'), 'export const runFeature = () => "v1";\n');
     execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['commit', '-m', 'feat: add runFeature helper'], { cwd: workTree, stdio: 'pipe' });
     commit2Oid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
-    // Commit 3: Second feature commit
     fs.writeFileSync(path.join(workTree, 'utils.ts'), 'export const format = (v: string) => v.trim();\n');
     execFileSync('git', ['add', '.'], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['commit', '-m', 'refactor: add string formatting utility'], { cwd: workTree, stdio: 'pipe' });
     commit3Oid = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: workTree, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
-    // Push objects to bare repo
     execFileSync('git', ['remote', 'add', 'origin', bareRepoPath], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/feature'], { cwd: workTree, stdio: 'pipe' });
 
-    // Set main ref to commit1
     const casInit = updateAuthoritativeRefCas(reposRoot, {
       storageKey,
       refName: 'refs/heads/main',
@@ -102,7 +92,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     });
     expect(casInit.success).toBe(true);
 
-    // Commit 4: Create a divergent commit on a separate worktree branch for divergence testing
     execFileSync('git', ['checkout', commit1Oid], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['checkout', '-b', 'divergent-branch'], { cwd: workTree, stdio: 'pipe' });
     fs.writeFileSync(path.join(workTree, 'CONFLICT.md'), 'Upstream changed concurrently\n');
@@ -118,9 +107,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     }
   });
 
-  // =========================================================================
-  // 1. REAL GIT DIFF & COMMIT LIST ENGINE ON BARE REPO
-  // =========================================================================
   describe('1. Real Git Diff & Commit List Engine', () => {
     it('returns real unified diff and commit list for a known multi-commit branch', () => {
       const result = getProposalDiff(reposRoot, storageKey, commit1Oid, commit3Oid);
@@ -133,7 +119,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(result.aheadCount).toBe(2);
       expect(result.behindCount).toBe(0);
 
-      // Verify commit list contains exactly Commit 2 and Commit 3
       expect(result.commits).toHaveLength(2);
       expect(result.commits[0].sha).toBe(commit3Oid);
       expect(result.commits[0].summary).toBe('refactor: add string formatting utility');
@@ -141,7 +126,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(result.commits[1].sha).toBe(commit2Oid);
       expect(result.commits[1].summary).toBe('feat: add runFeature helper');
 
-      // Verify files changed
       expect(result.filesChanged).toBe(3);
       expect(result.totalAdditions).toBeGreaterThanOrEqual(3);
       expect(result.totalDeletions).toBeGreaterThanOrEqual(1);
@@ -160,7 +144,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(utilsFile).toBeDefined();
       expect(utilsFile?.status).toBe('added');
 
-      // Verify unified diff string
       expect(result.unifiedDiff).toContain('diff --git a/README.md b/README.md');
       expect(result.unifiedDiff).toContain('+Enhanced release with features.');
       expect(result.unifiedDiff).toContain('+export const runFeature');
@@ -225,7 +208,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     });
 
     it('returns an honest error when diff exceeds maxBuffer limit (no fake-success empty diff)', () => {
-      // Execute diff with a tiny buffer (10 bytes) that cannot hold the full unified diff
       const result = getProposalDiff(reposRoot, storageKey, commit1Oid, commit3Oid, { maxBuffer: 10 });
       expect(result.success).toBe(false);
       expect(result.error).toContain('diff output exceeded maximum buffer limit');
@@ -255,18 +237,15 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     });
 
     it('truthfully detects divergence and marks canApprove as false in domain status', () => {
-      // Divergent comparison: base is commit 4 (on divergent-branch), head is commit 3 (on feature-branch)
-      // Both branched from commit 1
       const result = getProposalDiff(reposRoot, storageKey, commit4DivergedOid, commit3Oid);
 
       expect(result.success).toBe(true);
       expect(result.isFastForward).toBe(false);
       expect(result.diverged).toBe(true);
       expect(result.mergeBaseOid).toBe(commit1Oid);
-      expect(result.behindCount).toBe(1); // target has 1 commit ahead of merge-base
-      expect(result.aheadCount).toBe(2);  // feature has 2 commits ahead of merge-base
+      expect(result.behindCount).toBe(1);
+      expect(result.aheadCount).toBe(2);
 
-      // Shows status badge logic reports divergence
       const status = formatProposalStatus({
         id: 'prop-1',
         category: 'proposals',
@@ -291,12 +270,7 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     });
   });
 
-  // =========================================================================
-  // 2. HTTP DIFF & COMMENTS ENDPOINTS INTEGRATION
-  // =========================================================================
   describe('2. HTTP Diff & Comment Endpoints', () => {
-    // Seeds a passing build_runs row + matching signed R2 evidence bundle for
-    // a merge attempt, so a subsequent 'approve' satisfies the Fix 1 gate.
     async function seedEvidenceBundle(attemptId: string, repositoryId: string, resultCommitOid: string) {
       const buildId = `build-${attemptId}`;
       const bytes = new TextEncoder().encode(JSON.stringify({ logs: 'ok', mergeAttemptId: attemptId }));
@@ -357,7 +331,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     it('serves real diff via /api/git?action=diff for proposal and repo params', async () => {
       await seedProposalInD1();
 
-      // Query by proposalId
       const req1 = new Request('http://localhost/api/git?action=diff&proposalId=proposal:attempt-pr', {
         headers: authHeaders
       });
@@ -367,7 +340,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(data1.success).toBe(true);
       expect(data1.commits).toHaveLength(2);
 
-      // Query by repo + base + head
       const req2 = new Request(`http://localhost/api/git?action=diff&repositoryId=repo-pr&base=${commit1Oid}&head=${commit3Oid}`, {
         headers: authHeaders
       });
@@ -381,7 +353,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     it('allows reviewer and submitter to post and retrieve PR review comments', async () => {
       await seedProposalInD1();
 
-      // 1. Post a review comment from reviewer
       const commentReq = new Request('http://localhost/api/inbox', {
         method: 'POST',
         headers: authHeaders,
@@ -397,7 +368,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(commentData.success).toBe(true);
       expect(commentData.commentId).toBeDefined();
 
-      // 2. Retrieve conversation messages via /api/inbox?action=comments
       const getCommentsReq = new Request('http://localhost/api/inbox?action=comments&proposalId=proposal:attempt-pr', {
         headers: authHeaders
       });
@@ -405,14 +375,13 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(getCommentsRes.status).toBe(200);
       const getCommentsData: any = await getCommentsRes.json();
       expect(getCommentsData.success).toBe(true);
-      expect(getCommentsData.messages).toHaveLength(2); // Initial proposal + 1 reply
+      expect(getCommentsData.messages).toHaveLength(2);
       expect(getCommentsData.messages[1].content).toBe('Great work! Could you verify the export function performance?');
     });
 
     it('server-side rejects approval attempt for a divergent proposal with 409 Conflict', async () => {
       await seedProposalInD1();
 
-      // Seed a second divergent proposal in D1
       await ctx.d1.prepare(`INSERT INTO merge_jobs
         (id,target_repository_id,target_ref,requested_by_user_id,status,idempotency_key)
         VALUES ('job-pr-div','repo-pr','refs/heads/main','usr_sam','preview_ready','pr-test-div')`).run();
@@ -427,7 +396,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
         .bind(commit3Oid).run();
       await seedEvidenceBundle('attempt-pr-div', 'repo-pr', commit3Oid);
 
-      // Attempt to approve divergent proposal
       const approveReq = new Request('http://localhost/api/inbox', {
         method: 'POST',
         headers: authHeaders,
@@ -445,7 +413,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(approveData.success).toBe(false);
       expect(approveData.error).toContain('divergent proposal');
 
-      // Verify no outbox event was created and attempt was not approved
       const outboxEvent = await ctx.d1.prepare("SELECT * FROM forge_outbox_events WHERE aggregate_id='attempt-pr-div'").first();
       expect(outboxEvent).toBeNull();
       const attemptRow: any = await ctx.d1.prepare("SELECT status FROM merge_attempts WHERE id='attempt-pr-div'").first();
@@ -453,7 +420,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     });
 
     it('server-side rejects approval attempt when repo path is invalid or unavailable (fail closed)', async () => {
-      // Seed a proposal whose repository storage path does not exist on disk
       await ctx.d1.prepare(`INSERT INTO repositories
         (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
         VALUES ('repo-pr-missing','dronehunter','usr_nate','nate/missing','public','refs/heads/main','repositories/nonexistent-disk-path','active')`).run();
@@ -489,7 +455,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(approveData.success).toBe(false);
       expect(approveData.error).toContain('unavailable for lineage verification');
 
-      // Verify no outbox event and attempt was not approved
       const outboxEvent = await ctx.d1.prepare("SELECT * FROM forge_outbox_events WHERE aggregate_id='attempt-pr-missing'").first();
       expect(outboxEvent).toBeNull();
       const attemptRow: any = await ctx.d1.prepare("SELECT status FROM merge_attempts WHERE id='attempt-pr-missing'").first();
@@ -499,7 +464,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
     it('authoritatively approves and lands valid fast-forward PR commit OID via CAS', async () => {
       await seedProposalInD1();
 
-      // Approve proposal
       const approveReq = new Request('http://localhost/api/inbox', {
         method: 'POST',
         headers: authHeaders,
@@ -518,7 +482,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(approveData.approvalStatus).toBe('approved');
       expect(approveData.outboxEventId).toBe('merge_land_attempt-pr');
 
-      // Verify outbox event contains exact OID binding
       const outboxEvent: any = await ctx.d1.prepare("SELECT payload FROM forge_outbox_events WHERE id='merge_land_attempt-pr'").first();
       expect(outboxEvent).toBeDefined();
       const payload = JSON.parse(outboxEvent.payload);
@@ -526,7 +489,6 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       expect(payload.resultCommitOid).toBe(commit3Oid);
       expect(payload.targetRef).toBe('refs/heads/main');
 
-      // Perform real CAS update on disk
       const casLandRes = updateAuthoritativeRefCas(reposRoot, {
         storageKey,
         refName: 'refs/heads/main',
@@ -536,21 +498,14 @@ describe('Wave 2 — Real GitHub-Style PR Flow in INBOX', () => {
       });
       expect(casLandRes.success).toBe(true);
 
-      // Verify authoritative ref on disk is now commit 3
       const currentRef = readAuthoritativeRef(reposRoot, storageKey, 'refs/heads/main');
       expect(currentRef).toBe(commit3Oid);
     });
   });
 
-  // =========================================================================
-  // 3. UI RENDERING AND PR TAB INTEGRATION
-  // =========================================================================
   describe('3. UI Rendering — Agent Inbox (single-purpose after task #42)', () => {
     it('renders the local agent-mailbox observer, not the old cloud PR UI', () => {
       const html = renderToString(React.createElement(AuthProvider, null, React.createElement(InboxView)));
-      // The INBOX window was reworked to a single-purpose local agent-mailbox
-      // observer. The cloud PR/merge-proposal UI (INBOX.EXE / Pull Requests /
-      // All Inbound / GITSMITH CAS) is no longer rendered in this view.
       expect(html).toContain('Local Agent Mailbox');
       expect(html).toContain('127.0.0.1:8791');
       expect(html).not.toContain('Pull Requests');

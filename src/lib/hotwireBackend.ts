@@ -1,6 +1,3 @@
-// HOTWIRE & Daily Drops Engine - Production Backend Logic
-// Shareware Marketplace & Daily 12:01 AM UTC Release Protocol
-
 export type MakerBadgeTier = 'Rookie' | 'Iron Maker' | 'Hot Streak' | 'Legend';
 
 export interface MakerBadgeInfo {
@@ -95,7 +92,7 @@ export interface DropRankingInput {
   grantableBps?: number;
   createdAt: Date | string | number;
   creatorStreak?: number;
-  velocity?: number; // Upvotes per hour or recent velocity
+  velocity?: number;
   isVerifiedMaker?: boolean;
   [key: string]: any;
 }
@@ -179,17 +176,10 @@ export interface JsonFeedDocument {
   items: JsonFeedItem[];
 }
 
-// -----------------------------------------------------------------------------
-// 1. Daily 12:01 AM UTC Batch Rollover & Time-To-Next-Drop Logic
-// -----------------------------------------------------------------------------
-
-export const ROLLOVER_HOUR_UTC = 0; // 00:xx
-export const ROLLOVER_MINUTE_UTC = 1; // 00:01
+export const ROLLOVER_HOUR_UTC = 0;
+export const ROLLOVER_MINUTE_UTC = 1;
 export const GENESIS_EPOCH_UTC = new Date('2026-01-01T00:01:00.000Z').getTime();
 
-/**
- * Parses any valid Date input (Date, ISO string, timestamp) into a Date instance.
- */
 export function normalizeDate(input?: Date | string | number | null): Date {
   if (!input) return new Date();
   if (input instanceof Date) return new Date(input.getTime());
@@ -198,15 +188,9 @@ export function normalizeDate(input?: Date | string | number | null): Date {
   return parsed;
 }
 
-/**
- * Calculates the current active 12:01 AM UTC batch window for a given moment in time.
- * If 'now' is at 00:00:30 UTC, it belongs to the previous day's batch (ending at 00:01:00 UTC).
- * If 'now' is at 00:01:00 UTC or later, it belongs to the current day's batch.
- */
 export function getCurrentBatchWindow(nowInput?: Date | string | number): BatchWindow {
   const now = normalizeDate(nowInput);
 
-  // Determine current day 00:01:00.000 UTC
   const todayRollover = new Date(Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
@@ -221,7 +205,6 @@ export function getCurrentBatchWindow(nowInput?: Date | string | number): BatchW
   let windowEnd: Date;
 
   if (now.getTime() < todayRollover.getTime()) {
-    // Current time is before 00:01 UTC today, so active batch started yesterday at 00:01 UTC
     windowEnd = todayRollover;
     windowStart = new Date(Date.UTC(
       now.getUTCFullYear(),
@@ -233,7 +216,6 @@ export function getCurrentBatchWindow(nowInput?: Date | string | number): BatchW
       0
     ));
   } else {
-    // Current time is at or after 00:01 UTC today, so active batch started today at 00:01 UTC
     windowStart = todayRollover;
     windowEnd = new Date(Date.UTC(
       now.getUTCFullYear(),
@@ -246,13 +228,11 @@ export function getCurrentBatchWindow(nowInput?: Date | string | number): BatchW
     ));
   }
 
-  // Format batch ID: drop-YYYY-MM-DD
   const y = windowStart.getUTCFullYear();
   const m = String(windowStart.getUTCMonth() + 1).padStart(2, '0');
   const d = String(windowStart.getUTCDate()).padStart(2, '0');
   const batchId = `drop-${y}-${m}-${d}`;
 
-  // Batch index continuous count from genesis epoch
   const dayMs = 24 * 60 * 60 * 1000;
   const batchNumber = Math.max(1, Math.floor((windowStart.getTime() - GENESIS_EPOCH_UTC) / dayMs) + 1);
 
@@ -265,9 +245,6 @@ export function getCurrentBatchWindow(nowInput?: Date | string | number): BatchW
   };
 }
 
-/**
- * Calculates accurate countdown and statistics to the next 12:01 AM UTC drop cutoff.
- */
 export function getTimeToNextDrop(nowInput?: Date | string | number): DropCountdown {
   const now = normalizeDate(nowInput);
   const { windowStart, windowEnd } = getCurrentBatchWindow(now);
@@ -297,9 +274,6 @@ export function getTimeToNextDrop(nowInput?: Date | string | number): DropCountd
   };
 }
 
-/**
- * Checks if a daily 12:01 AM UTC batch rollover occurred between two timestamps.
- */
 export function isBatchRollover(
   previousCheckInput: Date | string | number,
   currentCheckInput: Date | string | number
@@ -315,9 +289,6 @@ export function isBatchRollover(
   return prevBatch.batchId !== currBatch.batchId || curr.getTime() >= prevBatch.windowEnd.getTime();
 }
 
-/**
- * Calculates continuous batch index number from genesis or custom baseline.
- */
 export function getDropBatchNumber(dateInput?: Date | string | number, epochDate?: Date): number {
   const date = normalizeDate(dateInput);
   const { windowStart } = getCurrentBatchWindow(date);
@@ -325,18 +296,12 @@ export function getDropBatchNumber(dateInput?: Date | string | number, epochDate
   const dayMs = 24 * 60 * 60 * 1000;
   return Math.max(1, Math.floor((windowStart.getTime() - epoch) / dayMs) + 1);
 }
-/**
- * Calculates the previous day's (yesterday's) 12:01 AM UTC batch window.
- */
 export function getYesterdayBatchWindow(nowInput?: Date | string | number): BatchWindow {
   const current = getCurrentBatchWindow(nowInput);
   const yesterdayDate = new Date(current.windowStart.getTime() - (12 * 60 * 60 * 1000));
   return getCurrentBatchWindow(yesterdayDate);
 }
 
-/**
- * Parses a batch ID (e.g. 'drop-2026-08-29') into a full BatchWindow.
- */
 export function getBatchWindowById(batchId: string): BatchWindow | null {
   if (!batchId || !batchId.startsWith('drop-')) return null;
   const parts = batchId.replace(/^drop-/, '').split('-');
@@ -367,9 +332,6 @@ export interface BatchFilterResolution {
   isArchive?: boolean;
 }
 
-/**
- * Resolves a batch query parameter into authoritative timestamp bounds.
- */
 export function resolveBatchFilter(
   batchParam?: string | null,
   nowInput?: Date | string | number
@@ -421,9 +383,6 @@ export function resolveBatchFilter(
   return { type: 'all' };
 }
 
-/**
- * In-memory batch filtering helper for drops arrays.
- */
 export function filterDropsByBatch(
   drops: DropRankingInput[],
   batchParam?: string | null,
@@ -459,9 +418,6 @@ export interface MakerLeaderboardEntry {
   lastDropDate?: string | null;
 }
 
-/**
- * Computes deterministic maker streak leaderboard from maker drops history.
- */
 export function buildMakerLeaderboard(
   makers: Array<{
     id: string;
@@ -492,7 +448,6 @@ export function buildMakerLeaderboard(
     };
   });
 
-  // Sort descending: current streak DESC, longest streak DESC, total drops DESC, username ASC
   leaderboard.sort((a, b) => {
     if (b.currentStreak !== a.currentStreak) return b.currentStreak - a.currentStreak;
     if (b.longestStreak !== a.longestStreak) return b.longestStreak - a.longestStreak;
@@ -503,13 +458,6 @@ export function buildMakerLeaderboard(
   return leaderboard;
 }
 
-// -----------------------------------------------------------------------------
-// 2. Maker Streak Calculator & Badge Tiering
-// -----------------------------------------------------------------------------
-
-/**
- * Resolves badge info and perks based on streak count or tier name.
- */
 export function getMakerBadgeInfo(tierOrStreak: MakerBadgeTier | number): MakerBadgeInfo {
   if (typeof tierOrStreak === 'number') {
     if (tierOrStreak >= 14) return MAKER_BADGE_TIERS['Legend'];
@@ -520,23 +468,13 @@ export function getMakerBadgeInfo(tierOrStreak: MakerBadgeTier | number): MakerB
   return MAKER_BADGE_TIERS[tierOrStreak] || MAKER_BADGE_TIERS['Rookie'];
 }
 
-/**
- * Calculates maker streak multiplier for ranking and royalties.
- */
 export function calculateStreakMultiplier(streak: number = 0): number {
   if (streak <= 0) return 1.0;
   const badge = getMakerBadgeInfo(streak);
-  // Base tier multiplier plus small incremental boost per day capped at 1.75
   const incremental = Math.min(0.15, streak * 0.01);
   return Number((badge.multiplier + incremental).toFixed(3));
 }
 
-/**
- * Updates a maker's streak when a new drop is submitted.
- * - Same-day drop (<= 24h from last or same batch window): streak increments if new batch window, or maintains if duplicate within same day.
- * - Grace window (24h < diff <= 48h): streak increments or maintains without reset.
- * - Inactivity (> 48h): streak resets to 1.
- */
 export function calculateMakerStreak(
   lastDropDateInput: Date | string | number | null,
   currentDateInput: Date | string | number = new Date(),
@@ -565,7 +503,6 @@ export function calculateMakerStreak(
   const diffHours = (current.getTime() - last.getTime()) / (1000 * 60 * 60);
 
   if (diffHours < 0) {
-    // Current time is behind last drop time (clock skew or historical data)
     return {
       newStreak: Math.max(1, currentStreak),
       isMaintained: true,
@@ -579,7 +516,6 @@ export function calculateMakerStreak(
   const currBatch = getCurrentBatchWindow(current);
 
   if (lastBatch.batchId === currBatch.batchId) {
-    // Multiple drops in the same 12:01 AM batch window - preserve active streak
     const streak = Math.max(1, currentStreak);
     return {
       newStreak: streak,
@@ -600,7 +536,6 @@ export function calculateMakerStreak(
       badge: getMakerBadgeInfo(newStreak)
     };
   } else if (diffHours <= 48) {
-    // Grace window: streak preserved or incremented
     const newStreak = Math.max(1, (currentStreak || 0) + 1);
     return {
       newStreak,
@@ -610,7 +545,6 @@ export function calculateMakerStreak(
       badge: getMakerBadgeInfo(newStreak)
     };
   } else {
-    // Streak expired beyond 48 hours
     const newStreak = 1;
     return {
       newStreak,
@@ -622,10 +556,6 @@ export function calculateMakerStreak(
   }
 }
 
-/**
- * Processes a full chronological history of drop timestamps for a maker to compute
- * current active streak, longest lifetime streak, and current badge tier.
- */
 export function calculateMakerStreakFromHistory(
   dropDates: (Date | string | number)[],
   nowInput?: Date | string | number
@@ -648,7 +578,6 @@ export function calculateMakerStreakFromHistory(
     };
   }
 
-  // Sort timestamps chronologically ascending
   const sorted = dropDates
     .map(d => normalizeDate(d))
     .filter(d => !isNaN(d.getTime()))
@@ -686,12 +615,11 @@ export function calculateMakerStreakFromHistory(
     lastEvaluatedDate = currentDate;
   }
 
-  // Check if current streak has decayed relative to Date.now() / nowInput
   const now = nowInput ? normalizeDate(nowInput) : new Date();
   if (lastEvaluatedDate) {
     const diffHoursFromNow = (now.getTime() - lastEvaluatedDate.getTime()) / (1000 * 60 * 60);
     if (diffHoursFromNow > 48) {
-      currentStreak = 0; // Inactive today
+      currentStreak = 0;
     }
   }
 
@@ -707,19 +635,6 @@ export function calculateMakerStreakFromHistory(
   };
 }
 
-// -----------------------------------------------------------------------------
-// 3. Hotwire Drop Ranking Algorithm
-// -----------------------------------------------------------------------------
-
-/**
- * Calculates the composite Hotwire ranking score for a drop.
- * Formula balances:
- * - Upvotes & Forks (weighted by fork lineage value)
- * - Lineage Depth multiplier (Local-First open-core tree depth)
- * - Maker Streak Multiplier (boost for consistent daily creators)
- * - Velocity Multiplier (rate of incoming upvotes / interest)
- * - Hacker News style Time-decay gravity curve based on drop release age
- */
 export function calculateHotwireScore(
   drop: DropRankingInput,
   options: RankingOptions = {}
@@ -743,28 +658,20 @@ export function calculateHotwireScore(
   const forkDepth = Math.max(0, drop.forkDepth || 0);
   const streak = Math.max(0, drop.creatorStreak || 0);
 
-  // 1. Base Score: Weighted combination of direct upvotes and downstream forks
   const baseScore = (upvotes * upvoteWeight) + (forks * forkWeight);
 
-  // 2. Lineage Bonus: Multiplier rewarded for deep Git/AST lineage trees
-  // Logarithmic scaling on forks + linear bonus for verified depth
   const forkLog = forks > 0 ? Math.log10(forks + 1) : 0;
   const lineageBonus = Number((1.0 + (forkLog * 0.25) + (forkDepth * forkDepthWeight)).toFixed(4));
 
-  // 3. Streak Multiplier
   const streakMultiplier = calculateStreakMultiplier(streak);
 
-  // 4. Velocity Multiplier: Bonus for drops gaining traction quickly
   const velocity = typeof drop.velocity === 'number' ? Math.max(0, drop.velocity) : 0;
   const velocityMultiplier = velocity > 0 ? Number(Math.min(2.5, 1.0 + (velocity * 0.15)).toFixed(3)) : 1.0;
 
-  // 5. Time Decay: Age in hours with gravity exponent
   const ageMs = Math.max(0, now.getTime() - createdAt.getTime());
   const ageInHours = Number((ageMs / (1000 * 60 * 60)).toFixed(2));
-  // (age + 2)^gravity damping prevents extreme division by zero or runaway scores in first few minutes
   const timeDecay = Number((1.0 / Math.pow(ageInHours + 2.0, gravity)).toFixed(5));
 
-  // Composite Score
   const rawScore = (baseScore + 1.0) * lineageBonus * streakMultiplier * velocityMultiplier * (timeDecay * 10.0);
   const score = Number(Math.max(0.001, rawScore).toFixed(4));
 
@@ -782,10 +689,6 @@ export function calculateHotwireScore(
   };
 }
 
-/**
- * Ranks an array of drops deterministically by Hotwire score, breaking ties by upvotes,
- * forks, creation date, and alphanumeric ID.
- */
 export function rankDrops(
   drops: DropRankingInput[],
   options: RankingOptions = {}
@@ -803,7 +706,6 @@ export function rankDrops(
     };
   });
 
-  // Sort descending by score, tiebreakers: upvotes DESC, forks DESC, createdAt DESC, id ASC
   evaluated.sort((a, b) => {
     if (b.hotwireScore !== a.hotwireScore) {
       return b.hotwireScore - a.hotwireScore;
@@ -826,7 +728,6 @@ export function rankDrops(
     return String(a.id).localeCompare(String(b.id));
   });
 
-  // Assign 1-indexed rank
   evaluated.forEach((item, index) => {
     item.rankingMetrics.rank = index + 1;
   });
@@ -834,14 +735,6 @@ export function rankDrops(
   return evaluated;
 }
 
-// -----------------------------------------------------------------------------
-// 4. Idempotent Upvoting & Cryptographic Hashing
-// -----------------------------------------------------------------------------
-
-/**
- * Fast SHA-256 hex digest generator compatible with Cloudflare Workers (crypto.subtle),
- * Node.js (globalThis.crypto.subtle), and standard modern browsers.
- */
 export async function sha256Hex(message: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(message);
@@ -852,7 +745,6 @@ export async function sha256Hex(message: string): Promise<string> {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  // Fallback for Node.js environments
   try {
     const nodeCrypto = await import('node:crypto');
     return nodeCrypto.createHash('sha256').update(message).digest('hex');
@@ -868,15 +760,10 @@ export async function sha256Hex(message: string): Promise<string> {
   }
 }
 
-/**
- * Anonymizes client IP address to protect voter privacy while preserving network uniqueness.
- * Masks last octet of IPv4 or last 64 bits of IPv6.
- */
 export function anonymizeIp(ip: string): string {
   if (!ip || ip.trim().length === 0) return '0.0.0.0';
   const cleanIp = ip.trim();
 
-  // IPv4
   if (cleanIp.includes('.')) {
     const parts = cleanIp.split('.');
     if (parts.length === 4) {
@@ -884,7 +771,6 @@ export function anonymizeIp(ip: string): string {
     }
   }
 
-  // IPv6
   if (cleanIp.includes(':')) {
     const parts = cleanIp.split(':');
     return parts.slice(0, 3).join(':') + '::';
@@ -893,10 +779,6 @@ export function anonymizeIp(ip: string): string {
   return cleanIp;
 }
 
-/**
- * Generates an anonymous, deterministic voter token hash using SHA-256.
- * Salt combines voter identification (masked IP / user token), drop ID, and optional batch ID / secret.
- */
 export async function hashVoterKey(
   voterIdentifier: string,
   appId: string,
@@ -916,9 +798,6 @@ export interface VoteValidationResult {
   error?: string;
 }
 
-/**
- * Validates an incoming upvote request and produces an idempotent voter hash.
- */
 export async function validateAndHashVote(
   appId: string,
   clientIp?: string,
@@ -939,15 +818,9 @@ export async function validateAndHashVote(
   };
 }
 
-/**
- * In-memory or cache-backed store for tracking idempotent upvotes and preventing duplicate voting.
- */
 export class IdempotentVoteStore {
   private votes = new Set<string>();
 
-  /**
-   * Hashes key and registers vote. Returns true if vote is NEW, false if already voted.
-   */
   async castVote(voterIdentifier: string, appId: string, secretSalt?: string): Promise<{
     isNewVote: boolean;
     voterHash: string;
@@ -976,10 +849,6 @@ export class IdempotentVoteStore {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 5. RSS 2.0 & JSON Feed Syndication Generator
-// -----------------------------------------------------------------------------
-
 function escapeXml(unsafe: string): string {
   if (!unsafe) return '';
   return String(unsafe)
@@ -990,9 +859,6 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, '&apos;');
 }
 
-/**
- * Generates valid RSS 2.0 XML syndication feed for daily Hotwire drops.
- */
 export function generateRssFeed(
   drops: DropRankingInput[],
   options: FeedOptions = {}
@@ -1075,9 +941,6 @@ export function generateRssFeed(
 </rss>`.trim();
 }
 
-/**
- * Generates JSON Feed v1.1 syndication document for daily Hotwire drops.
- */
 export function generateJsonFeed(
   drops: DropRankingInput[],
   options: FeedOptions = {}
@@ -1177,9 +1040,6 @@ export function generateJsonFeed(
   };
 }
 
-/**
- * Syndication feed content resolver based on query format or request Accept header.
- */
 export function generateFeedResponse(
   drops: DropRankingInput[],
   format: 'rss' | 'json' | 'auto' = 'auto',

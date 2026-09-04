@@ -1,8 +1,3 @@
-// Public proxy Pages Function for retrieving committed repository files (e.g. spec.md, screenshots, business.md)
-// Authoritative Git storage is token-gated on the GITSMITH gateway; this endpoint securely proxies
-// reads for PUBLIC repositories only, fail-closed against path traversal and private repo access.
-// Bound to the public default_ref tip only; no historical OID parameter accepted.
-
 import {
   isValidGitOid,
   validateRepoFilePath,
@@ -67,16 +62,10 @@ function sanitizeLogMessage(msg: unknown, sensitiveTokens: (string | undefined |
   return str;
 }
 
-/**
- * Reads a response body up to maxBytes using streaming chunks.
- * Fast-rejects if Content-Length header is present and exceeds maxBytes.
- * Enforces bounded streaming read: cancels reader as soon as accumulated bytes exceed maxBytes.
- */
 export async function readBoundedBody(
   res: Response,
   maxBytes: number
 ): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; status: 413; error: string }> {
-  // 1. Fast-reject early if Content-Length header is present and exceeds cap
   const clHeader = res.headers?.get?.('content-length');
   if (clHeader) {
     const cl = parseInt(clHeader, 10);
@@ -90,12 +79,10 @@ export async function readBoundedBody(
     }
   }
 
-  // 2. Empty/missing body
   if (!res.body) {
     return { ok: true, bytes: new Uint8Array(0) };
   }
 
-  // 3. Streaming bounded read (the enforcement boundary)
   if (typeof res.body.getReader === 'function') {
     const reader = res.body.getReader();
     const chunks: Uint8Array[] = [];
@@ -125,9 +112,6 @@ export async function readBoundedBody(
       } catch {}
       throw err;
     } finally {
-      // Always release the lock on the normal EOF path (cancel() already
-      // releases on the over-cap/error paths; releaseLock() after a cancel is a
-      // harmless no-op / caught below).
       try {
         reader.releaseLock();
       } catch {}
@@ -142,10 +126,6 @@ export async function readBoundedBody(
     return { ok: true, bytes: combined };
   }
 
-  // No streaming reader available (non-standard body / already-buffering mock).
-  // Fail CLOSED: a buffered read cannot honor the streaming DoS bound, so we do
-  // NOT fall back to res.arrayBuffer(). A conforming gateway Response always
-  // exposes getReader(); anything else is treated as an unreadable body.
   throw new Error('Gateway response body is not a streamable ReadableStream');
 }
 
@@ -153,7 +133,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   try {
     const url = new URL(request.url);
 
-    // 1. Validate requested file path (Security: fail-closed against traversal, absolute paths, backslashes, null bytes)
     const rawPath = url.searchParams.get('path') || url.searchParams.get('file') || url.searchParams.get('filePath');
     if (!rawPath || typeof rawPath !== 'string') {
       return jsonError('File path is required', 400);
@@ -169,9 +148,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError(pathVal.error || 'Invalid file path', 400);
     }
 
-    // 2. Parse repo identification parameters
-    // Note: caller-supplied commitOid is deliberately REMOVED entirely per security policy:
-    // this endpoint serves ONLY the current public default_ref tip resolved server-side from D1.
     let repoId = url.searchParams.get('repoId') || url.searchParams.get('repositoryId') || url.searchParams.get('id');
     let owner = url.searchParams.get('owner');
     let slug = url.searchParams.get('slug');
@@ -195,8 +171,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError('Database service is unavailable', 503);
     }
 
-    // 3. Resolve repository and commit OID from D1
-    // PUBLIC repos only (visibility='public' AND status='active') — reject private/unlisted/inactive with 404
     let repoRow: any = null;
 
     if (repoId) {
@@ -233,12 +207,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError('Repository not found', 404);
     }
 
-    // Fail-closed: Only serve active public repos
     if (repoRow.visibility !== 'public' || repoRow.status !== 'active') {
       return jsonError('Repository not found', 404);
     }
 
-    // 4. Resolve commit OID from DB default ref ONLY
     const targetCommitOid = repoRow.refCommitOid;
     if (!targetCommitOid || !isValidGitOid(targetCommitOid) || targetCommitOid.startsWith('-')) {
       return jsonError('No commit found for repository ref', 404);
@@ -246,14 +218,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const storageKey = repoRow.storageKey || `repositories/${repoRow.id}`;
     const maxAllowedBytes = getMaxFileSizeBytes(filePath);
-    // Base64 + JSON overhead cap for blob responses
     const maxGatewayBlobBytes = Math.ceil(maxAllowedBytes * 1.36) + 32 * 1024;
     let fileBytes: Buffer | Uint8Array | null = null;
 
-    // 5. Priority 1: Delegate to live token-gated GITSMITH gateway if configured
     if (env.GITSMITH_GATEWAY_URL) {
       if (!env.GITSMITH_GATEWAY_TOKEN) {
-        // Token must be configured; fail safely without leaking details
         return jsonError('Gateway configuration error', 500);
       }
 
@@ -297,7 +266,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             try { await res.body.cancel(); } catch {}
           }
 
-          // If gateway doesn't support /blob yet, fallback to /tree for text files
           if (filePath.endsWith('.md') || filePath.endsWith('.json') || filePath.endsWith('.txt')) {
             const gatewayTreeUrl = new URL('/api/gateway/tree', env.GITSMITH_GATEWAY_URL);
             gatewayTreeUrl.searchParams.set('storageKey', storageKey);
@@ -343,7 +311,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             return jsonError('Failed to retrieve file from repository gateway', 502);
           }
         } else {
-          // Bounded streaming read for blob response (enforcement boundary)
           const boundedBlob = await readBoundedBody(res, maxGatewayBlobBytes);
           if (!boundedBlob.ok) {
             return jsonError(boundedBlob.error, boundedBlob.status);
@@ -371,7 +338,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     }
 
-    // 6. Priority 2: Fallback to local filesystem for offline dev/tests
     if (!fileBytes) {
       const reposRoot = env.GITSMITH_REPOS_ROOT || (typeof process !== 'undefined' ? process.env?.GITSMITH_REPOS_ROOT : undefined);
       if (reposRoot) {
@@ -393,7 +359,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return jsonError('File not found in repository', 404);
     }
 
-    // 7. Hard size check and return HTTP response with correct MIME type and cache controls
     if (fileBytes.length > maxAllowedBytes) {
       return jsonError('File size exceeds maximum allowed limit', 413);
     }

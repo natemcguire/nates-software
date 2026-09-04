@@ -18,11 +18,11 @@ import { CORE_TERMINAL_TOOLS, LOCAL_TERMINAL_TOOLS } from './toolchain.js';
 
 export const DEFAULT_LIMITS: LimitsConfig = {
   maxConcurrentSessions: 10,
-  sessionTtlSeconds: 900, // 15 minutes hard TTL
-  idleTimeoutSeconds: 300, // 5 minutes idle timeout
-  maxOutputRateBytesPerSec: 1024 * 1024, // 1MB/s throttle
-  maxPayloadBytes: 64 * 1024, // 64KB max per WS message
-  maxOutputBufferBytes: 512 * 1024 // 512KB max backpressure buffer
+  sessionTtlSeconds: 900,
+  idleTimeoutSeconds: 300,
+  maxOutputRateBytesPerSec: 1024 * 1024,
+  maxPayloadBytes: 64 * 1024,
+  maxOutputBufferBytes: 512 * 1024
 };
 
 export const DEFAULT_CONFIG: GatewayConfig = {
@@ -130,7 +130,6 @@ export function createTerminalGateway(
       ? (reqOrigin || '*')
       : 'null';
 
-    // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', allowOriginHeader);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Sec-WebSocket-Protocol');
@@ -178,21 +177,18 @@ export function createTerminalGateway(
   httpServer.on('upgrade', async (req: IncomingMessage, socket, head) => {
     const origin = req.headers['origin'] as string | undefined;
 
-    // 1. Origin verification
     if (!isOriginAllowed(origin, config.allowedOrigins)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    // 2. Capacity limit check before redeeming tickets
     if (sessionManager.isAtCapacity()) {
       socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
       socket.destroy();
       return;
     }
 
-    // 3. Token extraction & validation
     const { token } = extractAuthToken(req);
     const authResult = validateToken(token, config.validTokens, config.tokenSecret);
     if (!authResult.valid) {
@@ -202,7 +198,6 @@ export function createTerminalGateway(
     }
 
     if (process.env.NODE_ENV === 'production' && token) {
-      // Fast in-memory replay rejection before remote redemption
       const digest = token.slice(-43);
       if (usedTicketDigests.has(digest)) {
         socket.write('HTTP/1.1 409 Conflict\r\n\r\n');
@@ -237,14 +232,11 @@ export function createTerminalGateway(
       }
     }
     if (process.env.NODE_ENV === 'production' && token) {
-      // Tickets are intentionally one-use. The set is bounded by the gateway's
-      // short ticket lifetime and periodically cleared without affecting sessions.
       const digest = token.slice(-43);
       usedTicketDigests.add(digest);
       setTimeout(() => usedTicketDigests.delete(digest), 90_000).unref();
     }
 
-    // Upgrade connection
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req, { ...authResult.user, gatewaySessionId });
     });
@@ -282,7 +274,6 @@ export function createTerminalGateway(
         repoRoot: config.repoRoot
       });
 
-      // Notify client session is ready
       sendWs({
         type: 'session_ready',
         sessionId: session.id,
@@ -294,7 +285,6 @@ export function createTerminalGateway(
         motd: `⚡ Nate's Software Ephemeral Terminal [${provider.isolationType.toUpperCase()} ISOLATION]\nWorkspace: ${session.workspacePath}\n`
       });
 
-      // Stream stdout/stderr from session to WebSocket
       session.onOutput((chunk: string) => {
         if (!sessionManager.checkRateLimit(sessionId, Buffer.byteLength(chunk))) {
           sendWs({ type: 'error', message: 'Terminal output rate exceeded; session terminated', code: 'OUTPUT_RATE_LIMIT' });
@@ -335,7 +325,6 @@ export function createTerminalGateway(
       return;
     }
 
-    // Handle inbound WebSocket messages
     ws.on('message', (data: Buffer | string) => {
       if (!session || !session.isAlive()) return;
 
@@ -360,7 +349,6 @@ export function createTerminalGateway(
           sendWs({ type: 'error', message: 'Unknown terminal message type', code: 'INVALID_MESSAGE' });
         }
       } catch {
-        // If not JSON, treat raw payload as terminal input
         session.write(raw);
       }
     });

@@ -1,8 +1,3 @@
-// Spec E — Approval/merge integrity (security-grade subset)
-// Verifies the reviewer-saw-OID confirmation gate added on top of the existing
-// CAS + fast-forward ancestry checks in functions/api/inbox.ts. This is fail-closed
-// security code: no approval may proceed without evidence the reviewer actually saw
-// matching the current merge attempt's OIDs.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -50,7 +45,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     execFileSync('git', ['remote', 'add', 'origin', initRes.repoPath], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['push', 'origin', 'HEAD:refs/heads/feature'], { cwd: workTree, stdio: 'pipe' });
 
-    // Divergent target: branch off base, add an unrelated commit, so target has moved.
     execFileSync('git', ['checkout', baseOid], { cwd: workTree, stdio: 'pipe' });
     execFileSync('git', ['checkout', '-b', 'divergent'], { cwd: workTree, stdio: 'pipe' });
     fs.writeFileSync(path.join(workTree, 'UPSTREAM.md'), 'concurrent upstream change\n');
@@ -69,8 +63,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  // Minimal in-memory R2 mock so the signed evidence-bundle approval gate
-  // (Fix 1, RIG spec) can be satisfied by this pre-existing OID-gate suite.
   const storage = {
     store: new Map<string, Uint8Array>(),
     async put(key: string, value: Uint8Array) { this.store.set(key, value); return { key }; },
@@ -102,9 +94,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
       VALUES (?, 'usr_nate','usr_sam','feat: PR','Preview','Please review','refs/heads/feature',?,0,1,'proposal',?)`)
       .bind(opts.messageId, opts.resultCommitOid, opts.attemptId).run();
 
-    // Seed a passing build_runs row + matching signed R2 evidence bundle so
-    // the Fix 1 approval gate is satisfied — this suite tests the OID gate
-    // specifically, not the evidence-bundle gate (see rig-verification-evidence-bundle.test.ts).
     const buildId = `build-${opts.attemptId}`;
     const bytes = new TextEncoder().encode(JSON.stringify({ logs: 'ok', mergeAttemptId: opts.attemptId }));
     const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -129,9 +118,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // 1. Approval blocked without loaded evidence (missing reviewedTargetOid/reviewedSourceOid)
-  // -------------------------------------------------------------------------
   it('fails closed with 422 when reviewedTargetOid and reviewedSourceOid are absent (evidence not confirmed)', async () => {
     await seedProposal({
       repoId: 'repo-e1', jobId: 'job-e1', attemptId: 'attempt-e1', messageId: 'msg-e1',
@@ -144,7 +130,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     expect(data.success).toBe(false);
     expect(data.error).toContain('reviewedTargetOid');
 
-    // No outbox event, no state change — the world was not mutated on a blind approval attempt.
     const outboxEvent = await ctx.d1.prepare("SELECT * FROM forge_outbox_events WHERE aggregate_id='attempt-e1'").first();
     expect(outboxEvent).toBeNull();
     const attemptRow: any = await ctx.d1.prepare("SELECT status FROM merge_attempts WHERE id='attempt-e1'").first();
@@ -160,7 +145,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     const res = await approveRequest({
       action: 'approve', messageId: 'msg-e2', comment: 'Partial evidence.',
       reviewedTargetOid: baseOid
-      // reviewedSourceOid intentionally omitted
     });
     expect(res.status).toBe(422);
     const data: any = await res.json();
@@ -168,17 +152,12 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     expect(data.error).toContain('reviewedSourceOid');
   });
 
-  // -------------------------------------------------------------------------
-  // 2. Approval blocked on OID drift (reviewer saw stale evidence)
-  // -------------------------------------------------------------------------
   it('fails closed with 409 when the submitted reviewed OIDs have drifted from the current merge attempt', async () => {
     await seedProposal({
       repoId: 'repo-e3', jobId: 'job-e3', attemptId: 'attempt-e3', messageId: 'msg-e3',
       inputTargetOid: baseOid, resultCommitOid: headOid
     });
 
-    // Reviewer submits OIDs that do not match the attempt's current input/result OIDs
-    // (e.g. they loaded evidence for a different or earlier version of the attempt).
     const res = await approveRequest({
       action: 'approve', messageId: 'msg-e3', comment: 'Approving with stale OIDs.',
       reviewedTargetOid: 'f'.repeat(40),
@@ -212,9 +191,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     expect(data.error).toContain('drifted');
   });
 
-  // -------------------------------------------------------------------------
-  // 3. FF merge succeeds when reviewed OIDs match and ancestry is a clean fast-forward
-  // -------------------------------------------------------------------------
   it('approves and queues landing when reviewed OIDs exactly match a fast-forward-able attempt', async () => {
     await seedProposal({
       repoId: 'repo-e5', jobId: 'job-e5', attemptId: 'attempt-e5', messageId: 'msg-e5',
@@ -239,18 +215,12 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     expect(payload.resultCommitOid).toBe(headOid);
   });
 
-  // -------------------------------------------------------------------------
-  // 4. Non-FF (divergent) merge fails closed even with matching reviewed OIDs
-  // -------------------------------------------------------------------------
   it('fails closed with 409 for a divergent (non-fast-forward) attempt even when reviewed OIDs match exactly', async () => {
     await seedProposal({
       repoId: 'repo-e6', jobId: 'job-e6', attemptId: 'attempt-e6', messageId: 'msg-e6',
       inputTargetOid: divergedTargetOid, resultCommitOid: headOid
     });
 
-    // Reviewer correctly submits the OIDs they saw (no drift) — but the underlying
-    // history is divergent, so the pre-existing fast-forward ancestry gate must still
-    // fail closed. The new reviewer-saw-OID gate does NOT weaken this check.
     const res = await approveRequest({
       action: 'approve', messageId: 'msg-e6', comment: 'Reviewed but branch has diverged.',
       reviewedTargetOid: divergedTargetOid,
@@ -265,9 +235,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     expect(outboxEvent).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
-  // 5. Gateway/repository unavailable fails closed even when reviewed OIDs match exactly
-  // -------------------------------------------------------------------------
   it('fails closed with 409 when repository storage is unavailable, even with matching reviewed OIDs', async () => {
     await ctx.d1.prepare(`INSERT INTO repositories
       (id,app_id,owner_user_id,slug,visibility,default_ref,storage_key,status)
@@ -309,9 +276,6 @@ describe('Spec E — INBOX approval reviewer-saw-OID confirmation gate', () => {
     expect(outboxEvent).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
-  // Rejections are exempt from the evidence-confirmation gate (only approvals are gated).
-  // -------------------------------------------------------------------------
   it('does not require reviewedTargetOid/reviewedSourceOid for rejections', async () => {
     await seedProposal({
       repoId: 'repo-e8', jobId: 'job-e8', attemptId: 'attempt-e8', messageId: 'msg-e8',

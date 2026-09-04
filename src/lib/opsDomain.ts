@@ -1,17 +1,3 @@
-// OPS — operator health / reconciliation read models.
-//
-// Read-only. No money mutation. These functions compute honest, server-side
-// metrics directly from the same durable commerce tables the drain worker
-// (workers/drain/src/index.ts) operates on: stripe_event_inbox,
-// commerce_transfer_outbox, commerce_reversal_outbox. Nothing here fabricates
-// state — every number is a real aggregate query against those tables.
-//
-// Column fact: commerce_transfer_outbox.destination_user_id identifies the
-// payout recipient (migrations/0009_durable_commerce.sql). The reversal
-// outbox (commerce_reversal_outbox, migrations/0011_commerce_money_movement.sql)
-// has no destination_user_id column of its own — it reverses an already
-// succeeded transfer via original_outbox_id, so a reversal row's recipient is
-// looked up (if needed) through that reference, not read directly.
 
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -32,14 +18,14 @@ export interface StripeInboxHealth {
   totalCount: number;
   statusCounts: StatusCount[];
   oldestUnprocessedNextAttemptAt: string | null;
-  deadLetterCount: number; // terminal_failure
+  deadLetterCount: number;
 }
 
 export interface OutboxHealth {
   totalCount: number;
   statusCounts: StatusCount[];
   oldestPendingCreatedAt: string | null;
-  deadLetterCount: number; // terminal_failure
+  deadLetterCount: number;
 }
 
 export interface WorkerFlagState {
@@ -73,11 +59,6 @@ function countForStatuses(counts: StatusCount[], statuses: readonly string[]): n
   return counts.filter(c => set.has(c.status)).reduce((acc, c) => acc + c.count, 0);
 }
 
-/**
- * Computes honest stripe_event_inbox health: counts by status, the oldest
- * un-processed row's next_attempt_at (queue age signal), and the
- * terminal_failure (dead-letter) count.
- */
 export async function computeStripeInboxHealth(db: D1Database): Promise<StripeInboxHealth> {
   const counts = await statusCounts(db, 'stripe_event_inbox');
   const totalCount = sumCounts(counts);
@@ -99,11 +80,6 @@ export async function computeStripeInboxHealth(db: D1Database): Promise<StripeIn
   };
 }
 
-/**
- * Computes honest outbox health (shared shape for commerce_transfer_outbox
- * and commerce_reversal_outbox): counts by status, oldest pending row's
- * created_at, and terminal_failure (dead-letter) count.
- */
 export async function computeOutboxHealth(db: D1Database, table: 'commerce_transfer_outbox' | 'commerce_reversal_outbox'): Promise<OutboxHealth> {
   const counts = await statusCounts(db, table);
   const totalCount = sumCounts(counts);
@@ -125,7 +101,6 @@ export async function computeOutboxHealth(db: D1Database, table: 'commerce_trans
   };
 }
 
-/** Reflects the real drain-worker env flag — never fabricated, never inferred. */
 export function computeWorkerFlags(env: { PAYOUTS_ENABLED?: string } | undefined | null): WorkerFlagState {
   return { payoutsEnabled: env?.PAYOUTS_ENABLED === 'true' };
 }
@@ -158,7 +133,7 @@ export interface DeadLetterInboxEvent {
 export interface DeadLetterOutboxRow {
   kind: 'commerce_transfer_outbox' | 'commerce_reversal_outbox';
   id: string;
-  orderRef: string; // order_id for transfer outbox, original_outbox_id for reversal outbox
+  orderRef: string;
   destinationUserId: string | null;
   amountCents: number;
   currency: string;

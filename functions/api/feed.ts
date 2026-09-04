@@ -1,5 +1,3 @@
-// Canonical HOTWIRE RSS 2.0 and JSON Feed syndication.
-
 const BASE_URL = 'https://nates-software.com';
 
 function xml(value: unknown): string {

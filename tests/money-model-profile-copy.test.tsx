@@ -6,13 +6,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { ProfileView } from '../src/views/ProfileView';
 import { AuthContext, AuthUser } from '../src/context/AuthContext';
 
-// ProfileView fetches profile data asynchronously and only renders the
-// "Sales, Royalties & Contributor Grants" tab once isLoading is false and the
-// viewer owns the profile. There's no jsdom in this suite (SSR-only, mirrors
-// the pattern in tests/slopshop-redesign.test.tsx), so we can't await a real
-// fetch + re-render here. Instead we assert directly against the component
-// source for the money-split copy the E3 task rewrites — this is the same
-// technique slopshop-redesign.test.tsx uses for click-/state-gated branches.
 
 const componentSourcePath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

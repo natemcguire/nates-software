@@ -28,11 +28,10 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     vi.restoreAllMocks();
   });
 
-  // Helper to create a root order (dronehunter, $15.00)
   async function seedRootOrder(orderId = 'ord_root_test_1', status = 'requires_payment') {
     const grossCents = 1500;
-    const sellerCents = 1350; // 90%
-    const platformCents = 150; // 10% (house, never paid out)
+    const sellerCents = 1350;
+    const platformCents = 150;
     const piId = `pi_${orderId}`;
 
     await ctx.d1.prepare(`
@@ -44,7 +43,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       ) VALUES (?, ?, 'usr_nate', 'dronehunter', 'usr_nate', 'v1.0.0', 1, ?, 'usd', 'maker_70_lineage_20_pool_10', '{}', ?, ?, 1, datetime('now'), datetime('now'))
     `).bind(orderId, `idempotency_${orderId}`, grossCents, piId, status).run();
 
-    // Allocation 0: Seller
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
@@ -52,7 +50,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       ) VALUES (?, ?, 0, 'seller', 'usr_nate', 0, NULL, ?)
     `).bind(`coa_seller_${orderId}`, orderId, sellerCents).run();
 
-    // Allocation 1: Platform (house, never paid out)
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
@@ -63,7 +60,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     return { orderId, piId, grossCents, sellerCents, platformCents };
   }
 
-  // Helper to record an event in stripe_event_inbox
   async function seedInboxEvent(eventId: string, eventType: string, eventData: any) {
     const rawPayload = JSON.stringify({
       id: eventId,
@@ -87,19 +83,14 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     return { eventId, rawPayload, payloadSha256 };
   }
 
-  // ==========================================================================
-  // 1. CONDITIONAL FINITE LEASES & CONCURRENT LOCKING
-  // ==========================================================================
   describe('1. Finite Leases & Claim Locks', () => {
     it('claims an available event and prevents concurrent execution with active lease', async () => {
       const eventId = 'evt_lease_test_1';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: 'pi_test_1' });
 
-      // First claim succeeds
       const claim1 = await claimInboxEvent(ctx.d1, eventId, { leaseDurationSeconds: 60 });
       expect(claim1.claimed).toBe(true);
 
-      // Second claim with active lease fails
       const claim2 = await claimInboxEvent(ctx.d1, eventId, { leaseDurationSeconds: 60 });
       expect(claim2.claimed).toBe(false);
     });
@@ -108,7 +99,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       const eventId = 'evt_lease_expired_test';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: 'pi_test_expired' });
 
-      // Simulate expired claim (claimed 10 minutes ago with expires_at in the past)
       await ctx.d1.prepare(`
         UPDATE stripe_event_inbox
         SET status = 'processing',
@@ -118,16 +108,12 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
         WHERE event_id = ?
       `).bind(eventId).run();
 
-      // New worker can re-claim expired lease
       const claim = await claimInboxEvent(ctx.d1, eventId, { leaseDurationSeconds: 60 });
       expect(claim.claimed).toBe(true);
       expect(claim.claimToken).not.toBe('clm_stale_token');
     });
   });
 
-  // ==========================================================================
-  // 2. UNSUPPORTED LIFECYCLE EVENTS GUARD (FAIL-CLOSED)
-  // ==========================================================================
   describe('2. Unsupported Lifecycle Events (Refunds/Disputes Fail-Closed)', () => {
     it.each([
       ['charge.refunded', { id: 'ch_refund_1', metadata: { orderId: 'ord_1' } }],
@@ -143,7 +129,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(result.terminal).toBe(true);
       expect(result.error).toMatch(/Explicitly unsupported event type/i);
 
-      // Verify row in D1 marked terminal_failure
       const inboxRow: any = await ctx.d1.prepare(`
         SELECT status, last_error FROM stripe_event_inbox WHERE event_id = ?
       `).bind(eventId).first();
@@ -153,21 +138,17 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     });
   });
 
-  // ==========================================================================
-  // 3. AUTHORITATIVE STRIPE RE-FETCH & TAMPER RESISTANCE
-  // ==========================================================================
   describe('3. Authoritative Stripe Re-fetch & Tamper Resistance', () => {
     it('re-fetches Stripe PaymentIntent and verifies status is succeeded', async () => {
       const { orderId, piId, grossCents } = await seedRootOrder('ord_tamper_1');
       const eventId = 'evt_tamper_status';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
 
-      // Mock Stripe returning status 'requires_action' instead of 'succeeded'
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           id: piId,
-          status: 'requires_action', // Not succeeded!
+          status: 'requires_action',
           amount: grossCents,
           currency: 'usd',
           livemode: false,
@@ -181,7 +162,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(result.terminal).toBe(true);
       expect(result.error).toMatch(/status is 'requires_action', expected 'succeeded'/i);
 
-      // Order remains in requires_payment
       const order: any = await ctx.d1.prepare('SELECT status FROM commerce_orders WHERE id = ?').bind(orderId).first();
       expect(order.status).toBe('requires_payment');
     });
@@ -191,13 +171,12 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       const eventId = 'evt_tamper_amount';
       await seedInboxEvent(eventId, 'payment_intent.succeeded', { id: piId });
 
-      // Stripe amount ($10.00) differs from order ($15.00)
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           id: piId,
           status: 'succeeded',
-          amount: 1000, // Tampered amount!
+          amount: 1000,
           currency: 'usd',
           livemode: false,
           metadata: { orderId }
@@ -223,7 +202,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           status: 'succeeded',
           amount: grossCents,
           amount_received: grossCents,
-          currency: 'eur', // Tampered currency!
+          currency: 'eur',
           livemode: false,
           metadata: { orderId }
         })
@@ -249,7 +228,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
           amount_received: 1500,
           currency: 'usd',
           livemode: false,
-          metadata: {} // Missing orderId!
+          metadata: {}
         })
       } as any);
 
@@ -261,9 +240,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     });
   });
 
-  // ==========================================================================
-  // 4. MONOTONIC STATE TRANSITIONS & ATOMIC FULFILLMENT (ROOT APP)
-  // ==========================================================================
   describe('4. Atomic Fulfillment & Economic Conservation (Root App)', () => {
     it('atomically fulfills root order: updates order state_version, mints license + AES-GCM secret, and creates 1 seller outbox row (never platform)', async () => {
       const { orderId, piId, grossCents, sellerCents } = await seedRootOrder('ord_root_fulfill_1');
@@ -288,9 +264,8 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(result.success).toBe(true);
       expect(result.orderId).toBe(orderId);
       expect(result.status).toBe('fulfilled');
-      expect(result.outboxCount).toBe(1); // Only seller; platform has NO outbox row
+      expect(result.outboxCount).toBe(1);
 
-      // 1. Verify commerce_orders updated to 'fulfilled' with state_version = 2
       const order: any = await ctx.d1.prepare(`
         SELECT status, state_version, paid_at, fulfilled_at FROM commerce_orders WHERE id = ?
       `).bind(orderId).first();
@@ -300,7 +275,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(order.paid_at).toBeTruthy();
       expect(order.fulfilled_at).toBeTruthy();
 
-      // 2. Verify exactly ONE canonical commerce_licenses record
       const licenses: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_licenses WHERE order_id = ?
       `).bind(orderId).all();
@@ -313,7 +287,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(lic.license_key_last4).toHaveLength(4);
       expect(lic.status).toBe('active');
 
-      // 3. Verify AES-256-GCM secret row in commerce_license_secrets
       const secrets: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_license_secrets WHERE license_id = ?
       `).bind(lic.id).all();
@@ -325,7 +298,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(secret.ciphertext_base64).toBeTruthy();
       expect(secret.iv_base64).toBeTruthy();
 
-      // 4. Verify secret creation event
       const secretEvents: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_license_secret_events WHERE license_id = ?
       `).bind(lic.id).all();
@@ -334,7 +306,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(secretEvents.results![0].event_type).toBe('created');
       expect(secretEvents.results![0].to_key_version).toBe(1);
 
-      // 5. Verify exactly ONE outbox row for Seller (never platform)
       const outbox: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_transfer_outbox WHERE order_id = ?
       `).bind(orderId).all();
@@ -342,17 +313,15 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(outbox.results).toHaveLength(1);
       const outboxRow = outbox.results![0];
       expect(outboxRow.destination_user_id).toBe('usr_nate');
-      expect(outboxRow.amount_cents).toBe(sellerCents); // 1350 cents ($13.50 = 90%)
+      expect(outboxRow.amount_cents).toBe(sellerCents);
       expect(outboxRow.currency).toBe('usd');
       expect(outboxRow.status).toBe('pending');
 
-      // 6. Verify legacy shelf_items table is NOT dual-written (remains only seeded 3 rows)
       const shelfRows: any = await ctx.d1.prepare(`
         SELECT * FROM shelf_items WHERE id NOT IN ('shelf_1', 'shelf_2', 'shelf_3')
       `).all();
       expect(shelfRows.results).toHaveLength(0);
 
-      // 7. Verify stripe_event_inbox is marked 'processed'
       const inbox: any = await ctx.d1.prepare(`
         SELECT status, processed_at, last_error FROM stripe_event_inbox WHERE event_id = ?
       `).bind(eventId).first();
@@ -363,12 +332,8 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     });
   });
 
-  // ==========================================================================
-  // 5. FORK ALLOCATION OUTBOX BATCHING (PLATFORM 10% HOUSE / ADDITIVE ANCESTOR LIENS / SELLER REMAINDER)
-  // ==========================================================================
   describe('5. Fork Order Fulfillment & Lineage Outbox Batching', () => {
     it('creates outbox rows for Seller and each Ancestor in the chain (never platform)', async () => {
-      // 1. Create users
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name)
         VALUES ('usr_root_dev', 'root_dev', 'Root'),
@@ -379,11 +344,11 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
 
       const orderId = 'ord_fork_fulfill_1';
       const piId = `pi_${orderId}`;
-      const grossCents = 3000; // $30.00
-      const platformCents = 300; // 10% house
-      const anc1Cents = 300;   // additive lien off remainder
-      const anc2Cents = 300;   // additive lien off remainder
-      const sellerCents = 2100; // seller keeps the rest
+      const grossCents = 3000;
+      const platformCents = 300;
+      const anc1Cents = 300;
+      const anc2Cents = 300;
+      const sellerCents = 2100;
 
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
@@ -394,26 +359,21 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
         ) VALUES (?, 'key_fork_1', 'usr_buyer_dev', 'dronehunter', 'usr_fork_dev', 'v2.0.0', 1, ?, 'usd', 'maker_70_lineage_20_pool_10', '{}', ?, 'requires_payment', 1)
       `).bind(orderId, grossCents, piId).run();
 
-      // Allocations:
-      // Seq 0: Platform ($3.00, house — never paid out)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (id, order_id, sequence, role, recipient_user_id, lineage_depth, basis_points, amount_cents)
         VALUES ('coa_f_0', ?, 0, 'platform', NULL, NULL, NULL, ?)
       `).bind(orderId, platformCents).run();
 
-      // Seq 1: Ancestor 1 ($3.00)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (id, order_id, sequence, role, recipient_user_id, lineage_depth, basis_points, amount_cents)
         VALUES ('coa_f_1', ?, 1, 'ancestor', 'usr_parent_dev', 1, 1000, ?)
       `).bind(orderId, anc1Cents).run();
 
-      // Seq 2: Ancestor 2 ($3.00)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (id, order_id, sequence, role, recipient_user_id, lineage_depth, basis_points, amount_cents)
         VALUES ('coa_f_2', ?, 2, 'ancestor', 'usr_root_dev', 2, 1000, ?)
       `).bind(orderId, anc2Cents).run();
 
-      // Seq 3: Seller ($21.00, the fork's own remainder)
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (id, order_id, sequence, role, recipient_user_id, lineage_depth, basis_points, amount_cents)
         VALUES ('coa_f_3', ?, 3, 'seller', 'usr_fork_dev', 0, NULL, ?)
@@ -438,7 +398,7 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       const result = await processStripeInboxEvent(ctx.d1, defaultEnv(), eventId);
 
       expect(result.success).toBe(true);
-      expect(result.outboxCount).toBe(3); // Seller + Ancestor 1 + Ancestor 2 (never platform)
+      expect(result.outboxCount).toBe(3);
 
       const outboxRows: any = await ctx.d1.prepare(`
         SELECT destination_user_id, amount_cents FROM commerce_transfer_outbox
@@ -450,7 +410,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
       expect(outboxRows.results![1]).toEqual({ destination_user_id: 'usr_parent_dev', amount_cents: 300 });
       expect(outboxRows.results![2]).toEqual({ destination_user_id: 'usr_root_dev', amount_cents: 300 });
 
-      // No outbox row exists for the platform allocation (house, never paid via Connect)
       const platformOutbox: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_transfer_outbox WHERE order_id = ? AND destination_user_id IS NULL
       `).bind(orderId).all();
@@ -458,9 +417,6 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
     });
   });
 
-  // ==========================================================================
-  // 6. RACING PROCESSORS & CONCURRENCY SAFETY
-  // ==========================================================================
   describe('6. Concurrency Safety & Race Idempotency', () => {
     it('handles duplicate delivery / racing processors safely without double fulfillment', async () => {
       const { orderId, piId, grossCents } = await seedRootOrder('ord_race_test_1');
@@ -480,21 +436,17 @@ describe('Durable Commerce P2: Authoritative Event Processor & Fulfillment State
         })
       } as any);
 
-      // First processor execution
       const res1 = await processStripeInboxEvent(ctx.d1, defaultEnv(), eventId);
       expect(res1.success).toBe(true);
       expect(res1.status).toBe('fulfilled');
 
-      // Second processor execution (e.g. duplicate webhook delivery or concurrent worker)
       const res2 = await processStripeInboxEvent(ctx.d1, defaultEnv(), eventId);
       expect(res2.success).toBe(true);
       expect(res2.duplicate).toBe(true);
 
-      // Verify exactly ONE license was minted in total
       const licenses: any = await ctx.d1.prepare('SELECT * FROM commerce_licenses WHERE order_id = ?').bind(orderId).all();
       expect(licenses.results).toHaveLength(1);
 
-      // Verify exactly ONE outbox row in total
       const outbox: any = await ctx.d1.prepare('SELECT * FROM commerce_transfer_outbox WHERE order_id = ?').bind(orderId).all();
       expect(outbox.results).toHaveLength(1);
     });

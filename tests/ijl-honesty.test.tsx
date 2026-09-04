@@ -42,7 +42,6 @@ describe('Spec I: TERMINAL Honesty', () => {
       </AuthContext.Provider>
     );
 
-    // Mode label & controls
     expect(html).toContain('TERMINAL.EXE');
     expect(html).toContain('Switch to Command Guide / Emulator');
     expect(html).toContain('Command Guide &amp; Emulator');
@@ -60,9 +59,6 @@ describe('Spec I: TERMINAL Honesty', () => {
     expect(html).toContain('Ephemeral Terminal');
   });
 });
-
-// Spec J (EDITORIAL Honesty) removed: the EDITORIAL / Nate's Lab surface was deleted
-// pre-launch (only sample articles; read as half-built). See launch-readiness cleanup.
 
 describe('Spec L: Synthesized-link Fix in ArtifactSandbox', () => {
   const draftApp: AppListing = {
@@ -110,9 +106,7 @@ describe('Spec L: Synthesized-link Fix in ArtifactSandbox', () => {
       </AlertProvider>
     );
 
-    // Does NOT render clickable link to synthesized URL
     expect(html).not.toContain('href="https://my-draft-app.nates-software.com"');
-    // Shows draft status
     expect(html).toContain('Deployment status:');
     expect(html).toContain('draft');
     expect(html).toContain('Draft (Unpublished)');
@@ -130,7 +124,6 @@ describe('Spec L: Synthesized-link Fix in ArtifactSandbox', () => {
       </AlertProvider>
     );
 
-    // Renders authoritative URL link
     expect(html).toContain('href="https://my-active-app.custom-domain.com"');
     expect(html).toContain('Open in New Window');
     expect(html).toContain('Launch Live App');
@@ -167,7 +160,6 @@ describe('Deployment-error surface does not leak a raw build stack trace', () =>
     screenshots: [],
     comments: [],
     deploymentState: 'failed',
-    // Real prod shape: multi-line build stderr / stack trace.
     deploymentError:
       'vinext: not found\n  at spawn (node:child_process:1234)\n  at buildStep (/workspace/build.js:88)\n  at async run (/workspace/build.js:200)'
   };
@@ -182,9 +174,7 @@ describe('Deployment-error surface does not leak a raw build stack trace', () =>
         </AuthProvider>
       </AlertProvider>
     );
-    // First line surfaces (honest diagnostic).
     expect(html).toContain('vinext: not found');
-    // Interior trace lines must NOT leak to a visitor.
     expect(html).not.toContain('at spawn (node:child_process');
     expect(html).not.toContain('/workspace/build.js');
   });

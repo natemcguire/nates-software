@@ -1,5 +1,3 @@
-// MY SHELF is a private projection of commerce-issued entitlements.
-// License creation belongs exclusively to the verified commerce fulfillment path.
 import { requireAuth } from './_auth';
 import { safePublishedArtifacts } from '../../src/lib/profileDomain';
 import { handleVerify } from './shelf/verify';

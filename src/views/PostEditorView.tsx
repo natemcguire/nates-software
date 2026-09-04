@@ -33,6 +33,10 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [description, setDescription] = useState(app.description);
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
+  const initialRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
+  const [royaltyPercent, setRoyaltyPercent] = useState<number>(
+    typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10
+  );
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
@@ -68,6 +72,9 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
       try {
         setIsSaving(true);
 
+        const clampedRoyaltyPercent = Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
+        const royaltyBps = Math.round(clampedRoyaltyPercent * 100);
+
         const updated: AppListing = {
           ...app,
           author: user?.username || app.author || 'guest',
@@ -80,6 +87,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
           description: description.trim(),
           version: version.trim(),
           price,
+          royaltyBps,
           tags: (tagsStr || '').split(',').map((t: string) => t.trim()).filter(Boolean),
           screenshots,
           binaries: {
@@ -103,7 +111,6 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm">
-      {/* Editor Header Navigation */}
       <div className="bg-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-base">Creator Studio &middot; Post Editor</span>
@@ -113,7 +120,6 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
           </span>
         </div>
 
-        {/* Tab Buttons */}
         <div className="flex gap-1 flex-wrap">
           <button
             onClick={() => setActiveTab('guide')}
@@ -142,9 +148,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
         </div>
       </div>
 
-      {/* Editor Main Content Area */}
       <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
-        {/* Tab Guide: Complete 4-Step Git & SLOP Walkthrough */}
         {activeTab === 'guide' && (
           <div className="space-y-5 max-w-3xl mx-auto py-2">
             <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-blue-900 text-white p-4 rounded-lg shadow-md border border-blue-700">
@@ -156,7 +160,6 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               </p>
             </div>
 
-            {/* Step 1 */}
             <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
               <div className="flex items-center justify-between border-b border-gray-300 pb-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
@@ -179,7 +182,6 @@ $ npm install -g @nates-software/slop
 $ slop --help</pre>
             </div>
 
-            {/* Step 2 */}
             <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
               <div className="flex items-center justify-between border-b border-gray-300 pb-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
@@ -197,7 +199,6 @@ $ slop --help</pre>
               </ul>
             </div>
 
-            {/* Step 3 */}
             <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
               <div className="flex items-center justify-between border-b border-gray-300 pb-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
@@ -232,7 +233,6 @@ Output:
   🚀 Deployed live to subdomain in 1.18s!</pre>
             </div>
 
-            {/* Step 4 */}
             <div className="border-2 border-gray-700 rounded-lg p-4 bg-gray-50 shadow-sm space-y-2">
               <div className="flex items-center justify-between border-b border-gray-300 pb-2">
                 <h3 className="font-bold text-sm text-gray-900 flex items-center gap-2">
@@ -250,10 +250,8 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
           </div>
         )}
 
-        {/* Tab 1: App Info */}
         {activeTab === 'info' && (
           <div className="space-y-3 max-w-2xl mx-auto">
-            {/* Maker Attribution Card */}
             <div className="bg-slate-50 border border-slate-300 p-2.5 rounded flex items-center justify-between text-xs font-mono">
               <div className="flex items-center gap-2">
                 <span className="text-lg">{user?.avatar || app.authorAvatar || '⚡'}</span>
@@ -339,7 +337,6 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
           </div>
         )}
 
-        {/* Tab 2: Screenshots */}
         {activeTab === 'media' && (
           <div className="space-y-4 max-w-3xl mx-auto">
             <div>
@@ -389,7 +386,6 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
           </div>
         )}
 
-        {/* Tab 3: Pricing */}
         {activeTab === 'pricing' && (
           <div className="space-y-4 max-w-2xl mx-auto">
             <div>
@@ -428,31 +424,54 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 <label className="font-bold text-gray-800 block mb-1">Registered Copy Price (USD):</label>
                 <div className="relative">
                   <input
-                    type="text"
+                    type="number"
+                    min={0}
+                    step={1}
                     value={price}
                     onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
                     className="w-full p-2 border-2 border-gray-600 font-bold text-base text-green-800 bg-green-50 font-mono"
                   />
                 </div>
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Single-copy registered license price for buyers on the shelf.
+                  What a buyer pays once to own this app. Set your own — the $15 default is just a starting point.
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-800 block mb-1">Your Royalty Rate (%):</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={royaltyPercent}
+                    onChange={(e) => setRoyaltyPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                    className="w-full p-2 border-2 border-gray-600 font-bold text-base text-w95-blue bg-blue-50 font-mono"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  What anyone who forks this app owes you on every sale of their version — frozen the day they fork, forever.
                 </p>
               </div>
             </div>
 
             <div className="bg-blue-50 border-2 border-w95-blue p-3.5 rounded space-y-2 text-xs">
               <div className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
-                <CheckCircle2 size={16} className="text-green-700" /> Lineage Split Guarantee:
+                <CheckCircle2 size={16} className="text-green-700" /> What you earn:
               </div>
               <p className="text-gray-700 leading-relaxed">
-                When developers fork and monetize this application, you earn the royalty rate you set here on every downstream registered sale, frozen at fork time and automatically deposited to your connected Stripe account.
+                On a <b>${Math.max(0, Number(price) || 0).toFixed(0)}</b> sale of your own app, you keep{' '}
+                <b className="text-green-800">${(Math.max(0, Number(price) || 0) * 0.9).toFixed(2)}</b> (the platform takes a flat 10%).
+                When someone forks it and sells their version, you earn{' '}
+                <b className="text-w95-blue">{Math.max(0, Math.min(100, Number(royaltyPercent) || 0))}%</b> of that sale —{' '}
+                and a fork-of-a-fork still pays you, frozen at the rate above. It deposits to your connected Stripe account automatically.
               </p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Editor Footer Actions */}
       <div className="bg-w95-gray p-3 border-t-2 border-white flex justify-between items-center">
         <button
           onClick={onCancel}

@@ -19,7 +19,6 @@ export {
   isOriginAllowed
 };
 
-// Start standalone server when executed directly
 if (
   typeof process !== 'undefined' &&
   process.argv &&

@@ -1,21 +1,3 @@
-/**
- * SLOPSHOP AST MOD ENGINE — LOCAL WORKTREE EXECUTION BOUNDARY
- * 
- * Implements the safe, bounded local-only CLI/worktree execution boundary for:
- * 'slop mod <package-or-manifest>'
- * 
- * Invariants & Guarantees:
- * 1. Accepts versioned feature package manifests (file path, JSON, or feature ref).
- * 2. Verifies base Git SHA before modifying any worktree files.
- * 3. Verifies expected previous file content and SHA-256 digests on disk before changes.
- * 4. Uses installed TypeScript compiler parser AST (not regex) to validate syntax & exports.
- * 5. Applies create/modify/delete as a rollback-capable local transaction.
- * 6. Path and symlink containment defenses prevent worktree escaping.
- * 7. Runs only explicit repository-configured test command without shell injection (shell: false).
- * 8. Records truthful stdout/stderr/exit/duration and cryptographic SHA-256 evidence.
- * 9. Leaves publication as an explicit separate GITSMITH/CAS step.
- */
-
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +39,6 @@ export interface VersionedFeatureManifest {
   readonly modifications?: readonly FileModification[];
   readonly files?: readonly FileModification[];
   readonly astTransforms?: readonly AstTransform[];
-  /** Informational only. Executable commands are trusted from the target repository, never the package. */
   readonly testCommand?: string | readonly string[];
   readonly assertions?: readonly string[];
   readonly migrationSql?: string;
@@ -137,16 +118,10 @@ export interface SlopModOptions {
   readonly rollbackOnTestFailure?: boolean;
 }
 
-/**
- * Compute SHA-256 of text
- */
 export function computeSha256(content: string | Buffer): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
-/**
- * Normalizes any supported manifest variant (or feature preset ref) into canonical format
- */
 export function resolveFeatureManifest(
   input: string | VersionedFeatureManifest,
   worktreePath?: string
@@ -156,7 +131,6 @@ export function resolveFeatureManifest(
   if (typeof input === 'string') {
     const trimmed = input.trim();
 
-    // 1. Check if input is inline JSON
     if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
       try {
         manifestObj = JSON.parse(trimmed);
@@ -194,7 +168,6 @@ export function resolveFeatureManifest(
     throw new Error('Unsupported or missing feature manifest schemaVersion; expected 1.');
   }
 
-  // Extract fields
   const id = manifestObj.id || manifestObj.featureName || manifestObj.name || 'unnamed-feature';
   const name = manifestObj.name || manifestObj.featureName || id;
   const version = manifestObj.version || '1.0.0';
@@ -279,10 +252,6 @@ export function materializeAstTransforms(worktreePath: string, transforms: reado
   }));
 }
 
-/**
- * 1. Base Git SHA Verification
- * Verifies that current repository HEAD matches the manifest's expected base SHA.
- */
 export function verifyBaseGitSha(
   worktreePath: string,
   expectedBaseSha?: string
@@ -346,10 +315,6 @@ export function verifyBaseGitSha(
   return { verified: true, currentSha, expectedSha: expectedBaseSha };
 }
 
-/**
- * 2. Path & Symlink Containment Defenses
- * Ensures target path does not escape the worktree root and traverses no external symlinks.
- */
 export function verifyPathAndSymlinkContainment(
   worktreePath: string,
   relativePath: string
@@ -371,7 +336,6 @@ export function verifyPathAndSymlinkContainment(
 
   const fullPath = path.resolve(worktreeRoot, norm.normalized);
 
-  // Check 1: Path must start with worktreeRoot
   if (!fullPath.startsWith(worktreeRoot + path.sep) && fullPath !== worktreeRoot) {
     return {
       contained: false,
@@ -380,7 +344,6 @@ export function verifyPathAndSymlinkContainment(
     };
   }
 
-  // Check 2: Verify symlinks along the existing directory hierarchy
   const segments = norm.normalized.split('/');
   let currentCheck = worktreeRoot;
 
@@ -412,9 +375,6 @@ export function verifyPathAndSymlinkContainment(
   return { contained: true, fullPath };
 }
 
-/**
- * 3. Verify Expected Previous File Content & Digests on Disk
- */
 export function verifyPreviousFileStates(
   worktreePath: string,
   modifications: readonly FileModification[]
@@ -536,9 +496,6 @@ export function verifyPreviousFileStates(
   };
 }
 
-/**
- * 4. Rollback-capable file transaction
- */
 export function applyModificationsAtomically(
   worktreePath: string,
   modifications: readonly FileModification[]
@@ -553,7 +510,6 @@ export function applyModificationsAtomically(
   const createdDirectories: string[] = [];
   const applied: { path: string; action: 'create' | 'modify' | 'delete' }[] = [];
 
-  // Step 1: Capture snapshot of all files before any writes
   for (const mod of modifications) {
     const containment = verifyPathAndSymlinkContainment(worktreePath, mod.path);
     if (!containment.contained) {
@@ -582,7 +538,6 @@ export function applyModificationsAtomically(
     });
   }
 
-  // Step 2: Apply mutations with try/catch to ensure rollback on unexpected I/O failure
   try {
     for (const mod of modifications) {
       const containment = verifyPathAndSymlinkContainment(worktreePath, mod.path);
@@ -591,7 +546,6 @@ export function applyModificationsAtomically(
       if (mod.action === 'create' || mod.action === 'modify') {
         const parentDir = path.dirname(fullPath);
         if (!fs.existsSync(parentDir)) {
-          // Track directories to delete if rollback is triggered
           let checkDir = parentDir;
           const newDirs: string[] = [];
           while (!fs.existsSync(checkDir) && checkDir !== path.resolve(worktreePath)) {
@@ -630,9 +584,6 @@ export function applyModificationsAtomically(
   }
 }
 
-/**
- * Executes full rollback of a transaction snapshot
- */
 export function rollbackModifications(
   rollbackSnapshot: readonly RollbackSnapshotEntry[],
   createdDirectories: readonly string[] = []
@@ -640,7 +591,6 @@ export function rollbackModifications(
   let restoredCount = 0;
 
   try {
-    // 1. Restore files in reverse order
     for (let i = rollbackSnapshot.length - 1; i >= 0; i--) {
       const entry = rollbackSnapshot[i];
       if (entry.existedBefore && typeof entry.previousContent === 'string') {
@@ -658,7 +608,6 @@ export function rollbackModifications(
       }
     }
 
-    // 2. Remove empty created directories
     for (let i = createdDirectories.length - 1; i >= 0; i--) {
       const dir = createdDirectories[i];
       try {
@@ -678,9 +627,6 @@ export function rollbackModifications(
   }
 }
 
-/**
- * 5. Resolve Explicit Repository-Configured Test Command
- */
 export function resolveRepoTestCommand(
   worktreePath: string
 ): {
@@ -688,7 +634,6 @@ export function resolveRepoTestCommand(
   args: string[];
   source: 'slop.json' | 'package.json' | 'manifest' | 'default';
 } {
-  // 1. Check slop.json in worktree root
   const slopJsonPath = path.join(worktreePath, 'slop.json');
   if (fs.existsSync(slopJsonPath)) {
     const cfg = JSON.parse(fs.readFileSync(slopJsonPath, 'utf-8'));
@@ -704,7 +649,6 @@ export function resolveRepoTestCommand(
     }
   }
 
-  // 2. Check package.json scripts.test in worktree root
   const pkgJsonPath = path.join(worktreePath, 'package.json');
   if (fs.existsSync(pkgJsonPath)) {
     const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
@@ -720,10 +664,6 @@ export function resolveRepoTestCommand(
   throw new Error('No repository-owned test command found. Add testCommand as an argument array to slop.json or define package.json scripts.test.');
 }
 
-/**
- * 6. Execute Repository Test Command Without Shell Injection
- * Executes process directly with shell: false.
- */
 export function executeRepoTestsWithoutShellInjection(
   worktreePath: string,
   commandConfig: { executable: string; args: readonly string[] },
@@ -732,7 +672,6 @@ export function executeRepoTestsWithoutShellInjection(
   const startTime = Date.now();
   const { executable, args } = commandConfig;
 
-  // Validate executable and args do not contain dangerous control characters
   const forbiddenPattern = /[\0\r\n]/;
   if (forbiddenPattern.test(executable) || args.some(a => forbiddenPattern.test(a))) {
     return {
@@ -751,7 +690,7 @@ export function executeRepoTestsWithoutShellInjection(
   try {
     const spawned = spawnSync(executable, [...args], {
       cwd: worktreePath,
-      shell: false, // PREVENTS SHELL INJECTION
+      shell: false,
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,
       encoding: 'utf-8',
@@ -793,7 +732,6 @@ export function executeRepoTestsWithoutShellInjection(
   }
 }
 
-/** Do not leak forge, cloud, model, or user credentials into package tests. */
 export function buildTestEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const allowed = ['PATH', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'COMSPEC', 'PATHEXT', 'LANG', 'LC_ALL', 'TERM'];
   const env: NodeJS.ProcessEnv = { CI: 'true', NODE_ENV: 'test' };
@@ -803,9 +741,6 @@ export function buildTestEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessE
   return env;
 }
 
-/**
- * 7. Generate Cryptographic Evidence Digest
- */
 export function computeModEvidenceDigest(params: {
   featureId: string;
   featureVersion: string;
@@ -837,17 +772,9 @@ export function computeModEvidenceDigest(params: {
   return `sha256:${digest}`;
 }
 
-/**
- * MAIN EXECUTION FUNCTION: slop mod <package-or-manifest>
- * 
- * Runs the full local worktree modding pipeline with base SHA check,
- * previous content check, TypeScript AST verification, rollback-capable application,
- * rollback on failure, shell-injection-free test execution, and evidence digest.
- */
 export async function executeSlopMod(options: SlopModOptions): Promise<SlopModResult> {
   const cwd = options.worktreePath ? path.resolve(options.worktreePath) : process.cwd();
 
-  // 1. Resolve & normalize manifest
   let manifest: ResolvedFeatureManifest;
   try {
     manifest = resolveFeatureManifest(options.manifestOrRef, cwd);
@@ -870,7 +797,6 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     };
   }
 
-  // 2. Base Git SHA verification
   const baseGitCheck = verifyBaseGitSha(cwd, manifest.expectedBaseSha);
   if (!baseGitCheck.verified) {
     return {
@@ -911,7 +837,6 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     };
   }
 
-  // 3. Verify previous file content & digests on disk
   const previousCheck = verifyPreviousFileStates(cwd, modifications);
   if (!previousCheck.valid) {
     const errorMsg = previousCheck.errors.map(e => e.message).join('; ');
@@ -933,7 +858,6 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     };
   }
 
-  // 4. Validate TypeScript AST (syntax errors, export collisions) using TypeScript compiler parser
   const astValidation = validateTypeScriptModifications(modifications);
   if (!astValidation.valid) {
     const errorMsg = astValidation.errors.map(e => e.message).join('; ');
@@ -955,11 +879,9 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     };
   }
 
-  // 5. Generate Forward & Inverse Unified Diff
   const diff = generateUnifiedDiff(modifications);
   const inverseDiff = generateInversePatch(modifications);
 
-  // 6. Apply modifications with a rollback snapshot
   const applyResult = applyModificationsAtomically(cwd, modifications);
   if (!applyResult.success) {
     return {
@@ -981,7 +903,6 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     };
   }
 
-  // 7. Execute repository-configured tests without shell injection (if enabled)
   let testResult: SandboxExecutionResult | undefined;
   const shouldRunTests = options.runTests !== false;
 
@@ -1015,7 +936,6 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
 
     testResult = executeRepoTestsWithoutShellInjection(cwd, testCmdConfig);
 
-    // If tests failed and rollback is requested on test failure
     if (!testResult.passed && options.rollbackOnTestFailure !== false) {
       const rollback = rollbackModifications(applyResult.rollbackSnapshot, applyResult.createdDirectories);
       const evidenceDigest = computeModEvidenceDigest({
@@ -1053,7 +973,6 @@ export async function executeSlopMod(options: SlopModOptions): Promise<SlopModRe
     }
   }
 
-  // 8. Compute stable cryptographic evidence digest
   const evidenceDigest = computeModEvidenceDigest({
     featureId: manifest.id,
     featureVersion: manifest.version,

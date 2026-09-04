@@ -1,12 +1,4 @@
-// Functions API: /api/deploy
-// Truthful Deployment Lifecycle Control Plane
-// Invariants:
-// 1. Apps must reach a verified deployment before appearing 'active'.
-// 2. Publication sets 'draft' (or 'source_ready'), NEVER 'active'.
-// 3. RIG runtime detection inspects the committed source tree at the pinned commit OID.
-// 4. Async real build in AWS CodeBuild container substrate for server/container applications.
-// 5. Static apps build and publish directly to R2 byte storage.
-// 6. Fail-closed deployment: records honest failure evidence in D1; NEVER fakes active or success.
+
 
 import { createHash } from 'node:crypto';
 import { requireAuth } from './_auth';
@@ -43,7 +35,7 @@ const json = (body: unknown, status = 200) =>
 function extractWorkerUrl(cbBuild: any): string | null {
   if (!cbBuild) return null;
 
-  // 1. Primary: exportedEnvironmentVariables from buildspec exported-variables
+  
   if (Array.isArray(cbBuild.exportedEnvironmentVariables)) {
     const item = cbBuild.exportedEnvironmentVariables.find(
       (v: any) => v.name === 'DEPLOYED_WORKER_URL' || v.name === 'WORKER_URL'
@@ -53,7 +45,7 @@ function extractWorkerUrl(cbBuild: any): string | null {
     }
   }
 
-  // 2. Secondary: environmentVariables
+  
   if (Array.isArray(cbBuild.environment?.environmentVariables)) {
     const item = cbBuild.environment.environmentVariables.find(
       (v: any) => v.name === 'DEPLOYED_WORKER_URL' || v.name === 'WORKER_URL'
@@ -63,7 +55,7 @@ function extractWorkerUrl(cbBuild: any): string | null {
     }
   }
 
-  // 3. Fallback: parse phase context messages
+  
   if (Array.isArray(cbBuild.phases)) {
     for (const phase of cbBuild.phases) {
       if (Array.isArray(phase.contexts)) {
@@ -122,7 +114,7 @@ async function verifySourceCommit(
   commitOid: string,
   manifestCandidates: string[] = DEFAULT_MANIFEST_CANDIDATES
 ): Promise<CommitVerification> {
-  // Priority 1: Delegate to live GITSMITH gateway if configured
+  
   if (env?.GITSMITH_GATEWAY_URL && env?.GITSMITH_GATEWAY_TOKEN) {
     const gatewayUrl = new URL('/api/gateway/verify-commit', env.GITSMITH_GATEWAY_URL);
     const gatewayFetch: typeof fetch = env.__GITSMITH_GATEWAY_FETCH || fetch;
@@ -175,7 +167,7 @@ async function verifySourceCommit(
     }
   }
 
-  // Priority 2: Fallback to local filesystem only if reposRoot is explicitly configured (for local dev / offline unit tests)
+  
   const reposRoot = env?.GITSMITH_REPOS_ROOT || (typeof process !== 'undefined' ? process.env?.GITSMITH_REPOS_ROOT : undefined);
   if (reposRoot) {
     try {
@@ -208,7 +200,7 @@ async function fetchSourceArchive(
   storageKey: string,
   commitOid: string
 ): Promise<{ archive: Buffer | null; error?: string }> {
-  // Priority 1: Fetch archive from live GITSMITH gateway
+  
   if (env?.GITSMITH_GATEWAY_URL && env?.GITSMITH_GATEWAY_TOKEN) {
     const gatewayUrl = new URL('/api/gateway/archive', env.GITSMITH_GATEWAY_URL);
     gatewayUrl.searchParams.set('storageKey', storageKey);
@@ -235,7 +227,7 @@ async function fetchSourceArchive(
     }
   }
 
-  // Priority 2: Fallback to local filesystem if reposRoot is explicitly configured
+  
   const reposRoot = env?.GITSMITH_REPOS_ROOT || (typeof process !== 'undefined' ? process.env?.GITSMITH_REPOS_ROOT : undefined);
   if (reposRoot) {
     try {
@@ -300,8 +292,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const isCurrentlyActive = listing.deploymentState === 'active' && Boolean(listing.activeDeploymentId && listing.revisionStatus === 'healthy');
 
-    // Lazy finalize check for async AWS CodeBuild runs:
-    // If this app has a running build_runs entry, check CodeBuild BatchGetBuilds
+    
+    
     if (listing.repositoryId || appId) {
       try {
         const runningBuild = await env.DB.prepare(`
@@ -360,11 +352,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
             }
           } else {
             const codeBuildId = runningBuild.runner_image_digest;
-            // Stage discriminator = which CodeBuild project this build_runs row
-            // points at (build vs deploy). We deliberately do NOT use a separate
-            // 'deploying' app state — both stages surface as 'building' to the
-            // user (prod's deployment_state CHECK has no 'deploying' value, and
-            // recreating that CHECK on the most-FK-referenced table isn't worth it).
+            
+            
+            
+            
+            
             const isDeployStage = runningBuild.build_command === 'nsw-deploy' ||
               runningBuild.build_command === 'nsw-deploy-next' ||
               codeBuildId.startsWith('nsw-deploy:') ||
@@ -381,9 +373,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
               const buildStatus = cbBuild.buildStatus;
 
               if (isDeployStage) {
-                // ==========================================
-                // STAGE 2: Deploy Stage (nsw-deploy -> active)
-                // ==========================================
+                
+                
+                
                 if (buildStatus === 'SUCCEEDED') {
                   const workerUrl = extractWorkerUrl(cbBuild);
                   if (!workerUrl) {
@@ -433,7 +425,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       }
                     }
                   } else {
-                    // Deploy succeeded with worker URL! CAS promote on deploy build_runs
+                    
                     const casRes = await env.DB.prepare(`
                       UPDATE build_runs SET
                         status = 'passed',
@@ -454,7 +446,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       const revisionNumber = revRow?.nextRev || 1;
                       const revisionId = `rev_${crypto.randomUUID().replace(/-/g, '')}`;
 
-                      // 1. Insert healthy deployment_revisions row FIRST
+                      
                       await env.DB.prepare(`
                         INSERT INTO deployment_revisions (
                           id, app_id, repository_id, commit_oid, build_run_id, environment,
@@ -485,13 +477,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         timestamp: new Date().toISOString()
                       };
 
-                      // 2. Atomically FLIP active_deployment_id and origin_ref with CAS on old active_deployment_id
-                      //
-                      // Known accepted risk:
-                      // The router HOST_CACHE KV caches the listing 60s. After a flip, up to 60s of requests
-                      // can still route to the old origin_ref — harmless because the old revision stays healthy
-                      // (sleepAfter=10m). This is stale-but-serving, not an outage.
-                      // Follow-up (not now): HOST_CACHE.delete on flip for instant cutover.
+                      
+                      
+                      
+                      
+                      
+                      
+                      
                       const oldActiveId = listing.activeDeploymentId || null;
                       const flipRes = oldActiveId
                         ? await env.DB.prepare(`
@@ -519,7 +511,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                       const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
 
-                      // 3. THEN supersede previous active production revisions (new revision healthy FIRST, flip LAST)
+                      
                       if (flipChanges > 0) {
                         await env.DB.prepare(`
                           UPDATE deployment_revisions SET status = 'superseded'
@@ -592,12 +584,12 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                   }
                 }
               } else {
-                // ==========================================
-                // STAGE 1: Candidate Build Stage (nsw-build -> ECR -> trigger nsw-deploy)
-                // ==========================================
+                
+                
+                
                 if (buildStatus === 'SUCCEEDED') {
                   if (isNextLane) {
-                    // Candidate Next.js OpenNext build SUCCEEDED -> SKIP ECR check entirely!
+                    
                     const artifactBucket = env?.NSW_ARTIFACT_BUCKET || env?.AWS_S3_BUILD_BUCKET || DEFAULT_NSW_ARTIFACT_BUCKET;
                     const artifactDigest = `s3://${artifactBucket}/${appId}/${commitOid}/opennext.tar`;
 
@@ -767,7 +759,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       }
                     }
                   } else if (ecrRes.success && ecrRes.imageDigest) {
-                    // Candidate build Succeeded! Verified image digest from ECR
+                    
                     const imageDigest = ecrRes.imageDigest;
 
                     if (!/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
@@ -828,7 +820,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                       const changes = casRes?.meta?.changes ?? (casRes as any)?.changes ?? 0;
                       if (changes > 0) {
-                        // Trigger nsw-deploy for cf_container server apps
+                        
                         const deployProject = env?.AWS_CODEBUILD_DEPLOY_PROJECT || DEFAULT_AWS_CODEBUILD_DEPLOY_PROJECT || 'nsw-deploy';
                         const cfAccountId = env?.CF_ACCOUNT_ID || DEFAULT_CF_ACCOUNT_ID || '4219a576830c72b0e6e4ca358e61473a';
                         const deployEnvOverrides: Record<string, string> = {
@@ -915,7 +907,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         };
 
                         if (isCurrentlyActive) {
-                          // Keep active state while deploy stage runs in background
+                          
                           await env.DB.prepare(`
                             UPDATE app_listings SET
                               deployment_evidence_json = ?
@@ -924,9 +916,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
                           listing.deploymentEvidenceJson = JSON.stringify(deployingEvidence);
                         } else {
-                          // Deploy stage stays under 'building' (no 'deploying'
-                          // state in prod's CHECK); the deploy build_runs row is
-                          // the stage discriminator.
+                          
+                          
+                          
                           await env.DB.prepare(`
                             UPDATE app_listings SET
                               deployment_state = 'building',
@@ -945,8 +937,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                     }
                   }
                 } else {
-                    // Transient ECR error / image not yet visible post-SUCCEEDED
-                    // Check 10-minute bounded retry
+                    
+                    
                     const endMs = parseTimestampMs(cbBuild.endTime) ?? parseTimestampMs(runningBuild.started_at) ?? Date.now();
                     const elapsedMs = Date.now() - endMs;
                     const TEN_MINUTES_MS = 10 * 60 * 1000;
@@ -1000,7 +992,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                         }
                       }
                     } else {
-                      // Stays running (app stays building) for bounded retry on next GET
+                      
                     }
                   }
                 }
@@ -1144,7 +1136,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return json({ success: false, error: `Invalid appId '${appId}': must match ^[a-z0-9][a-z0-9-]{0,62}$` }, 400);
     }
 
-    // 1. Check if application listing exists
+    
     const appListing = await env.DB.prepare(`
       SELECT 
         a.id, a.name, a.creator_id, a.version, a.deployment_state, a.deployment_error, a.repository_id,
@@ -1160,19 +1152,19 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return json({ success: false, error: `App listing '${appId}' not found` }, 404);
     }
 
-    // Authorization check
+    
     if (appListing.creator_id !== auth.user.id && auth.user.role !== 'super_admin') {
       return json({ success: false, error: 'Forbidden: you do not own this application listing' }, 403);
     }
 
     isCurrentlyActive = appListing.deployment_state === 'active' && Boolean(appListing.active_deployment_id && appListing.revisionStatus === 'healthy');
 
-    // Action: Plan only
+    
     if (action === 'plan') {
       let files: string[] = Array.isArray(body.files) ? body.files : [];
       let fileContents: Record<string, string> = typeof body.fileContents === 'object' && body.fileContents !== null ? body.fileContents : {};
 
-      // If no files provided in request, read committed tree from canonical repo on gateway
+      
       if (files.length === 0) {
         const repository = await env.DB.prepare(`
           SELECT r.id, r.storage_key, rf.commit_oid AS headCommitOid
@@ -1212,11 +1204,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       });
     }
 
-    // Action: Deploy lifecycle (source -> detect -> plan -> build -> smoke -> promote -> serve)
+    
     if (action === 'deploy' || action === 'promote') {
       const timestamp = new Date().toISOString();
 
-      // Step 1: Check canonical GITSMITH repository & commit in D1
+      
       const repository = await env.DB.prepare(`
         SELECT r.id, r.slug, r.status, r.default_ref, r.storage_key,
                rf.commit_oid AS headCommitOid
@@ -1229,7 +1221,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const commitOid = repository?.headCommitOid;
 
       if (!repository || !commitOid) {
-        // No canonical GITSMITH repo/commit in database -> remain draft / fail closed
+        
         const errorMsg = `No deployable revision exists for ${appListing.name}. Source has not been imported into GITSMITH and built by RIG.`;
         const evidence = {
           stage: 'source_verification',
@@ -1321,11 +1313,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
-      // Step 2: Verify source commit & committed tree strictly via GATEWAY
+      
       const sourceVerify = await verifySourceCommit(env, storageKey, commitOid);
 
       if (!sourceVerify.exists) {
-        // Commit does not exist on gateway disk -> remain draft / fail closed
+        
         const errorMsg = `No deployable revision exists for ${appListing.name}. Source has not been imported into GITSMITH and built by RIG.`;
         const evidence = {
           stage: 'source_verification',
@@ -1374,7 +1366,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       targetRepoId = repository.id;
       targetCommitOid = commitOid;
 
-      // Step 3: Detect project type & build plan from committed files and manifest contents
+      
       const committedFiles = sourceVerify.files;
 
       if (committedFiles.length === 0) {
@@ -1484,8 +1476,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         plan.detectedType === 'docker' ||
         (plan.detectedType === 'node' && plan.startCommand !== 'static-pages-runtime');
 
-      // Fail-closed guard: slop.json postgres: true is ONLY supported for server/container (cf_container) apps.
-      // A static app with postgres: true fails closed (422).
+      
+      
       if (plan.postgres && !isServerApp) {
         const errorMsg = `Deployment failed for ${appListing.name}: Postgres add-on is only supported for server/container applications (cf_container), not static applications.`;
         const evidence = {
@@ -1534,9 +1526,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
-      // Step 4a: Next.js (OpenNext) Worker lane dispatch
+      
       if (isNextWorker) {
-        // Supersede prior running builds for this app/repository
+        
         await env.DB.prepare(`
           UPDATE build_runs SET
             status = 'cancelled',
@@ -1544,7 +1536,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           WHERE (repository_id = ? OR repository_id = ?) AND status = 'running'
         `).bind(repository.id, appId).run();
 
-        // Asynchronous AWS build substrate dispatch for Next.js OpenNext candidate build
+        
         const buildId = crypto.randomUUID();
         const buildRunId = `br_${buildId.replace(/-/g, '')}`;
         activeBuildRunId = buildRunId;
@@ -1603,7 +1595,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const s3Key = `${buildId}.tar`;
         const codebuildProject = env?.AWS_CODEBUILD_PROJECT || DEFAULT_AWS_CODEBUILD_PROJECT;
 
-        // S3 PutObject (SigV4)
+        
         const s3Result = await putS3SourceArchive(env, {
           bucket: s3Bucket,
           key: s3Key,
@@ -1659,7 +1651,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }, 422);
         }
 
-        // CodeBuild StartBuild (SigV4) with OpenNext buildspec override
+        
         const cbResult = await startCodeBuild(env, {
           projectName: codebuildProject,
           buildspecOverride: NSW_BUILD_NEXT_BUILDSPEC,
@@ -1804,9 +1796,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }
       }
 
-      // Step 4b: Server vs Static applications
+      
       if (isServerApp) {
-        // Step 4b.1: Postgres add-on provisioning (if opt-in requested)
+        
         let dbSecretPath: string | null = appListing.db_secret_path || null;
         if (plan.postgres) {
           const dbResult = await provisionAppDatabase(env, appId);
@@ -1859,7 +1851,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
           dbSecretPath = dbResult.secretPath || `/nsw/apps/${appId}/db-url`;
 
-          // Persist db columns on app_listings under CAS discipline
+          
           await env.DB.prepare(`
             UPDATE app_listings SET
               db_kind = 'postgres',
@@ -1869,7 +1861,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           `).bind(dbSecretPath, appId).run();
         }
 
-        // Supersede prior running builds for this app/repository
+        
         await env.DB.prepare(`
           UPDATE build_runs SET
             status = 'cancelled',
@@ -1877,7 +1869,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           WHERE (repository_id = ? OR repository_id = ?) AND status = 'running'
         `).bind(repository.id, appId).run();
 
-        // Asynchronous AWS build substrate dispatch for server/container applications
+        
         const buildId = crypto.randomUUID();
         const buildRunId = `br_${buildId.replace(/-/g, '')}`;
         activeBuildRunId = buildRunId;
@@ -1937,7 +1929,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const codebuildProject = env?.AWS_CODEBUILD_PROJECT || DEFAULT_AWS_CODEBUILD_PROJECT;
         const procfileStart = plan.startCommand || plan.buildCommand || '';
 
-        // S3 PutObject (SigV4)
+        
         const s3Result = await putS3SourceArchive(env, {
           bucket: s3Bucket,
           key: s3Key,
@@ -1993,7 +1985,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }, 422);
         }
 
-        // ECR CreateRepository (SigV4) - ensure per-app repository exists before container build
+        
         const ecrResult = await createEcrRepository(env, {
           repositoryName: ecrRepo
         });
@@ -2046,7 +2038,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           }, 422);
         }
 
-        // CodeBuild StartBuild (SigV4)
+        
         const cbResult = await startCodeBuild(env, {
           projectName: codebuildProject,
           envOverrides: {
@@ -2137,9 +2129,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         };
 
         if (isCurrentlyActive) {
-          // If the app is CURRENTLY active with a healthy active revision,
-          // DO NOT touch deployment_state and DO NOT clear active_deployment_id/origin_ref.
-          // Track the new build ONLY in build_runs. The old revision keeps serving throughout.
+          
+          
+          
           await env.DB.prepare(`
             UPDATE app_listings SET
               detected_project_type = ?,
@@ -2197,8 +2189,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }
       }
 
-      // Step 5: Static App execution (remains synchronous R2 publish path)
-      // Supersede prior running builds for this app/repository
+      
+      
       await env.DB.prepare(`
         UPDATE build_runs SET
           status = 'cancelled',
@@ -2293,7 +2285,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         `).bind(plan.detectedType, JSON.stringify(plan), commitOid, appId).run();
       }
 
-      // Step 6: Execute static build via RIG gateway (or injected executor)
+      
       let buildResult: any;
 
       if (typeof env?.__RIG_DEPLOY_EXECUTOR === 'function') {
@@ -2355,7 +2347,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         });
       }
 
-      // Evaluate static build & smoke result
+      
       if (!buildResult || !buildResult.success || buildResult.exitCode !== 0 || !buildResult.smokeCheck?.passed) {
         const errorMsg = buildResult?.error || buildResult?.smokeCheck?.error || `Build or smoke check failed for ${appListing.name}.`;
         const failureEvidence = {
@@ -2418,8 +2410,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
-      // Step 7: Static App Promotion (real deployment_revisions row + R2 static publish + active state)
-      // Enforce: active requires env.STORAGE present, non-empty static files, and all puts succeeding.
+      
+      
       if (!env?.STORAGE) {
         const errorMsg = `Deployment publication failed for ${appListing.name}: Artifact storage service (R2 STORAGE) is unavailable.`;
         const storageEvidence = {
@@ -2545,7 +2537,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       const revisionId = `rev_${crypto.randomUUID().replace(/-/g, '')}`;
       const deployedUrl = `https://${appId}.nates-software.com`;
 
-      // Upload static files to R2 STORAGE
+      
       try {
         for (const file of buildResult.staticFiles) {
           const contentBuffer = Buffer.from(file.contentBase64, 'base64');
@@ -2618,7 +2610,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, 422);
       }
 
-      // Insert build_artifacts
+      
       const artifactId = `art_${crypto.randomUUID().replace(/-/g, '')}`;
       const totalSizeBytes = buildResult.staticFiles?.reduce((acc: number, f: any) => acc + (f.sizeBytes || 0), 0) || 0;
 
@@ -2633,7 +2625,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         totalSizeBytes
       ).run();
 
-      // Update build_runs
+      
       await env.DB.prepare(`
         UPDATE build_runs SET
           status = 'passed',
@@ -2644,7 +2636,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         WHERE id = ?
       `).bind(buildResult.artifactDigest, buildResult.durationMs, buildRunId).run();
 
-      // Calculate next revision number
+      
       const revRow: any = await env.DB.prepare(`
         SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRev
         FROM deployment_revisions
@@ -2652,7 +2644,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       `).bind(appId).first();
       const revisionNumber = revRow?.nextRev || 1;
 
-      // 1. Insert real deployment_revisions row FIRST (status='healthy')
+      
       await env.DB.prepare(`
         INSERT INTO deployment_revisions (
           id, app_id, repository_id, commit_oid, build_run_id, environment,
@@ -2686,13 +2678,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         logs: [buildResult.output]
       };
 
-      // 2. Atomically FLIP active_deployment_id with CAS predicate on old active_deployment_id
-      //
-      // Known accepted risk:
-      // The router HOST_CACHE KV caches the listing 60s. After a flip, up to 60s of requests
-      // can still route to the old origin_ref — harmless because the old revision stays healthy
-      // (sleepAfter=10m). This is stale-but-serving, not an outage.
-      // Follow-up (not now): HOST_CACHE.delete on flip for instant cutover.
+      
+      
+      
+      
+      
+      
+      
       const oldActiveId = appListing.active_deployment_id || null;
       const flipRes = oldActiveId
         ? await env.DB.prepare(`
@@ -2718,7 +2710,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
 
-      // 3. THEN supersede previous active revisions (new revision healthy FIRST, flip LAST)
+      
       if (flipChanges > 0) {
         await env.DB.prepare(`
           UPDATE deployment_revisions SET status = 'superseded'
@@ -2789,9 +2781,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       }
     }
 
-    // The full stack lives in the STORED evidence (server-side diagnostics) but must not
-    // be returned to the client. Strip the stack-bearing `error` field from the response
-    // evidence; keep the human-readable message.
+    
+    
+    
     const { error: _stack, ...clientEvidence } = failureEvidence as any;
     console.error('[DEPLOY] execution error:', String(err?.stack || err?.message || err));
     return json({

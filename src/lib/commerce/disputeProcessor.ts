@@ -1,11 +1,3 @@
-// Authoritative Stripe Dispute Event Processor
-// Handles `charge.dispute.created` / `charge.dispute.updated` / `charge.dispute.closed`
-// webhook deliveries by re-fetching the authoritative Stripe Dispute object (never
-// trusting the webhook body) and durably recording it against the matching order.
-// A dispute that closes as 'lost' opens a commerce_recovery_obligations row per
-// maker/ancestor/contributor allocation so the recovery-execution worker can claw the funds
-// back — mirroring how refundProcessor.ts opens obligations for refund deltas.
-
 import { hashPayload, markInboxTerminalFailure, releaseInboxClaim } from './stripeInbox';
 import { calculateDisputeRecoveryDelta } from './recoveryDomain';
 import { ProcessEventResult } from './types';
@@ -32,16 +24,6 @@ async function failTerminal(db: any, eventId: string, claimToken: string, messag
   return { success: false, terminal: true, error: message };
 }
 
-/**
- * Executes a single conditional order-state UPDATE STANDALONE (never inside a larger
- * db.batch()) and reports whether it changed exactly one row. D1 does not throw on a
- * zero-row conditional UPDATE, so every conditional order-state transition in this
- * processor MUST go through this helper and have its result checked before any dependent
- * writes are constructed — otherwise a lost CAS would silently leave dependent
- * obligation/event rows committed as if the transition it depends on actually happened.
- * A genuine DB error (as opposed to a 0-row CAS loss) is reported via `dbError` rather
- * than thrown, so callers can uniformly release the inbox claim as retryable.
- */
 async function runGuardedOrderCas(
   db: any,
   sql: string,
@@ -68,32 +50,6 @@ async function fetchAuthoritativeCharge(env: any, chargeId: string, fetchImpl: t
   });
 }
 
-/**
- * Processes a `charge.dispute.*` event from `stripe_event_inbox`.
- *
- * Requirements:
- * 1. Re-fetches the authoritative Stripe Dispute (GET /v1/disputes/<id>) and the
- *    Charge it references — the webhook body is only used to discover the
- *    dispute ID to re-fetch, never trusted for status/economics.
- * 2. Resolves the commerce order via the charge's PaymentIntent
- *    (commerce_orders.stripe_payment_intent_id), matching the pattern used by
- *    refundProcessor.ts.
- * 3. Upserts an immutable-by-convention commerce_disputes row keyed on
- *    stripe_dispute_id, plus a commerce_dispute_observations row per delivery
- *    (every delivery remains evidence, matching refund observations).
- * 4. When the dispute is open (not yet won/lost) and the order is currently
- *    'fulfilled', advances the order to 'disputed' — informational, no money
- *    movement yet.
- * 5. When the dispute status is authoritatively 'lost', opens one
- *    commerce_recovery_obligations row per maker/ancestor/contributor allocation (capped at
- *    each allocation's frozen amount) so the recovery-execution worker can claw
- *    the funds back from already-completed transfers. Idempotent via the
- *    (source_kind, source_id, allocation_id) unique constraint.
- * 6. When the dispute status is authoritatively 'won' and the order has no
- *    other unresolved dispute, reverts the order from 'disputed' back to
- *    'fulfilled' (funds were never actually clawed back, so this is safe).
- * 7. Fails closed if the order cannot be resolved from the authoritative data.
- */
 export async function processDisputeInboxEvent(
   db: any,
   env: any,
@@ -227,27 +183,7 @@ export async function processDisputeInboxEvent(
   let recoveryObligationsOpened = 0;
   let orderNextStatus = order.status;
 
-  // CRITICAL (money conservation, #2/#7): every conditional order-state-transition UPDATE
-  // below is executed STANDALONE via `.run()`, ahead of and separate from any dependent
-  // writes (recovery obligations / order_events / inbox-processed), with its rows-affected
-  // (`meta.changes`) checked immediately. D1 does NOT throw when a conditional UPDATE's
-  // WHERE clause matches zero rows — db.batch() only rolls back a batch on a THROWN error,
-  // never on a 0-row conditional write — so if these guarded UPDATEs were merely statements
-  // inside a larger batch, a lost CAS (state advanced under us — e.g. a concurrent dispute
-  // delivery, or another open dispute blocking a 'won' revert) would silently affect 0 rows
-  // while every other statement in that batch still committed as if the transition had
-  // actually happened. Guarding each one standalone makes that impossible: the dependent
-  // writes for a given transition are only ever constructed and executed AFTER their
-  // governing UPDATE is confirmed to have changed exactly the expected row.
   if (status === 'lost') {
-    // #1 (CRITICAL, partial-dispute over-claw): a Stripe dispute can be PARTIAL
-    // (dispute.amount < order gross_cents) — a 500c dispute on a 2000c order must claw
-    // back EXACTLY 500c total, pro-rata across ALL of the order's frozen allocations
-    // (including protocol_pool), reusing the identical cumulative largest-remainder
-    // (D'Hondt) split refunds already use so cents conserve deterministically. Only the
-    // PAYABLE roles (maker/ancestor/contributor) actually get a recovery obligation
-    // inserted — protocol_pool is never paid out, so its pro-rata share needs no
-    // recovery (mirrors refundProcessor, which does the same for refund allocations).
     const allocationResult = await db.prepare(`
       SELECT id, sequence, role, amount_cents AS amountCents
       FROM commerce_order_allocations
@@ -262,11 +198,6 @@ export async function processDisputeInboxEvent(
       return { success: false, retryable: true, error: message };
     }
 
-    // Combine prior clawback already recorded against each allocation from BOTH
-    // succeeded refunds and any earlier disputes on this order (disputes and refunds
-    // draw down the same finite per-allocation pool), so this dispute's cumulative
-    // target is seated on top of everything already recovered and total clawback
-    // (refunds + disputes) can never exceed what was actually paid out.
     const priorRefundResult = await db.prepare(`
       SELECT ra.allocation_id, SUM(ra.amount_cents) AS amount
       FROM commerce_refund_allocations ra
@@ -299,22 +230,14 @@ export async function processDisputeInboxEvent(
     } catch (error: any) {
       return failTerminal(db, eventId, claimToken, `Dispute recovery allocation failed: ${error.message}`);
     }
-    // Fail closed rather than silently insert a clawback that doesn't conserve.
     const sumDeltas = deltas.reduce((sum, delta) => sum + delta.deltaAmountCents, 0);
     if (sumDeltas !== amountCents) {
       const message = `Dispute recovery deltas (${sumDeltas}) do not conserve dispute amount (${amountCents})`;
       return failTerminal(db, eventId, claimToken, message);
     }
 
-    // Idempotent: obligations are keyed uniquely on (source_kind, source_id, allocation_id),
-    // so re-processing the same 'lost' delivery is a safe no-op via INSERT OR IGNORE (never
-    // double-opens obligations for the same dispute).
     const lostStatements: any[] = [];
     for (const delta of deltas) {
-      // House roles ('platform' under the new model, legacy 'protocol_pool') are never
-      // paid out via Connect, so they must never get a recovery obligation — migration
-      // 0038's commerce_recovery_matches_order_allocation trigger only allowlists payable
-      // roles ('maker','ancestor','contributor','seller') and RAISE(ABORT)s otherwise.
       if (delta.role === 'protocol_pool' || delta.role === 'platform' || delta.deltaAmountCents <= 0) continue;
       const outboxRow: any = await db.prepare(`
         SELECT id FROM commerce_transfer_outbox WHERE allocation_id = ?
@@ -368,10 +291,6 @@ export async function processDisputeInboxEvent(
     statements.push(...lostStatements);
   } else if (status === 'won') {
     if (order.status === 'disputed') {
-      // #3 (HIGH): only revert 'disputed' -> 'fulfilled' if THIS is the last unresolved
-      // dispute on the order. If another dispute on the same order is still open (not yet
-      // 'won' or 'warning_closed'), winning this one must NOT clear the order back to
-      // fulfilled — chargeback exposure remains until every dispute resolves.
       const casResult = await runGuardedOrderCas(db, `
         UPDATE commerce_orders SET status = 'fulfilled', state_version = state_version + 1, updated_at = datetime('now')
         WHERE id = ? AND state_version = ? AND status = 'disputed'
@@ -381,9 +300,6 @@ export async function processDisputeInboxEvent(
           )
       `, [order.id, order.state_version, order.id, disputeId]);
       if (casResult.dbError) {
-        // A genuine DB error, not a 0-row CAS outcome — must abort and retry, never
-        // silently proceed as if the (unattempted) transition succeeded or was correctly
-        // skipped.
         const message = `Dispute order transition to 'fulfilled' failed: ${casResult.dbError.message}`;
         await releaseInboxClaim(db, eventId, claimToken, message, 5);
         return { success: false, retryable: true, error: message };
@@ -391,14 +307,6 @@ export async function processDisputeInboxEvent(
       if (casResult.ok) {
         orderNextStatus = 'fulfilled';
       }
-      // If the guarded UPDATE affected 0 rows with NO dbError, either another dispute is
-      // still open (the order correctly stays 'disputed' — this is an expected, non-error
-      // outcome, not a lost race) or order state advanced concurrently under us. Either way
-      // we must NOT treat the order as reverted: orderNextStatus stays at its
-      // already-fetched value. We do not need to distinguish the two cases here because in
-      // both, leaving the order at its current authoritative status (not silently forcing
-      // 'fulfilled') is correct and safe — a fresh redelivery will re-evaluate against
-      // current state.
     }
     statements.push(
       db.prepare(`
@@ -412,7 +320,6 @@ export async function processDisputeInboxEvent(
       )
     );
   } else {
-    // Dispute opened or still under review: informational transition only.
     if (order.status === 'fulfilled') {
       const casResult = await runGuardedOrderCas(db, `
         UPDATE commerce_orders SET status = 'disputed', state_version = state_version + 1, updated_at = datetime('now')
@@ -450,11 +357,6 @@ export async function processDisputeInboxEvent(
   try {
     await db.batch(statements);
   } catch (error: any) {
-    // Any order-state CAS this delivery needed has already been guarded and committed
-    // standalone above (or this branch never needed one). A failure here is a genuine
-    // partial-failure of the remaining dependent writes (obligations/events/inbox-processed)
-    // straddling that already-committed state, so it needs reconciliation attention rather
-    // than a blind automatic retry that could recompute against already-advanced state.
     const message = `Dispute reconciliation batch failed (needs manual reconciliation): ${error.message}`;
     return failTerminal(db, eventId, claimToken, message);
   }

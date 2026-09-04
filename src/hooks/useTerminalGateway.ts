@@ -44,7 +44,6 @@ export function useTerminalGateway(options: UseTerminalGatewayOptions = {}) {
     }
   }, []);
 
-  // Initialize and check gateway availability
   useEffect(() => {
     const client = new TerminalClient(gatewayUrl, {
       onOutput: (chunk) => {

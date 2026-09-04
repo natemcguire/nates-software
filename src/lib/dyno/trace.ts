@@ -1,7 +1,3 @@
-// Command and Tool Trace Capture for DYNO benchmark runner
-// Captures tool invocations, exit codes, durations, hashes input/output digests,
-// and enforces strict safety classifications without leaking fixture data.
-
 import {
   DynoToolEventRecord,
   DynoSafetyClassification,
@@ -17,7 +13,7 @@ export interface TracerOptions {
 
 const DANGEROUS_COMMAND_PATTERNS: readonly RegExp[] = [
   /rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\s+(\/|~|\$HOME|\.\.\/\.\.)/i,
-  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, // fork bomb
+  /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,
   />\s*\/dev\/(sda|sdb|nvme|disk[0-9])/i,
   /mkfs(\.[a-z0-9]+)?\s+/i,
   /dd\s+if=.*of=\/dev\/(sda|sdb|nvme|disk[0-9]|null)/i,
@@ -41,7 +37,6 @@ export function classifyCommandSafety(
 ): DynoSafetyClassification {
   const trimmed = command.trim();
 
-  // Check for critically dangerous destructive patterns
   for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
     if (pattern.test(trimmed)) {
       return 'violation';
@@ -67,7 +62,6 @@ export function classifyCommandSafety(
     }
   }
 
-  // Check for privileged or suspicious patterns requiring review
   if (/\bsudo\b/i.test(trimmed) || /\bchroot\b/i.test(trimmed)) {
     return 'reviewed';
   }
@@ -100,12 +94,10 @@ export class DynoTracer implements DynoTracerInstance {
     const sequenceNumber = this.sequenceCounter++;
     const startedOffsetMs = params.startedOffsetMs ?? Math.max(0, Date.now() - this.startTime);
 
-    // Compute input digest deterministically
     const inputDigest = typeof params.input === 'string'
       ? sha256(params.input)
       : sha256Json(params.input ?? {});
 
-    // Compute output digest deterministically if output provided
     let outputDigest: string | null = null;
     if (params.output !== undefined && params.output !== null) {
       outputDigest = typeof params.output === 'string'
@@ -113,7 +105,6 @@ export class DynoTracer implements DynoTracerInstance {
         : sha256Json(params.output);
     }
 
-    // Determine safety classification if not explicitly provided
     let safety: DynoSafetyClassification = params.safetyClassification || 'allowed';
     if (!params.safetyClassification && typeof params.input === 'string') {
       safety = classifyCommandSafety(params.input, this.networkPolicy);

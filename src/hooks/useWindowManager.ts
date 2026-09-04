@@ -19,8 +19,7 @@ export interface WindowState {
 const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: number) => {
   const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
-  
-  // Scale window dimensions up on high-res displays
+
   const isHighRes = screenW >= 1600;
   const isUltraWide = screenW >= 2000;
   
@@ -63,9 +62,6 @@ export function useWindowManager(user?: AuthUser | null) {
       id: 'setup',
       title: "SETUP.EXE — [Welcome & 1-Click Fork Quickstart Wizard]",
       icon: '🚀',
-      // Closed on first paint; App opens it (once) after the session check resolves,
-      // only for genuine first-run / logged-out visitors. Opening-by-default and then
-      // closing for returning users caused the window to flash on every refresh.
       isOpen: false,
       isMinimized: false,
       isMaximized: false,
@@ -241,9 +237,6 @@ export function useWindowManager(user?: AuthUser | null) {
       const target = curr[id];
       if (!target) return curr;
 
-      // Smart placement: aim for the centered free spot; if another open window
-      // already sits there, cascade-offset until we find open space, wrapping
-      // back toward the top-left when we run past the usable area.
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1440;
       const screenH = typeof window !== 'undefined' ? window.innerHeight : 900;
       const taskbarH = 40;
@@ -252,28 +245,23 @@ export function useWindowManager(user?: AuthUser | null) {
       const centerX = Math.max(20, Math.floor((screenW - w) / 2));
       const centerY = Math.max(20, Math.floor((screenH - h - taskbarH) / 2));
 
-      // Top-left corners of other currently-open, non-minimized windows.
       const occupied = Object.entries(curr)
         .filter(([wid, ws]) => wid !== id && ws.isOpen && !ws.isMinimized)
         .map(([, ws]) => ({ x: ws.x, y: ws.y }));
 
-      const STEP = 32;               // cascade step per collision
-      const NEAR = 24;               // how close counts as "same spot"
+      const STEP = 32;
+      const NEAR = 24;
       const maxX = Math.max(centerX, screenW - w - 20);
       const maxY = Math.max(centerY, screenH - h - taskbarH - 20);
 
       let x = centerX;
       let y = centerY;
-      // Cascade until the slot is clear of other windows' top-lefts, capped so
-      // we never loop forever (fall back to a wrapped offset from center).
       for (let i = 0; i < occupied.length + 1; i++) {
         const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
         if (!collides) break;
         x += STEP;
         y += STEP;
         if (x > maxX || y > maxY) {
-          // Wrapped past the usable area — nudge back near center with a small
-          // varying offset so it doesn't land exactly on the centered stack.
           x = Math.min(maxX, centerX + ((i % 5) + 1) * 16);
           y = Math.min(maxY, centerY + ((i % 5) + 1) * 16);
         }

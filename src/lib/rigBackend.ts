@@ -1,15 +1,3 @@
-/**
- * RIG.EXE Control Plane Backend — Deterministic Provider-Agnostic State Machine
- *
- * Invariants:
- * 1. Deterministic state machine governing runtime-agnostic specs and explicit observed state.
- * 2. Enforces legal lifecycle transitions: queued -> building -> starting -> healthy (or degraded, crashed, oom, expired, stopped).
- * 3. Safe port allocation with collision avoidance and deterministic release upon stop/oom/crash/expiry/teardown.
- * 4. Rigorous memory governor enforcing strict memory caps without fabricated WAL/R2 side-effects.
- * 5. Honest TTL and expiry tracking releasing resources automatically.
- * 6. Explicit truth boundary: distinguishes demo simulation from connected provider adapter.
- */
-
 import {
   type RigSpec,
   type RigInstance,
@@ -55,7 +43,6 @@ export class MicroDynoPortAllocator {
       throw new Error('appId must be a non-empty string for port allocation.');
     }
 
-    // If preferred port is specified and available within range, allocate it
     if (preferredPort !== undefined && this.isAvailable(preferredPort)) {
       this.allocations.set(preferredPort, {
         port: preferredPort,
@@ -66,7 +53,6 @@ export class MicroDynoPortAllocator {
       return preferredPort;
     }
 
-    // Find lowest available port in range [minPort, maxPort] with automatic collision avoidance
     for (let port = this.minPort; port <= this.maxPort; port++) {
       if (!this.allocations.has(port)) {
         this.allocations.set(port, {
@@ -178,7 +164,6 @@ export class RigMemoryGovernor {
       };
     }
 
-    // Exceeded cap -> Honest OOM observation
     return {
       allowed: false,
       action: 'oom',
@@ -430,7 +415,6 @@ export class RigControlPlane {
       throw new Error(`Instance with id ${spec.id} already exists.`);
     }
 
-    // Allocate port upon creation (initial queued state)
     const port = this.portAllocator.allocate(spec.appId, spec.preferredPort, spec.id);
     const now = new Date();
     const nowIso = now.toISOString();
@@ -483,14 +467,12 @@ export class RigControlPlane {
     const terminalOrInactiveStates: RigLifecycleState[] = ['crashed', 'oom', 'expired', 'stopped'];
     const activeStates: RigLifecycleState[] = ['queued', 'building', 'starting', 'healthy', 'degraded'];
 
-    // If moving to terminal/inactive state, release allocated port safely
     if (terminalOrInactiveStates.includes(toState)) {
       if (port !== undefined) {
         this.portAllocator.release(port);
         port = undefined;
       }
     } else if (activeStates.includes(toState) && port === undefined) {
-      // Re-allocate port if transitioning to active state without a port
       port = this.portAllocator.allocate(instance.spec.appId, instance.spec.preferredPort, instance.spec.id);
     }
 
@@ -556,7 +538,6 @@ export class RigControlPlane {
         throw new Error(`Cannot observe OOM for instance '${instanceId}' in state '${fromState}': ${validation.error}`);
       }
 
-      // Transition to OOM lifecycle state and release port
       const updated = this.transitionState(
         instanceId,
         'oom',
@@ -588,13 +569,11 @@ export class RigControlPlane {
     }
 
     const fromState = instance.observed.lifecycle;
-    // Restart target is 'queued'
     const validation = validateRigTransition(fromState, 'queued');
     if (!validation.valid) {
       throw new Error(`Cannot restart instance from state '${fromState}': ${validation.error}`);
     }
 
-    // Allocate port if released
     let port = instance.observed.allocatedPort;
     if (port === undefined) {
       port = this.portAllocator.allocate(instance.spec.appId, instance.spec.preferredPort, instance.spec.id);
@@ -713,7 +692,6 @@ export class RigControlPlane {
     };
   }
 
-  // Backwards-compatible methods for legacy callers
   public spawnContainer(params: {
     appId: string;
     name: string;
@@ -797,6 +775,5 @@ export class RigControlPlane {
   }
 }
 
-// Export RigRuntimeBackend alias for seamless backwards compatibility
 export const RigRuntimeBackend = RigControlPlane;
 export type RigRuntimeBackend = RigControlPlane;

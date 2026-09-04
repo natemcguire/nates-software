@@ -27,9 +27,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     return token;
   }
 
-  // ==========================================================================
-  // 1. FAIL-CLOSED GUARD & DISABLED PRODUCTION BEHAVIOR
-  // ==========================================================================
   describe('1. Disabled Production Guard', () => {
     it('returns 503 when PAYMENTS_ENABLED is not explicitly true', async () => {
       const req = new Request('http://localhost/api/payments/create-intent', {
@@ -64,9 +61,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 2. AUTHENTICATION & HEADER VALIDATION
-  // ==========================================================================
   describe('2. Authentication & Header Validation', () => {
     const env = () => ({
       DB: ctx.d1,
@@ -153,9 +147,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 3. PRODUCT & APP LISTING INTEGRITY
-  // ==========================================================================
   describe('3. D1 Product & Listing Authoritative State', () => {
     const env = () => ({
       DB: ctx.d1,
@@ -187,7 +178,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     it('returns 400 if product is not in active status (e.g. draft or suspended)', async () => {
       await createSession('usr_nate', 'test_token_buyer');
 
-      // Create draft product
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
         VALUES ('draft-app', 'Draft App', 'Draft Tagline', 'Draft Desc', 'usr_nate', 'v1.0.0', 'MIT', '$10', '/data', '[]', '[]', '{}')
@@ -217,14 +207,10 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 4. CLIENT PRICE/BUYER/ANCESTRY TAMPER RESISTANCE
-  // ==========================================================================
   describe('4. Tamper Resistance (Ignores Client-Supplied Economics)', () => {
     it('completely ignores client-supplied customPriceCents, buyerId, makerId, ancestors, and currency', async () => {
       await createSession('usr_nate', 'test_token_buyer');
 
-      // Mock Stripe fetch response
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -242,7 +228,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         },
         body: JSON.stringify({
           appId: 'dronehunter',
-          customPriceCents: 50, // HACKER ATTEMPT: $0.50 instead of $15.00
+          customPriceCents: 50,
           buyerId: 'usr_hacker',
           makerId: 'usr_hacker',
           currency: 'eur',
@@ -263,11 +249,9 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(res.status).toBe(200);
       expect(data.success).toBe(true);
 
-      // Verify authoritative price and currency used
-      expect(data.amountCents).toBe(1500); // Authoritative $15.00, NOT 50 cents
+      expect(data.amountCents).toBe(1500);
       expect(data.currency).toBe('usd');
 
-      // Verify order persisted in D1
       const order: any = await ctx.d1.prepare(`
         SELECT * FROM commerce_orders WHERE id = ?
       `).bind(data.orderId).first();
@@ -275,12 +259,11 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(order).toBeTruthy();
       expect(order.gross_cents).toBe(1500);
       expect(order.currency).toBe('usd');
-      expect(order.buyer_user_id).toBe('usr_nate'); // From authenticated session, NOT 'usr_hacker'
-      expect(order.seller_user_id).toBe('usr_nate'); // From commerce_products
+      expect(order.buyer_user_id).toBe('usr_nate');
+      expect(order.seller_user_id).toBe('usr_nate');
       expect(order.stripe_payment_intent_id).toBe('pi_test_dronehunter_123');
       expect(order.status).toBe('requires_payment');
 
-      // Verify Stripe payload called with authoritative amounts
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
       const callArgs = (globalThis.fetch as any).mock.calls[0];
       const sentBody = new URLSearchParams(callArgs[1].body);
@@ -292,9 +275,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 5. ROOT AND FORK ALLOCATIONS D1 PERSISTENCE
-  // ==========================================================================
   describe('5. Root & Fork Allocations D1 Atomic Persistence', () => {
     it('atomically persists root app allocations (platform 10% / seller 90%, no liens) and order event', async () => {
       await createSession('usr_nate', 'test_token_buyer');
@@ -314,7 +294,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
           'Authorization': 'Bearer test_token_buyer',
           'Idempotency-Key': 'key_root_order_1'
         },
-        body: JSON.stringify({ appId: 'certified-mailer' }) // $25.00
+        body: JSON.stringify({ appId: 'certified-mailer' })
       });
 
       const env = {
@@ -331,7 +311,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.success).toBe(true);
       expect(data.amountCents).toBe(2500);
 
-      // Verify allocations in D1
       const allocs = await ctx.d1.prepare(`
         SELECT sequence, role, recipient_user_id AS recipientUserId,
                source_repository_id AS sourceRepositoryId, lineage_depth AS lineageDepth,
@@ -343,12 +322,10 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
       expect(allocs.results).toHaveLength(2);
 
-      // House-first conservation: platform + seller == gross exactly.
       const total = allocs.results!.reduce((s: number, a: any) => s + a.amountCents, 0);
       expect(total).toBe(2500);
       expect(allocs.results!.some((a: any) => a.role === 'ancestor')).toBe(false);
 
-      // Seller: floored remainder of R (no liens, so 90% of 2500 = 2250 cents)
       const seller = allocs.results!.find((a: any) => a.role === 'seller');
       expect(seller).toEqual({
         sequence: 1,
@@ -360,7 +337,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         amountCents: 2250
       });
 
-      // Platform (house): flat 10% base + any rounding dust = 250 cents
       const platform = allocs.results!.find((a: any) => a.role === 'platform');
       expect(platform).toEqual({
         sequence: 2,
@@ -372,7 +348,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         amountCents: 250
       });
 
-      // Verify events in D1
       const events = await ctx.d1.prepare(`
         SELECT event_type AS eventType, source FROM commerce_order_events
         WHERE order_id = ? ORDER BY created_at ASC
@@ -383,7 +358,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
 
     it('atomically persists fork app allocations from frozen liens (platform 10%, two 10% ancestor liens, seller remainder)', async () => {
-      // 1. Setup user hierarchy: Root (usr_root) -> Parent (usr_parent) -> Maker (usr_forker)
+
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name)
         VALUES
@@ -392,7 +367,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
           ('usr_forker', 'forker_dev', 'Forker Dev')
       `).run();
 
-      // 2. Setup repositories
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, storage_key)
         VALUES
@@ -401,8 +375,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
           ('repo_fork', 'usr_forker', 'wallart-fork', 'key_f')
       `).run();
 
-      // 3. Setup fork relationships:
-      // repo_parent is fork of repo_root
       await ctx.d1.prepare(`
         INSERT INTO repository_forks (
           child_repository_id, parent_repository_id, forked_by_user_id,
@@ -411,7 +383,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         ) VALUES ('repo_parent', 'repo_root', 'usr_parent', 'refs/heads/main', 'oid_1', 'oid_1', 'repo_root', 1)
       `).run();
 
-      // repo_fork is fork of repo_parent
       await ctx.d1.prepare(`
         INSERT INTO repository_forks (
           child_repository_id, parent_repository_id, forked_by_user_id,
@@ -420,9 +391,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         ) VALUES ('repo_fork', 'repo_parent', 'usr_forker', 'refs/heads/main', 'oid_2', 'oid_2', 'repo_root', 2)
       `).run();
 
-      // 3b. Frozen liens captured at fork-confirm time (Task B2, not this task):
-      // repo_fork owes 10% to usr_parent (depth 1, immediate parent's listing rate)
-      // and 10% to usr_root (depth 2, inherited from the parent's own liens).
       await ctx.d1.prepare(`
         INSERT INTO repository_fork_liens (
           id, holder_of_repository_id, ancestor_repository_id, ancestor_user_id, bps, depth
@@ -431,7 +399,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
           ('rfl_2', 'repo_fork', 'repo_root', 'usr_root', 1000, 2)
       `).run();
 
-      // 4. Setup app_listings & commerce_products for the fork
       await ctx.d1.prepare(`
         INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
         VALUES ('wallart-custom-3d', 'Wallart Custom 3D', '3D Living Room Art', 'Custom art fork', 'usr_forker', 'v2.1.0', 'MIT', '$30.00', '/data', '[]', '[]', '{}')
@@ -446,7 +413,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         VALUES ('wallart-custom-3d', 'repo_fork', 'usr_forker', 3000, 'usd', 'active')
       `).run();
 
-      // Authenticated buyer
       await createSession('usr_nate', 'test_token_buyer');
 
       globalThis.fetch = vi.fn().mockResolvedValue({
@@ -481,11 +447,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.success).toBe(true);
       expect(data.amountCents).toBe(3000);
 
-      // Verify allocations in D1 via the additive frozen-lien model:
-      // Gross = 3000 cents. Platform base = floor(0.10 * 3000) = 300. R = 2700.
-      // Each 10%-bps ancestor lien pays floor(0.10 * 2700) = 270 (additive, not nested).
-      // Seller keeps the floored remainder of R: 2700 - 270 - 270 = 2160.
-      // Conservation: 300 (platform) + 270 + 270 (ancestors) + 2160 (seller) == 3000.
       const allocs = await ctx.d1.prepare(`
         SELECT sequence, role, recipient_user_id AS recipientUserId,
                source_repository_id AS sourceRepositoryId, lineage_depth AS lineageDepth,
@@ -500,7 +461,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       const total = allocs.results!.reduce((s: number, a: any) => s + a.amountCents, 0);
       expect(total).toBe(3000);
 
-      // Sequence 1: Ancestor (root: repo_root / usr_root, depth 2, sorted root-first)
       expect(allocs.results![0]).toEqual({
         sequence: 1,
         role: 'ancestor',
@@ -511,7 +471,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         amountCents: 270
       });
 
-      // Sequence 2: Ancestor (parent: repo_parent / usr_parent, depth 1)
       expect(allocs.results![1]).toEqual({
         sequence: 2,
         role: 'ancestor',
@@ -522,7 +481,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         amountCents: 270
       });
 
-      // Sequence 3: Seller — floored remainder of R after all ancestor liens
       expect(allocs.results![2]).toEqual({
         sequence: 3,
         role: 'seller',
@@ -533,7 +491,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         amountCents: 2160
       });
 
-      // Sequence 4: Platform (house) — flat 10% base + any rounding dust
       expect(allocs.results![3]).toEqual({
         sequence: 4,
         role: 'platform',
@@ -548,9 +505,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 6. HONEST FAILURE HANDLING (NO FABRICATION)
-  // ==========================================================================
   describe('6. Honest Failure Handling (Zero Fabrication)', () => {
     it('fails honestly when STRIPE_SECRET_KEY is not configured on server', async () => {
       await createSession('usr_nate', 'test_token_buyer');
@@ -568,7 +522,7 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       const env = {
         DB: ctx.d1,
         PAYMENTS_ENABLED: 'true',
-        // Missing STRIPE_SECRET_KEY
+
         STRIPE_PUBLISHABLE_KEY: 'pk_test_123'
       };
 
@@ -579,7 +533,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.success).toBe(false);
       expect(data.error).toMatch(/Stripe secret key is not configured/i);
 
-      // Verify order marked payment_failed with honest code
       const order: any = await ctx.d1.prepare(`
         SELECT status, failure_code FROM commerce_orders WHERE idempotency_key = 'key_no_stripe_secret'
       `).first();
@@ -624,7 +577,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.success).toBe(false);
       expect(data.error).toMatch(/Stripe PaymentIntent creation failed: Invalid currency parameter/);
 
-      // Verify order status in D1 is payment_failed
       const order: any = await ctx.d1.prepare(`
         SELECT status, failure_code FROM commerce_orders WHERE idempotency_key = 'key_stripe_err_1'
       `).first();
@@ -671,9 +623,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 6B. ORPHANED PAYMENTINTENT RECOVERY (Codex #6)
-  // ==========================================================================
   describe('6B. Orphaned PaymentIntent recovery on "creating" retry (Codex #6)', () => {
     const env = () => ({
       DB: ctx.d1,
@@ -682,12 +631,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       STRIPE_PUBLISHABLE_KEY: 'pk_test_123'
     });
 
-    // Simulates the exact orphan scenario: Stripe already created a
-    // PaymentIntent for this order (the D1 write that would have attached it
-    // failed afterward), leaving a durable 'creating' row with no
-    // stripe_payment_intent_id. This is constructed directly rather than by
-    // forcing a mid-request D1 failure, since the durable persisted state is
-    // what a real retry would observe.
     async function seedOrphanedCreatingOrder(orderId: string, idempotencyKey: string) {
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
@@ -703,8 +646,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       await createSession('usr_nate', 'test_token_buyer');
       await seedOrphanedCreatingOrder('ord_orphaned_1', 'key_orphan_recovery_1');
 
-      // Mock Stripe: replaying the create call with the same Idempotency-Key
-      // returns the ORIGINAL PaymentIntent Stripe already created.
       const stripeMock = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -734,20 +675,16 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.clientSecret).toBe('pi_orphaned_original_999_secret');
       expect(data.status).toBe('requires_payment');
 
-      // Stripe was called with the SAME deterministic idempotency key so the
-      // original PI is retrieved, never a new/duplicate one created.
       expect(stripeMock).toHaveBeenCalledTimes(1);
       const callHeaders = (stripeMock.mock.calls[0][1] as any).headers;
       expect(callHeaders['Idempotency-Key']).toBe('pi_ord_orphaned_1');
 
-      // Order is no longer stranded: it is re-attached and moved past 'creating'.
       const order: any = await ctx.d1.prepare(`
         SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE id = ?
       `).bind('ord_orphaned_1').first();
       expect(order.status).toBe('requires_payment');
       expect(order.piId).toBe('pi_orphaned_original_999');
 
-      // A recovery event is recorded for auditability.
       const events: any = await ctx.d1.prepare(`
         SELECT event_type AS eventType FROM commerce_order_events WHERE order_id = ?
       `).bind('ord_orphaned_1').all();
@@ -777,8 +714,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data.success).toBe(false);
       expect(data.error).toMatch(/Failed to connect to Stripe/i);
 
-      // Order is NOT marked payment_failed and NOT fabricated as paid — it
-      // stays in 'creating' so the next retry can attempt recovery again.
       const order: any = await ctx.d1.prepare(`
         SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE id = ?
       `).bind('ord_orphaned_2').first();
@@ -797,15 +732,11 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         })
       } as any);
 
-      // Simulate the D1 write that attaches the PI failing (e.g. transient
-      // D1 outage) by making the final batch() call throw once.
       const originalBatch = ctx.d1.batch.bind(ctx.d1);
       let batchCallCount = 0;
       vi.spyOn(ctx.d1, 'batch').mockImplementation(async (stmts: any) => {
         batchCallCount += 1;
-        // First batch() call persists the 'creating' order + allocations +
-        // event — let that succeed normally. Second batch() call is the
-        // attach-PI step — make it fail once.
+
         if (batchCallCount === 2) {
           throw new Error('simulated D1 outage during PI attach');
         }
@@ -825,22 +756,18 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       const res = await createIntentApi.onRequestPost({ request: req, env: env() });
       const data = await res.json();
 
-      // Honest failure: never claims success when the attach write failed.
       expect(res.status).toBe(500);
       expect(data.success).toBe(false);
       expect(data.error).toMatch(/Retry with the same Idempotency-Key/i);
 
       vi.restoreAllMocks();
 
-      // The order must remain in 'creating' (recoverable), NOT payment_failed.
       const order: any = await ctx.d1.prepare(`
         SELECT status, stripe_payment_intent_id AS piId FROM commerce_orders WHERE idempotency_key = 'key_attach_fail_1'
       `).first();
       expect(order.status).toBe('creating');
       expect(order.piId).toBeNull();
 
-      // Now retry with the SAME Idempotency-Key: recovery should retrieve
-      // the exact same PaymentIntent Stripe already created and re-attach it.
       const retryStripeMock = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -875,9 +802,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 7. IDEMPOTENCY KEY REPLAY & CONFLICT BEHAVIOR
-  // ==========================================================================
   describe('7. Idempotency Key Replay & Conflicts', () => {
     const env = () => ({
       DB: ctx.d1,
@@ -897,7 +821,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         })
       } as any);
 
-      // First call
       const req1 = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
         headers: {
@@ -913,7 +836,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(res1.status).toBe(200);
       expect(data1.paymentIntentId).toBe('pi_replay_123');
 
-      // Second call with same idempotency key
       const req2 = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
         headers: {
@@ -932,7 +854,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
       expect(data2.orderId).toBe(data1.orderId);
       expect(data2.paymentIntentId).toBe('pi_replay_123');
 
-      // Stripe API should not be called a second time
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 
@@ -947,7 +868,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
         })
       } as any);
 
-      // First call for dronehunter
       const req1 = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
         headers: {
@@ -960,7 +880,6 @@ describe('Durable Commerce /api/payments/create-intent Engine', () => {
 
       await createIntentApi.onRequestPost({ request: req1, env: env() });
 
-      // Second call for certified-mailer with SAME idempotency key
       const req2 = new Request('http://localhost/api/payments/create-intent', {
         method: 'POST',
         headers: {

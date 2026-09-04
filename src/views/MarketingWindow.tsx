@@ -97,7 +97,6 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
 
   return (
     <div className="flex flex-col h-full font-tahoma text-sm">
-      {/* ── TOP TITLE ─────────────────────────────────────────────── */}
       <div className="text-center py-2.5 border-b border-gray-300 mb-3">
         <div className="text-3xl font-black text-w95-blue tracking-tight mb-1.5">
           WELCOME TO NATE'S SOFTWARE EMPORIUM
@@ -123,10 +122,8 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </div>
       </div>
 
-      {/* Shared scroll area */}
       <div className="flex-1 overflow-y-auto mb-3">
 
-        {/* ── WHAT IS THIS? ───────────────────────────────────────── */}
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-3 shadow-sm">
           <div className="text-w95-blue font-bold text-base mb-2">What is this?</div>
           <p className="text-gray-800 text-xs leading-relaxed font-sans mb-2.5">
@@ -144,7 +141,6 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           </div>
         </div>
 
-        {/* ── HOW IT WORKS ────────────────────────────────────────── */}
         <div className="bg-white border-2 border-gray-800 p-3.5 mb-4 shadow-sm">
           <div className="text-w95-blue font-bold text-base mb-2">How it works</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-gray-700 text-xs leading-relaxed">
@@ -155,12 +151,13 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Publish and sell</div>
-              Push your code to the forge and it builds onto its own URL. No Dockerfile, no servers.
-              Then list it on HOTWIRE at whatever price you set.
+              Fork in your browser; publish from your machine. Push your fork up with the{' '}
+              <code className="bg-gray-200 px-1 rounded font-mono">slop</code> CLI — it builds onto its own URL, no Dockerfile,
+              no servers. Then list it on HOTWIRE at whatever price you set.
             </div>
             <div>
               <div className="font-bold text-gray-900 mb-0.5">Get paid on every sale</div>
-              The house takes a flat <strong>10%</strong>. Makers you forked from earn the royalty they
+              The platform takes a flat <strong>10%</strong>. Makers you forked from earn the royalty they
               froze the day you forked, and you keep the rest. Original app, no parents? <strong className="text-green-800">90% you / 10% us</strong>.
             </div>
             <div>
@@ -171,13 +168,11 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
           </div>
         </div>
 
-        {/* ── SECOND TITLE ────────────────────────────────────────── */}
         <div className="text-center mb-3">
           <div className="text-2xl font-black text-w95-blue tracking-tight">ENTER ONE OF THE SHOPS</div>
           <div className="text-xs text-gray-500 font-sans mt-0.5">Each stands on its own — here's what they are and how they connect.</div>
         </div>
 
-        {/* App grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {shops.map((s) => (
             <div
@@ -198,7 +193,6 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </div>
       </div>
 
-      {/* Footer Controls */}
       <div className="pt-2.5 border-t border-gray-300 flex items-center justify-between flex-wrap gap-2">
         <button
           onClick={onDismiss}

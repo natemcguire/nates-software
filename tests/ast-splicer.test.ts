@@ -27,13 +27,12 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
   let baseCommitSha: string;
 
   beforeEach(() => {
-    // Initialize temporary Git worktree for testing
+
     tempWorktree = mkdtempSync(join(tmpdir(), 'slop-ast-test-'));
     execSync('git init -b main', { cwd: tempWorktree, stdio: 'pipe' });
     execSync('git config user.name "Test Developer"', { cwd: tempWorktree, stdio: 'pipe' });
     execSync('git config user.email "dev@nates-software.com"', { cwd: tempWorktree, stdio: 'pipe' });
 
-    // Seed project files
     writeFileSync(join(tempWorktree, 'package.json'), JSON.stringify({
       name: 'test-app',
       version: '1.0.0',
@@ -63,9 +62,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     }
   });
 
-  // ==========================================================================
-  // 1. TypeScript Compiler Parser AST Validation (Not Regex)
-  // ==========================================================================
   describe('1. TypeScript Compiler Parser AST Validation', () => {
     it('should correctly parse valid TypeScript and extract named, variable, and function exports', () => {
       const tsCode = `
@@ -183,9 +179,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
   });
 
-  // ==========================================================================
-  // 2. Base Git SHA Verification
-  // ==========================================================================
   describe('2. Base Git SHA Verification', () => {
     it('should verify matching base Git SHA successfully', () => {
       const check = verifyBaseGitSha(tempWorktree, baseCommitSha);
@@ -216,9 +209,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
   });
 
-  // ==========================================================================
-  // 3. Expected Previous File Content & Digest Verification
-  // ==========================================================================
   describe('3. Previous File Content & Digest Verification', () => {
     it('should verify matching previous content and SHA-256 digest', () => {
       const indexContent = readFileSync(join(tempWorktree, 'src', 'index.ts'), 'utf-8');
@@ -311,9 +301,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
   });
 
-  // ==========================================================================
-  // 4. Path & Symlink Containment Defenses
-  // ==========================================================================
   describe('4. Path & Symlink Containment Defenses', () => {
     it('should reject path traversal attempts with ".."', () => {
       const res = verifyPathAndSymlinkContainment(tempWorktree, '../../secret.txt');
@@ -334,7 +321,7 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
 
     it('should detect and reject symlink traversal pointing outside worktree', () => {
-      // Create external folder outside worktree
+
       const externalDir = mkdtempSync(join(tmpdir(), 'slop-symlink-target-'));
       const symlinkInWorktree = join(tempWorktree, 'src', 'external_link');
 
@@ -350,9 +337,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
   });
 
-  // ==========================================================================
-  // 5. Atomic Application & Rollback on Failure
-  // ==========================================================================
   describe('5. Atomic Application & Rollback on Failure', () => {
     it('should apply create, modify, and delete operations atomically', () => {
       const originalConfig = readFileSync(join(tempWorktree, 'src', 'config.ts'), 'utf-8');
@@ -395,24 +379,18 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
         }
       ];
 
-      // Apply
       const applyRes = applyModificationsAtomically(tempWorktree, mods);
       expect(applyRes.success).toBe(true);
       expect(existsSync(join(tempWorktree, 'src', 'weapons', 'Beam.ts'))).toBe(true);
 
-      // Rollback
       const rollbackRes = rollbackModifications(applyRes.rollbackSnapshot, applyRes.createdDirectories);
       expect(rollbackRes.success).toBe(true);
 
-      // Verify state restored
       expect(existsSync(join(tempWorktree, 'src', 'weapons', 'Beam.ts'))).toBe(false);
       expect(readFileSync(join(tempWorktree, 'src', 'config.ts'), 'utf-8')).toBe(originalConfig);
     });
   });
 
-  // ==========================================================================
-  // 6. Repository-Configured Test Runner without Shell Injection
-  // ==========================================================================
   describe('6. Repository-Configured Test Execution without Shell Injection', () => {
     it('should resolve test command from slop.json', () => {
       const cmd = resolveRepoTestCommand(tempWorktree);
@@ -454,7 +432,7 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
 
     it('should prevent shell injection attacks by executing without shell interpretation', () => {
-      // Shell injection payload: attempting to create a file via chained shell command
+
       const injectedFile = join(tempWorktree, 'injected-file.txt');
       const injectionAttempt = {
         executable: 'node',
@@ -462,7 +440,7 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
       };
 
       const res = executeRepoTestsWithoutShellInjection(tempWorktree, injectionAttempt);
-      // Because shell: false is used, args are passed directly to node without executing 'touch'
+
       expect(existsSync(injectedFile)).toBe(false);
       expect(res.passed).toBe(true);
     });
@@ -476,9 +454,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
   });
 
-  // ==========================================================================
-  // 7. Full End-to-End executeSlopMod Integration
-  // ==========================================================================
   describe('7. Full End-to-End executeSlopMod Execution', () => {
     it('should successfully execute a valid manifest against real worktree', async () => {
       const manifest: VersionedFeatureManifest = {
@@ -586,7 +561,7 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
 
     it('should rollback modifications atomically when test suite fails in strict mode', async () => {
-      // Configure failing test in slop.json
+
       writeFileSync(join(tempWorktree, 'slop.json'), JSON.stringify({
         name: 'test-app',
         testCommand: ['node', '-e', 'console.error("Test failure simulated"); process.exit(1);']
@@ -617,7 +592,7 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
       expect(result.rolledBack).toBe(true);
       expect(result.testResult?.passed).toBe(false);
       expect(result.testResult?.exitCode).toBe(1);
-      // File should have been cleaned up by rollback
+
       expect(existsSync(join(tempWorktree, 'src', 'hud', 'FailingRadar.ts'))).toBe(false);
     });
 
@@ -643,9 +618,6 @@ describe('SLOPSHOP AST Splicer & Local Worktree Execution Boundary', () => {
     });
   });
 
-  // ==========================================================================
-  // 8. CLI Handler: slop mod <package-or-manifest>
-  // ==========================================================================
   describe('8. CLI Handler: slop mod <package-or-manifest>', () => {
     it('should execute slop mod via handleMod with manifest file path', async () => {
       const manifestPath = join(tempWorktree, 'feature-manifest.json');

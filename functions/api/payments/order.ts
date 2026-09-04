@@ -1,6 +1,3 @@
-// GET /api/payments/order?id=...
-// Alias route to handleGetOrder for query-parameter queries.
-
 import { handleGetOrder, onRequestPost as disallowedMethod } from './orders/[id]';
 
 export const onRequestGet = handleGetOrder;

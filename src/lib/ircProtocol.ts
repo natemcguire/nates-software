@@ -1,8 +1,3 @@
-/**
- * IRC Protocol Client & Parser (RFC 1459 / RFC 2812 Standard)
- * Implements core channel mechanics, commands (/nick, /me, /topic, /who, /clear, /join),
- * raw IRC line serialization/deserialization, and presence management.
- */
 
 export interface IrcUser {
   nick: string;
@@ -39,9 +34,6 @@ export interface IrcChannelState {
   port: number;
 }
 
-/**
- * Format timestamp to IRC standard [HH:MM:SS]
- */
 export function formatIrcTime(date: Date = new Date()): string {
   const h = date.getHours().toString().padStart(2, '0');
   const m = date.getMinutes().toString().padStart(2, '0');
@@ -49,10 +41,6 @@ export function formatIrcTime(date: Date = new Date()): string {
   return `${h}:${m}:${s}`;
 }
 
-/**
- * Parse an incoming raw IRC protocol line into structured parameters
- * e.g. ":nate!nate@nates-software.com PRIVMSG #lounge :Hello world"
- */
 export function parseRawIrcLine(line: string): { prefix?: string; command: string; params: string[] } | null {
   if (!line || !line.trim()) return null;
 
@@ -85,9 +73,6 @@ export function parseRawIrcLine(line: string): { prefix?: string; command: strin
   return { prefix, command, params };
 }
 
-/**
- * Format structured command to raw IRC wire format
- */
 export function formatRawIrcLine(command: string, ...params: string[]): string {
   if (params.length === 0) return command;
   const last = params[params.length - 1];
@@ -99,11 +84,6 @@ export function formatRawIrcLine(command: string, ...params: string[]): string {
   return `${command} ${params.join(' ')}`;
 }
 
-/**
- * Parses user input in the chat box:
- * - If starts with "/", extracts command and arguments (e.g. /nick, /me, /topic, /clear, /who)
- * - Otherwise defaults to a standard PRIVMSG
- */
 export function parseUserChatInput(input: string, _currentNick: string = 'nate', currentChannel: string = '#lounge'): {
   command: string;
   args: string[];
@@ -192,9 +172,6 @@ export function parseUserChatInput(input: string, _currentNick: string = 'nate',
   }
 }
 
-/**
- * Initial standard channel presence and default seed messages
- */
 export const DEFAULT_CHANNEL: string = '#lounge';
 export const DEFAULT_SERVER: string = 'irc.nates-software.com';
 export const DEFAULT_PORT: number = 6667;
@@ -265,9 +242,6 @@ export const INITIAL_CHAT_MESSAGES: IrcMessage[] = [
   }
 ];
 
-/**
- * Purge helper: returns only messages created within the last 24 hours
- */
 export const IRC_MESSAGE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function filterUnexpiredIrcMessages(messages: IrcMessage[], nowMs: number = Date.now()): IrcMessage[] {

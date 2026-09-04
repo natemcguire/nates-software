@@ -1,5 +1,3 @@
-// GET /api/upvote - Viewer-scoped vote state inspection (have-I-voted read endpoint)
-// POST /api/upvote - Atomic idempotent upvote counter in D1 with cryptographic voter hashing
 import { validateAndHashVote, hashVoterKey } from '../../src/lib/hotwireBackend';
 import { requireAuth, getSessionUser } from './_auth';
 
@@ -38,7 +36,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       });
     }
 
-    // Return all apps this viewer has voted on
     const { results } = await env.DB.prepare(
       'SELECT app_id, voter_hash FROM drop_upvotes'
     ).all();
@@ -86,15 +83,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       return Response.json({ success: false, error: validation.error || 'Invalid vote payload' }, { status: 400 });
     }
 
-    // Verify app exists
     const app = await env.DB.prepare("SELECT id, upvotes FROM app_listings WHERE id = ? AND listing_status = 'active'").bind(cleanAppId).first();
     if (!app) {
       return Response.json({ success: false, error: 'App listing not found' }, { status: 404 });
     }
 
-    // D1 batch is one transaction. SQLite changes() in the second statement
-    // reflects whether INSERT OR IGNORE inserted a new vote, so the vote record
-    // and denormalized leaderboard count cannot diverge.
     const insertStmt = env.DB.prepare(`
       INSERT OR IGNORE INTO drop_upvotes (app_id, voter_hash) VALUES (?, ?)
     `).bind(cleanAppId, validation.voterHash);
@@ -114,7 +107,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const currentUpvotes = Number(countResult?.results?.[0]?.upvotes ?? app.upvotes ?? 0);
 
     if (!inserted) {
-      // Idempotent return - duplicate vote already counted
       return Response.json({
         success: true,
         alreadyVoted: true,

@@ -1,10 +1,5 @@
 import React, { useEffect, useState } from 'react';
 
-// A fast DOS-style POST / boot screen shown when the user picks "Restart Desktop…".
-// It plays for ~1.4s (a few BIOS-ish lines type on), then reloads the app. Purely
-// cosmetic — the real work is the reload. Honors prefers-reduced-motion by reloading
-// almost immediately.
-
 const LINES = [
   'NATE-BIOS (C) 1995 East Bay Projects',
   '',
@@ -29,7 +24,6 @@ export const RestartOverlay: React.FC = () => {
       return () => clearTimeout(t);
     }
 
-    // Reveal one line every ~150ms, then reload shortly after the last line.
     const perLine = 150;
     const timers: any[] = [];
     LINES.forEach((_, i) => {

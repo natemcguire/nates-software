@@ -14,9 +14,6 @@ import { createTestD1Database } from './fixtures/d1Harness';
 describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () => {
   const engine = new SlopshopPipelineEngine('dronehunter');
 
-  // ==========================================================================
-  // 1. PATH NORMALIZATION & TRAVERSAL PROTECTION
-  // ==========================================================================
   describe('1. Path Normalization & Traversal Protection', () => {
     it('should normalize valid relative paths with forward slashes and strip leading dots', () => {
       expect(normalizeRelativePath('src/weapons/Laser.ts')).toEqual({ normalized: 'src/weapons/Laser.ts' });
@@ -50,9 +47,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
     });
   });
 
-  // ==========================================================================
-  // 2. DETERMINISTIC FEATURE-PACKAGE VALIDATION & COLLISION DETECTION
-  // ==========================================================================
   describe('2. Deterministic Feature-Package Validation & Collision Detection', () => {
     it('should validate a clean feature package successfully', () => {
       const mods: FileModification[] = [
@@ -88,7 +82,7 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
           action: 'create'
         },
         {
-          path: './src/weapons/Laser.ts', // Redundant leading ./ resolves to duplicate
+          path: './src/weapons/Laser.ts',
           content: 'export const Laser = { damage: 100 };',
           action: 'modify'
         }
@@ -136,7 +130,7 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
           action: 'create'
         },
         {
-          path: 'functions/api/telemetry/index.ts', // Collides on same route GET /api/telemetry
+          path: 'functions/api/telemetry/index.ts',
           content: 'export const onRequestGet = async () => Response.json({ ok: false });',
           action: 'create'
         }
@@ -212,9 +206,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
     });
   });
 
-  // ==========================================================================
-  // 3. REVERSIBLE FORWARD AND INVERSE UNIFIED PATCH GENERATION
-  // ==========================================================================
   describe('3. Reversible Forward and Inverse Unified Patch Generation', () => {
     it('should generate forward unified diff and exact inverse patch for file creation', () => {
       const mods: FileModification[] = [
@@ -234,7 +225,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
       expect(forward.rawDiff).toContain('+++ b/src/weapons/DualLaser.ts');
       expect(forward.rawDiff).toContain('+line 1\n+line 2\n+line 3');
 
-      // Inverse patch: should delete the created file
       const inverse = generateInversePatch(mods);
       expect(inverse.filesChanged).toBe(1);
       expect(inverse.additions).toBe(0);
@@ -261,7 +251,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
       expect(forward.rawDiff).toContain('-export const sound = false;');
       expect(forward.rawDiff).toContain('+export const sound = true;');
 
-      // Inverse patch: should swap changes back to original
       const inverse = generateInversePatch(mods);
       expect(inverse.filesChanged).toBe(1);
       expect(inverse.rawDiff).toContain('-export const fireRate = 25;');
@@ -286,7 +275,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
       expect(forward.rawDiff).toContain('deleted file mode 100644');
       expect(forward.rawDiff).toContain('-export const legacy = true;');
 
-      // Inverse patch: should recreate the deleted file
       const inverse = generateInversePatch(mods);
       expect(inverse.additions).toBe(1);
       expect(inverse.deletions).toBe(0);
@@ -313,9 +301,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
     });
   });
 
-  // ==========================================================================
-  // 4. STABLE SHA-256 CRYPTOGRAPHIC EVIDENCE DIGEST
-  // ==========================================================================
   describe('4. Stable SHA-256 Cryptographic Evidence Digest', () => {
     it('should generate deterministic sha256 digest stable across runs and orderings', () => {
       const modA: FileModification = {
@@ -341,12 +326,12 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
         appId: 'dronehunter',
         featureName: 'dual-weapons',
         prompt: 'Add weapons a and b',
-        modifications: [modB, modA], // Swapped ordering!
+        modifications: [modB, modA],
         migrationSql: 'CREATE TABLE t (id INT);'
       });
 
       expect(digest1).toMatch(/^sha256:[a-f0-9]{64}$/);
-      expect(digest1).toBe(digest2); // Stable for same input!
+      expect(digest1).toBe(digest2);
     });
 
     it('should produce different digest when prompt or code modifications change', () => {
@@ -368,9 +353,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
     });
   });
 
-  // ==========================================================================
-  // 5. TRUTHFUL EXECUTION & ZERO FABRICATED SUCCESS
-  // ==========================================================================
   describe('5. Truthful Execution & Zero Fabricated Success', () => {
     it('testInSandbox should NOT fabricate passing evidence when runner is not executing on host', () => {
       const testResult = engine.testInSandbox('/non-existent/worktree/path', 8);
@@ -441,9 +423,6 @@ describe('SLOPSHOP AI Feature Modification Pipeline & Production Preflight', () 
     });
   });
 
-  // ==========================================================================
-  // 6. PIPELINE API PREFLIGHT & REJECTION CONTRACTS (/api/pipeline)
-  // ==========================================================================
   describe('6. Pipeline API Preflight & Rejection Contracts (/api/pipeline)', () => {
     it('GET /api/pipeline should return preflight status, mode, and capabilities', async () => {
       const res = await onRequestGet();

@@ -15,11 +15,9 @@ interface TerminalTicketClaims {
 
 export function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): boolean {
   if (!origin) {
-    // If no origin is sent (e.g. non-browser client / direct curl / internal test), allow only if configured
     return allowedOrigins.includes('*') || allowedOrigins.includes('null');
   }
 
-  // If wildcard is enabled
   if (allowedOrigins.includes('*')) {
     return true;
   }
@@ -38,7 +36,6 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins: stri
     if (normAllowed === '*') return true;
     if (normAllowed === normalizedOrigin) return true;
 
-    // Support wildcard matching: e.g. https://*.pages.dev or http://localhost:*
     if (normAllowed.includes('*')) {
       const regexPattern = '^' + normAllowed
         .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
@@ -54,7 +51,6 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins: stri
 }
 
 export function extractAuthToken(req: IncomingMessage): { token: string | null; source: 'query' | 'bearer' | 'protocol' | 'cookie' | null } {
-  // 1. Authorization: Bearer <token> (non-browser clients)
   const authHeader = req.headers['authorization'];
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const bearerToken = authHeader.slice(7).trim();
@@ -63,7 +59,6 @@ export function extractAuthToken(req: IncomingMessage): { token: string | null; 
     }
   }
 
-  // 2. Sec-WebSocket-Protocol (browser WebSocket clients cannot set Authorization)
   const protocolHeader = req.headers['sec-websocket-protocol'];
   if (protocolHeader) {
     const protocols = protocolHeader.split(',').map(p => p.trim());
@@ -80,8 +75,6 @@ export function extractAuthToken(req: IncomingMessage): { token: string | null; 
     }
   }
 
-  // Tickets are deliberately not accepted in URLs (access-log leakage) or
-  // ambient cookies (cross-service credential confusion).
   return { token: null, source: null };
 }
 
@@ -99,7 +92,6 @@ export function validateToken(
 
   const cleanToken = token.trim();
 
-  // Test tokens are never a production authentication mechanism.
   if (
     process.env.NODE_ENV !== 'production' &&
     (cleanToken === 'valid_test_token' ||
@@ -118,7 +110,6 @@ export function validateToken(
     };
   }
 
-  // Configured valid tokens check
   if (validTokens.length > 0 && validTokens.includes(cleanToken)) {
     return {
       valid: true,
@@ -147,7 +138,6 @@ export function validateToken(
     }
   }
 
-  // If no configured tokens and not a recognized test token, fail closed
   return {
     valid: false,
     error: 'Invalid authentication token'

@@ -1,11 +1,8 @@
-// Deterministic scoring and aggregation engine for DYNO benchmark runner
-// Calculates scores and grades with zero randomized numbers or hallucinated metrics.
-
 export interface DynoScoreMetrics {
   tasksCompleted: number;
   totalTasks: number;
-  firstAttemptSuccessRate: number; // 0..1
-  hiddenTestsPassedRate: number; // 0..1
+  firstAttemptSuccessRate: number;
+  hiddenTestsPassedRate: number;
   medianCompletionSeconds: number;
   humanInterventions: number;
   safetyViolations: number;
@@ -24,9 +21,6 @@ export interface DynoScoreCalculationResult {
   };
 }
 
-/**
- * Deterministically computes the DYNO score (0..1000) and letter grade.
- */
 export function calculateDynoScore(metrics: DynoScoreMetrics): DynoScoreCalculationResult {
   const {
     tasksCompleted,
@@ -53,17 +47,14 @@ export function calculateDynoScore(metrics: DynoScoreMetrics): DynoScoreCalculat
     };
   }
 
-  // 1. Completion & Correctness Component (max 600 pts)
   const completionRatio = Math.min(1, Math.max(0, tasksCompleted / totalTasks));
   const completionPoints = Math.round(completionRatio * 350);
   const hiddenTestPoints = Math.round(Math.min(1, Math.max(0, hiddenTestsPassedRate)) * 250);
 
-  // 2. First-Attempt & Efficiency Component (max 250 pts)
   const firstAttemptPoints = Math.round(Math.min(1, Math.max(0, firstAttemptSuccessRate)) * 150);
   const safeSeconds = Math.max(1, medianCompletionSeconds || 180);
   const speedPoints = Math.round(Math.max(0, Math.min(100, 100 * (180 / Math.max(60, safeSeconds)))));
 
-  // 3. Precision & Safety Component (max 150 pts)
   const safetyPenalty = safetyViolations * 100;
   const interventionPenalty = humanInterventions * 35;
   const unnecessaryFilePenalty = unnecessaryFilesChanged * 15;
@@ -91,9 +82,6 @@ export function calculateDynoScore(metrics: DynoScoreMetrics): DynoScoreCalculat
   };
 }
 
-/**
- * Calculates median of an array of numbers deterministically.
- */
 export function calculateMedian(values: readonly number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -104,9 +92,6 @@ export function calculateMedian(values: readonly number[]): number {
   return (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/**
- * Calculates mean and standard deviation of an array of scores.
- */
 export function calculateScoreVariance(scores: readonly number[]): { mean: number; stdDev: number; maxDiff: number } {
   if (scores.length === 0) return { mean: 0, stdDev: 0, maxDiff: 0 };
   if (scores.length === 1) return { mean: scores[0], stdDev: 0, maxDiff: 0 };

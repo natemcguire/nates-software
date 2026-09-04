@@ -44,9 +44,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   const [apps, setApps] = useState<AppListing[]>(catalogApps);
   const [selectedApp, setSelectedApp] = useState<AppListing | null>(catalogApps[0] || null);
-  // Land on the cumulative catalog, not today's batch: seed rows have a frozen
-  // created_at so a 'today' window is empty every day, which made the board open to
-  // "no drops today". 'alltime' shows the real apps; the Today tab is one click away.
   const [activeFilter, setActiveFilter] = useState<'today' | 'forked' | 'alltime' | 'streaks' | 'mine'>('alltime');
   const [searchQuery, setSearchQuery] = useState('');
   const [upvotedApps, setUpvotedApps] = useState<Set<string>>(votedAppIds || new Set());
@@ -54,7 +51,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
   const [activeVoterApp, setActiveVoterApp] = useState<AppListing | null>(null);
   const [voteReward, setVoteReward] = useState<string | null>(null);
 
-  // Sync internal apps and selected app with catalog updates
   useEffect(() => {
     setApps(catalogApps);
     if (catalogApps.length > 0) {
@@ -68,7 +64,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     }
   }, [catalogApps, isAuthoritativeLive]);
 
-  // Hydrate upvoted state from authoritative catalog
   useEffect(() => {
     if (votedAppIds && votedAppIds.size > 0) {
       setUpvotedApps(prev => {
@@ -103,7 +98,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
     }
   };
 
-  // 12:01 AM UTC Live Ticker Countdown & Batch Window Calculation
   const [timeUntilNextDrop, setTimeUntilNextDrop] = useState<string>('00h 00m 00s');
   const [batchInfo, setBatchInfo] = useState(() => getCurrentBatchWindow());
 
@@ -139,19 +133,16 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       setUpvotedApps(prev => new Set(prev).add(appId));
 
       try {
-        // Single optimistic upvote layer handled authoritatively by CatalogContext
         await catalogUpvote(appId);
         playSuccessChime();
         setVoteReward(appId);
       } catch (err: any) {
-        // Rollback upvoted visual state if this vote was rejected
         setUpvotedApps(prev => {
           const next = new Set(prev);
           next.delete(appId);
           return next;
         });
 
-        // Truthfully explain rejection and authenticated/network requirements
         const errMsg = err?.message || 'Upvote rejected';
         if (errMsg.includes('not found') || errMsg.includes('404')) {
           showAlert(
@@ -237,13 +228,11 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
 
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-sans text-xs select-none">
-      {/* Top Explanatory Definition Banner */}
       <div className="bg-[#000050] text-blue-200 px-3 py-1 text-[11px] font-mono border-b border-blue-900 flex items-center justify-between flex-wrap gap-2">
         <span>Every day at 12:01 AM UTC, makers drop new apps. Vote for your favorites.</span>
         <span className="text-blue-300 text-[10px]">12:01 AM UTC = {getNextDropLocalTime()} local</span>
       </div>
 
-      {/* Vote Reward Action Banner */}
       {voteReward && (
         <div className="bg-emerald-100 border-b border-emerald-400 px-3 py-1.5 flex items-center justify-between text-emerald-950 text-xs">
           <span className="font-bold">Vote counted.</span>
@@ -269,7 +258,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         </div>
       )}
 
-      {/* 12:01 AM UTC Live Drops Header Banner */}
       <div className="bg-[#000080] text-white px-3 py-2 flex items-center justify-between flex-wrap gap-2 border-b-2 border-white shadow-inner">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 font-bold tracking-wide">
@@ -282,9 +270,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           </div>
         </div>
 
-        {/* Action Bar */}
         <div className="flex items-center gap-2">
-          {/* Daily Calendar Batch Selector */}
           <div className="flex items-center gap-1 bg-blue-950 px-2 py-0.5 rounded border border-blue-600 text-[11px] font-mono">
             <Calendar size={12} className="text-sky-300" />
             <select
@@ -322,7 +308,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         </div>
       </div>
 
-      {/* Explicit Error Banner if Catalog Loading / Sync Encountered Failure */}
       {catalogError && (
         <div className="bg-amber-100 border-b-2 border-amber-400 px-3 py-1.5 flex items-center justify-between text-amber-900 font-mono text-[11px]">
           <span className="flex items-center gap-1.5">
@@ -342,11 +327,8 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         </div>
       )}
 
-      {/* Main Hotwire Body: Split Layout */}
       <div className="flex-1 flex overflow-hidden p-2 gap-2">
-        {/* Left Column: Product Hunt Style Drops Leaderboard */}
         <div className="w-1/2 flex flex-col min-w-[320px]">
-          {/* Filter Tabs */}
           <div className="flex gap-1 mb-1 flex-wrap">
             <button
               onClick={() => handleFilterSelect('today')}
@@ -392,7 +374,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             )}
           </div>
 
-          {/* Search Filter */}
           <div className="win95-field p-1 mb-2 bg-white flex items-center gap-1.5 border border-gray-600">
             <Search size={13} className="text-gray-500 ml-1" />
             <input
@@ -404,7 +385,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             />
           </div>
 
-          {/* Drops List Container */}
           <div className="flex-1 win95-field p-1 bg-white overflow-y-auto divide-y divide-gray-200">
             {activeFilter === 'streaks' ? (
               <div className="p-2 space-y-2">
@@ -559,14 +539,12 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         </span>
                         <span className="text-gray-500 text-[10px]">by @{app.author || app.creator || 'not supplied'}</span>
 
-                        {/* Submitted by User (Mine) Badge */}
                         {user?.username && (app.author === user.username || app.creator === user.username) && (
                           <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Submitted by you">
                             MINE
                           </span>
                         )}
 
-                        {/* Distinct Demo Data vs Live Drop Badge */}
                         {app.isDemo || !isAuthoritativeLive ? (
                           <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Seed Demo Data">
                             DEMO
@@ -577,7 +555,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                           </span>
                         )}
 
-                        {/* Canonical Forge Identity or Honest Absent Badge */}
                         {app.hasCanonicalRepo && app.repoSlug ? (
                           <span className="bg-blue-50 text-blue-900 border border-blue-300 font-mono text-[9px] px-1.5 py-0.2 rounded flex items-center gap-1" title={`Canonical GITSMITH Repo: ${app.repoSlug}`}>
                             <GitFork size={9} className="text-blue-700 shrink-0" />
@@ -592,7 +569,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                           </span>
                         )}
 
-                        {/* Product Hunt Style Award Badges */}
                         {app.badge && (
                           <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold text-[9px] px-1.5 py-0.2 rounded-full flex items-center gap-1">
                             <Trophy size={10} className="text-amber-600" />
@@ -617,9 +593,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         <span className="text-gray-500 font-mono flex items-center gap-0.5">
                           <GitFork size={10} /> {app.forkCount || 0} forks
                         </span>
-                        {/* Always offer the lineage tree — even a never-forked app has a
-                            single-node (root) tree worth sharing, and gating on forkCount>0
-                            made the whole feature undiscoverable (every app has 0 forks). */}
                         <span className="text-gray-400 font-mono">|</span>
                         <a
                           href={`/tree/${encodeURIComponent(app.id)}`}
@@ -634,7 +607,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                       </div>
                     </div>
 
-                    {/* Upvote & Voter Badge Button */}
                     <div className="flex flex-col items-center gap-1">
                       {isSelected ? (
                         <button
@@ -693,7 +665,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
           </div>
         </div>
 
-        {/* Right Column: Artifact Sandbox */}
         <div className="w-1/2 flex flex-col min-w-[320px]">
           {selectedApp ? (
             <ArtifactSandbox
@@ -712,7 +683,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
         </div>
       </div>
 
-      {/* Voter Transparency Modal */}
       {activeVoterApp && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="win95-window max-w-sm w-full bg-[#c0c0c0] p-3 text-xs space-y-3">

@@ -1,7 +1,3 @@
-// Neutral developer task fixtures for DYNO benchmark runner
-// Covers common real-world software engineering tasks across standard categories.
-// Strictly independent of this repository's domain and marketplace apps.
-
 import { DynoFixture, DynoTaskCategory, DynoSuiteRecord, DynoRunExecutionResult } from './types';
 import { digestFileManifest, sha256, sha256Json } from './crypto';
 
@@ -862,9 +858,6 @@ export function computeGraderManifestDigest(
   return sha256Json({ graders, hiddenFiles });
 }
 
-/**
- * Reference solutions for calibration and deterministic verification of all task fixtures.
- */
 export const REFERENCE_SOLUTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   neutral_cli_arg_parser: {
     'src/parser.js': `function parseArgs(args, booleanFlags = []) {
@@ -1202,10 +1195,6 @@ export function getReferenceSolution(taskKey: string): Readonly<Record<string, s
   return REFERENCE_SOLUTIONS[taskKey];
 }
 
-// ============================================================================
-// CANONICAL SUITE & MANIFEST METADATA
-// ============================================================================
-
 export const CANONICAL_DYNO_SUITE_ID = 'suite_dyno_neutral_2026_2';
 export const CANONICAL_DYNO_SUITE_SLUG = 'dyno-standard-dev';
 export const CANONICAL_DYNO_SUITE_VERSION = '2026.2';
@@ -1241,11 +1230,6 @@ export const CANONICAL_TASK_MAP: ReadonlyMap<string, DynoFixture> = new Map(
   NEUTRAL_DEV_FIXTURES.map(f => [f.key, f])
 );
 
-/**
- * Non-submittable schema/documentation reference example.
- * Intentionally contains invalid dummy digests and an explicit non-submittable ID
- * so it cannot be mistakenly submitted as real evidence.
- */
 export const NON_SUBMITTABLE_SCHEMA_EXAMPLE: Readonly<DynoRunExecutionResult> = {
   run: {
     id: 'run_example_non_submittable_doc_only',

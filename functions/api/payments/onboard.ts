@@ -1,7 +1,3 @@
-// POST /api/payments/onboard
-// Session-bound Stripe Connect Express onboarding. Fails closed: this endpoint
-// never invents account IDs or onboarding URLs when Stripe is unavailable.
-
 import { requireAuth } from '../_auth';
 
 function jsonError(error: string, status: number): Response {

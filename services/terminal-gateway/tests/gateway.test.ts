@@ -11,12 +11,12 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
 
   beforeAll(async () => {
     gateway = createTerminalGateway({
-      port: 0, // dynamic port
+      port: 0,
       allowedOrigins: ['http://localhost:*', 'https://nates-software.pages.dev'],
       validTokens: ['custom_valid_token_123'],
       limits: {
         maxConcurrentSessions: 3,
-        sessionTtlSeconds: 2, // 2s TTL for testing
+        sessionTtlSeconds: 2,
         idleTimeoutSeconds: 2,
         maxOutputRateBytesPerSec: 1024 * 1024,
         maxPayloadBytes: 64 * 1024,
@@ -113,7 +113,6 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
       let outputBuffer = '';
 
       ws.on('open', () => {
-        // Connected
       });
 
       ws.on('message', (raw) => {
@@ -127,7 +126,6 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
             expect(msg.isProductionVps).toBe(false);
             expect(fs.existsSync(workspacePath)).toBe(true);
 
-            // Send test command
             ws.send(JSON.stringify({ type: 'input', data: 'echo "PTY_TEST_OK"\n' }));
           } else if (msg.type === 'output') {
             outputBuffer += msg.data;
@@ -152,7 +150,6 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
       ws.on('error', (err) => reject(err));
     });
 
-    // Wait a brief moment for workspace directory cleanup
     await new Promise((r) => setTimeout(r, 100));
 
     expect(workspacePath).toBeTruthy();
@@ -184,14 +181,12 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
       ws.on('error', (err) => reject(err));
     });
 
-    // Wait for cleanup
     await new Promise((r) => setTimeout(r, 100));
     expect(workspacePath).toBeTruthy();
     expect(fs.existsSync(workspacePath)).toBe(false);
   }, 10000);
 
   it('rejects connections with 503 when capacity limit is reached', async () => {
-    // Limits config is maxConcurrentSessions: 3
     const sockets: WebSocket[] = [];
     const openSocket = () =>
       new Promise<WebSocket>((resolve, reject) => {
@@ -206,13 +201,11 @@ describe('Terminal Gateway Full Integration & Protocol QA', () => {
       });
 
     try {
-      // Connect up to max (3 sessions)
       for (let i = 0; i < 3; i++) {
         const s = await openSocket();
         sockets.push(s);
       }
 
-      // 4th connection must be rejected with 503
       await new Promise<void>((resolve) => {
         const overflowWs = new WebSocket(`${wsUrl}/terminal`, ['nsw-terminal-v1', 'nsw-ticket.valid_test_token'], {
           headers: { Origin: 'http://localhost:5173' }

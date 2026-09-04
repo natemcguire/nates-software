@@ -13,33 +13,7 @@ import {
   Users
 } from 'lucide-react';
 
-/**
- * LocalAgentMailbox
- * ------------------------------------------------------------------
- * Read-only window into the LOCAL agent-inbox service running on the
- * developer's own workstation at http://127.0.0.1:8791.
- *
- * This is a DISTINCT system from the cloud merge-proposals inbox
- * (functions/api/inbox.ts / D1 inbox_messages). This component NEVER
- * touches /api/inbox. It speaks only to the local loopback service and
- * follows the honesty contract in agent-inboxes/README.md §6:
- *
- *   - Probe /healthz on mount and on manual Reconnect.
- *   - If unreachable → show the exact honest "Offline" pane. NEVER show
- *     mock, simulated, or cached stale data when the service is down.
- *   - If running → fetch and render only real data from the service.
- *
- * CORS: the local service sends Access-Control-Allow-Origin for the
- * known web-suite origins (https://nates-software.com, *.pages.dev,
- * localhost) and answers OPTIONS preflight with 204, so a browser
- * fetch() from the web app reaches 127.0.0.1:8791. (README §6.)
- */
-
 export const LOCAL_AGENT_INBOX_URL = 'http://127.0.0.1:8791';
-
-// ---------------------------------------------------------------------------
-// API payload types (README §5)
-// ---------------------------------------------------------------------------
 
 export interface HealthResult {
   running: boolean;
@@ -82,15 +56,6 @@ export interface LocalThreadDetail {
   emails: LocalEmail[];
 }
 
-// ---------------------------------------------------------------------------
-// Pure service functions (exported for focused testing)
-// ---------------------------------------------------------------------------
-
-/**
- * Health probe. Running iff the request resolves AND the JSON reports
- * status === "ok" (per the running-service contract). Any error, refused
- * connection, non-ok HTTP status, or non-ok body → { running: false }.
- */
 export async function checkLocalAgentInboxHealth(): Promise<HealthResult> {
   try {
     const res = await fetch(`${LOCAL_AGENT_INBOX_URL}/healthz`, {
@@ -104,7 +69,6 @@ export async function checkLocalAgentInboxHealth(): Promise<HealthResult> {
     }
     return { running: false };
   } catch {
-    // Connection refused / service down.
     return { running: false };
   }
 }
@@ -146,10 +110,6 @@ export async function markLocalThreadRead(address: string, threadId: string): Pr
     { method: 'POST', headers: { Accept: 'application/json' } }
   );
 }
-
-// ---------------------------------------------------------------------------
-// Presentational: honest OFFLINE pane (README §6.2 — exact copy)
-// ---------------------------------------------------------------------------
 
 interface OfflinePaneProps {
   probing?: boolean;
@@ -203,10 +163,6 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
   </div>
 );
 
-// ---------------------------------------------------------------------------
-// Presentational: running-state 3-pane body (pure, renderable from props)
-// ---------------------------------------------------------------------------
-
 interface RunningPaneProps {
   version?: string;
   inboxes: LocalInbox[];
@@ -245,7 +201,6 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
   probing
 }) => (
   <div className="grid grid-cols-12 gap-2 flex-1 overflow-hidden">
-    {/* Local pane 1: Inboxes */}
     <div className="col-span-3 bg-white border-2 border-gray-800 p-2 flex flex-col overflow-y-auto">
       <div className="font-bold text-w95-blue border-b pb-1 mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1">
@@ -306,7 +261,6 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
       </div>
     </div>
 
-    {/* Local pane 2: Threads */}
     <div className="col-span-3 bg-white border-2 border-gray-800 overflow-y-auto flex flex-col">
       <div className="p-2 border-b bg-gray-100 font-bold text-gray-700 text-[11px] flex justify-between items-center">
         <span className="truncate">
@@ -373,7 +327,6 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
       </div>
     </div>
 
-    {/* Local pane 3: Thread detail / emails */}
     <div className="col-span-6 bg-white border-2 border-gray-800 p-3 flex flex-col overflow-y-auto">
       {!selectedThreadId ? (
         <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-2 p-6">
@@ -437,10 +390,6 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
   </div>
 );
 
-// ---------------------------------------------------------------------------
-// Stateful container
-// ---------------------------------------------------------------------------
-
 export const LocalAgentMailbox: React.FC = () => {
   const [health, setHealth] = useState<HealthResult>({ running: false });
   const [probing, setProbing] = useState<boolean>(true);
@@ -460,8 +409,6 @@ export const LocalAgentMailbox: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  // Clear every downstream data slice. Called on any offline transition so no
-  // stale data is ever shown when the service is unreachable.
   const resetData = useCallback(() => {
     setInboxes([]);
     setInboxesError(null);
@@ -502,12 +449,10 @@ export const LocalAgentMailbox: React.FC = () => {
     }
   }, [loadInboxes, resetData]);
 
-  // Probe on mount.
   useEffect(() => {
     probe();
   }, [probe]);
 
-  // Load threads when an inbox is selected.
   const handleSelectInbox = useCallback((address: string) => {
     setSelectedAddress(address);
     setSelectedThreadId(null);
@@ -536,7 +481,6 @@ export const LocalAgentMailbox: React.FC = () => {
     };
   }, [selectedAddress]);
 
-  // Load thread detail on selection, then mark read and decrement unread.
   const handleSelectThread = useCallback((threadId: string) => {
     setSelectedThreadId(threadId);
   }, []);
@@ -562,7 +506,6 @@ export const LocalAgentMailbox: React.FC = () => {
             );
           }
         } catch {
-          // Mark-read is best-effort; a failure here must not hide the thread.
         }
       } catch (err: any) {
         if (!cancelled) setDetailError(err?.message || 'Failed to load thread detail');
@@ -579,7 +522,6 @@ export const LocalAgentMailbox: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-2 h-full overflow-hidden font-tahoma text-xs">
-      {/* Connection status strip */}
       <div className="border-2 border-gray-800 bg-white px-2 py-1 flex items-center justify-between shrink-0">
         <span className="flex items-center gap-1.5 font-bold text-gray-800">
           <Server size={13} className={health.running ? 'text-emerald-600' : 'text-gray-400'} />

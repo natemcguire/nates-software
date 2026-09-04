@@ -1,7 +1,3 @@
-// Standalone Cloudflare Router Worker
-// Wildcard front-door router for *.nates-software.com
-// Resolves <app>.nates-software.com -> D1 app listing -> R2 static assets (for origin_kind='r2_static')
-// Preserves all 13 authoritative proxied hostnames via passthrough allowlist.
 
 import { getMediaType } from './mediaType';
 import { buildOriginAuthToken } from './originAuth';
@@ -63,10 +59,6 @@ export interface AppListingRecord {
   readonly revision_status?: string | null;
 }
 
-/**
- * Authoritative exclusion list for proxied hostnames in zone nates-software.com (id: 3a1a7fed796a2d4b09b3c4e9ac1cfeea).
- * In-Worker allowlist defense-in-depth: if the router ever runs for any of these hostnames, it returns fetch(request) unchanged.
- */
 export const EXCLUSION_HOSTNAMES = new Set([
   'nates-software.com',
   'www.nates-software.com',
@@ -83,15 +75,6 @@ export const EXCLUSION_HOSTNAMES = new Set([
   'rig-provider.nates-software.com',
 ]);
 
-/**
- * First-party-looking subdomains that must NEVER be served from a tenant
- * app_listings row, even by the `OR id = ?` legacy-match fallback in the
- * router's host lookup (Codex #5). Mirrors RESERVED_APP_IDS in
- * src/lib/hotwireDomain.ts and the DB-level guard trigger added in migration
- * 0035 — kept here too as router-side defense-in-depth so a bad/legacy row
- * (or a future write path that bypasses the app layer and the DB trigger)
- * still can never be dispatched to a tenant origin under one of these names.
- */
 export const RESERVED_ROUTER_SUBDOMAINS = new Set([
   'www', 'apex', 'api', 'admin', 'app', 'auth', 'login', 'account', 'mail', 'static', 'assets',
   'cdn', 'router', 'gateway', 'rig-provider', 'ops', 'status', 'help', 'support', 'docs',
@@ -107,9 +90,6 @@ const json = (body: unknown, status = 200) =>
     }
   });
 
-/**
- * Normalize hostname by lowercasing, trimming, and removing one terminal trailing dot if present.
- */
 export function normalizeHostname(raw: string): string {
   let host = (raw || '').toLowerCase().trim();
   if (host.endsWith('.')) {
@@ -163,20 +143,16 @@ export function extractSubdomain(
 export async function handleRequest(request: Request, env: Env, _ctx?: any): Promise<Response> {
   try {
     const url = new URL(request.url);
-    // Cloudflare zone-route Worker: use routed URL hostname only (lowercased, trailing-dot normalized)
     const hostname = normalizeHostname(url.hostname);
 
-    // 1. Suffix guard: only handle *.nates-software.com or apex nates-software.com
     if (hostname !== 'nates-software.com' && !hostname.endsWith('.nates-software.com')) {
       return fetch(request);
     }
 
-    // 2. Authoritative exclusion allowlist defense-in-depth
     if (EXCLUSION_HOSTNAMES.has(hostname)) {
       return fetch(request);
     }
 
-    // 3. Extract subdomain
     const { isCanary, subdomain } = extractSubdomain(hostname, url, request, env);
 
     if (isCanary && !subdomain) {
@@ -193,7 +169,6 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       return fetch(request);
     }
 
-    // 4. D1 host lookup with KV caching
     const cacheKey = `host:${subdomain}`;
     let listing: AppListingRecord | null = null;
 
@@ -206,14 +181,6 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
     }
 
     if (!listing && env?.DB) {
-      // SECURITY (Codex #5): prefer the AUTHORITATIVE hostname column. Only
-      // fall back to the legacy `id = ?` match when the requested subdomain
-      // is not itself a reserved/first-party name — a reserved subdomain
-      // (e.g. "inbox", "chat", "admin") must NEVER be servable from a tenant
-      // app_listings row even via the id-fallback, regardless of what's in
-      // the DB. Migration 0035 backstops this with a DB trigger that refuses
-      // to let any row's id/hostname be a reserved name in the first place;
-      // this is router-side defense-in-depth on top of that DB invariant.
       const hostnameQuery = `
         SELECT a.id, a.origin_kind, a.origin_ref, a.deployment_state, a.active_deployment_id,
                dr.status AS revisionStatus
@@ -241,7 +208,6 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }
     }
 
-    // 5. Validate listing and active deployment state (gating on healthy revisionStatus)
     if (!listing) {
       return json({
         success: false,
@@ -258,7 +224,6 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }, 503);
     }
 
-    // 6. Origin kind dispatch
     if (
       listing.origin_kind === 'cf_container' ||
       listing.origin_kind === 'worker' ||
@@ -272,10 +237,6 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
         }, 503);
       }
 
-      // Defense-in-depth: origin_ref is control-plane-set, but the router must
-      // never be turned into an open proxy by a bad D1 value. Only proxy to
-      // https origins on expected platform hosts (per-app workers.dev, CF
-      // Pages/tunnel, or the platform domain). Anything else fails closed.
       let originHost: string;
       try {
         const o = new URL(originRef);
@@ -303,23 +264,8 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
 
       const targetUrl = new URL(url.pathname + url.search, originRef);
       const originRequest = new Request(targetUrl.toString(), request);
-      // SECURITY: never forward the platform's session credentials to a tenant
-      // origin — tenant app code is attacker-controlled. Strip the session
-      // cookie and any Authorization/bearer before proxying, so a victim's
-      // nsw_session (or a bearer token) can never be exfiltrated to a hostile
-      // app even if it somehow rode the request. (The cookie is also host-only,
-      // so the browser won't send it here in the first place; this is
-      // defense-in-depth for the proxy path.)
       originRequest.headers.delete('Cookie');
       originRequest.headers.delete('Authorization');
-      // SECURITY (Codex #4): never forward the raw platform-global
-      // ORIGIN_SHARED_SECRET to a tenant origin — attacker-controlled tenant
-      // app code that captured it could replay it to forge a router->origin
-      // authenticated request against ANY OTHER app. Instead send a
-      // request-scoped proof signed with a PER-APP derived key, bound to
-      // this appId/host/method/path with a short expiry — useless if
-      // captured and replayed elsewhere or later. See originAuth.ts for the
-      // full scheme and the origin-side verification contract.
       const originAuthToken = await buildOriginAuthToken({
         globalSecret: originSecret,
         appId: listing.id,
@@ -338,7 +284,6 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
       }, 501);
     }
 
-    // 7. Serve from R2
     let rawPath = url.pathname;
     let assetPath = rawPath.replace(/^\/+/, '').trim();
     if (!assetPath) assetPath = 'index.html';
@@ -364,17 +309,14 @@ export async function handleRequest(request: Request, env: Env, _ctx?: any): Pro
     const appId = listing.id;
     const activeDeploymentId = listing.active_deployment_id;
 
-    // (i) Revision key: apps/{appId}/revisions/{activeDeploymentId}/{assetPath}
     const revKey = `apps/${appId}/revisions/${activeDeploymentId}/${assetPath}`;
     let object = await env.STORAGE.get(revKey);
 
-    // (ii) Directory index fallback: apps/{appId}/revisions/{activeDeploymentId}/{assetPath}/index.html
     if (!object && !assetPath.includes('.')) {
       const indexKey = `apps/${appId}/revisions/${activeDeploymentId}/${assetPath}/index.html`.replace(/\/+/g, '/');
       object = await env.STORAGE.get(indexKey);
     }
 
-    // (iii) Live key fallback: apps/{appId}/live/{assetPath}
     if (!object) {
       const liveKey = `apps/${appId}/live/${assetPath}`;
       object = await env.STORAGE.get(liveKey);

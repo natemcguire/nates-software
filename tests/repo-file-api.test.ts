@@ -90,7 +90,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
     return commitOid;
   }
 
-  // PNG header magic bytes: 89 50 4E 47 0D 0A 1A 0A
   const samplePngBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
   const sampleMarkdown = '# DroneHunter Idea Spec\n\nDouble-barrel shotgun arcade game.\n\n![Hero](screenshots/hero.png)\n';
 
@@ -113,7 +112,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       const imageBase64 = readCommitFileBase64(reposRoot, storageKey, commitOid, 'screenshots/hero.png');
       expect(imageBase64).toBe(samplePngBuffer.toString('base64'));
 
-      // Non-existent file returns null
       expect(readCommitFileBuffer(reposRoot, storageKey, commitOid, 'nonexistent.png')).toBeNull();
       expect(readCommitFileBase64(reposRoot, storageKey, commitOid, 'nonexistent.png')).toBeNull();
     });
@@ -131,13 +129,12 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       const pngSize = getCommitFileSize(reposRoot, storageKey, commitOid, 'screenshots/hero.png');
       expect(pngSize).toBe(samplePngBuffer.length);
 
-      // Nonexistent file returns null
       expect(getCommitFileSize(reposRoot, storageKey, commitOid, 'missing.txt')).toBeNull();
     });
 
     it('rejects files exceeding size limits with ERR_FILE_TOO_LARGE before buffering', () => {
       const storageKey = 'repositories/test-large-file-repo';
-      const largeContent = 'X'.repeat(300 * 1024); // 300 KiB > 256 KiB
+      const largeContent = 'X'.repeat(300 * 1024);
       const { commitOid } = createCommittedRepo(storageKey, {
         'large-spec.md': largeContent
       });
@@ -170,12 +167,10 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       expect(validateRepoFilePath('screenshots/hero.png').valid).toBe(true);
       expect(validateRepoFilePath('docs/sub/spec.markdown').valid).toBe(true);
 
-      // Backslashes anywhere
       expect(validateRepoFilePath('images\\secret.png').valid).toBe(false);
       expect(validateRepoFilePath('foo\\bar/baz.png').valid).toBe(false);
       expect(validateRepoFilePath('\\root.png').valid).toBe(false);
 
-      // Traversal and segment issues
       expect(validateRepoFilePath('../secret.txt').valid).toBe(false);
       expect(validateRepoFilePath('foo/../bar').valid).toBe(false);
       expect(validateRepoFilePath('foo/./bar').valid).toBe(false);
@@ -202,7 +197,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
     let publicCommitOid: string;
 
     beforeEach(async () => {
-      // Create public repo
       publicRepoId = 'repo_pub_123';
       const pubStorageKey = `repositories/${publicRepoId}`;
       const pubRepo = createCommittedRepo(pubStorageKey, {
@@ -222,7 +216,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         VALUES (?, 'refs/heads/main', ?, 1)
       `).bind(publicRepoId, publicCommitOid).run();
 
-      // Create private repo
       privateRepoId = 'repo_priv_456';
       const privStorageKey = `repositories/${privateRepoId}`;
       const privRepo = createCommittedRepo(privStorageKey, {
@@ -290,12 +283,8 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       expect(body.error).toContain('not found');
     });
 
-    // =========================================================================
-    // SECURITY TESTS & VERIFICATIONS
-    // =========================================================================
     describe('Security Fixes: OID Lock, Status Check, Bounds, Sanitization, Backslashes', () => {
       it('HIGH FIX #1: Ignores caller-supplied commitOid and strictly serves the current default_ref tip', async () => {
-        // Step 1: Create an old commit containing a sensitive file (.env) and spec v1
         const pubStorageKey = `repositories/repo_oid_lock`;
         const initialRepo = createCommittedRepo(pubStorageKey, {
           '.env': 'SECRET_KEY=12345_should_not_leak',
@@ -303,7 +292,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         });
         const oldCommitOid = initialRepo.commitOid;
 
-        // Step 2: Push commit 2 removing .env and updating spec.md to V2
         const v2CommitOid = appendCommitToRepo(
           initialRepo.workTree,
           initialRepo.repoPath,
@@ -311,7 +299,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
           ['.env']
         );
 
-        // Step 3: Insert repo into D1 with default_ref pointing ONLY to v2CommitOid
         const repoId = 'repo_oid_lock';
         await ctx.d1.prepare(`
           INSERT INTO repositories (id, owner_user_id, slug, visibility, default_ref, storage_key, status)
@@ -323,16 +310,13 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
           VALUES (?, 'refs/heads/main', ?, 1)
         `).bind(repoId, v2CommitOid).run();
 
-        // Step 4: Attempt to query the old commit's .env file by passing ?commitOid=<oldCommitOid>&path=.env
         const evilEnvReq = new Request(`https://nates.software/api/repo-file?repoId=${repoId}&commitOid=${oldCommitOid}&path=.env`);
         const evilEnvRes = await repoFileApi.onRequestGet({ request: evilEnvReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
 
-        // MUST return 404 because server ignores caller commitOid and resolves the tip where .env is deleted!
         expect(evilEnvRes.status).toBe(404);
         const envBody = await evilEnvRes.json();
         expect(envBody.success).toBe(false);
 
-        // Step 5: Query spec.md with ?commitOid=<oldCommitOid> — must return V2 (the tip), NOT V1!
         const specReq = new Request(`https://nates.software/api/repo-file?repoId=${repoId}&commitOid=${oldCommitOid}&path=spec.md`);
         const specRes = await repoFileApi.onRequestGet({ request: specReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
 
@@ -343,25 +327,21 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
       });
 
       it('HIGH FIX #1: Enforces status="active" — rejects non-active (archived, quarantined, provisioning) repos with 404', async () => {
-        // Archived repo
         await ctx.d1.prepare(`UPDATE repositories SET status = 'archived' WHERE id = ?`).bind(publicRepoId).run();
         const reqArchived = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
         const resArchived = await repoFileApi.onRequestGet({ request: reqArchived, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
         expect(resArchived.status).toBe(404);
 
-        // Quarantined repo
         await ctx.d1.prepare(`UPDATE repositories SET status = 'quarantined' WHERE id = ?`).bind(publicRepoId).run();
         const reqQuarantined = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
         const resQuarantined = await repoFileApi.onRequestGet({ request: reqQuarantined, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
         expect(resQuarantined.status).toBe(404);
 
-        // Provisioning repo
         await ctx.d1.prepare(`UPDATE repositories SET status = 'provisioning' WHERE id = ?`).bind(publicRepoId).run();
         const reqProv = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
         const resProv = await repoFileApi.onRequestGet({ request: reqProv, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
         expect(resProv.status).toBe(404);
 
-        // Active repo succeeds
         await ctx.d1.prepare(`UPDATE repositories SET status = 'active' WHERE id = ?`).bind(publicRepoId).run();
         const reqActive = new Request(`https://nates.software/api/repo-file?repoId=${publicRepoId}&path=spec.md`);
         const resActive = await repoFileApi.onRequestGet({ request: reqActive, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
@@ -370,8 +350,8 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
 
       it('MEDIUM FIX #2: Enforces size caps (413 Payload Too Large) on oversized markdown and images', async () => {
         const largeStorageKey = 'repositories/repo_large_caps';
-        const overLimitMarkdown = '# Large Spec\n' + 'A'.repeat(300 * 1024); // 300 KiB > 256 KiB
-        const overLimitImage = Buffer.alloc(2.5 * 1024 * 1024, 0x50); // 2.5 MiB > 2 MiB
+        const overLimitMarkdown = '# Large Spec\n' + 'A'.repeat(300 * 1024);
+        const overLimitImage = Buffer.alloc(2.5 * 1024 * 1024, 0x50);
 
         const largeRepo = createCommittedRepo(largeStorageKey, {
           'large-spec.md': overLimitMarkdown,
@@ -389,7 +369,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
           VALUES (?, 'refs/heads/main', ?, 1)
         `).bind(repoId, largeRepo.commitOid).run();
 
-        // 1. Oversized markdown rejected with 413
         const mdReq = new Request(`https://nates.software/api/repo-file?repoId=${repoId}&path=large-spec.md`);
         const mdRes = await repoFileApi.onRequestGet({ request: mdReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
         expect(mdRes.status).toBe(413);
@@ -397,7 +376,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         expect(mdBody.success).toBe(false);
         expect(mdBody.error).toContain('exceeds maximum allowed limit');
 
-        // 2. Oversized image rejected with 413
         const imgReq = new Request(`https://nates.software/api/repo-file?repoId=${repoId}&path=large-image.png`);
         const imgRes = await repoFileApi.onRequestGet({ request: imgReq, env: { DB: ctx.d1, GITSMITH_REPOS_ROOT: reposRoot } });
         expect(imgRes.status).toBe(413);
@@ -428,15 +406,12 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         expect(res.status).toBe(502);
         const bodyText = await res.text();
 
-        // MUST be a fixed public message
         expect(bodyText).toBe(JSON.stringify({ success: false, error: 'Repository gateway unreachable' }));
 
-        // MUST NEVER contain the token or "Bearer"
         expect(bodyText).not.toContain('Bearer');
         expect(bodyText).not.toContain(sensitiveGatewayToken);
         expect(bodyText).not.toContain('connection refused');
 
-        // Verify console logs redacted sensitive tokens
         expect(consoleSpy).toHaveBeenCalled();
         const loggedArgs = consoleSpy.mock.calls.flat().join(' ');
         expect(loggedArgs).not.toContain(sensitiveGatewayToken);
@@ -559,9 +534,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         expect(mockGatewayFetch).toHaveBeenCalledTimes(1);
       });
 
-      // =========================================================================
-      // PROXY BOUNDED READ TESTS (DoS MEDIUM FIX)
-      // =========================================================================
       describe('PROXY Bounded Stream Reader & Size Enforcement', () => {
         function createMockStream(chunkSize: number, totalChunks: number) {
           let chunksRead = 0;
@@ -573,7 +545,7 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
               if (chunksRead < totalChunks) {
                 chunksRead++;
                 const chunk = new Uint8Array(chunkSize);
-                chunk.fill(0x61); // 'a'
+                chunk.fill(0x61);
                 controller.enqueue(chunk);
               } else {
                 controller.close();
@@ -625,11 +597,9 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         });
 
         it('helper: readBoundedBody cancels stream and returns 413 when total read exceeds limit', async () => {
-          // 50 chunks of 100 KiB = 5 MiB > limit of 250 KiB
           const mockStream = createMockStream(100 * 1024, 50);
           const res = new Response(mockStream.stream, {
             status: 200
-            // No Content-Length header
           });
 
           const result = await repoFileApi.readBoundedBody(res, 250 * 1024);
@@ -638,13 +608,11 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
             expect(result.status).toBe(413);
           }
           expect(mockStream.isCancelled()).toBe(true);
-          // Should have stopped after chunk 3 (300 KiB > 250 KiB), NOT read all 50 chunks
           expect(mockStream.getChunksRead()).toBeLessThanOrEqual(4);
           expect(mockStream.getChunksRead()).toBeGreaterThanOrEqual(3);
         });
 
         it('helper: readBoundedBody catches lying Content-Length via streaming bound', async () => {
-          // Claims 50 bytes, but emits 50 * 100 KiB
           const mockStream = createMockStream(100 * 1024, 50);
           const res = new Response(mockStream.stream, {
             status: 200,
@@ -661,7 +629,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         });
 
         it('proxy: gateway response whose body exceeds the cap returns 413 and cancels reader early', async () => {
-          // 50 chunks of 100 KiB = 5 MiB stream (maxGatewayBlobBytes for spec.md is ~389 KiB)
           const mockStream = createMockStream(100 * 1024, 50);
           const mockGatewayFetch = vi.fn(async () => {
             return new Response(mockStream.stream, {
@@ -686,7 +653,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
           expect(body.success).toBe(false);
           expect(body.error).toContain('exceeds maximum allowed limit');
 
-          // Assert reader was cancelled and we did NOT buffer the whole 5 MiB stream
           expect(mockStream.isCancelled()).toBe(true);
           expect(mockStream.getChunksRead()).toBeLessThan(10);
         });
@@ -698,7 +664,7 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
               status: 200,
               headers: {
                 'Content-Type': 'application/json',
-                'Content-Length': '10485760' // 10 MiB > ~389 KiB
+                'Content-Length': '10485760'
               }
             });
           });
@@ -723,7 +689,6 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         });
 
         it('proxy: lying Content-Length header is still caught and rejected with 413 via streaming bound', async () => {
-          // Lying Content-Length: 100 bytes, but body emits 50 * 100 KiB
           const mockStream = createMockStream(100 * 1024, 50);
           const mockGatewayFetch = vi.fn(async () => {
             return new Response(mockStream.stream, {
@@ -755,7 +720,7 @@ describe('Public Repo-File Proxy API & Storage Suite (Phase C-render FIX)', () =
         });
 
         it('proxy: fallback /tree path enforces bounded streaming read and returns 413 on over-cap stream', async () => {
-          const mockTreeStream = createMockStream(100 * 1024, 50); // 5 MiB stream > 768 KiB
+          const mockTreeStream = createMockStream(100 * 1024, 50);
           const mockGatewayFetch = vi.fn(async (url: string) => {
             if (url.includes('/api/gateway/blob')) {
               return new Response(JSON.stringify({ success: false, error: 'Endpoint not implemented' }), {

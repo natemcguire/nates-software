@@ -1,4 +1,3 @@
-// Production Domain Rules & Invariants for HOTWIRE
 
 export interface DropSubmission {
   id?: string;
@@ -28,8 +27,6 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
     errors.push('Version must follow valid semver (e.g. v1.0.0 or 2.4.0).');
   }
 
-  // Upper bounds on free-text / array fields so an authenticated submit can't
-  // store an unbounded payload (storage/DoS). Generous but finite.
   if (typeof (drop as any).tagline === 'string' && (drop as any).tagline.length > 280) {
     errors.push('Tagline must be at most 280 characters.');
   }
@@ -54,10 +51,6 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
     if (!/^[a-zA-Z0-9_-]{2,64}$/.test(trimmedId)) {
       errors.push('Drop ID must be 2-64 characters using alphanumeric, dashes, or underscores.');
     } else if (RESERVED_APP_IDS.has(trimmedId.toLowerCase())) {
-      // The app id becomes the tenant subdomain (<id>.nates-software.com), so a
-      // maker must not be able to register a first-party host name (apex, www,
-      // the app-shell subdomains, or infra names). Otherwise an attacker could
-      // claim e.g. inbox/chat/profile.nates-software.com and impersonate the shell.
       errors.push(`Drop ID '${trimmedId}' is reserved and cannot be used.`);
     }
   }
@@ -68,18 +61,9 @@ export function validateDropSubmission(drop: Partial<DropSubmission>): { valid: 
   };
 }
 
-// First-party host names that must never be claimable as a NEW tenant app
-// subdomain. This covers platform infrastructure and the app-shell subdomains —
-// names that, if grabbed, would let a maker impersonate the first-party shell.
-// It deliberately does NOT include the existing PRODUCT app ids (dronehunter,
-// certified-mailer, picfitai, american-gardener): those are real apps that
-// already own their subdomain, and their legitimate owner must be able to keep
-// publishing them. A *different* maker taking one is already blocked by the
-// listing/repository ownership guards in drops.ts, not by this name list.
 export const RESERVED_APP_IDS = new Set([
   'www', 'apex', 'api', 'admin', 'app', 'auth', 'login', 'account', 'mail', 'static', 'assets',
   'cdn', 'router', 'gateway', 'rig-provider', 'ops', 'status', 'help', 'support', 'docs',
-  // the app-shell / first-party product subdomains
   'chat', 'git', 'gitsmith', 'hotwire', 'inbox', 'slopshop', 'rig', 'dyno', 'profile',
 ]);
 
@@ -115,16 +99,15 @@ export function calculateStreak(lastDropDate: Date, currentDate: Date, currentSt
   if (diffHours <= 24) {
     return currentStreak + 1;
   } else if (diffHours <= 48) {
-    return currentStreak; // Grace window within 48h
+    return currentStreak;
   } else {
-    return 1; // Streak reset
+    return 1;
   }
 }
 
 export function calculateNextUtcDrop(): { countdown: string; totalSeconds: number } {
   const now = new Date();
   const nextDrop = new Date();
-  // 12:01 AM UTC next day
   nextDrop.setUTCHours(24, 1, 0, 0);
   const diff = Math.max(0, nextDrop.getTime() - now.getTime());
 

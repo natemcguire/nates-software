@@ -31,7 +31,6 @@ export const ChatView: React.FC = () => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom of chat
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -40,12 +39,10 @@ export const ChatView: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Sync current nick with logged-in user
   useEffect(() => {
     setCurrentNick(user?.username || 'guest');
   }, [user]);
 
-  // Heartbeat: register online presence for authenticated users
   useEffect(() => {
     if (!user) return;
 
@@ -62,19 +59,16 @@ export const ChatView: React.FC = () => {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Live Heartbeat & Message Polling for #lounge
   useEffect(() => {
     const fetchLatestMessages = () => {
       fetch(`/api/chat?channel=${encodeURIComponent(DEFAULT_CHANNEL)}`)
         .then(res => res.json())
         .then(data => {
           if (data.success) {
-            // 1. Topic
             if (typeof data.topic === 'string' && data.topic) {
               setTopic(data.topic);
             }
 
-            // 2. Presence
             if (Array.isArray(data.presence)) {
               const liveUsers: IrcUser[] = data.presence.map((p: any) => ({
                 nick: p.nick,
@@ -86,7 +80,6 @@ export const ChatView: React.FC = () => {
               setUsers(liveUsers);
             }
 
-            // 3. Messages
             if (Array.isArray(data.messages)) {
               const apiMsgs: IrcMessage[] = data.messages.map((m: any) => ({
                 id: m.id,
@@ -103,7 +96,6 @@ export const ChatView: React.FC = () => {
                 const existingIds = new Set(prev.map(p => p.id));
                 const newOnes = apiMsgs.filter(m => !existingIds.has(m.id));
                 if (newOnes.length > 0 && prev.length > 0) {
-                  // Play chime for incoming messages from others
                   const myNick = user?.username || 'guest';
                   const fromOther = newOnes.some(n => n.sender !== myNick && n.sender !== 'System');
                   if (fromOther) playSuccessChime();
@@ -221,7 +213,6 @@ export const ChatView: React.FC = () => {
       return;
     }
 
-    // Standard PRIVMSG or ACTION (/me)
     const isUserOp = Boolean(user?.isSuperAdmin || user?.role === 'super_admin');
     const newMsg: IrcMessage = {
       id: `msg-${Date.now()}`,
@@ -238,7 +229,6 @@ export const ChatView: React.FC = () => {
     playSuccessChime();
 
     try {
-      // POST sends channel, type, text. Sender and isOp are strictly derived server-side from session.
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -279,7 +269,6 @@ export const ChatView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#c0c0c0] font-sans text-xs select-none">
-      {/* 1. IRC Title & Channel Topic Bar */}
       <div className="bg-[#000080] text-white px-3 py-1.5 flex items-center justify-between border-b-2 border-white shadow-inner flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Hash size={15} className="text-yellow-300 font-bold" />
@@ -307,9 +296,7 @@ export const ChatView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Main IRC Split Body: Messages Log (Left) + Nicklist (Right) */}
       <div className="flex-1 flex overflow-hidden p-2 gap-2">
-        {/* Left / Message Stream Window (Authentic IRC Slate & Retro styling) */}
         <div className="flex-1 win95-field bg-[#0f172a] text-slate-100 p-3 overflow-y-auto font-mono text-xs space-y-1.5 flex flex-col justify-between border-2 border-gray-600">
           <div className="space-y-1 overflow-y-auto flex-1 pr-1">
             {messages.length === 0 && (
@@ -346,7 +333,6 @@ export const ChatView: React.FC = () => {
                 );
               }
 
-              // Standard PRIVMSG
               return (
                 <div key={m.id} className="flex items-start gap-1.5 text-xs leading-relaxed hover:bg-slate-800/40 px-1 py-0.5 rounded transition-colors">
                   <span className="text-slate-500 shrink-0 select-none">[{m.timeFormatted}]</span>
@@ -361,7 +347,6 @@ export const ChatView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right / Channel Userlist (Nicklist Panel) */}
         <div className="w-52 win95-field bg-white p-2 flex flex-col border-2 border-gray-600">
           <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs mb-2">
             <div className="flex items-center gap-1">
@@ -377,7 +362,6 @@ export const ChatView: React.FC = () => {
                 No active users
               </div>
             )}
-            {/* Ops first */}
             {users
               .slice()
               .sort((a, b) => (b.isOp ? 1 : 0) - (a.isOp ? 1 : 0))
@@ -417,7 +401,6 @@ export const ChatView: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Command Input Bar */}
       <div className="bg-[#dfdfdf] p-2 border-t-2 border-white flex items-center gap-2">
         <form onSubmit={handleSendMessage} className="flex-1 flex gap-2">
           <div className="bg-white border-2 border-gray-600 border-t-black border-l-black flex-1 flex items-center px-2 py-1">
@@ -444,7 +427,6 @@ export const ChatView: React.FC = () => {
         </form>
       </div>
 
-      {/* 4. IRC Help Modal */}
       {showHelpModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#1e293b] border-2 border-slate-600 rounded-lg max-w-lg w-full shadow-2xl p-5 text-slate-100 font-sans text-xs space-y-4">

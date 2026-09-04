@@ -1,5 +1,3 @@
-// Configuration and Production Startup Validator for GITSMITH Git Gateway
-
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { GatewayConfig } from './types.ts';
@@ -29,10 +27,6 @@ export const DEFAULT_DEV_CONFIG: GatewayConfig = {
   maxBackoffSeconds: 300
 };
 
-/**
- * Validates production startup invariants. Fails closed if any required parameter is missing.
- * Does not mutate filesystem during validation.
- */
 export function validateProductionStartup(config: GatewayConfig): void {
   const isProduction =
     config.isProduction === true ||
@@ -43,14 +37,12 @@ export function validateProductionStartup(config: GatewayConfig): void {
     return;
   }
 
-  // 1. Explicit production enable flag must be true
   if (config.productionEnabled !== true && process.env.GITSMITH_PRODUCTION_ENABLED !== 'true') {
     throw new ProductionStartupError(
       'Production startup rejected: GITSMITH_PRODUCTION_ENABLED=true must be explicitly configured.'
     );
   }
 
-  // 2. Explicit, valid, non-root reposRoot
   if (!config.reposRoot || typeof config.reposRoot !== 'string' || !config.reposRoot.trim()) {
     throw new ProductionStartupError(
       'Production startup rejected: GITSMITH_REPOS_ROOT must be explicitly configured.'
@@ -71,7 +63,6 @@ export function validateProductionStartup(config: GatewayConfig): void {
     );
   }
 
-  // Non-mutating check: Verify directory exists and is writable, or parent directory exists and is writable
   try {
     if (fs.existsSync(cleanRoot)) {
       fs.accessSync(cleanRoot, fs.constants.W_OK | fs.constants.R_OK);
@@ -88,7 +79,6 @@ export function validateProductionStartup(config: GatewayConfig): void {
     );
   }
 
-  // 3. Control plane URL must be valid HTTPS URL in production (HTTP rejected)
   if (!config.controlPlaneUrl || typeof config.controlPlaneUrl !== 'string' || !config.controlPlaneUrl.trim()) {
     throw new ProductionStartupError(
       'Production startup rejected: GITSMITH_CONTROL_PLANE_URL must be explicitly configured.'
@@ -106,7 +96,6 @@ export function validateProductionStartup(config: GatewayConfig): void {
     );
   }
 
-  // 4. Gateway token secret must be non-empty and reasonably secure
   if (!config.gatewayToken || typeof config.gatewayToken !== 'string' || !config.gatewayToken.trim()) {
     throw new ProductionStartupError(
       'Production startup rejected: GITSMITH_GATEWAY_TOKEN secret must be explicitly configured.'
@@ -138,9 +127,6 @@ export function validateProductionStartup(config: GatewayConfig): void {
   }
 }
 
-/**
- * Validates configuration and returns diagnostic errors.
- */
 export function validateGatewayConfig(config: Partial<GatewayConfig>): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -177,7 +163,6 @@ export function validateGatewayConfig(config: Partial<GatewayConfig>): { valid: 
     }
   }
 
-  // Numeric config range validations
   if (config.port !== undefined) {
     if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
       errors.push('port must be an integer between 1 and 65535.');
@@ -221,9 +206,6 @@ export function validateGatewayConfig(config: Partial<GatewayConfig>): { valid: 
   };
 }
 
-/**
- * Loads gateway configuration from environment variables or custom overrides.
- */
 export function loadGatewayConfigFromEnv(env: Record<string, string | undefined> = process.env): GatewayConfig {
   const isProd = env.NODE_ENV === 'production' || env.GITSMITH_PRODUCTION_ENABLED === 'true';
 

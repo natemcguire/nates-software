@@ -1,6 +1,3 @@
-// Production Domain Logic for SLOPSHOP AI Agent Worktree & Prompt Forge
-// Local-First Agentic Architecture & Truthful Feature Manifest Engine
-
 export interface RepoCoordinate {
   readonly appId: string;
   readonly name: string;
@@ -135,10 +132,6 @@ export interface GatewayLandingPrerequisites {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Canonical Repository Coordinates
-// ---------------------------------------------------------------------------
-
 export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
   dronehunter: {
     appId: 'dronehunter',
@@ -172,10 +165,6 @@ export const REPO_COORDINATES: Record<string, RepoCoordinate> = {
     icon: '📫'
   }
 };
-
-// ---------------------------------------------------------------------------
-// Canonical Feature Mod Presets
-// ---------------------------------------------------------------------------
 
 export const FEATURE_MOD_PRESETS: Record<string, FeaturePreset[]> = {
   dronehunter: [
@@ -378,10 +367,6 @@ export const CUSTOM_FEATURE_PRESET: FeaturePreset = {
   blueprintDiffPreview: 'No speculative diff is generated before the repository is inspected.'
 };
 
-// ---------------------------------------------------------------------------
-// Agent Tools Configuration
-// ---------------------------------------------------------------------------
-
 export const AGENT_TOOLS: Record<AgentToolId, AgentToolMeta> = {
   agy: {
     id: 'agy',
@@ -440,10 +425,6 @@ export const AGENT_TOOLS: Record<AgentToolId, AgentToolMeta> = {
   }
 };
 
-// ---------------------------------------------------------------------------
-// Backward Compatibility Exports
-// ---------------------------------------------------------------------------
-
 export interface AgentPromptPreset {
   readonly id: string;
   readonly name: string;
@@ -486,10 +467,6 @@ export const WORKTREE_CONFIGS: Record<string, AppWorktreeConfig> = {
   }
 };
 
-// ---------------------------------------------------------------------------
-// Domain Helper Functions
-// ---------------------------------------------------------------------------
-
 export function getAppCoordinates(): RepoCoordinate[] {
   return Object.values(REPO_COORDINATES);
 }
@@ -498,7 +475,6 @@ export function getAppCoordinate(appId: string): RepoCoordinate {
   if (REPO_COORDINATES[appId]) {
     return REPO_COORDINATES[appId];
   }
-  // Safe dynamic fallback for custom coordinates
   const cleanId = appId.toLowerCase().replace(/[^a-z0-9-_]/g, '-');
   return {
     appId: cleanId,
@@ -561,16 +537,10 @@ export function getAgentTool(toolId: AgentToolId): AgentToolMeta {
   return AGENT_TOOLS[toolId] || AGENT_TOOLS.agy;
 }
 
-/**
- * Escapes strings safely for POSIX shell double quotes
- */
 export function escapeShellDoubleQuotes(str: string): string {
   return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
 }
 
-/**
- * Generates structured feature manifest document (slop-feature.json)
- */
 export function generateFeatureManifest(params: {
   coordinate: RepoCoordinate;
   feature: FeaturePreset;
@@ -646,10 +616,6 @@ export function generateFeatureManifest(params: {
   };
 }
 
-/**
- * Generates the complete, concrete local agent plan with executable shell commands,
- * step-by-step instructions, and manifest JSON.
- */
 export function generateLocalAgentPlan(params: {
   coordinate: RepoCoordinate;
   feature: FeaturePreset;
@@ -684,12 +650,9 @@ export function generateLocalAgentPlan(params: {
       break;
   }
 
-  // Installation is authoritative and completes before SLOP offers to launch an
-  // engine. Never chain an agent process behind an unverified clone/install.
   const cloneTarget = params.coordinate.repoUrl || params.coordinate.slug;
   const singleLineCommand = `slop fork "${escapeShellDoubleQuotes(cloneTarget)}"`;
 
-  // 4 Concrete Local Workflow Steps
   const steps: LocalWorkflowStep[] = [
     {
       stepNumber: 1,
@@ -746,9 +709,6 @@ export function generateLocalAgentPlan(params: {
   };
 }
 
-/**
- * Returns the 5-point evidence verification checklist explaining local proof requirements.
- */
 export function getEvidenceChecklist(feature: FeaturePreset): {
   id: string;
   title: string;
@@ -795,10 +755,6 @@ export function getEvidenceChecklist(feature: FeaturePreset): {
   ];
 }
 
-/**
- * Evaluates the truthful gateway status and explains why in-browser execution / landing
- * is offline without a host agent daemon.
- */
 export function evaluateGatewayLandingStatus(_params?: {
   coordinate?: RepoCoordinate;
   feature?: FeaturePreset;

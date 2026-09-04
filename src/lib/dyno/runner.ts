@@ -1,7 +1,3 @@
-// Core DYNO Benchmark Runner Engine
-// Orchestrates isolated task sandboxes, agent harness invocations, trace captures,
-// deterministic local grading, repetition cycles, and honest incomplete/error states.
-
 import {
   DynoSuiteRecord,
   DynoSubjectRecord,
@@ -83,9 +79,6 @@ export class DynoRunner {
     };
   }
 
-  /**
-   * Executes a single task attempt in an isolated sandbox.
-   */
   async runTaskAttempt(
     task: DynoFixture,
     harness: DynoAgentHarness,
@@ -113,7 +106,6 @@ export class DynoRunner {
     }, timeLimitMs);
 
     try {
-      // 1. Create isolated sandbox with initial fixture files
       sandbox = await DynoSandbox.create({
         initialFiles: task.files,
         tracer,
@@ -121,7 +113,6 @@ export class DynoRunner {
         networkPolicy: this.networkPolicy
       });
 
-      // 2. Execute agent harness inside sandbox
       const { hiddenFiles: _hiddenFiles, hiddenTests: _hiddenTests, graders: _graders, ...publicTask } = task;
       agentResult = await harness.execute({
         runId,
@@ -136,7 +127,6 @@ export class DynoRunner {
 
       clearTimeout(timeoutTimer);
 
-      // Check if timed out
       if (abortController.signal.aborted) {
         attemptStatus = 'timed_out';
       }
@@ -153,13 +143,11 @@ export class DynoRunner {
     const durationMs = Date.now() - startTime;
     const completedAt = new Date().toISOString();
 
-    // 3. Safety inspection
     const safetyViolations = tracer.getSafetyViolationsCount();
     if (safetyViolations > 0 && attemptStatus !== 'timed_out') {
       attemptStatus = 'unsafe';
     }
 
-    // 4. File changes inspection
     let fileChanges: DynoFileChangeSummary = {
       modified: [],
       created: [],
@@ -171,11 +159,9 @@ export class DynoRunner {
       try {
         fileChanges = await sandbox.getFileChanges(task.expectedModifiedFiles);
       } catch {
-        // Ignore file inspection errors if directory gone
       }
     }
 
-    // 5. Deterministic Grading
     let gradingOutcome: GradingOutcome = {
       passed: false,
       score: 0,
@@ -194,7 +180,6 @@ export class DynoRunner {
       }
     }
 
-    // 6. Cleanup Sandbox
     if (sandbox) {
       await sandbox.cleanup();
     }
@@ -220,9 +205,6 @@ export class DynoRunner {
       task_id: task.key,
       attempt_number: attemptNumber,
       status: attemptStatus,
-      // Each repetition currently contains exactly one agent execution. The
-      // persisted attempt ordinal identifies that repetition, while this flag
-      // records whether its sole (first) execution succeeded.
       first_attempt_success: attemptStatus === 'passed' ? 1 : 0,
       hidden_tests_passed: gradingOutcome.hiddenTestsPassed,
       hidden_tests_total: gradingOutcome.hiddenTestsTotal,
@@ -250,9 +232,6 @@ export class DynoRunner {
     };
   }
 
-  /**
-   * Executes the full benchmark suite across all repetitions.
-   */
   async runSuite(harness: DynoAgentHarness): Promise<DynoRunExecutionResult> {
     const runId = `run_${this.subject.id}_${Date.now()}`;
     const startedAt = new Date().toISOString();
@@ -263,15 +242,11 @@ export class DynoRunner {
       const repAttempts: DynoTaskAttemptExecutionResult[] = [];
 
       for (const task of this.fixtures) {
-        // The persisted schema uses attempt_number as the ordinal execution of
-        // a task within a run. DYNO currently performs one execution per task
-        // per repetition, so the repetition ordinal is the attempt ordinal.
         const attemptResult = await this.runTaskAttempt(task, harness, rep, rep, runId);
         repAttempts.push(attemptResult);
         allAttemptResults.push(attemptResult);
       }
 
-      // Calculate score for this repetition
       const repPassed = repAttempts.filter(a => a.attempt.status === 'passed').length;
       const repTotal = repAttempts.length;
       const repFirstAttemptPassed = repAttempts.filter(a => a.attempt.first_attempt_success === 1).length;
@@ -298,7 +273,6 @@ export class DynoRunner {
 
     const completedAt = new Date().toISOString();
 
-    // Aggregate metrics across all attempts
     const totalAttempts = allAttemptResults.length;
     const passedAttempts = allAttemptResults.filter(a => a.attempt.status === 'passed').length;
     const firstAttemptSuccesses = allAttemptResults.filter(a => a.attempt.first_attempt_success === 1).length;
@@ -329,8 +303,6 @@ export class DynoRunner {
       unnecessaryFilesChanged: totalUnnecessaryChanges
     });
 
-    // Local CLI repetitions improve measurement confidence, but a runner cannot
-    // promote its own evidence. Only the independent DYNO verifier may do that.
     let verificationStatus: DynoVerificationStatus = 'unverified';
     if (totalSafetyViolations > 0) {
       verificationStatus = 'rejected';
@@ -400,9 +372,6 @@ export class DynoRunner {
   }
 }
 
-/**
- * Creates a baseline unassisted harness that inspects initial fixture files without editing them.
- */
 export function createBaselineHarness(
   modelId = 'unassisted-baseline',
   harnessName = 'Baseline Unassisted'
@@ -427,9 +396,6 @@ export function createBaselineHarness(
   };
 }
 
-/**
- * Creates a reference harness that applies verified canonical solutions for all task fixtures.
- */
 export function createReferenceHarness(
   modelId = 'reference-calibration',
   harnessName = 'Reference Calibration Solver'
@@ -455,9 +421,6 @@ export function createReferenceHarness(
   };
 }
 
-/**
- * Creates a generic CLI command harness that executes a user-specified command inside each isolated sandbox.
- */
 export function createCommandHarness(
   command: string,
   modelId = 'custom-cli-agent',

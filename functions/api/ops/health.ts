@@ -1,17 +1,3 @@
-// GET /api/ops/health — operator queue-health snapshot. super_admin ONLY.
-//
-// Returns honest, server-computed metrics reused from the exact tables the
-// scheduled drain worker (workers/drain/src/index.ts) reconciles:
-//   - stripe_event_inbox: counts by status, oldest un-processed
-//     next_attempt_at (queue age), terminal_failure (dead-letter) count.
-//   - commerce_transfer_outbox / commerce_reversal_outbox: counts by status,
-//     oldest pending row, terminal_failure (dead-letter) count.
-//   - workerFlags.payoutsEnabled: the real PAYOUTS_ENABLED env value the
-//     drain worker itself gates on (see runTransferDrain/runRecoveryDrain) —
-//     never inferred, never hardcoded true.
-//
-// Read-only: no row is claimed, retried, or mutated by this handler.
-
 import { requireSuperAdmin, opsJson } from './_guard';
 import { computeOpsHealthSnapshot, type D1Database } from '../../../src/lib/opsDomain';
 

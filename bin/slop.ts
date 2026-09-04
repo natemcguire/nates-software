@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-/**
- * SLOP CLI — OFFICIAL SHAREWARE DEVELOPER TOOL
- * "Go Fork, and Multiply"
- * Developer Loop: FORK -> AI CODES IN WORKTREE -> PUSH
- */
+
 
 import {
   NEUTRAL_DEV_FIXTURES,
@@ -74,7 +70,6 @@ export function resolveControlPlaneUrl(customUrl?: string): string {
 
   return urlStr.replace(/\/+$/, '');
 }
-
 
 export interface SlopCommandResult {
   readonly success: boolean;
@@ -157,7 +152,7 @@ export function writeStoredCredentials(creds: StoredCredentials): void {
   const credPath = getCredentialsFilePath();
   const credDir = pathMod ? pathMod.dirname(credPath) : credPath.substring(0, credPath.lastIndexOf('/'));
 
-  // 1. Resolve directory and verify permissions/ownership
+  
   let dirStat: any = null;
   try {
     dirStat = fsMod.lstatSync(credDir);
@@ -190,7 +185,7 @@ export function writeStoredCredentials(creds: StoredCredentials): void {
     } catch {}
   }
 
-  // 2. Reject existing symlinks or non-regular files at the credentials path
+  
   try {
     const fileStat = fsMod.lstatSync(credPath);
     if (fileStat.isSymbolicLink()) {
@@ -205,7 +200,7 @@ export function writeStoredCredentials(creds: StoredCredentials): void {
     }
   }
 
-  // 3. Write atomically to a temporary file in the same verified directory
+  
   const pid = typeof process !== 'undefined' ? process.pid : Math.floor(Math.random() * 100000);
   const nonce = `${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
   const tmpPath = pathMod ? pathMod.join(credDir, `credentials.${pid}.${nonce}.tmp`) : `${credDir}/credentials.${pid}.${nonce}.tmp`;
@@ -425,7 +420,7 @@ export function handleInit(args: string[] = []): SlopCommandResult {
     }
   }
 
-  // Create or update local slop.json if not present
+  
   const configFile = "slop.json";
   try {
     const configPath = `${cwd}/${configFile}`;
@@ -616,20 +611,20 @@ export async function handleFork(
       }
 
       if (isUnregisteredLocal) {
-        // Explicit local-dev escape hatch ONLY (does not claim canonical lineage)
+        
         const cloneSource = canonicalSourceUrl || (foundLocal ? `file://${foundLocal}` : null);
         if (cloneSource) {
           cp.execFileSync('git', ['clone', cloneSource, worktreePath], { stdio: 'pipe', timeout: 15000 });
           canonicalSourceUrl = cloneSource;
         } else if (explicitTemplate) {
-          // Template requested without existing repo
+          
         } else {
           throw new Error(`No local repository found for ${slug}; no placeholder fork was created.`);
         }
       } else {
-        // Canonical Forge Fork API Call
-        // Call the canonical fork API on the control plane (/api/git with action: 'fork')
-        // to register the fork with immutable parent->child ancestry.
+        
+        
+        
         const token = options.sessionToken || options.token || (typeof process !== 'undefined' ? (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN) : '') || readStoredCredentials()?.sessionToken || ((typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || process.env.VITEST)) ? 'valid_test_token' : '');
         const controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
 
@@ -673,7 +668,7 @@ export async function handleFork(
             body: JSON.stringify(forkPayload)
           });
           const gitModulePath = "../functions/api/git.ts";
-          const gitControlPlane = await import(/* @vite-ignore */ gitModulePath);
+          const gitControlPlane = await import( gitModulePath);
           forkRes = await gitControlPlane.onRequestPost({ request: req, env: options.env });
         } else if (options.fetchImpl) {
           forkRes = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/git`, {
@@ -716,7 +711,7 @@ export async function handleFork(
         }
         registeredFork = forkBody;
 
-        // If gateway token is provided, confirm fork to record immutable lineage in repository_forks
+        
         const gwToken = options.gatewayToken || (options.env?.GITSMITH_GATEWAY_TOKEN) || (typeof process !== 'undefined' ? process.env.GITSMITH_GATEWAY_TOKEN : '');
         if (registeredFork && gwToken && forkBody.repository?.id && forkBody.forkRequest) {
           const confirmPayload = {
@@ -740,7 +735,7 @@ export async function handleFork(
               body: JSON.stringify(confirmPayload)
             });
             const gitModulePath = "../functions/api/git.ts";
-            const gitControlPlane = await import(/* @vite-ignore */ gitModulePath);
+            const gitControlPlane = await import( gitModulePath);
             const confirmRes = await gitControlPlane.onRequestPost({ request: confirmReq, env: options.env });
             const confirmData: any = await confirmRes.json().catch(() => ({}));
             if (confirmData.success && confirmData.fork) {
@@ -766,7 +761,7 @@ export async function handleFork(
           }
         }
 
-        // Determine canonical clone source
+        
         if (isDirectLocal && directLocalPath) {
           canonicalSourceUrl = `file://${directLocalPath}`;
           cp.execFileSync('git', ['clone', canonicalSourceUrl, worktreePath], {
@@ -833,7 +828,7 @@ export async function handleFork(
               stdio: 'pipe', timeout: 15000
             });
           } else if (explicitTemplate) {
-            // Template requested without pre-existing bare repo
+            
           } else {
             throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
           }
@@ -843,13 +838,13 @@ export async function handleFork(
             stdio: 'pipe', timeout: 15000
           });
         } else if (explicitTemplate) {
-          // Explicit starter template requested without a pre-existing canonical repository
+          
         } else {
           throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created.`);
         }
       }
 
-      // Check if git repository exists in worktreePath
+      
       const hasGit = fsMod.existsSync(`${worktreePath}/.git`);
       let hasCommits = false;
       if (hasGit) {
@@ -863,9 +858,9 @@ export async function handleFork(
         }
       }
 
-      // Determine template to scaffold:
-      // Scaffolding is strictly opt-in via an explicit flag (--template <name>).
-      // NEVER auto-invent source into an empty repo based on its name or slug.
+      
+      
+      
       const selectedTemplate = explicitTemplate;
 
       if (selectedTemplate) {
@@ -924,14 +919,14 @@ export async function handleFork(
         }
       }
 
-      // If no git repository exists yet (e.g. bundled starter copy), initialize git
+      
       if (!fsMod.existsSync(`${worktreePath}/.git`)) {
         cp.execFileSync('git', ['init', worktreePath], { stdio: 'pipe', timeout: 15000 });
         cp.execFileSync('git', ['-C', worktreePath, 'add', '-A'], { stdio: 'pipe', timeout: 15000 });
         cp.execFileSync('git', ['-C', worktreePath, '-c', 'user.name=SLOP Installer', '-c', 'user.email=installer@nates-software.com', 'commit', '-m', `feat(fork): initialize from ${slug}`], { stdio: 'pipe', timeout: 15000 });
       }
 
-      // Check if this is an empty repository clone (no commits and no starter template applied)
+      
       if (!hasCommits && !templateApplied) {
         isEmptyRepo = true;
         if (canonicalSourceUrl) {
@@ -1046,13 +1041,13 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         throw new Error('child_process is not available in this environment');
       }
 
-      // 1. Verify inside git repo
+      
       const isInside = cp.execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { encoding: 'utf-8', stdio: 'pipe' }).trim();
       if (isInside !== "true") {
         throw new Error("Not a git repository (or any of the parent directories)");
       }
 
-      // App ID from cwd or slop.json
+      
       appId = cwd.split("/").pop() || appId;
       const fsMod = getFs();
       if (fsMod && fsMod.existsSync(`${cwd}/slop.json`)) {
@@ -1062,20 +1057,20 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         } catch {}
       }
 
-      // 2. Get HEAD SHA
+      
       sha = cp.execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8', stdio: 'pipe' }).trim();
       if (!sha) {
         throw new Error("Repository has no commits to push");
       }
 
-      // 3. Determine current branch and remote ref
+      
       let currentBranch = "main";
       try {
         currentBranch = cp.execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf-8', stdio: 'pipe' }).trim() || "main";
       } catch {}
       remoteRef = `refs/heads/${currentBranch === "HEAD" ? "main" : currentBranch}`;
 
-      // 4. Determine target remote
+      
       let targetRemote = "slop";
       const remotesStr = cp.execFileSync('git', ['remote'], { encoding: 'utf-8', stdio: 'pipe' }) || "";
       const remotes = remotesStr.split(/\s+/).filter(Boolean);
@@ -1088,7 +1083,7 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         throw new Error('No provisioned "slop" publication remote is configured. SLOP will not push the upstream origin.');
       }
 
-      // 5. Execute git push with strict connect timeout
+      
       const pushRefspec = currentBranch === "HEAD" ? "HEAD:main" : `HEAD:${currentBranch}`;
       const env = { ...process.env, GIT_SSH_COMMAND: "ssh -o ConnectTimeout=1 -o BatchMode=yes" };
       cp.execFileSync('git', ['push', targetRemote, pushRefspec], { stdio: 'pipe', timeout: 5000, env });
@@ -1285,7 +1280,7 @@ export function parseDynoArgs(args: string[] | boolean = []): DynoCliOptions {
 export async function handleDyno(argsArg: string[] | boolean = []): Promise<SlopCommandResult> {
   const opts = parseDynoArgs(argsArg);
 
-  // If running in browser environment without Node fs/cp
+  
   if (!isNode) {
     const fallbackMsg = `[DYNO] Browser Execution Boundary: DYNO real-world benchmark requires local workstation sandbox execution via './bin/slop dyno'`;
     return {
@@ -1300,13 +1295,13 @@ export async function handleDyno(argsArg: string[] | boolean = []): Promise<Slop
     };
   }
 
-  // Keep Node filesystem/process modules out of the browser bundle used by
-  // TERMINAL.EXE. This path is reached only by the local CLI executable.
+  
+  
   const runnerModulePath = '../src/lib/dyno/runner.ts';
   const environmentModulePath = '../src/lib/dyno/environment.ts';
   const [runnerModule, environmentModule] = await Promise.all([
-    import(/* @vite-ignore */ runnerModulePath),
-    import(/* @vite-ignore */ environmentModulePath)
+    import( runnerModulePath),
+    import( environmentModulePath)
   ]);
   const {
     DynoRunner,
@@ -1316,7 +1311,7 @@ export async function handleDyno(argsArg: string[] | boolean = []): Promise<Slop
   } = runnerModule;
   const { detectLocalEnvironment } = environmentModule;
 
-  // Select fixtures
+  
   let fixturesToRun = NEUTRAL_DEV_FIXTURES;
   if (opts.task) {
     const found = getFixtureByKey(opts.task);
@@ -1379,7 +1374,7 @@ export async function handleDyno(argsArg: string[] | boolean = []): Promise<Slop
 
   const result = await runner.runSuite(harness);
 
-  // Save report to disk
+  
   let savedPath: string | null = null;
   try {
     const fsMod = getFs();
@@ -1445,7 +1440,7 @@ export async function handleDyno(argsArg: string[] | boolean = []): Promise<Slop
 export function handleTest(): SlopCommandResult {
   const checkResults: { name: string; pass: boolean; details?: string }[] = [];
 
-  // Check 1: Memory Governor 256MB cap enforcement
+  
   try {
     const pass = MEMORY_CAP_MB === 256;
     checkResults.push({ name: "Memory Governor 256MB cap enforcement", pass });
@@ -1453,7 +1448,7 @@ export function handleTest(): SlopCommandResult {
     checkResults.push({ name: "Memory Governor 256MB cap enforcement", pass: false, details: err.message });
   }
 
-  // Check 2: Micro-Dyno Port Allocator range [3001..3010] collision avoidance
+  
   try {
     const allocator = new MicroDynoPortAllocator(3001, 3010);
     const p1 = allocator.allocate("app1");
@@ -1464,12 +1459,12 @@ export function handleTest(): SlopCommandResult {
     checkResults.push({ name: "Micro-Dyno Port Allocator range [3001..3010] collision avoidance", pass: false, details: err.message });
   }
 
-  // Check 3: Lineage Ledger flat-10%-platform + frozen-royalty exact cent conservation
+  
   try {
     const priceCents = 1500;
     const platformCut = Math.floor(priceCents * 0.10);
     const remainder = priceCents - platformCut;
-    const ancestorRoyaltyBps = 2000; // example frozen royalty rate for this proof only, not a fixed platform rule
+    const ancestorRoyaltyBps = 2000; 
     const ancestorCut = Math.floor(remainder * ancestorRoyaltyBps / 10000);
     const sellerCut = remainder - ancestorCut;
     const pass = (platformCut + ancestorCut + sellerCut) === priceCents && platformCut === 150 && ancestorCut === 270 && sellerCut === 1080;
@@ -1478,7 +1473,7 @@ export function handleTest(): SlopCommandResult {
     checkResults.push({ name: "Lineage Ledger flat-10%-platform + frozen-royalty exact cent conservation", pass: false, details: err.message });
   }
 
-  // Check 4: GITSMITH CAS compare-and-swap atomic ref verification
+  
   try {
     const validCas = isCasRefUpdateValid({ currentOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expectedOldOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", newOid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
     const invalidCas = isCasRefUpdateValid({ currentOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expectedOldOid: "cccccccccccccccccccccccccccccccccccccccc", newOid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
@@ -1637,8 +1632,8 @@ export async function readTokenFromStdin(options: any = {}): Promise<string> {
       });
     }
   } else {
-    // Non-TTY / piped stdin fallback (e.g. echo $TOKEN | slop login)
-    // Avoid reading hanging process.stdin in Vitest when no explicit options.stdin was provided
+    
+    
     const isVitest = typeof process !== 'undefined' && (process.env.VITEST || process.env.NODE_ENV === 'test');
     if (isVitest && !options.stdin) {
       return '';
@@ -1679,7 +1674,7 @@ export async function readTokenFromStdin(options: any = {}): Promise<string> {
 }
 
 export async function handleLogin(args: string[] = [], options: any = {}): Promise<SlopCommandResult> {
-  // Extract token from flags, positional arguments, options, or environment
+  
   let token = (options.token || options.sessionToken || '').trim();
 
   if (!token && Array.isArray(args)) {
@@ -1706,7 +1701,7 @@ export async function handleLogin(args: string[] = [], options: any = {}): Promi
     token = (process.env.SLOP_SESSION_TOKEN || process.env.SESSION_TOKEN || process.env.AUTH_TOKEN || '').trim();
   }
 
-  // Interactive masked prompt or non-TTY stdin if no token provided
+  
   if (!token && !options.nonInteractive) {
     try {
       token = await readTokenFromStdin(options);
@@ -1724,7 +1719,7 @@ export async function handleLogin(args: string[] = [], options: any = {}): Promi
     };
   }
 
-  // Validate the token against the control plane
+  
   let controlPlaneUrl: string;
   try {
     controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
@@ -1748,7 +1743,7 @@ export async function handleLogin(args: string[] = [], options: any = {}): Promi
         }
       });
       const authModulePath = "../functions/api/auth.ts";
-      const authControlPlane = await import(/* @vite-ignore */ authModulePath);
+      const authControlPlane = await import( authModulePath);
       authRes = await authControlPlane.onRequestGet({ request: req, env: options.env });
     } else if (options.fetchImpl) {
       authRes = await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth`, {
@@ -1856,7 +1851,7 @@ export async function handleLogout(_args: string[] = [], options: any = {}): Pro
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const authModulePath = "../functions/api/auth.ts";
-          const authControlPlane = await import(/* @vite-ignore */ authModulePath);
+          const authControlPlane = await import( authModulePath);
           await authControlPlane.onRequestPost({ request: req, env: options.env });
         } else if (options.fetchImpl) {
           await options.fetchImpl(`${controlPlaneUrl.replace(/\/$/, '')}/api/auth?action=logout`, {
@@ -1916,7 +1911,7 @@ export async function handleMod(args: string[] = []): Promise<SlopCommandResult>
   }
 
   const localRunnerModule = "../src/lib/slopshopModEngine.ts";
-  const { executeSlopMod } = await import(/* @vite-ignore */ localRunnerModule);
+  const { executeSlopMod } = await import( localRunnerModule);
   const modResult = await executeSlopMod({
     manifestOrRef: manifestArg,
     worktreePath: cwd,

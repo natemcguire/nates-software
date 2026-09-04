@@ -36,7 +36,6 @@ export interface CatalogContextType {
 const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Authoritative catalog starts empty; live D1 drops populate on mount
   const [apps, setApps] = useState<AppListing[]>([]);
   const [shelfAppIds, setShelfAppIds] = useState<Set<string>>(new Set<string>());
   const [votedAppIds, setVotedAppIds] = useState<Set<string>>(new Set<string>());
@@ -45,10 +44,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isAuthoritativeLive, setIsAuthoritativeLive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [currentSort, setCurrentSort] = useState<string>('today');
-  // Default the landing board to the CUMULATIVE catalog ('all'), not today's batch.
-  // Catalog rows carry a frozen migration-time created_at, so batch='today' returns 0
-  // rows every day after seed → the flagship board opened to an empty "no drops today"
-  // state. 'all' shows the real apps; the Today filter is still one click away.
   const [currentBatch, setCurrentBatch] = useState<string>('all');
 
   const auth = useContext(AuthContext);
@@ -72,7 +67,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       setShelfAppIds(new Set<string>());
     } catch {
-      // Shelf fetch failures do not overwrite existing state
     }
   }, []);
 
@@ -101,12 +95,10 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (activeSort) params.set('sort', activeSort);
       if (activeBatch && activeBatch !== 'all') params.set('batch', activeBatch);
 
-      // 1. Fetch live drops from Cloudflare D1
       const dropsRes = await fetch(`/api/drops?${params.toString()}`);
       if (dropsRes.ok) {
         const dropsData = await dropsRes.json();
         if (dropsData.success && Array.isArray(dropsData.drops)) {
-          // Authoritative live response: map live drops directly WITHOUT inventing fake defaults
           const liveDrops: AppListing[] = dropsData.drops.map((d: any) => {
             const parsedPrice = typeof d.price === 'string'
               ? (parseInt(d.price.replace(/[^0-9.]/g, ''), 10) || undefined)
@@ -175,22 +167,18 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setIsAuthoritativeLive(true);
           setError(null);
         } else {
-          // Response not successful: set empty live drops and truthful error
           setApps([]);
           setIsAuthoritativeLive(false);
           setError(dropsData?.error || 'Failed to load live drops from server');
         }
       } else {
-        // HTTP error: set empty live drops and truthful error
         setApps([]);
         setIsAuthoritativeLive(false);
         setError(`Failed to fetch live catalog (HTTP ${dropsRes.status})`);
       }
 
-      // 2. Fetch authoritative shelf ownership (Never grant seed ownership to guests)
       await fetchShelf();
 
-      // 3. Hydrate viewer-scoped upvotes if separate read endpoint is available
       try {
         const upvoteRes = await fetch('/api/upvote?action=my-votes');
         if (upvoteRes.ok) {
@@ -204,7 +192,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         }
       } catch {
-        // Vote state fetch failures handled gracefully
       }
     } catch (err: any) {
       setApps([]);
@@ -234,7 +221,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const upvoteApp = useCallback(async (appId: string): Promise<boolean> => {
     const originalUpvotes = apps.find(a => a.id === appId)?.upvotes ?? 0;
 
-    // 1. Optimistic UI update
     setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: (a.upvotes || 0) + 1, hasVoted: true } : a));
     setVotedAppIds(prev => new Set(prev).add(appId));
 
@@ -254,7 +240,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setVotedAppIds(prev => new Set(prev).add(appId));
         return true;
       } else {
-        // 2. Rollback on non-OK response or failed success flag
         setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: originalUpvotes, hasVoted: false } : a));
         setVotedAppIds(prev => {
           const next = new Set(prev);
@@ -268,7 +253,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         throw error;
       }
     } catch (err: any) {
-      // 3. Rollback on network failure or thrown error
       setApps(prev => prev.map(a => a.id === appId ? { ...a, upvotes: originalUpvotes, hasVoted: false } : a));
       setVotedAppIds(prev => {
         const next = new Set(prev);
@@ -309,7 +293,8 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
           binaries: dropData.binaries || {},
           liveUrl: dropData.liveUrl || (dropData.binaries as any)?.web,
           repositoryId: dropData.repositoryId,
-          grantableBps: dropData.grantableBps ?? dropData.grantable_bps
+          grantableBps: dropData.grantableBps ?? dropData.grantable_bps,
+          royaltyBps: dropData.royaltyBps ?? dropData.royalty_bps
         })
       });
 
@@ -320,7 +305,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return { success: false, error: errorMsg };
       }
 
-      // Refresh catalog from authoritative live backend after successful persistence
       await fetchAuthoritativeCatalog({ sort: 'today', batch: 'today' });
       return {
         success: true,
@@ -339,7 +323,6 @@ export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [fetchAuthoritativeCatalog]);
 
   const incrementForkCount = useCallback((_appId: string) => {
-    // Refresh authoritative catalog instead of lying with a local counter
     fetchAuthoritativeCatalog();
   }, [fetchAuthoritativeCatalog]);
 

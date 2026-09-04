@@ -41,7 +41,6 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
       ) VALUES (?, ?, 'usr_nate', 'dronehunter', 'usr_nate', 'v1.0.0', 1, ?, 'usd', 'additive_frozen_liens_house_first', '{}', ?, ?, ?, datetime('now'), datetime('now'))
     `).bind(orderId, `idem_${orderId}`, grossCents, piId, status, stateVersion).run();
 
-    // Root sale, no liens: platform flat 10% off the top, seller keeps R.
     await ctx.d1.prepare(`
       INSERT INTO commerce_order_allocations (
         id, order_id, sequence, role, recipient_user_id,
@@ -79,9 +78,6 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
     return { orderId, piId, eventId, grossCents };
   }
 
-  // ==========================================================================
-  // 1. CONCURRENT RACING PROCESSORS
-  // ==========================================================================
   describe('1. Concurrent Processor Races', () => {
     it('prevents double license minting and outbox creation when multiple workers race simultaneously', async () => {
       const { orderId, piId, eventId, grossCents } = await setupOrderAndEvent('ord_concurrent_race_1');
@@ -99,7 +95,6 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
         })
       } as any);
 
-      // Launch 5 workers concurrently on the exact same event
       const workerResults = await Promise.all([
         processStripeInboxEvent(ctx.d1, defaultEnv(), eventId),
         processStripeInboxEvent(ctx.d1, defaultEnv(), eventId),
@@ -108,32 +103,24 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
         processStripeInboxEvent(ctx.d1, defaultEnv(), eventId)
       ]);
 
-      // At least one worker succeeded in claiming and fulfilling
       const successfulWorkers = workerResults.filter(r => r.success);
       expect(successfulWorkers.length).toBeGreaterThanOrEqual(1);
 
-      // Exactly ONE license minted in D1
       const licenses: any = await ctx.d1.prepare('SELECT * FROM commerce_licenses WHERE order_id = ?').bind(orderId).all();
       expect(licenses.results).toHaveLength(1);
 
-      // Exactly ONE secret record
       const secrets: any = await ctx.d1.prepare('SELECT * FROM commerce_license_secrets WHERE license_id = ?').bind(licenses.results![0].id).all();
       expect(secrets.results).toHaveLength(1);
 
-      // Exactly ONE outbox record
       const outbox: any = await ctx.d1.prepare('SELECT * FROM commerce_transfer_outbox WHERE order_id = ?').bind(orderId).all();
       expect(outbox.results).toHaveLength(1);
 
-      // Order state_version incremented exactly once (from 1 to 2)
       const order: any = await ctx.d1.prepare('SELECT state_version, status FROM commerce_orders WHERE id = ?').bind(orderId).first();
       expect(order.status).toBe('fulfilled');
       expect(order.state_version).toBe(2);
     });
   });
 
-  // ==========================================================================
-  // 2. MONOTONIC STATE TRANSITION REJECTION
-  // ==========================================================================
   describe('2. Monotonic State Transition Rejection', () => {
     it.each([
       ['payment_failed'],
@@ -163,19 +150,14 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
       expect(result.terminal).toBe(true);
       expect(result.error).toMatch(new RegExp(`Cannot fulfill order in non-payable state '${invalidStatus}'`));
 
-      // Verify no licenses were minted
       const licenses: any = await ctx.d1.prepare('SELECT * FROM commerce_licenses WHERE order_id = ?').bind(orderId).all();
       expect(licenses.results).toHaveLength(0);
 
-      // Verify no outbox rows created
       const outbox: any = await ctx.d1.prepare('SELECT * FROM commerce_transfer_outbox WHERE order_id = ?').bind(orderId).all();
       expect(outbox.results).toHaveLength(0);
     });
   });
 
-  // ==========================================================================
-  // 3. RETRYABLE FAILURES & BACKOFF LEASE RELEASE
-  // ==========================================================================
   describe('3. Retryable Failures & Lease Release', () => {
     it('releases claim and sets retryable_failure with backoff when Stripe API fails with network error', async () => {
       const { eventId } = await setupOrderAndEvent('ord_retry_network_1');
@@ -188,7 +170,6 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
       expect(result.retryable).toBe(true);
       expect(result.error).toMatch(/Network error/i);
 
-      // Check inbox row: status must be retryable_failure, claim_token released, next_attempt_at in the future
       const inboxRow: any = await ctx.d1.prepare(`
         SELECT status, claim_token, last_error, next_attempt_at, attempt_count
         FROM stripe_event_inbox WHERE event_id = ?
@@ -199,7 +180,6 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
       expect(inboxRow.attempt_count).toBe(1);
       expect(inboxRow.last_error).toMatch(/Network error/i);
 
-      // Backoff is enforced before another worker may re-claim it.
       const earlyClaim = await claimInboxEvent(ctx.d1, eventId);
       expect(earlyClaim.claimed).toBe(false);
       await ctx.d1.prepare(`
@@ -215,7 +195,7 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
 
       const envWithoutSecret = {
         DB: ctx.d1,
-        // STRIPE_SECRET_KEY missing
+
         LICENSE_ENCRYPTION_KEYS_JSON: keysJson,
         LICENSE_ACTIVE_KEY_VERSION: '1'
       };
@@ -235,14 +215,10 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
     });
   });
 
-  // ==========================================================================
-  // 4. LIVEMODE MISMATCH SECURITY CHECK
-  // ==========================================================================
   describe('4. Livemode Mismatch Protection', () => {
     it('rejects with terminal_failure when event livemode differs from authoritative Stripe livemode', async () => {
       const { orderId, piId, eventId, grossCents } = await setupOrderAndEvent('ord_livemode_mismatch_1');
 
-      // Stripe API reports livemode: true (live production mode), but event was recorded with livemode: false (test mode)
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -251,7 +227,7 @@ describe('Durable Commerce P2: Concurrency, Monotonicity & Race Conditions', () 
           amount: grossCents,
           amount_received: grossCents,
           currency: 'usd',
-          livemode: true, // Livemode mismatch!
+          livemode: true,
           metadata: { orderId }
         })
       } as any);

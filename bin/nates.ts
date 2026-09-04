@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-/**
- * Backward-compatible entry point for early `nates` CLI users.
- *
- * The supported CLI is `slop`. Delegating here keeps old scripts useful without
- * maintaining a second command implementation or fabricating runtime state.
- */
+
 
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';

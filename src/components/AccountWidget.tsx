@@ -20,8 +20,6 @@ export const AccountWidget: React.FC<AccountWidgetProps> = ({
       className={`h-8 px-2.5 bg-[#c0c0c0] text-black border-2 border-gray-500 border-r-white border-b-white flex items-center gap-1.5 font-mono text-[13px] select-none ${className}`}
     >
       {authLoading ? (
-        // Don't flash the logged-out buttons before the session check resolves —
-        // show a neutral placeholder so it never flickers logged-out → logged-in.
         <span className="text-gray-500 flex items-center gap-1.5 px-1">
           <span className="inline-block w-3 h-3 rounded-full border-2 border-gray-400 border-t-transparent animate-spin" />
           <span className="hidden sm:inline">Loading…</span>

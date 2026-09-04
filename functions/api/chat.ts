@@ -19,13 +19,13 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
   if (!CHANNEL.test(channel)) return response({ success: false, error: 'Invalid channel.' }, 400);
 
   try {
-    // 1. Purge expired ephemeral data
+    
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM chat_messages WHERE created_at < datetime('now', '-24 hours')`),
       env.DB.prepare(`DELETE FROM chat_presence WHERE last_seen < datetime('now', '-${PRESENCE_PRUNE_MINUTES} minutes')`)
     ]);
 
-    // 2. Fetch presence (active within last 60s)
+    
     const { results: presenceResults } = await env.DB.prepare(`
       SELECT u.id, u.username AS nick, u.display_name AS displayName, u.avatar_url AS avatar,
              CASE WHEN u.role IN ('admin', 'super_admin') THEN 1 ELSE 0 END AS isOp,
@@ -48,7 +48,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return response({ success: true, channel, presence, transport: 'web' });
     }
 
-    // 3. Fetch topic
+    
     let topic = DEFAULT_TOPIC;
     try {
       const topicRow = await env.DB.prepare(`
@@ -59,7 +59,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     } catch {}
 
-    // 4. Fetch real messages (last 24h)
+    
     const { results: messageResults } = await env.DB.prepare(`
       SELECT m.id, m.channel, u.username AS sender,
              COALESCE(m.message_type, 'PRIVMSG') AS type,
@@ -107,7 +107,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
   if (!CHANNEL.test(channel)) return response({ success: false, error: 'Invalid channel.' }, 400);
 
-  // Heartbeat Action
+  
   if (action === 'heartbeat') {
     try {
       await env.DB.prepare(`
@@ -127,7 +127,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  // Topic Update Action
+  
   if (action === 'topic') {
     const newTopic = String(body?.topic || '').trim();
     if (!newTopic) return response({ success: false, error: 'topic is required' }, 400);
@@ -165,7 +165,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     }
   }
 
-  // Standard Message (PRIVMSG / ACTION)
+  
   const type = String(body?.type || 'PRIVMSG').toUpperCase();
   const text = String(body?.text || '').trim();
 

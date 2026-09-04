@@ -1,12 +1,4 @@
-// Deterministic universal cryptographic digest utilities for DYNO benchmark runner
-// Operates consistently in Node.js, Cloudflare Workers/Pages Functions, and Browser environments.
-
-/**
- * Pure TypeScript standard SHA-256 implementation (FIPS 180-4 compliant).
- * Ensures deterministic hashing across all JavaScript execution targets without native module dependencies.
- */
 function sha256Pure(input: string | Uint8Array | ArrayBuffer): string {
-  // Convert input to Uint8Array UTF-8 bytes
   let bytes: Uint8Array;
   if (typeof input === 'string') {
     if (typeof TextEncoder !== 'undefined') {
@@ -39,7 +31,6 @@ function sha256Pure(input: string | Uint8Array | ArrayBuffer): string {
     bytes = new Uint8Array(input);
   }
 
-  // Initial hash values (first 32 bits of fractional parts of square roots of first 8 primes 2..19)
   let h0 = 0x6a09e667;
   let h1 = 0xbb67ae85;
   let h2 = 0x3c6ef372;
@@ -49,7 +40,6 @@ function sha256Pure(input: string | Uint8Array | ArrayBuffer): string {
   let h6 = 0x1f83d9ab;
   let h7 = 0x5be0cd19;
 
-  // Round constants (first 32 bits of fractional parts of cube roots of first 64 primes 2..311)
   const K = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -61,7 +51,6 @@ function sha256Pure(input: string | Uint8Array | ArrayBuffer): string {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
   ];
 
-  // Pre-processing: padding
   const byteLength = bytes.length;
   const bitLength = byteLength * 8;
   const remainder = (byteLength + 9) % 64;
@@ -71,13 +60,11 @@ function sha256Pure(input: string | Uint8Array | ArrayBuffer): string {
   padded.set(bytes, 0);
   padded[byteLength] = 0x80;
 
-  // Append 64-bit big-endian length
   const view = new DataView(padded.buffer);
   view.setUint32(totalLength - 4, bitLength >>> 0, false);
   const highBits = Math.floor(bitLength / 0x100000000);
   view.setUint32(totalLength - 8, highBits >>> 0, false);
 
-  // Process message in 512-bit (64-byte) blocks
   const W = new Int32Array(64);
   const numBlocks = totalLength / 64;
 
@@ -135,17 +122,10 @@ function sha256Pure(input: string | Uint8Array | ArrayBuffer): string {
   return `${toHex(h0)}${toHex(h1)}${toHex(h2)}${toHex(h3)}${toHex(h4)}${toHex(h5)}${toHex(h6)}${toHex(h7)}`;
 }
 
-/**
- * Computes SHA-256 hex string of input string or buffer deterministically.
- */
 export function sha256(data: string | Uint8Array | ArrayBuffer): string {
   return sha256Pure(data);
 }
 
-/**
- * Canonical JSON serialization with recursively sorted object keys.
- * Ensures deterministic hashes regardless of key insertion order.
- */
 export function canonicalJson(obj: unknown): string {
   if (obj === null || obj === undefined) {
     return JSON.stringify(obj);
@@ -161,19 +141,13 @@ export function canonicalJson(obj: unknown): string {
   return '{' + pairs.join(',') + '}';
 }
 
-/**
- * Computes deterministic SHA-256 digest of an arbitrary object using canonical JSON.
- */
 export function sha256Json(obj: unknown): string {
   return sha256(canonicalJson(obj));
 }
 
-/**
- * Computes SHA-256 digest of a local file in Node environments.
- */
 export async function sha256File(filePath: string): Promise<string> {
   try {
-    const fsPromises = await import(/* @vite-ignore */ 'node:fs/promises');
+    const fsPromises = await import('node:fs/promises');
     const content = await fsPromises.readFile(filePath);
     return sha256(content);
   } catch (err: any) {
@@ -181,14 +155,10 @@ export async function sha256File(filePath: string): Promise<string> {
   }
 }
 
-/**
- * Computes deterministic digest of a file manifest (map of relative paths to contents or sha256 hashes).
- */
 export function digestFileManifest(files: Record<string, string>): string {
   const sortedKeys = Object.keys(files).sort();
   const normalized: Record<string, string> = {};
   for (const key of sortedKeys) {
-    // If value looks like a raw file content, hash it; if it's already a 64-char sha256 hex, keep it
     const val = files[key];
     normalized[key] = val.length === 64 && /^[0-9a-f]{64}$/i.test(val) ? val : sha256(val);
   }

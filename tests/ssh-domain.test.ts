@@ -72,8 +72,8 @@ describe('Shared SSH Public Key Domain & Validator (sshDomain.ts)', () => {
     it('rejects malformed base64 strings', () => {
       const invalidBlobs = [
         'INVALID!BASE64',
-        'AAA AC3Nza', // internal space
-        'AAAA===',    // 3 equal signs
+        'AAA AC3Nza',
+        'AAAA===',
         'AAAA#@$%',
       ];
       for (const blob of invalidBlobs) {

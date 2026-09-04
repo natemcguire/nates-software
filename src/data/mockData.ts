@@ -68,11 +68,9 @@ export interface AppListing {
   repoDefaultRef?: string | null;
   grantable_bps?: number | null;
   grantableBps?: number | null;
+  royaltyBps?: number | null;
+  royalty_bps?: number | null;
   binaries?: {
-    // The real deliverable is the live web app URL. Native-installer fields
-    // (.dmg/.exe/.AppImage) were removed — the platform runs apps on a URL,
-    // it doesn't mint desktop/mobile installers. Index signature kept for
-    // forward-compat with any app-declared extra links.
     web?: string;
     [key: string]: string | undefined;
   };
@@ -81,20 +79,3 @@ export interface AppListing {
   isDemo?: boolean;
   hasVoted?: boolean;
 }
-
-// The fabricated INITIAL_APPS seed fixture (invented upvotes/forks, fake voters
-// including "Sam (AI)", fake comments, and Unsplash stock photos passed off as app
-// screenshots) used to live here and could leak into the UI as demo/fallback data.
-// It was removed pre-launch — the catalog is sourced exclusively from D1 via
-// /api/drops. The AppListing / AppComment / AppDeploymentState types above remain
-// the shared shape used across the app.
-
-
-// NOTE: A fabricated MAKER_PROFILES fixture (invented "Verified Maker"
-// accounts with made-up streaks/fork counts, including an unrelated real
-// person's name) used to live here and render on the live HOTWIRE surface
-// as a fallback whenever the authoritative /api/drops leaderboard fetch
-// failed. That was a fabricated-identity honesty violation (Codex #8) and
-// has been removed. HotwireView now shows an honest "offline / unavailable"
-// empty state instead of synthetic maker profiles. Real maker profiles are
-// sourced exclusively from D1 via /api/drops' makerLeaderboard.

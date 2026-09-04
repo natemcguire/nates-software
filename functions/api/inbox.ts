@@ -1,5 +1,3 @@
-// Authenticated mailbox, replies, and immutable merge-attempt approvals.
-// GITSMITH remains the only authority that may land a Git ref.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { requireAuth } from './_auth';
@@ -49,7 +47,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
     const url = new URL(request.url);
     const action = url.searchParams.get('action');
 
-    // 0. Global Unread Count Action (lightweight badge query; never loads message bodies)
     if (action === 'unread-count') {
       const row = await env.DB.prepare(`
         SELECT COUNT(*) AS n
@@ -59,7 +56,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
       return Response.json({ success: true, unreadCount: Number((row as any)?.n) || 0 });
     }
 
-    // 1. Proposal Diff Action
     if (action === 'diff') {
       const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId') || url.searchParams.get('mergeAttemptId');
       if (!proposalId) return jsonError('proposalId is required', 400);
@@ -143,9 +139,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
       });
     }
 
-    // 1b. Verification Evidence Bundle Action — streams the exact signed R2
-    // object a reviewer must load before approving (see the fail-closed gate
-    // in onRequestPost's approve/reject handler below).
     if (action === 'evidence') {
       const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId') || url.searchParams.get('mergeAttemptId');
       if (!proposalId) return jsonError('proposalId is required', 400);
@@ -185,7 +178,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: { 
       });
     }
 
-    // 2. Proposal Comments & Discussion Thread Action
     if (action === 'comments' || action === 'conversation') {
       const proposalId = url.searchParams.get('proposalId') || url.searchParams.get('messageId');
       if (!proposalId) return jsonError('proposalId is required', 400);
@@ -480,11 +472,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
         return jsonError(`Merge job cannot be ${decision} from status ${proposal.jobStatus}`, 409);
       }
 
-      // Reviewer-saw-OID confirmation gate (fail closed on missing/mismatched evidence).
-      // The client must submit the exact target/source OIDs it displayed to the reviewer
-      // after successfully loading the diff/evidence. This is ADDITIONAL to the existing
-      // CAS and fast-forward checks below — it exists to catch the case where the reviewer
-      // approves based on stale evidence they saw before the underlying attempt moved.
       if (decision === 'approved') {
         const reviewedTargetOid = typeof body.reviewedTargetOid === 'string' ? body.reviewedTargetOid.trim() : '';
         const reviewedSourceOid = typeof body.reviewedSourceOid === 'string' ? body.reviewedSourceOid.trim() : '';
@@ -496,13 +483,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
         }
       }
 
-      // Signed R2 verification-evidence bundle gate (fail closed on missing/mismatched
-      // bundle). ADDITIONAL to the reviewer-saw-OID gate above and the CAS/fast-forward
-      // checks below: a merge attempt may only be approved if its passing RIG
-      // verification run recorded exactly one immutable evidence bundle in R2, and the
-      // bytes at that R2 key still hash to the digest recorded on build_runs at
-      // verification-complete time. Missing STORAGE, a missing object, or any digest
-      // mismatch fails closed — approval never proceeds on unverifiable evidence.
       if (decision === 'approved') {
         if (!proposal.evidenceBundleR2Key || !proposal.evidenceBundleSha256) {
           return jsonError('Cannot approve: no signed verification evidence bundle is recorded for this merge attempt. A passing RIG verification run must produce an evidence bundle before it can be approved.', 409);
@@ -527,8 +507,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: {
       if (rawComment.length > 2_000) return jsonError('Review comment must be 2,000 characters or fewer', 400);
       if (decision === 'rejected' && rawComment.length < 3) return jsonError('A meaningful rejection comment is required', 400);
 
-      // Server-side guard: verify that the proposal is not divergent before approving
-      // Fail closed: return conflict/error UNLESS the repository exists AND getProposalDiff confirms a fast-forward
       if (decision === 'approved') {
         const reposRoot = env.GITSMITH_REPOS_ROOT || process.env.GITSMITH_REPOS_ROOT || path.resolve(process.cwd(), '.gitsmith-repos');
         const storageKey = proposal.storageKey || `repositories/${proposal.repositoryId}`;

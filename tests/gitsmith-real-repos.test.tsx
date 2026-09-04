@@ -5,9 +5,6 @@ import { AuthProvider } from '../src/context/AuthContext';
 import { AlertProvider } from '../src/context/AlertContext';
 
 describe('GITSMITH showcase-file resolution is owner-scoped (no slug-collision content spoof)', () => {
-  // Repo slugs are unique PER-OWNER, not globally. A malicious user could create a
-  // public repo named 'wallart' / 'dronehunter' / etc. Embedded showcase files must
-  // resolve ONLY for nate's canonical repo of that slug — never another owner's.
   it('serves embedded showcase files for nate/<showcase-slug>', () => {
     for (const slug of ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']) {
       const files = showcaseFilesForRepo({ name: slug, owner: 'nate' });
@@ -18,10 +15,8 @@ describe('GITSMITH showcase-file resolution is owner-scoped (no slug-collision c
 
   it('does NOT serve nate\'s showcase files for another owner\'s colliding slug', () => {
     for (const slug of ['dronehunter', 'certified-mailer', 'wallart', 'american-gardener']) {
-      // bob creates a public repo named exactly like a showcase app.
       expect(showcaseFilesForRepo({ name: slug, owner: 'bob' })).toBeUndefined();
       expect(showcaseFilesForRepo({ name: slug, owner: 'attacker' })).toBeUndefined();
-      // Even an owner string that merely contains 'nate' must not match.
       expect(showcaseFilesForRepo({ name: slug, owner: 'natefake' })).toBeUndefined();
       expect(showcaseFilesForRepo({ name: slug, owner: 'nate-evil' })).toBeUndefined();
     }
@@ -58,11 +53,9 @@ describe('GITSMITH Real Repos, File Browser & Readiness Honesty', () => {
   it('initializes in loading state and does not leak bundled fixture repos by default', () => {
     const html = renderComponent();
 
-    // Must show truthful loading message
     expect(html).toContain('LOADING CANONICAL FORGE');
     expect(html).toContain('Loading the forge');
 
-    // Must not show bundled fixture repositories on initial render
     expect(html).not.toContain('nate/dronehunter');
     expect(html).not.toContain('nate/certified-mailer');
     expect(html).not.toContain('nate/wallart');
@@ -110,11 +103,9 @@ describe('GITSMITH Real Repos, File Browser & Readiness Honesty', () => {
   });
 
   it('ensures synthetic README fallback is eliminated and never generated', () => {
-    // Check that the legacy fallback string is nowhere in the rendered output
     const html = renderComponent();
 
     expect(html).not.toContain('Canonical repository metadata is loaded from the control plane');
     expect(html).not.toContain('File browsing requires a commissioned GITSMITH object gateway');
   });
 });
-

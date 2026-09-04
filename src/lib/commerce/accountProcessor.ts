@@ -1,13 +1,3 @@
-// Authoritative Stripe Connect Account Event Processor
-// Handles `account.updated` webhook deliveries by re-fetching the authoritative
-// Stripe Account object (never trusting the webhook body) and durably flipping
-// `stripe_accounts.charges_enabled` / `payouts_enabled` / `onboarding_status`.
-//
-// Mirrors the same "verify from Stripe, never trust the delivered payload" shape
-// used by eventProcessor.ts (payment_intent.succeeded) and refundProcessor.ts.
-// Reuses the existing inbox claim/lease/backoff primitives; does not reimplement
-// any Stripe plumbing.
-
 import { markInboxTerminalFailure, releaseInboxClaim } from './stripeInbox';
 import { ProcessEventResult } from './types';
 
@@ -28,24 +18,6 @@ async function fetchAuthoritativeAccount(env: any, accountId: string, fetchImpl:
   });
 }
 
-/**
- * Processes an `account.updated` event from `stripe_event_inbox`.
- *
- * Requirements:
- * 1. Re-fetches the authoritative Stripe Account (GET /v1/accounts/<id>) using
- *    STRIPE_SECRET_KEY — the webhook body's `data.object` is only used to learn
- *    which account ID to re-fetch, never trusted for economic/state fields.
- * 2. Updates the matching `stripe_accounts` row (by stripe_account_id) with the
- *    authoritative `charges_enabled` / `payouts_enabled` booleans.
- * 3. Sets `onboarding_status = 'complete'` only when Stripe reports
- *    `details_submitted && payouts_enabled`; otherwise honestly reflects
- *    'restricted' (Stripe reported requirements/disabled reason) or 'pending'.
- * 4. Idempotent: re-processing the same or a later account.updated event is a
- *    safe no-op / monotonic overwrite with the latest authoritative snapshot.
- * 5. Fails closed (terminal) if the account has no matching local row — an
- *    account.updated delivery for an account we never onboarded is not
- *    actionable and must not silently pass.
- */
 export async function processAccountInboxEvent(
   db: any,
   env: any,
@@ -102,11 +74,6 @@ export async function processAccountInboxEvent(
   const payoutsEnabled = Boolean(account.payouts_enabled);
   const detailsSubmitted = Boolean(account.details_submitted);
 
-  // Honest, non-optimistic status derivation:
-  // - 'complete' only when Stripe reports full onboarding + payouts capability.
-  // - 'restricted' when Stripe has flagged currently-due or past-due requirements
-  //   (a previously-onboarded account that has since been restricted).
-  // - 'pending' otherwise (still onboarding, nothing enabled yet).
   const currentlyDue = Array.isArray(account.requirements?.currently_due) ? account.requirements.currently_due : [];
   const pastDue = Array.isArray(account.requirements?.past_due) ? account.requirements.past_due : [];
   const disabledReason = account.requirements?.disabled_reason;
@@ -131,13 +98,6 @@ export async function processAccountInboxEvent(
     `).bind(chargesEnabled ? 1 : 0, payoutsEnabled ? 1 : 0, onboardingStatus, accountId)
   ];
 
-  // Best-effort audit trail: if this account's user has any commerce orders,
-  // attach an informational event to the most recent one. account.updated is
-  // account-scoped (not order-scoped) and commerce_order_events requires a
-  // non-null order_id, so there is no dedicated account-event table to write
-  // to here (none exists in the current schema); this is a bonus breadcrumb,
-  // not the source of truth. The source of truth is the stripe_accounts row
-  // update above, which is unconditional.
   try {
     const recentOrder: any = await db.prepare(`
       SELECT id FROM commerce_orders WHERE seller_user_id = ? ORDER BY created_at DESC LIMIT 1
@@ -163,7 +123,6 @@ export async function processAccountInboxEvent(
       );
     }
   } catch {
-    // Non-critical audit breadcrumb; never block the authoritative account flip on it.
   }
 
   statements.push(

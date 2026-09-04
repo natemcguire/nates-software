@@ -30,7 +30,6 @@ import { validateDropSubmission, parseAndValidatePrice } from '../src/lib/hotwir
 
 describe('1. Daily 12:01 AM UTC Batch Rollover & Time-To-Next-Drop Logic', () => {
   it('should assign timestamps before 00:01:00 UTC to previous day batch', () => {
-    // 2026-08-26 00:00:30 UTC -> Batch belongs to 2026-08-25
     const testDate = new Date('2026-08-26T00:00:30.000Z');
     const batch = getCurrentBatchWindow(testDate);
 
@@ -41,21 +40,18 @@ describe('1. Daily 12:01 AM UTC Batch Rollover & Time-To-Next-Drop Logic', () =>
   });
 
   it('should assign timestamps at or after 00:01:00 UTC to current day batch', () => {
-    // 2026-08-26 00:01:00 UTC -> Batch belongs to 2026-08-26
     const exactRollover = new Date('2026-08-26T00:01:00.000Z');
     const batchExact = getCurrentBatchWindow(exactRollover);
     expect(batchExact.batchId).toBe('drop-2026-08-26');
     expect(batchExact.windowStart.toISOString()).toBe('2026-08-26T00:01:00.000Z');
     expect(batchExact.windowEnd.toISOString()).toBe('2026-08-27T00:01:00.000Z');
 
-    // 2026-08-26 14:30:00 UTC -> Batch belongs to 2026-08-26
     const midDay = new Date('2026-08-26T14:30:00.000Z');
     const batchMidDay = getCurrentBatchWindow(midDay);
     expect(batchMidDay.batchId).toBe('drop-2026-08-26');
   });
 
   it('should calculate accurate time to next drop and countdown string', () => {
-    // 2 hours before 00:01:00 UTC cutoff on 2026-08-26
     const twoHoursBefore = new Date('2026-08-25T22:01:00.000Z');
     const countdown = getTimeToNextDrop(twoHoursBefore);
 
@@ -78,7 +74,6 @@ describe('1. Daily 12:01 AM UTC Batch Rollover & Time-To-Next-Drop Logic', () =>
     const sameWindow2 = new Date('2026-08-26T04:00:00.000Z');
     expect(isBatchRollover(sameWindow1, sameWindow2)).toBe(false);
 
-    // Negative time / reverse order should return false
     expect(isBatchRollover(afterCutoff, beforeCutoff)).toBe(false);
   });
 
@@ -104,14 +99,14 @@ describe('2. Hotwire Drop Ranking Algorithm', () => {
   };
 
   it('should compute composite score with upvotes, forks, lineage depth, and velocity', () => {
-    const now = new Date('2026-08-26T06:01:00.000Z'); // 6 hours later
+    const now = new Date('2026-08-26T06:01:00.000Z');
     const result = calculateHotwireScore(baseDrop, { now });
 
     expect(result.score).toBeGreaterThan(0);
-    expect(result.metrics.baseScore).toBe(100 * 1.0 + 20 * 2.5); // 150
-    expect(result.metrics.streakMultiplier).toBeGreaterThan(1.0); // Hot Streak tier
-    expect(result.metrics.lineageBonus).toBeGreaterThan(1.0); // Forks + Depth
-    expect(result.metrics.velocityMultiplier).toBeGreaterThan(1.0); // Velocity bonus
+    expect(result.metrics.baseScore).toBe(100 * 1.0 + 20 * 2.5);
+    expect(result.metrics.streakMultiplier).toBeGreaterThan(1.0);
+    expect(result.metrics.lineageBonus).toBeGreaterThan(1.0);
+    expect(result.metrics.velocityMultiplier).toBeGreaterThan(1.0);
     expect(result.metrics.ageInHours).toBe(6);
     expect(result.metrics.timeDecay).toBeLessThan(1.0);
   });
@@ -193,7 +188,6 @@ describe('3. Maker Streak Calculator & Badge Tiering', () => {
     expect(getMakerBadgeInfo(14).tier).toBe('Legend');
     expect(getMakerBadgeInfo(100).tier).toBe('Legend');
 
-    // Legend badge perk check
     const legendInfo = MAKER_BADGE_TIERS['Legend'];
     expect(legendInfo.multiplier).toBe(1.6);
     expect(legendInfo.feeWaiverPercent).toBe(100);
@@ -228,7 +222,7 @@ describe('3. Maker Streak Calculator & Badge Tiering', () => {
 
   it('should handle grace window (24h - 48h) without resetting streak', () => {
     const drop1 = new Date('2026-08-24T12:00:00Z');
-    const drop2 = new Date('2026-08-25T23:00:00Z'); // 35 hours later
+    const drop2 = new Date('2026-08-25T23:00:00Z');
 
     const result = calculateMakerStreak(drop1, drop2, 6);
     expect(result.newStreak).toBe(7);
@@ -238,7 +232,7 @@ describe('3. Maker Streak Calculator & Badge Tiering', () => {
 
   it('should reset streak to 1 after > 48 hours of inactivity', () => {
     const oldDrop = new Date('2026-08-20T12:00:00Z');
-    const newDrop = new Date('2026-08-26T12:00:00Z'); // 6 days later
+    const newDrop = new Date('2026-08-26T12:00:00Z');
 
     const result = calculateMakerStreak(oldDrop, newDrop, 12);
     expect(result.newStreak).toBe(1);
@@ -251,15 +245,15 @@ describe('3. Maker Streak Calculator & Badge Tiering', () => {
       '2026-08-01T12:00:00Z',
       '2026-08-02T12:00:00Z',
       '2026-08-03T12:00:00Z',
-      '2026-08-04T12:00:00Z', // 4 streak
-      '2026-08-10T12:00:00Z', // Reset
+      '2026-08-04T12:00:00Z',
+      '2026-08-10T12:00:00Z',
       '2026-08-11T12:00:00Z',
       '2026-08-12T12:00:00Z',
       '2026-08-13T12:00:00Z',
       '2026-08-14T12:00:00Z',
       '2026-08-15T12:00:00Z',
       '2026-08-16T12:00:00Z',
-      '2026-08-17T12:00:00Z'  // 8 streak
+      '2026-08-17T12:00:00Z'
     ];
 
     const stats = calculateMakerStreakFromHistory(dropHistory);
@@ -310,12 +304,10 @@ describe('4. Idempotent Upvoting & Cryptographic Hashing', () => {
     expect(firstVote.isNewVote).toBe(true);
     expect(store.hasVoted(firstVote.voterHash, 'app_wallart')).toBe(true);
 
-    // Duplicate vote on same app
     const secondVote = await store.castVote('voter_1', 'app_wallart');
     expect(secondVote.isNewVote).toBe(false);
     expect(secondVote.voterHash).toBe(firstVote.voterHash);
 
-    // Vote on different app by same voter is accepted
     const otherAppVote = await store.castVote('voter_1', 'app_retro_calc');
     expect(otherAppVote.isNewVote).toBe(true);
 
@@ -460,7 +452,7 @@ describe('6. Batch Window Querying, Resolution & Maker Leaderboard', () => {
         id: 'usr_1',
         username: 'alice',
         displayName: 'Alice',
-        dropDates: ['2026-08-26T12:00:00Z', '2026-08-27T12:00:00Z', '2026-08-28T12:00:00Z'] // 3 streak
+        dropDates: ['2026-08-26T12:00:00Z', '2026-08-27T12:00:00Z', '2026-08-28T12:00:00Z']
       },
       {
         id: 'usr_2',
@@ -469,7 +461,7 @@ describe('6. Batch Window Querying, Resolution & Maker Leaderboard', () => {
         dropDates: [
           '2026-08-22T12:00:00Z', '2026-08-23T12:00:00Z', '2026-08-24T12:00:00Z',
           '2026-08-25T12:00:00Z', '2026-08-26T12:00:00Z', '2026-08-27T12:00:00Z',
-          '2026-08-28T12:00:00Z' // 7 streak (Hot Streak)
+          '2026-08-28T12:00:00Z'
         ]
       }
     ];

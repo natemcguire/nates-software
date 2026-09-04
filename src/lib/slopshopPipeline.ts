@@ -1,14 +1,3 @@
-/**
- * SLOPSHOP AI FEATURE SPLICING & MODIFICATION PIPELINE
- * Production Engine for:
- * 1. Environment-neutral feature-package validation & collision detection
- * 2. Reversible forward and inverse unified patch generation
- * 3. Stable SHA-256 cryptographic evidence digest computation
- * 4. Local-first worktree checkout and modification safety
- * 5. Truthful sandbox test execution & persistence migration evidence
- * 6. Zero fabricated success across edge, browser, and host boundaries
- */
-
 import crypto from 'node:crypto';
 
 export interface PipelineWorktreeOptions {
@@ -136,28 +125,21 @@ export interface PreflightPipelineResult {
   readonly error?: string;
 }
 
-// ---------------------------------------------------------------------------
-// 1. Path Normalization & Traversal Checking Helper
-// ---------------------------------------------------------------------------
-
 export function normalizeRelativePath(rawPath: string): { normalized: string; error?: string } {
   if (typeof rawPath !== 'string') {
     return { normalized: '', error: 'Path must be a non-empty string' };
   }
 
-  // Check for null byte injection
   if (rawPath.includes('\0')) {
     return { normalized: '', error: `Path contains null byte: "${rawPath}"` };
   }
 
-  // Normalize Windows backslashes to forward slashes and trim
   const p = rawPath.replace(/\\/g, '/').trim();
 
   if (!p) {
     return { normalized: '', error: 'Path cannot be empty' };
   }
 
-  // Reject absolute paths (POSIX / or Windows C:/)
   if (p.startsWith('/') || /^[a-zA-Z]:\//.test(p)) {
     return { normalized: '', error: `Absolute paths are not allowed: "${rawPath}"` };
   }
@@ -182,24 +164,19 @@ export function normalizeRelativePath(rawPath: string): { normalized: string; er
   return { normalized: normalizedSegments.join('/') };
 }
 
-// ---------------------------------------------------------------------------
-// 2. Deterministic Collision Detectors (Routes, Exports, Schemas)
-// ---------------------------------------------------------------------------
-
 export function inspectRoutes(modifications: readonly FileModification[]): {
   routes: string[];
   collisions: ValidationError[];
 } {
   const routes: string[] = [];
   const collisions: ValidationError[] = [];
-  const routeMap = new Map<string, string>(); // routeKey -> filePath
+  const routeMap = new Map<string, string>();
 
   for (const mod of modifications) {
     const normRes = normalizeRelativePath(mod.path);
     if (normRes.error) continue;
     const filePath = normRes.normalized;
 
-    // Check Cloudflare Pages Functions route files (functions/api/...)
     if (filePath.startsWith('functions/api/')) {
       const routePath = filePath
         .replace(/^functions\/api/, '/api')
@@ -240,7 +217,6 @@ export function inspectRoutes(modifications: readonly FileModification[]): {
       }
     }
 
-    // Check explicit router declarations in code (e.g. app.get('/foo'), router.post('/bar'))
     const routeDeclMatches = Array.from(
       mod.content.matchAll(/(?:app|router|server)\.(get|post|put|delete|patch)\(\s*['"`]([^'"`]+)['"`]/gi)
     );
@@ -276,9 +252,8 @@ export function inspectExports(modifications: readonly FileModification[]): {
     const normRes = normalizeRelativePath(mod.path);
     if (normRes.error) continue;
     const filePath = normRes.normalized;
-    const fileExports = new Map<string, string>(); // exportName -> kind
+    const fileExports = new Map<string, string>();
 
-    // Match export declarations (const, function, class, type, interface, enum, let, var)
     const declRegex = /export\s+(?:async\s+)?(const|function|class|type|interface|enum|let|var)\s+([a-zA-Z0-9_$]+)/g;
     const declMatches = Array.from(mod.content.matchAll(declRegex));
     for (const match of declMatches) {
@@ -297,7 +272,6 @@ export function inspectExports(modifications: readonly FileModification[]): {
       }
     }
 
-    // Match export { a, b as c } blocks
     const blockRegex = /export\s*\{([^}]+)\}/g;
     const blockMatches = Array.from(mod.content.matchAll(blockRegex));
     for (const match of blockMatches) {
@@ -370,10 +344,6 @@ export function inspectSchemaTables(
   return { tables, collisions };
 }
 
-// ---------------------------------------------------------------------------
-// 3. Feature Package Validator
-// ---------------------------------------------------------------------------
-
 export function validateFeaturePackage(params: {
   appId?: string;
   featureName?: string;
@@ -386,7 +356,6 @@ export function validateFeaturePackage(params: {
   const normalizedPaths: string[] = [];
   const seenPaths = new Set<string>();
 
-  // Required field checks
   if (!params.appId || typeof params.appId !== 'string' || !params.appId.trim()) {
     errors.push({
       code: 'MISSING_REQUIRED_FIELD',
@@ -433,7 +402,6 @@ export function validateFeaturePackage(params: {
     errors.push({ code: 'LIMIT_EXCEEDED', message: 'migrationSql may not exceed 1,000,000 characters' });
   }
 
-  // Validate each file modification
   for (let i = 0; i < modifications.length; i++) {
     const mod = modifications[i];
     if (!mod || typeof mod !== 'object') {
@@ -510,7 +478,6 @@ export function validateFeaturePackage(params: {
     }
   }
 
-  // Inspect route, export, and schema collisions
   const routeInspection = inspectRoutes(modifications);
   errors.push(...routeInspection.collisions);
 
@@ -532,10 +499,6 @@ export function validateFeaturePackage(params: {
     }
   };
 }
-
-// ---------------------------------------------------------------------------
-// 4. Deterministic Unified Diff & Inverse Patch Engine (LCS)
-// ---------------------------------------------------------------------------
 
 function splitLines(text: string): string[] {
   if (text.length === 0) return [];
@@ -567,9 +530,6 @@ interface DiffOp {
 }
 
 function buildDiffOps(a: string[], b: string[]): DiffOp[] {
-  // Exact LCS is quadratic. Beyond this bound, emit a deterministic full-file
-  // replacement hunk so edge preflight cannot be used for memory exhaustion.
-  // The resulting patch is larger, but remains valid and exactly reversible.
   if (a.length * b.length > 1_000_000) {
     return [
       ...a.map((line, index) => ({ type: 'del' as const, line, oldIndex: index + 1 })),
@@ -646,7 +606,6 @@ export function generateFileDiff(
     };
   }
 
-  // action === 'modify'
   const beforeLines = splitLines(previousContent);
   const afterLines = splitLines(content);
 
@@ -753,7 +712,6 @@ export function generateInversePatch(modifications: readonly FileModification[])
         previousContent: ''
       };
     } else {
-      // modify
       return {
         path: norm,
         action: 'modify' as const,
@@ -765,10 +723,6 @@ export function generateInversePatch(modifications: readonly FileModification[])
 
   return generateUnifiedDiff(inverseMods);
 }
-
-// ---------------------------------------------------------------------------
-// 5. Stable SHA-256 Cryptographic Evidence Digest
-// ---------------------------------------------------------------------------
 
 export function computeStableEvidenceDigest(params: {
   appId: string;
@@ -801,10 +755,6 @@ export function computeStableEvidenceDigest(params: {
   return `sha256:${hash}`;
 }
 
-// ---------------------------------------------------------------------------
-// 6. Main SlopshopPipelineEngine Class
-// ---------------------------------------------------------------------------
-
 export class SlopshopPipelineEngine {
   private readonly defaultAppId: string;
 
@@ -812,9 +762,6 @@ export class SlopshopPipelineEngine {
     this.defaultAppId = defaultAppId;
   }
 
-  /**
-   * Deterministically validate a feature package without side effects
-   */
   public validatePackage(options: {
     appId?: string;
     featureName: string;
@@ -831,9 +778,6 @@ export class SlopshopPipelineEngine {
     });
   }
 
-  /**
-   * 1. Provision isolated worktree path metadata
-   */
   public checkoutWorktree(options: PipelineWorktreeOptions): {
     worktreePath: string;
     appId: string;
@@ -851,11 +795,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * Host mutation belongs to the local SLOP CLI/runner, not this shared
-   * browser/edge module. Keeping the method as an explicit rejection preserves
-   * the legacy API without pretending files were written.
-   */
   public applyModifications(
     worktreePath: string,
     options: AiAgentExecutionOptions
@@ -879,9 +818,6 @@ export class SlopshopPipelineEngine {
     throw new Error('HOST_RUNNER_REQUIRED: apply the validated patch through the local SLOP CLI or an authenticated runner');
   }
 
-  /**
-   * 3. Produce deterministic unified diff
-   */
   public produceDiff(
     worktreeOrMods: string | readonly FileModification[],
     maybeMods?: readonly FileModification[]
@@ -890,16 +826,10 @@ export class SlopshopPipelineEngine {
     return generateUnifiedDiff(modifications);
   }
 
-  /**
-   * 3b. Produce deterministic inverse unified patch
-   */
   public produceInverseDiff(modifications: readonly FileModification[]): DiffSummary {
     return generateInversePatch(modifications);
   }
 
-  /**
-   * Compute stable SHA-256 evidence digest
-   */
   public computeDigest(params: {
     appId: string;
     featureName: string;
@@ -919,7 +849,6 @@ export class SlopshopPipelineEngine {
     });
   }
 
-  /** Repository-defined persistence changes are executed by the target app. */
   public applyMigrations(
     worktreePath: string,
     migrationSql?: string
@@ -936,9 +865,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * 5. Truthful sandboxed runner
-   */
   public testInSandbox(worktreePath: string, testCount: number = 0): SandboxTestResult {
     void worktreePath;
     return {
@@ -952,9 +878,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * 6. Publish immutable feature ref truthfully (rejects fabricated SHAs)
-   */
   public publishFeatureRef(params: {
     worktreePath: string;
     appId: string;
@@ -974,9 +897,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * 7. CAS Feature Land (Truthfully rejects in-browser/edge merges)
-   */
   public landFeatureRef(featureRef: string, targetRef: string = 'refs/heads/main'): LandFeatureResult {
     return {
       success: false,
@@ -987,9 +907,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * 8. Revert feature ref (Generates real inverse patch if modifications provided)
-   */
   public revertFeatureRef(
     commitSha: string,
     options?: { modifications?: readonly FileModification[] }
@@ -1016,9 +933,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * Truthful Preflight Pipeline Execution
-   */
   public preflightPipeline(params: {
     appId?: string;
     featureName: string;
@@ -1076,9 +990,6 @@ export class SlopshopPipelineEngine {
     };
   }
 
-  /**
-   * Complete End-to-End Preflight & Planning Execution
-   */
   public async executePipeline(params: {
     appId: string;
     featureName: string;

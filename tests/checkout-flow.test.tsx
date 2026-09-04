@@ -5,13 +5,11 @@ import { AuthContext } from '../src/context/AuthContext';
 import { CatalogProvider, useCatalog } from '../src/context/CatalogContext';
 import { AlertProvider } from '../src/context/AlertContext';
 
-// Mock soundEngine
 vi.mock('../src/lib/soundEngine', () => ({
   playClickSound: vi.fn(),
   playSuccessChime: vi.fn()
 }));
 
-// Mock @stripe/stripe-js
 const mockPaymentElementMount = vi.fn();
 const mockPaymentElementOn = vi.fn((event: string, callback: () => void) => {
   if (event === 'ready') callback();
@@ -55,7 +53,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
     creator: 'nate',
     author: 'nate',
     creatorAvatar: '🎨',
-    price: '$59.00', // Should be ignored in favor of server quote!
+    price: '$59.00',
     forkDepth: 2
   };
 
@@ -86,7 +84,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
 
   describe('1. Unauthenticated Checkout Gate', () => {
     it('requires login before checkout and presents login prompt without creating intent', () => {
-      const authValue = createAuthContextValue(null); // Unauthenticated
+      const authValue = createAuthContextValue(null);
       const fetchSpy = vi.fn();
       globalThis.fetch = fetchSpy;
 
@@ -107,7 +105,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
       expect(html).toContain('Authentication Required to Purchase');
       expect(html).toContain('Log In or Register to Buy');
       expect(html).toContain('Cancel');
-      // Must not call create-intent
+
       expect(fetchSpy).not.toHaveBeenCalledWith('/api/payments/create-intent', expect.anything());
     });
   });
@@ -119,7 +117,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
         orderId: 'ord_authoritative_999',
         clientSecret: 'pi_test_secret_123',
         paymentIntentId: 'pi_test_123',
-        amountCents: 4500, // Authoritative $45.00 from backend, NOT $59 or $15
+        amountCents: 4500,
         currency: 'usd',
         publishableKey: 'pk_test_sample_key',
         lineageSnapshot: {
@@ -163,7 +161,6 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
         });
       });
 
-      // Verify contract of create-intent call
       const res = await fetch('/api/payments/create-intent', {
         method: 'POST',
         headers: {
@@ -178,7 +175,7 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
       expect(sentBody.appId).toBe('wallart');
       expect(data.amountCents).toBe(4500);
       expect(data.allocations).toHaveLength(4);
-      expect(data.allocations[0].amountCents).toBe(3150); // 70%
+      expect(data.allocations[0].amountCents).toBe(3150);
       expect(data.allocations[1].recipientUserId).toBe('parent_dev');
       expect(data.allocations[2].recipientUserId).toBe('root_dev');
       expect(data.allocations[3].role).toBe('protocol_pool');
@@ -302,21 +299,18 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
         });
       });
 
-      // 1. Initial poll returns processing
       const poll1 = await fetch(`/api/payments/orders/${orderId}`);
       const data1 = await poll1.json();
       expect(data1.order.status).toBe('processing');
       expect(data1.order.license).toBeNull();
 
-      // 2. Second poll returns fulfilled
       const poll2 = await fetch(`/api/payments/orders/${orderId}`);
       const data2 = await poll2.json();
       expect(data2.order.status).toBe('fulfilled');
       expect(data2.order.license.licenseKey).toBe('NSW-CE-A1B2-C3D4-E5F6-0011');
-      // The real deliverable is the live web app URL, not a native installer.
+
       expect(data2.order.binaries.web).toContain('nates-software.com');
 
-      // 3. Shelf refetch returns the newly owned app
       const shelfRes = await fetch('/api/shelf');
       const shelfData = await shelfRes.json();
       expect(shelfData.shelf).toHaveLength(1);
@@ -371,7 +365,6 @@ describe('Cluster A1: Checkout -> Payment -> Own Real Loop', () => {
       expect(contextRef).toBeTruthy();
       expect(typeof contextRef.refreshShelf).toBe('function');
 
-      // Calling refreshShelf directly invokes /api/shelf
       await contextRef.refreshShelf();
       expect(shelfFetchCount).toBe(1);
     });

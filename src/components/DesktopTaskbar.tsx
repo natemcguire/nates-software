@@ -30,7 +30,6 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
 
   return (
     <div className="fixed bottom-0 left-0 right-0 h-10 bg-[#c0c0c0] border-t-2 border-white flex items-center px-1.5 select-none z-50 shadow-md font-tahoma text-xs">
-      {/* Start Button */}
       <button
         onClick={() => { playClickSound(); onStartClick(); }}
         className="h-7 px-3.5 flex items-center gap-1.5 font-bold border-2 border-white border-r-gray-800 border-b-gray-800 bg-[#c0c0c0] active:border-gray-800 hover:bg-gray-100"
@@ -41,7 +40,6 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
 
       <div className="w-[2px] h-6 bg-gray-400 border-r border-white mx-2" />
 
-      {/* Running Taskbar Buttons */}
       <div className="flex-1 flex gap-1 overflow-x-auto h-7">
         {tabs.map((tab) => (
           <button
@@ -59,10 +57,8 @@ export const DesktopTaskbar: React.FC<DesktopTaskbarProps> = ({
         ))}
       </div>
 
-      {/* Account / Login Widget */}
       <AccountWidget className="mr-1" />
 
-      {/* System Tray (Audio / Clock / Status) — sized up for laptop legibility */}
       <div className="h-8 px-3 bg-[#c0c0c0] border-2 border-gray-500 border-r-white border-b-white flex items-center gap-3">
         <button
           onClick={handleToggleSound}

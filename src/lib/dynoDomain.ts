@@ -1,7 +1,3 @@
-// DYNO Real-World AI Developer Benchmark Suite - Domain & Interface Layer
-// Re-exports canonical types and deterministic runners aligned with migration 0007.
-// Zero random/fabricated scores, zero hardcoded verified leaderboards.
-
 export * from './dyno/types';
 export * from './dyno/crypto';
 export * from './dyno/scoring';
@@ -56,9 +52,9 @@ export interface DynoRunResult {
   readonly runTimestamp: string;
   readonly totalTasks: number;
   readonly tasksCompleted: number;
-  readonly completionRate: number; // 0..100%
-  readonly firstAttemptSuccessRate: number; // 0..100%
-  readonly hiddenTestsPassedRate: number; // 0..100%
+  readonly completionRate: number;
+  readonly firstAttemptSuccessRate: number;
+  readonly hiddenTestsPassedRate: number;
   readonly medianCompletionSeconds: number;
   readonly medianToolCallsPerTask: number;
   readonly totalTokensConsumed: number;
@@ -66,15 +62,12 @@ export interface DynoRunResult {
   readonly totalHumanInterventions: number;
   readonly totalSafetyViolations: number;
   readonly totalUnnecessaryFilesChanged: number;
-  readonly instructionFollowingScore: number; // 0..100
-  readonly overallDynoScore: number; // 0..1000
+  readonly instructionFollowingScore: number;
+  readonly overallDynoScore: number;
   readonly grade: string;
   readonly taskBreakdown: readonly DynoTaskRunRecord[];
 }
 
-/**
- * Neutral real-world developer tasks under test, derived deterministically from canonical fixtures.
- */
 export const REAL_WORLD_DEV_TASKS: readonly DynoTaskSpec[] = NEUTRAL_DEV_FIXTURES.map((f: DynoFixture) => ({
   id: f.key,
   category: f.category,
@@ -85,17 +78,11 @@ export const REAL_WORLD_DEV_TASKS: readonly DynoTaskSpec[] = NEUTRAL_DEV_FIXTURE
   hiddenTestCount: f.hiddenTests.length
 }));
 
-/**
- * Deterministically calculates DYNO score (0..1000) and letter grade with zero randomized numbers.
- */
 export function calculateDynoScore(metrics: DynoScoreMetrics): { score: number; grade: string } {
   const res = calculateScoreInternal(metrics);
   return { score: res.score, grade: res.grade };
 }
 
-/**
- * Backward-compatible grade calculator supporting both score (0..1000) and legacy throughput metrics.
- */
 export function calculateDynoGrade(tokensPerSecOrScore: number, cacheHitRate?: number): string {
   if (typeof cacheHitRate === 'number') {
     if (tokensPerSecOrScore >= 150 && cacheHitRate >= 0.90) return 'Grade A+ (Pro Engineer / M4 Max)';
@@ -110,16 +97,9 @@ export function calculateDynoGrade(tokensPerSecOrScore: number, cacheHitRate?: n
   return 'Grade C (Standard)';
 }
 
-/**
- * Generates dynamic Markdown badge linking to verified DYNO score.
- */
 export function generateBadgeMarkdown(username: string, score: number | string): string {
   const cleanScore = encodeURIComponent(String(score));
   return `[![DYNO Real-World AI Benchmark](https://img.shields.io/badge/DYNO%20Dev%20Score-${cleanScore}%2F1000-blue?style=flat-square&logo=apple)](https://nates-software.com/dyno/@${username})`;
 }
 
-/**
- * Canonical empty preset array. Eliminates fabricated/hardcoded verified leaderboards.
- * Verified runs are queried dynamically from canonical D1 dyno_runs database.
- */
 export const LEADERBOARD_PRESETS: readonly DynoRunResult[] = [];

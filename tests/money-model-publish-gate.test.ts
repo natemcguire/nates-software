@@ -4,22 +4,7 @@ import * as createIntentApi from '../functions/api/payments/create-intent';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
 import { hashSessionToken } from '../functions/api/_session';
 
-// D2 — Prove-it publish gate (assert + document).
-//
-// Ethos (spec §3.7): a Resale (paid) listing may only become purchasable
-// (commerce_products.status = 'active') once its repo has been proven to
-// build/run at least once — "you can only buy software the platform has
-// watched boot." This test file PINS the two halves of that invariant so a
-// regression fails loudly:
-//   1. Publish-side: a listing whose repo has no built commit is persisted
-//      as commerce_products.status = 'draft' (never a fake 'active').
-//   2. Buy-side: create-intent rejects purchasing a 'draft' product and
-//      creates no order.
-//
-// Both halves already exist in the codebase (functions/api/drops.ts
-// `honestProductStatus`, functions/api/payments/create-intent.ts
-// `product.status !== 'active'` guard) — this is a pinning/regression test,
-// not new behavior.
+
 describe('D2: Prove-it publish gate — invariant pin', () => {
   let ctx: TestD1Context;
   const originalFetch = globalThis.fetch;
@@ -62,7 +47,7 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.success).toBe(true);
-    // Honest response contract: caller can see the real status immediately.
+
     expect(data.productStatus).toBe('draft');
 
     const product = await ctx.d1.prepare(
@@ -71,8 +56,7 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
     expect(product).not.toBeNull();
     expect((product as any).status).toBe('draft');
 
-    // The repository itself must genuinely have no resolvable commit —
-    // otherwise this test would be pinning the wrong scenario.
+
     const repoId = data.repositoryId;
     const commit = await ctx.d1.prepare(`
       SELECT rf.commit_oid AS commitOid
@@ -90,8 +74,7 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
     `).run();
     const buyerToken = await createSession('usr_prove_it_buyer', 'tok_prove_it_buyer');
 
-    // Seed a draft (unproven) product directly — mirrors the state the
-    // publish-side test above produces.
+
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES ('prove-it-draft-app', 'Prove It Draft App', 'Draft Tagline', 'Draft Desc', 'usr_nate', 'v1.0.0', 'MIT', '$10', '/data', '[]', '[]', '{}')
@@ -127,7 +110,7 @@ describe('D2: Prove-it publish gate — invariant pin', () => {
     expect(data.success).toBe(false);
     expect(data.error).toMatch(/not active/i);
 
-    // No order was created for the rejected purchase attempt.
+
     const orders = await ctx.d1.prepare(
       'SELECT id FROM commerce_orders WHERE app_id = ?'
     ).bind('prove-it-draft-app').all();

@@ -1,10 +1,3 @@
-// Spec RIG Fix 2 — deploy-readiness preflight gates the publish control.
-// GET /api/product-readiness?appId=...&deploy=1 extends the existing
-// product-readiness projection with an honest, non-fabricated `deploy`
-// preflight over the prerequisites functions/api/deploy.ts itself requires:
-// an active linked repository, a routable hostname/origin, R2 artifact
-// storage, AWS build substrate configuration, and (live-checked, since it is
-// never persisted in D1) the per-app ECR repository.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as readinessApi from '../functions/api/product-readiness';
 import { createTestD1Database, TestD1Context } from './fixtures/d1Harness';
@@ -82,7 +75,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     await seedListing('no-storage-app', { hostname: 'no-storage-app.nates-software.com' });
     await seedRepository('repo-no-storage', 'no-storage-app', 'active');
     const req = new Request('http://localhost/api/product-readiness?appId=no-storage-app&deploy=1');
-    const res = await readinessApi.onRequestGet({ request: req, env: { DB: ctx.d1 /* no STORAGE */ } });
+    const res = await readinessApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
     const data: any = await res.json();
 
     expect(data.readiness.deploy.ready).toBe(false);
@@ -96,7 +89,7 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     const req = new Request('http://localhost/api/product-readiness?appId=no-aws-app&deploy=1');
     const res = await readinessApi.onRequestGet({
       request: req,
-      env: { DB: ctx.d1, STORAGE: {}, AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy' /* build substrate configured, but no AWS creds */ }
+      env: { DB: ctx.d1, STORAGE: {}, AWS_CODEBUILD_DEPLOY_PROJECT: 'nsw-deploy' }
     });
     const data: any = await res.json();
 
@@ -110,9 +103,6 @@ describe('GET /api/product-readiness?deploy=1 — deploy-readiness preflight', (
     await seedListing('all-ready-app', { hostname: 'all-ready-app.nates-software.com', originKind: 'cf_container' });
     await seedRepository('repo-all-ready', 'all-ready-app', 'active');
 
-    // createEcrRepository ultimately calls global fetch via aws4fetch; stub it
-    // to simulate ECR's idempotent RepositoryAlreadyExistsException response
-    // (i.e. the repo is provisioned and reachable) so this test stays offline.
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async () => new Response(
       JSON.stringify({ __type: 'RepositoryAlreadyExistsException', message: 'already exists' }),

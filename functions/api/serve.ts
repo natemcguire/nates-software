@@ -1,7 +1,3 @@
-// Functions API: /api/serve
-// R2-Backed Static Application Artifact Server
-// Serves built static artifacts for active application revisions
-
 import { getMediaType } from '../../src/lib/rig/deployExecutor';
 
 const json = (body: unknown, status = 200) =>
@@ -21,12 +17,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       assetPath = 'index.html';
     }
 
-    // Safety check: Prevent traversal
     if (assetPath.includes('..') || assetPath.includes('\0')) {
       return json({ success: false, error: 'Invalid path' }, 400);
     }
 
-    // 1. Verify app is active in D1
     if (env?.DB) {
       const listing = await env.DB.prepare(`
         SELECT a.id, a.deployment_state AS deploymentState, a.active_deployment_id AS activeDeploymentId,
@@ -47,13 +41,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         }, 503);
       }
 
-      // 2. Fetch from R2 STORAGE
       if (env?.STORAGE) {
         const revKey = `apps/${appId}/revisions/${listing.activeDeploymentId}/${assetPath}`;
         let object = await env.STORAGE.get(revKey);
 
         if (!object) {
-          // Try fallback to index.html if path doesn't have an extension
           if (!pathHasExtension(assetPath)) {
             const indexKey = `apps/${appId}/revisions/${listing.activeDeploymentId}/${assetPath}/index.html`.replace(/\/+/g, '/');
             object = await env.STORAGE.get(indexKey);
@@ -61,7 +53,6 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         }
 
         if (!object) {
-          // Try fallback to live key
           const liveKey = `apps/${appId}/live/${assetPath}`;
           object = await env.STORAGE.get(liveKey);
         }

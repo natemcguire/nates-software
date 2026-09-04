@@ -28,9 +28,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     env = { DB: ctx.d1, GITSMITH_GATEWAY_TOKEN: GATEWAY_SECRET };
   });
 
-  // =========================================================================
-  // 1. MIGRATION 0028, BACKFILL HARDENING & FAIL-CLOSED GUARD
-  // =========================================================================
+
   describe('1. Migration 0028, Backfill Hardening & Self-Consistency CHECK', () => {
     it('backfills seed users with legacy ssh_public_key into user_ssh_keys', async () => {
       const rows = await ctx.d1.prepare(`
@@ -58,7 +56,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         migrations: legacyMigrations
       });
 
-      // Insert custom users with various whitespace and comment formats
+
       await legacyCtx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
         VALUES
@@ -82,7 +80,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
 
       const keyMap = new Map((keys.results || []).map((k: any) => [k.user_id, k]));
 
-      // Alice (with comment)
+
       expect(keyMap.get('usr_alice')).toMatchObject({
         user_id: 'usr_alice',
         key_type: 'ssh-rsa',
@@ -91,7 +89,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         label: 'migrated'
       });
 
-      // Bob (tab-separated with comment)
+
       expect(keyMap.get('usr_bob')).toMatchObject({
         user_id: 'usr_bob',
         key_type: 'ecdsa-sha2-nistp256',
@@ -100,7 +98,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         label: 'migrated'
       });
 
-      // Carol (multi-space with leading/trailing whitespace and comment)
+
       expect(keyMap.get('usr_carol')).toMatchObject({
         user_id: 'usr_carol',
         key_type: 'ssh-ed25519',
@@ -109,7 +107,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         label: 'migrated'
       });
 
-      // Empty user should not have a key
+
       expect(keyMap.has('usr_empty')).toBe(false);
 
       expect(legacyCtx.runForeignKeyCheck()).toEqual([]);
@@ -120,7 +118,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
         'utf8'
       );
-      // Rerun on already-migrated database
+
       await expect(ctx.d1.exec(migrationSql)).resolves.not.toThrow();
 
       const nateKeys = await ctx.d1.prepare(`
@@ -145,14 +143,14 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         migrations: legacyMigrations
       });
 
-      // Insert user with legacy Key B
+
       const KEY_B_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIKeyBInLegacyColumn1234567890123456';
       await legacyCtx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
         VALUES ('usr_partial', 'partial', 'Partial User', 'maker', ?)
       `).bind(`ssh-ed25519 ${KEY_B_B64} partial@laptop`).run();
 
-      // Pre-create table user_ssh_keys and insert Key A for usr_partial
+
       const KEY_A_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIKeyAAlreadyInNewTable1234567890123';
       await legacyCtx.d1.prepare(`
         CREATE TABLE user_ssh_keys (
@@ -174,9 +172,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         VALUES ('key_migrated_usr_partial', 'usr_partial', 'ssh-ed25519', ?, ?, 'old')
       `).bind(KEY_A_B64, `ssh-ed25519 ${KEY_A_B64}`).run();
 
-      // Now run migration 0028:
-      // The INSERT OR IGNORE will skip key_migrated_usr_partial (id collision) so Key B does NOT land.
-      // The exact-prefix guard MUST catch that Key B never landed and ABORT.
+
       const migrationSql = fs.readFileSync(
         path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
         'utf8'
@@ -206,7 +202,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
         'utf8'
       );
-      // Unique constraint prevents second user from landing -> guard fails closed
+
       await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
     });
 
@@ -341,7 +337,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         migrations: legacyMigrations
       });
 
-      // Insert an invalid legacy key type that will not match the parse filter
+
       await legacyCtx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
         VALUES ('usr_corrupt', 'corrupt', 'Corrupt User', 'maker', 'unsupported-key-type AAAAC3NzaC1lZDI1NTE5AAAAI')
@@ -351,7 +347,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         path.join(getMigrationsDir(), '0028_user_ssh_keys.sql'),
         'utf8'
       );
-      // Guard CHECK(x = 0) must trigger and fail the migration
+
       await expect(legacyCtx.d1.exec(migrationSql)).rejects.toThrow(/CHECK constraint failed/);
     });
 
@@ -365,9 +361,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     });
   });
 
-  // =========================================================================
-  // 2. SINGLE AUTHORITATIVE STORE GIT AUTH (git.ts)
-  // =========================================================================
+
   describe('2. Single Authoritative Auth Store in git.ts (#1 & #2 Security Fix)', () => {
     const KEY_TYPE = 'ssh-ed25519';
     const NATE_MIGRATED_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187';
@@ -375,7 +369,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     const SECOND_KEY_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAISecondKeyBlobForSam123456789012345678';
 
     it('a backfilled legacy user authenticates via user_ssh_keys on both gateway actions', async () => {
-      // 1. Identify action
+
       const identifyRes = await gitPost({
         request: gwRequest({
           action: 'gateway-identify-ssh-key',
@@ -389,7 +383,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       expect(identifyData.success).toBe(true);
       expect(identifyData.actorUserId).toBe('usr_nate');
 
-      // 2. Authorize action
+
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, visibility, storage_key, status)
         VALUES ('repo_nate_auth', 'usr_nate', 'dronehunter', 'public', 'repositories/repo_nate_auth', 'active')
@@ -440,14 +434,14 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     });
 
     it('REMOVED migrated key returns 401 from BOTH gateway actions (Proves #1 False Revocation Fixed)', async () => {
-      // Usr_nate has migrated key in user_ssh_keys and users.ssh_public_key
+
       const sessionToken = 'tok_nate_removal_test';
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
         VALUES (?, 'usr_nate', ?)
       `).bind(await hashSessionToken(sessionToken), Date.now() + 100000).run();
 
-      // Nate removes his migrated key via profile API
+
       const removeReq = new Request('http://localhost/api/profile', {
         method: 'POST',
         headers: {
@@ -464,11 +458,11 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       expect(removeRes.status).toBe(200);
       expect(removeData.removed).toBe(true);
 
-      // Verify users.ssh_public_key was ALSO cleared
+
       const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
       expect((userRow as any).ssh_public_key).toBeNull();
 
-      // 1. Identify action MUST return 401
+
       const identifyRes = await gitPost({
         request: gwRequest({
           action: 'gateway-identify-ssh-key',
@@ -481,7 +475,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       const identifyData = await identifyRes.json();
       expect(identifyData.error).toContain('SSH public key is not registered.');
 
-      // 2. Authorize action MUST return 401
+
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, visibility, storage_key, status)
         VALUES ('repo_nate_auth_revoked', 'usr_nate', 'dronehunter', 'public', 'repositories/repo_nate_auth_revoked', 'active')
@@ -504,7 +498,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     });
 
     it('rejects a key present ONLY in legacy users.ssh_public_key (Single Store Enforced, No Fallback)', async () => {
-      // Legacy user inserted after migration, present only in users.ssh_public_key
+
       const UNMIGRATED_B64 = 'AAAAC3NzaC1lZDI1NTE5AAAAIUnmigratedLegacyKeyNotInNewTable123456';
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role, ssh_public_key)
@@ -536,7 +530,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     });
 
     it('resolves exact owner unambiguously with NO cross-store wrong-user resolution possible', async () => {
-      // Sam owns SECOND_KEY_B64 in user_ssh_keys
+
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
         VALUES ('key_sam_exact', 'usr_sam', ?, ?, ?, 'sam-laptop')
@@ -557,7 +551,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     });
 
     it('rejects malformed / oversized / unsupported-type identify requests with 400', async () => {
-      // 1. Unsupported key type
+
       const unsupportedRes = await gitPost({
         request: gwRequest({
           action: 'gateway-identify-ssh-key',
@@ -570,7 +564,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       const unsupportedData = await unsupportedRes.json();
       expect(unsupportedData.error).toContain('Unsupported SSH public key type.');
 
-      // 2. Malformed non-base64
+
       const malformedRes = await gitPost({
         request: gwRequest({
           action: 'gateway-identify-ssh-key',
@@ -583,7 +577,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       const malformedData = await malformedRes.json();
       expect(malformedData.error).toContain('Malformed SSH public key');
 
-      // 3. Oversized (> 16384 chars)
+
       const oversizedRes = await gitPost({
         request: gwRequest({
           action: 'gateway-identify-ssh-key',
@@ -646,21 +640,19 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
     });
   });
 
-  // =========================================================================
-  // 3. AUTHENTICATED PROFILE KEY MANAGEMENT (/api/profile)
-  // =========================================================================
+
   describe('3. Authenticated Profile Key Management (/api/profile)', () => {
     const sessionToken = 'tok_nate_multikey_test';
     const secondUserToken = 'tok_sam_multikey_test';
 
     beforeEach(async () => {
-      // Create session for usr_nate
+
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
         VALUES (?, 'usr_nate', ?)
       `).bind(await hashSessionToken(sessionToken), Date.now() + 100000).run();
 
-      // Create session for usr_sam
+
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
         VALUES (?, 'usr_sam', ?)
@@ -721,7 +713,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       });
       expect(data.key.id).toMatch(/^key_/);
 
-      // Verify user now has 2 keys
+
       const listReq = new Request('http://localhost/api/profile?action=list-ssh-keys', {
         headers: { Authorization: `Bearer ${sessionToken}` }
       });
@@ -797,7 +789,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         VALUES ('key_orig_dup', 'usr_nate', 'ssh-ed25519', ?, ?, 'original')
       `).bind(keyBlob, `ssh-ed25519 ${keyBlob}`).run();
 
-      // Sam tries to register the exact same key
+
       const req = new Request('http://localhost/api/profile', {
         method: 'POST',
         headers: {
@@ -826,7 +818,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         VALUES (?, 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIDeleteMe', ?, 'temp')
       `).bind(keyId, keyPrefix).run();
 
-      // Also set on users.ssh_public_key with a comment
+
       await ctx.d1.prepare(`
         UPDATE users SET ssh_public_key = ? WHERE id = 'usr_nate'
       `).bind(`${keyPrefix} nate@temp`).run();
@@ -863,7 +855,7 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
         VALUES (?, 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAINateScopedKey', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINateScopedKey', 'nate-key')
       `).bind(nateKeyId).run();
 
-      // Sam attempts to delete Nate's key
+
       const req = new Request('http://localhost/api/profile', {
         method: 'POST',
         headers: {
@@ -935,25 +927,25 @@ describe('Multi-SSH-Key Support & Single Authoritative Auth Store Suite', () => 
       expect(data.user.displayName).toBe('Nate McGuire (Updated)');
       expect(data.user.sshKey).toContain('AAAAC3NzaC1lZDI1NTE5AAAAILegacyProfileUpdateKey12345');
 
-      // Verify written to users.ssh_public_key
+
       const userRow = await ctx.d1.prepare('SELECT ssh_public_key FROM users WHERE id = ?').bind('usr_nate').first();
       expect((userRow as any).ssh_public_key).toContain('AAAAC3NzaC1lZDI1NTE5AAAAILegacyProfileUpdateKey12345');
 
-      // Verify written through to user_ssh_keys
+
       const keyRow = await ctx.d1.prepare('SELECT * FROM user_ssh_keys WHERE user_id = ?').bind('usr_nate').first();
       expect(keyRow).not.toBeNull();
       expect((keyRow as any).key_prefix).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILegacyProfileUpdateKey12345');
     });
 
     it('legacy profile sshKey update collides (409) on another user registered key', async () => {
-      // Nate already has a key in user_ssh_keys
+
       const nateKeyBlob = 'AAAAC3NzaC1lZDI1NTE5AAAAINateRegisteredKeyForCollision12345';
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
         VALUES ('key_nate_coll', 'usr_nate', 'ssh-ed25519', ?, ?, 'primary')
       `).bind(nateKeyBlob, `ssh-ed25519 ${nateKeyBlob}`).run();
 
-      // Sam tries to update profile sshKey with Nate's key
+
       const req = new Request('http://localhost/api/profile', {
         method: 'POST',
         headers: {

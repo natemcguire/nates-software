@@ -43,8 +43,6 @@ export class SessionManager {
       throw new Error(`Max concurrent sessions limit reached (${this.limits.maxConcurrentSessions})`);
     }
 
-    // Reserve capacity before the asynchronous provider call so concurrent
-    // upgrades cannot all pass the same preflight and exceed the fleet cap.
     this.pendingCreates++;
     let session: TerminalSession;
     try {
@@ -54,14 +52,12 @@ export class SessionManager {
     }
     const sessionId = session.id;
 
-    // Set Hard TTL Timer
     const ttlMs = this.limits.sessionTtlSeconds * 1000;
     const ttlTimer = setTimeout(async () => {
       console.log(`[SessionManager] Session ${sessionId} reached hard TTL (${this.limits.sessionTtlSeconds}s). Terminating.`);
       await this.destroySession(sessionId, 'Hard TTL expired');
     }, ttlMs);
 
-    // Set Idle Check Interval (check every 15 seconds)
     const idleCheckTimer = setInterval(async () => {
       const idleMs = Date.now() - session.lastActivityAt;
       if (idleMs > this.limits.idleTimeoutSeconds * 1000) {
@@ -81,7 +77,6 @@ export class SessionManager {
 
     this.sessions.set(sessionId, managed);
 
-    // Handle exit
     session.onExit(() => {
       this.destroySession(sessionId, 'Process exited').catch(() => {});
     });
@@ -105,7 +100,7 @@ export class SessionManager {
 
     managed.byteCountWindow += chunkSize;
     if (managed.byteCountWindow > this.limits.maxOutputRateBytesPerSec) {
-      return false; // Rate limit exceeded
+      return false;
     }
 
     return true;

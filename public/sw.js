@@ -1,9 +1,3 @@
-// Nate's Software Service Worker v2
-// Fix: v1 was cache-first for everything, so it served a STALE precached
-// /index.html across deploys — pointing at old hashed asset filenames that
-// 404 and fall back to HTML, breaking MIME. v2 is network-first for the HTML
-// shell and navigations (always pick up fresh asset hashes) and only
-// cache-first for content-hashed /assets/* (which are immutable).
 const CACHE_NAME = 'nates-software-v3';
 const CORE_ASSETS = [
   '/manifest.webmanifest',
@@ -38,21 +32,13 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Never intercept cross-origin requests. In particular the Local Agent
-  // Mailbox fetches http://127.0.0.1:8791 from this page; if the SW wrapped
-  // that fetch, a failure would resolve to caches.match() -> a synthesized
-  // bogus response instead of letting the browser handle the cross-origin
-  // request (and its local-network permission) natively.
   if (url.origin !== self.location.origin) return;
 
-  // API: network-first, no stale serving.
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(request).catch(() => caches.match(request)));
     return;
   }
 
-  // HTML shell / navigations: NETWORK-FIRST so new deploys' asset hashes load.
-  // Never serve a stale precached index.html. Fall back to cache only offline.
   if (isNavigation(request)) {
     event.respondWith(
       fetch(request).catch(() => caches.match('/index.html') || caches.match('/'))
@@ -60,7 +46,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Content-hashed /assets/* are immutable → cache-first is safe and fast.
   if (url.pathname.startsWith('/assets/')) {
     event.respondWith(
       caches.match(request).then((cached) => cached || fetch(request).then((response) => {
@@ -74,6 +59,5 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Everything else: network-first, cache fallback.
   event.respondWith(fetch(request).catch(() => caches.match(request)));
 });

@@ -1,14 +1,8 @@
-// POST /api/auth?action=register
-// POST /api/auth?action=login
-// POST /api/auth?action=logout
-// POST /api/auth?action=claim-credentials
-// POST /api/auth?action=create-cli-token
-// GET  /api/auth?action=me
+
 
 import { extractSessionToken, hashSessionToken, sessionCookie } from './_session';
 import { requireAuth } from './_auth';
 
-// Constant-time string comparison using SHA-256 digest XOR to prevent timing leaks
 async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) {
     return false;
@@ -25,7 +19,6 @@ async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   return diff === 0;
 }
 
-// Web Crypto PBKDF2 Password Hashing (100,000 rounds)
 export async function hashPassword(password: string, saltHex: string): Promise<string> {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -111,14 +104,14 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       }
     }
 
-    // Default guest
+    
     return Response.json({ success: true, user: null, authenticated: false });
   } catch (err: any) {
-    // A session *read* failing (e.g. a transient cold-D1 hiccup) is not a fault
-    // the visitor should see as a red 500 in the console during first-run — and
-    // it can never grant access. Degrade to an honest "not authenticated" 200;
-    // the client's AuthContext treats that as a plain guest. (Mutations below
-    // still fail-closed with 500 — this soft path is GET/session-check only.)
+    
+    
+    
+    
+    
     console.error('[AUTH] session lookup error (degrading to guest):', err?.message || err);
     return Response.json({ success: true, user: null, authenticated: false });
   }
@@ -327,7 +320,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
         }
 
-        // Placeholder accounts cannot log in directly until claimed via credential bootstrap
+        
         if (user.password_hash === 'seeded_super_admin' || user.password_hash === 'seeded_bot') {
           return Response.json({
             success: false,
@@ -339,7 +332,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });
         }
 
-        // Strictly verify password using PBKDF2 Web Crypto
+        
         const testHash = await hashPassword(password, user.salt);
         if (testHash !== user.password_hash) {
           return Response.json({ success: false, error: 'Invalid username or password' }, { status: 401 });

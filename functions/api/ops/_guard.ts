@@ -1,13 +1,3 @@
-// Shared super_admin gate for the OPS operator health/reconciliation surface.
-// Both GET /api/ops/health and GET /api/ops/dead-letters use this — a single
-// choke point so the "never leak internal queue state to non-admins" rule
-// can't drift between the two routes.
-//
-// 401: no valid authenticated session (requireAuth's own failure path).
-// 403: authenticated, but role !== 'super_admin'. The 403 body is
-// deliberately generic — it does not confirm or deny that the resource
-// exists beyond "you may not see it."
-
 import { requireAuth, type AuthenticatedUser } from '../_auth';
 
 export interface OpsGuardResult {

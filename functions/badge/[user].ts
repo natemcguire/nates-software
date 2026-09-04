@@ -1,7 +1,3 @@
-// Cloudflare Pages Function: GET /badge/:user.svg or GET /badge/:user
-// Dynamic SVG badge server querying canonical DYNO benchmark results from Cloudflare D1
-// Strictly aligned with migrations/0007_dyno_real_world_benchmarks.sql
-
 export const onRequestGet = async ({ params, env }: { params: { user: string }; env: any }) => {
   try {
     const rawUser = params.user || 'nate';
@@ -35,15 +31,14 @@ export const onRequestGet = async ({ params, env }: { params: { user: string }; 
       }
     }
 
-    // Color based on verification level and score
-    let badgeColor = '#6b7280'; // gray default for unverified/no run
+    let badgeColor = '#6b7280';
     if (hasRun) {
       if (verificationStatus === 'verified' || verificationStatus === 'reproducible') {
-        if (score >= 800) badgeColor = '#059669'; // emerald (pro/elite)
-        else if (score >= 700) badgeColor = '#0284c7'; // sky blue (senior)
-        else badgeColor = '#d97706'; // amber (standard)
+        if (score >= 800) badgeColor = '#059669';
+        else if (score >= 700) badgeColor = '#0284c7';
+        else badgeColor = '#d97706';
       } else {
-        badgeColor = '#4b5563'; // neutral slate for unverified
+        badgeColor = '#4b5563';
       }
     }
 

@@ -65,11 +65,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   const { isAuthenticated, openAuthModal } = useAuth();
   const { refreshCatalog, refreshShelf } = useCatalog();
 
-  // Per-attempt idempotency key (retained across retries of the same attempt)
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => crypto.randomUUID());
 
-  // Checkout lifecycle status:
-  // 'auth_required' | 'init' | 'commissioning' | 'ready' | 'processing' | 'polling' | 'fulfilled' | 'timeout' | 'error'
   const [status, setStatus] = useState<string>(() => (!isAuthenticated ? 'auth_required' : 'init'));
   const [quote, setQuote] = useState<ServerIntentQuote | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -83,7 +80,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   const paymentContainerRef = useRef<HTMLDivElement | null>(null);
   const pollTimerRef = useRef<any>(null);
 
-  // Clean up on close / unmount
   const cleanupStripe = useCallback(() => {
     if (paymentElementRef.current) {
       try {
@@ -100,7 +96,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
     }
   }, []);
 
-  // Initialize fresh idempotency key when modal opens
   useEffect(() => {
     if (isOpen) {
       setIdempotencyKey(crypto.randomUUID());
@@ -118,7 +113,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
     }
   }, [isOpen, isAuthenticated, cleanupStripe]);
 
-  // Fetch authoritative intent & quote from server
   const fetchIntent = useCallback(async (currentKey: string) => {
     if (!isAuthenticated) {
       setStatus('auth_required');
@@ -178,7 +172,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
     }
   }, [isAuthenticated, app.id, cleanupStripe]);
 
-  // Trigger intent fetch when opening or when auth status changes
   useEffect(() => {
     if (!isOpen) return;
     if (!isAuthenticated) {
@@ -188,7 +181,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
     }
   }, [isOpen, isAuthenticated, idempotencyKey, fetchIntent]);
 
-  // Mount Stripe Elements when quote is ready
   useEffect(() => {
     if (status !== 'ready' || !quote || !paymentContainerRef.current) return;
 
@@ -243,7 +235,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
     };
   }, [status, quote, cleanupStripe]);
 
-  // Poll buyer-scoped order fulfillment endpoint
   const pollOrderFulfillment = useCallback(async (orderId: string, maxAttempts = 25) => {
     setStatus('polling');
     let attempts = 0;
@@ -280,7 +271,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
       if (attempts < maxAttempts) {
         pollTimerRef.current = setTimeout(checkStatus, 1000);
       } else {
-        // Polling timeout fallback
         setStatus('timeout');
         try {
           await refreshShelf();
@@ -292,7 +282,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
     checkStatus();
   }, [refreshShelf, refreshCatalog]);
 
-  // Form submission handler
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!stripeRef.current || !elementsRef.current || !quote) return;
@@ -315,7 +304,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
 
       const pi = result.paymentIntent;
       if (pi && (pi.status === 'succeeded' || pi.status === 'processing' || pi.status === 'requires_capture')) {
-        // Begin polling authoritative order fulfillment
         await pollOrderFulfillment(quote.orderId);
       } else if (pi?.status === 'requires_action') {
         setStatus('error');
@@ -338,14 +326,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
 
   if (!isOpen) return null;
 
-  // Authoritative calculations from server quote (NO client guessing)
   const formattedPrice = quote
     ? `$${(quote.amountCents / 100).toFixed(2)}`
     : typeof app.price === 'number'
       ? `$${app.price.toFixed(2)}`
       : `$${(parseInt(String(app.price || '15').replace(/[^0-9.]/g, ''), 10) || 15).toFixed(2)}`;
 
-  // Parse authoritative allocations for display
   const makerAlloc = quote?.allocations?.find(a => a.role === 'seller');
   const poolAlloc = quote?.allocations?.find(a => a.role === 'platform');
   const ancestorAllocs = quote?.allocations?.filter(a => a.role === 'ancestor') || [];
@@ -355,7 +341,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4 font-tahoma text-xs">
       <div className="w-full max-w-lg bg-w95-gray border-2 border-t-white border-l-white border-b-black border-r-black shadow-2xl p-1 max-h-[95vh] flex flex-col">
-        {/* Win95 Blue Title Bar */}
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs shrink-0">
           <div className="flex items-center gap-1.5">
             <Lock size={13} className="text-yellow-300" />
@@ -370,7 +355,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
         </div>
 
         <div className="p-4 bg-w95-gray space-y-4 overflow-y-auto flex-1">
-          {/* STATE 1: Unauthenticated */}
           {status === 'auth_required' && (
             <div className="space-y-4">
               <div className="bg-amber-50 border-2 border-amber-500 p-3 text-amber-950 flex items-start gap-2.5">
@@ -408,7 +392,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </div>
           )}
 
-          {/* STATE 2: Commissioning / Not Configured */}
           {status === 'commissioning' && (
             <div className="space-y-4">
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
@@ -431,6 +414,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                   <div className="mt-1 leading-relaxed text-[11px]">
                     {checkoutError || "Stripe test mode and settlement secrets are being configured on the server. Buying turns on once Stripe keys, order fulfillment, and payout splits all work together end to end."}
                   </div>
+                  <div className="mt-2 text-[11px]">
+                    Want it the moment it's live?{' '}
+                    <a
+                      href={`mailto:nate.mcguire@gmail.com?subject=${encodeURIComponent(`Notify me when I can buy ${app.name}`)}&body=${encodeURIComponent(`Ping me when checkout is live for ${app.name} (${app.id || ''}).`)}`}
+                      className="font-bold underline text-w95-blue"
+                    >
+                      Notify me when buying is live →
+                    </a>
+                  </div>
                 </div>
               </div>
 
@@ -446,7 +438,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </div>
           )}
 
-          {/* STATE 3: Loading quote / intent */}
           {status === 'init' && (
             <div className="p-8 text-center space-y-3">
               <RefreshCw size={24} className="animate-spin text-w95-blue mx-auto" />
@@ -455,10 +446,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </div>
           )}
 
-          {/* STATE 4 & 5: Ready to Pay / Processing / Error */}
           {(status === 'ready' || status === 'processing' || status === 'error') && (
             <form onSubmit={handlePay} className="space-y-3">
-              {/* Product Header with Authoritative Price */}
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-2xl">{app.creatorAvatar || app.authorAvatar || '🎯'}</span>
@@ -473,7 +462,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               </div>
 
-              {/* Authoritative Lineage Allocation Breakdown from Server Quote */}
               {quote && (
                 <div className="bg-blue-50 border border-blue-300 p-2.5 rounded font-mono text-[11px] space-y-1">
                   <div className="font-bold text-blue-950 flex items-center gap-1">
@@ -481,7 +469,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                     <span>Authoritative Lineage Split:</span>
                   </div>
 
-                  {/* Seller Allocation */}
                   {makerAlloc && (
                     <div className="flex justify-between text-gray-700">
                       <span>
@@ -491,17 +478,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                     </div>
                   )}
 
-                  {/* Ancestor Allocations (frozen royalty owed to upstream makers) */}
                   {ancestorAllocs.map((anc, idx) => (
                     <div key={idx} className="flex justify-between text-gray-700">
                       <span>
-                        💎 {(anc.basisPoints / 100).toFixed(0)}% to ancestor ({anc.recipientUserId ? `@${anc.recipientUserId}` : `Depth ${anc.lineageDepth ?? idx + 1}`}):
+                        💎 {(anc.basisPoints / 100).toFixed(0)}% to upstream maker ({anc.recipientUserId ? `@${anc.recipientUserId}` : `Depth ${anc.lineageDepth ?? idx + 1}`}):
                       </span>
                       <span className="font-bold">${(anc.amountCents / 100).toFixed(2)}</span>
                     </div>
                   ))}
 
-                  {/* Platform Allocation */}
                   {poolAlloc && (
                     <div className="flex justify-between text-gray-700">
                       <span>🛡️ {(poolAlloc.basisPoints / 100).toFixed(0)}% to platform:</span>
@@ -511,7 +496,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               )}
 
-              {/* Stripe Payment Element Container */}
               <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 min-h-[160px] relative">
                 {!isStripeReady && status !== 'error' && (
                   <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
@@ -561,7 +545,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </form>
           )}
 
-          {/* STATE 6: Polling fulfillment */}
           {status === 'polling' && (
             <div className="p-6 text-center space-y-4">
               <div className="w-12 h-12 bg-blue-100 border-2 border-w95-blue rounded-full flex items-center justify-center mx-auto text-w95-blue">
@@ -579,7 +562,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </div>
           )}
 
-          {/* STATE 7: Fulfilled Success */}
           {status === 'fulfilled' && (
             <div className="space-y-4">
               <div className="bg-emerald-50 border-2 border-emerald-600 p-3.5 rounded flex items-center gap-3">
@@ -594,7 +576,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               </div>
 
-              {/* License Key Box */}
               {fulfilledOrder?.license && (
                 <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-2">
                   <div className="flex items-center justify-between text-gray-700">
@@ -630,7 +611,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               )}
 
-              {/* Download / Launch Actions */}
               {artifactLinks.length > 0 && (
                 <div className="space-y-1.5">
                   <div className="font-bold text-gray-800 text-xs">Downloads &amp; Access:</div>
@@ -663,11 +643,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
             </div>
           )}
 
-          {/* STATE 8: Polling Timeout — we stopped waiting for fulfillment; the
-              outcome is NOT known yet. Do NOT claim the payment succeeded: polling
-              exhausted without the order reaching 'fulfilled', so it may still be
-              settling, or it may have failed. Tell the honest truth and point the
-              user at the authoritative source (their Shelf). */}
           {status === 'timeout' && (
             <div className="space-y-4">
               <div className="bg-amber-50 border-2 border-amber-500 p-3.5 rounded flex items-center gap-3">

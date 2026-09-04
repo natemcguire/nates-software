@@ -20,9 +20,6 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
     '2': keyV2
   });
 
-  // ==========================================================================
-  // 1. LICENSE KEY GENERATION & HASHING
-  // ==========================================================================
   describe('1. License Key Generation, Hashing & Formatting', () => {
     it('generates a formatted license key with application prefix', () => {
       const key = generateLicenseKey('dronehunter');
@@ -51,11 +48,9 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
       expect(hash).toHaveLength(64);
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
 
-      // Deterministic hash check
       const hash2 = await hashLicenseKey(key);
       expect(hash).toBe(hash2);
 
-      // Different key produces different hash
       const hash3 = await hashLicenseKey('NSW-DH-8F12-9A4C');
       expect(hash).not.toBe(hash3);
     });
@@ -67,9 +62,6 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
     });
   });
 
-  // ==========================================================================
-  // 2. ENCRYPTION KEY PARSING & VALIDATION
-  // ==========================================================================
   describe('2. Versioned Encryption Key Map Parsing', () => {
     it('successfully parses single and multi-version key maps', () => {
       const map = parseEncryptionKeys(validKeysJson);
@@ -96,17 +88,14 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
     });
 
     it('rejects keys that are not exactly 32 bytes (256-bit)', () => {
-      const shortKey = bytesToBase64(new Uint8Array(16)); // 128-bit
-      const longKey = bytesToBase64(new Uint8Array(64)); // 512-bit
+      const shortKey = bytesToBase64(new Uint8Array(16));
+      const longKey = bytesToBase64(new Uint8Array(64));
 
       expect(() => parseEncryptionKeys(JSON.stringify({ '1': shortKey }))).toThrow(/must be 32 bytes/);
       expect(() => parseEncryptionKeys(JSON.stringify({ '1': longKey }))).toThrow(/must be 32 bytes/);
     });
   });
 
-  // ==========================================================================
-  // 3. AES-256-GCM ENCRYPTION & DECRYPTION ROUNDTRIP
-  // ==========================================================================
   describe('3. AES-256-GCM Encryption, Decryption & Key Rotation', () => {
     it('successfully encrypts and decrypts a license key with active version 1', async () => {
       const licenseKey = 'NSW-DH-A1B2-C3D4';
@@ -136,12 +125,10 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
       const enc1 = await encryptLicenseSecret(licenseKey, env);
       const enc2 = await encryptLicenseSecret(licenseKey, env);
 
-      // IVs must be random and unique
       expect(enc1.ivBase64).not.toBe(enc2.ivBase64);
-      // Ciphertexts must differ due to unique IVs
+
       expect(enc1.ciphertextBase64).not.toBe(enc2.ciphertextBase64);
 
-      // Both decrypt back to identical plaintext
       expect(await decryptLicenseSecret(enc1, env)).toBe(licenseKey);
       expect(await decryptLicenseSecret(enc2, env)).toBe(licenseKey);
     });
@@ -150,21 +137,18 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
       const licenseKey1 = 'NSW-WA-1111-2222';
       const licenseKey2 = 'NSW-WA-3333-4444';
 
-      // Secret 1 encrypted with key version 1
       const encV1 = await encryptLicenseSecret(licenseKey1, {
         LICENSE_ENCRYPTION_KEYS_JSON: validKeysJson,
         LICENSE_ACTIVE_KEY_VERSION: '1'
       });
       expect(encV1.keyVersion).toBe(1);
 
-      // Secret 2 encrypted with active key version 2
       const encV2 = await encryptLicenseSecret(licenseKey2, {
         LICENSE_ENCRYPTION_KEYS_JSON: validKeysJson,
         LICENSE_ACTIVE_KEY_VERSION: '2'
       });
       expect(encV2.keyVersion).toBe(2);
 
-      // Both decrypt correctly from the multi-key map
       const multiKeyEnv = { LICENSE_ENCRYPTION_KEYS_JSON: validKeysJson };
       expect(await decryptLicenseSecret(encV1, multiKeyEnv)).toBe(licenseKey1);
       expect(await decryptLicenseSecret(encV2, multiKeyEnv)).toBe(licenseKey2);
@@ -174,7 +158,7 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
       await expect(
         encryptLicenseSecret('NSW-DH-1234-5678', {
           LICENSE_ENCRYPTION_KEYS_JSON: validKeysJson,
-          LICENSE_ACTIVE_KEY_VERSION: 99 // version 99 does not exist
+          LICENSE_ACTIVE_KEY_VERSION: 99
         })
       ).rejects.toThrow(/Active key version 99 not found/);
     });
@@ -188,7 +172,6 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
 
       const encrypted = await encryptLicenseSecret(licenseKey, env);
 
-      // Flip a bit in the ciphertext
       const rawCipher = base64ToBytes(encrypted.ciphertextBase64);
       rawCipher[0] ^= 0x01;
       const tamperedCiphertextBase64 = bytesToBase64(rawCipher);
@@ -213,7 +196,6 @@ describe('Durable Commerce P2: Cryptographic License & Secret Engine', () => {
 
       const encrypted = await encryptLicenseSecret(licenseKey, env);
 
-      // Flip a bit in the IV
       const rawIv = base64ToBytes(encrypted.ivBase64);
       rawIv[0] ^= 0xff;
       const tamperedIvBase64 = bytesToBase64(rawIv);

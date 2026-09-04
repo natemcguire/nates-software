@@ -28,10 +28,10 @@ describe('buildInheritedLiens (pure)', () => {
     ];
     const result = buildInheritedLiens(
       parentLiens,
-      1000, // parentListingBps (Bob's rate)
-      'repo_b', // parentRepositoryId (Bob)
-      'bob', // parentUserId
-      'repo_c' // childRepositoryId (Carol)
+      1000,
+      'repo_b',
+      'bob',
+      'repo_c'
     );
 
     expect(result.liens).toEqual([
@@ -132,7 +132,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
     await createSession('usr_bob', 'session_bob');
     await createSession('usr_carol', 'session_carol');
 
-    // 1. Ann creates the root repository and activates it via gateway ref record.
+
     const annCreateRes = await postAsUser('session_ann', { action: 'create-repository', slug: 'ann-root' });
     expect(annCreateRes.status).toBe(201);
     const annRepoId = (await annCreateRes.json()).repository.id;
@@ -147,7 +147,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       idempotencyKey: 'ann_init_ref'
     });
 
-    // Ann's listing royalty rate: 10% (1000 bps).
+
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES ('app_ann', 'Ann Root', 'Tagline', 'Desc', 'usr_ann', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
@@ -157,7 +157,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       VALUES ('app_ann', ?, 'usr_ann', 1000, 'usd', 'active', 1000)
     `).bind(annRepoId).run();
 
-    // 2. Bob forks Ann (Phase 1 request + Phase 2 gateway confirm).
+
     const bobForkReq = await postAsUser('session_bob', {
       action: 'fork', parentRepositoryId: annRepoId, childSlug: 'bob-fork', parentRefName: 'refs/heads/main'
     });
@@ -177,7 +177,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
     });
     expect(bobConfirmRes.status).toBe(201);
 
-    // Bob's own listing royalty rate: also 10% (1000 bps).
+
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES ('app_bob', 'Bob Fork', 'Tagline', 'Desc', 'usr_bob', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
@@ -187,7 +187,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       VALUES ('app_bob', ?, 'usr_bob', 1000, 'usd', 'active', 1000)
     `).bind(bobRepoId).run();
 
-    // Bob's repo needs to be active + have a ref to fork from; advance to OID_2 to give Carol something to pin.
+
     await post({
       action: 'gateway-record-ref',
       repositoryId: bobRepoId,
@@ -198,7 +198,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       idempotencyKey: 'bob_advance_ref'
     });
 
-    // 3. Carol forks Bob (Phase 1 request + Phase 2 gateway confirm).
+
     const carolForkReq = await postAsUser('session_carol', {
       action: 'fork', parentRepositoryId: bobRepoId, childSlug: 'carol-fork', parentRefName: 'refs/heads/main'
     });
@@ -218,7 +218,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
     });
     expect(carolConfirmRes.status).toBe(201);
 
-    // 4. Assert repository_fork_liens for Carol's repo = Ann@1000/depth2 + Bob@1000/depth1.
+
     const lienRows: any = await ctx.d1.prepare(`
       SELECT holder_of_repository_id AS holderOfRepositoryId, ancestor_repository_id AS ancestorRepositoryId,
              ancestor_user_id AS ancestorUserId, bps, depth
@@ -231,7 +231,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       { holderOfRepositoryId: carolRepoId, ancestorRepositoryId: bobRepoId, ancestorUserId: 'usr_bob', bps: 1000, depth: 1 },
     ]);
 
-    // 5. Bob's own repo should carry exactly one lien: Ann@1000/depth1.
+
     const bobLienRows: any = await ctx.d1.prepare(`
       SELECT holder_of_repository_id AS holderOfRepositoryId, ancestor_repository_id AS ancestorRepositoryId,
              ancestor_user_id AS ancestorUserId, bps, depth
@@ -268,7 +268,7 @@ describe('gateway-confirm-fork: lien capture integration (real D1 + real handler
       operation: 'create',
       idempotencyKey: 'dave_init_ref'
     });
-    // No commerce_products row for Dave's repo -> royalty_bps treated as 0.
+
 
     const erinForkReq = await postAsUser('session_erin', {
       action: 'fork', parentRepositoryId: daveRepoId, childSlug: 'erin-fork', parentRefName: 'refs/heads/main'
@@ -346,7 +346,7 @@ describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
     await createSession('usr_bob', 'session_bob');
     await createSession('usr_carol', 'session_carol');
 
-    // 1. Ann creates the root repository with a 60% royalty rate.
+
     const annCreateRes = await postAsUser('session_ann', { action: 'create-repository', slug: 'ann-root-b3' });
     expect(annCreateRes.status).toBe(201);
     const annRepoId = (await annCreateRes.json()).repository.id;
@@ -370,7 +370,7 @@ describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
       VALUES ('app_ann_b3', ?, 'usr_ann', 1000, 'usd', 'active', 6000)
     `).bind(annRepoId).run();
 
-    // 2. Bob forks Ann (inherits Ann@6000/depth1). Well under 10000, allowed.
+
     const bobForkReq = await postAsUser('session_bob', {
       action: 'fork', parentRepositoryId: annRepoId, childSlug: 'bob-fork-b3', parentRefName: 'refs/heads/main'
     });
@@ -389,8 +389,7 @@ describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
     });
     expect(bobConfirmRes.status).toBe(201);
 
-    // Bob sets his own rate to 60% too. Bob's repo carries Ann@6000/depth1.
-    // Anyone forking Bob would inherit Ann@6000/depth2 + Bob@6000/depth1 = 12000 bps > 10000.
+
     await ctx.d1.prepare(`
       INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, price, storage, tags, screenshots, binaries)
       VALUES ('app_bob_b3', 'Bob Fork', 'Tagline', 'Desc', 'usr_bob', 'v1.0.0', 'MIT', '$10.00', '/data', '[]', '[]', '{}')
@@ -410,8 +409,7 @@ describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
       idempotencyKey: 'bob_advance_ref_b3'
     });
 
-    // 3. Carol attempts to fork Bob. Prospective Σr = 6000 (Ann) + 6000 (Bob) = 12000 > 10000.
-    // Must be rejected at Phase 1 (the fork REQUEST) before any provisioning.
+
     const carolForkReq = await postAsUser('session_carol', {
       action: 'fork', parentRepositoryId: bobRepoId, childSlug: 'carol-fork-b3', parentRefName: 'refs/heads/main'
     });
@@ -421,19 +419,19 @@ describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
     const carolForkBody = await carolForkReq.json();
     expect(carolForkBody.success).toBe(false);
 
-    // No child repository was created for Carol.
+
     const carolRepoRow = await ctx.d1.prepare(`
       SELECT id FROM repositories WHERE owner_user_id = 'usr_carol' AND slug = 'carol-fork-b3'
     `).first();
     expect(carolRepoRow).toBeNull();
 
-    // No fork lineage edge was written.
+
     const carolForkRow = await ctx.d1.prepare(`
       SELECT * FROM repository_forks WHERE parent_repository_id = ? AND forked_by_user_id = 'usr_carol'
     `).bind(bobRepoId).first();
     expect(carolForkRow).toBeNull();
 
-    // No lien rows were written for any would-be Carol repository.
+
     const anyCarolLiens = await ctx.d1.prepare(`
       SELECT COUNT(*) AS n FROM repository_fork_liens
       WHERE holder_of_repository_id IN (
@@ -442,7 +440,7 @@ describe('Σr <= 100% gate at fork REQUEST time (Task B3)', () => {
     `).first();
     expect((anyCarolLiens as any).n).toBe(0);
 
-    // No provisioning outbox event was queued for Carol's would-be fork.
+
     const outboxRow = await ctx.d1.prepare(`
       SELECT COUNT(*) AS n FROM forge_outbox_events
       WHERE aggregate_type = 'fork' AND payload LIKE '%carol-fork-b3%'

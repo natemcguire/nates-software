@@ -96,7 +96,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     const panelContent = (
       <div className="w-full max-w-lg bg-[#c0c0c0] w95-border w95-shadow flex flex-col font-tahoma text-xs select-none">
-        {/* Title Bar */}
         <div className="bg-gradient-to-r from-[#800000] via-[#a00000] to-[#800000] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5 truncate">
             <AlertTriangle size={13} className="text-yellow-300 shrink-0" />
@@ -113,7 +112,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           )}
         </div>
 
-        {/* Panel Body */}
         <div className="p-3 space-y-3 bg-[#ece9d8]">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-full bg-red-600 border border-white shadow-sm flex items-center justify-center text-white shrink-0 font-bold text-base select-none">
@@ -129,7 +127,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </div>
           </div>
 
-          {/* Diagnostic Box */}
           <div className="bg-white w95-border-inset p-2.5 space-y-1.5">
             <div className="font-bold text-red-800 text-[10px] uppercase tracking-wider">
               Diagnostic Information:
@@ -149,7 +146,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             )}
           </div>
 
-          {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-1">
             {onDismiss && (
               <button

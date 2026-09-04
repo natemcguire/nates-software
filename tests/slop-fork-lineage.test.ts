@@ -92,12 +92,10 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     const { id, ownerUserId, slug, commitOid, refName = 'refs/heads/main' } = options;
     const storageKey = `repositories/${id}`;
 
-    // 1. Create bare repo on disk
     const barePath = join(testReposDir, 'repositories', id);
     mkdirSync(barePath, { recursive: true });
     execSync('git init --bare -b main', { cwd: barePath, stdio: 'pipe' });
 
-    // Create a commit in a temp work dir to populate object store
     const tmpWork = join(testReposDir, `tmp-work-${id}`);
     mkdirSync(tmpWork, { recursive: true });
     execSync('git init -b main', { cwd: tmpWork, stdio: 'pipe' });
@@ -111,7 +109,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     const realCommitOid = execSync('git rev-parse HEAD', { cwd: tmpWork, encoding: 'utf8' }).trim();
     rmSync(tmpWork, { recursive: true, force: true });
 
-    // 2. Insert into D1 projections
     await ctx.d1.batch([
       ctx.d1.prepare(`
         INSERT INTO repositories (
@@ -133,7 +130,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
   }
 
   it('Requirement 1 & 4: slop fork of canonical repo registers immutable parent->child lineage row in repository_forks', async () => {
-    // Seed canonical root repo: nate/dronehunter
     const rootRepo = await seedCanonicalRepository({
       id: 'repo_dronehunter_root',
       ownerUserId: 'usr_nate',
@@ -141,7 +137,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       commitOid: OID_ROOT
     });
 
-    // User Sam forks nate/dronehunter
     const forkResult = await handleFork('nate/dronehunter', {
       env: testEnv,
       sessionToken: 'token_sam_secret',
@@ -154,7 +149,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     const worktreePath = forkResult.data.worktreePath;
     createdWorktrees.push(worktreePath);
 
-    // Verify child repository was registered in repositories table
     const childRepo = await ctx.d1.prepare(`
       SELECT id, owner_user_id AS ownerUserId, slug, status
       FROM repositories WHERE owner_user_id = 'usr_sam' AND slug = 'dronehunter'
@@ -163,7 +157,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(childRepo.ownerUserId).toBe('usr_sam');
     expect(childRepo.status).toBe('active');
 
-    // Verify canonical immutable lineage row in repository_forks table
     const lineageRow = await ctx.d1.prepare(`
       SELECT child_repository_id AS childRepositoryId,
              parent_repository_id AS parentRepositoryId,
@@ -187,13 +180,11 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(lineageRow.parentCommitOid).toBe(rootRepo.realCommitOid);
     expect(lineageRow.childInitialCommitOid).toBe(rootRepo.realCommitOid);
 
-    // Verify worktree cloned from canonical source
     expect(existsSync(join(worktreePath, 'README.md'))).toBe(true);
     expect(existsSync(join(worktreePath, '.git'))).toBe(true);
   });
 
   it('Requirement 1: Multi-generation fork chaining preserves lineage root and increments depth', async () => {
-    // 1. Generation 0: Root repo (nate/dronehunter)
     const rootRepo = await seedCanonicalRepository({
       id: 'repo_root_app',
       ownerUserId: 'usr_nate',
@@ -201,7 +192,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       commitOid: OID_ROOT
     });
 
-    // 2. Generation 1: Sam forks nate/dronehunter -> sam/dronehunter (depth 1)
     const gen1Result = await handleFork('nate/dronehunter', {
       env: testEnv,
       sessionToken: 'token_sam_secret',
@@ -216,7 +206,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     `).first<any>();
     expect(samRepo).toBeDefined();
 
-    // Replicate sam's bare repo for local disk cloning if needed
     const samBare = join(testReposDir, 'repositories', samRepo.id);
     if (!existsSync(samBare)) {
       mkdirSync(samBare, { recursive: true });
@@ -224,7 +213,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       execSync(`git -C "${rootRepo.barePath}" push "file://${samBare}" refs/heads/main:refs/heads/main`, { stdio: 'pipe' });
     }
 
-    // 3. Generation 2: Josh forks sam/dronehunter -> josh/dronehunter (depth 2)
     const gen2Result = await handleFork('sam/dronehunter', {
       env: testEnv,
       sessionToken: 'token_josh_secret',
@@ -250,12 +238,11 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     `).bind(joshRepo.id).first<any>();
 
     expect(joshLineage).toBeDefined();
-    expect(joshLineage.parentRepositoryId).toBe(samRepo.id); // Parent is Sam's fork
+    expect(joshLineage.parentRepositoryId).toBe(samRepo.id);
     expect(joshLineage.forkedByUserId).toBe('usr_josh');
-    expect(joshLineage.lineageRootRepositoryId).toBe(rootRepo.id); // Lineage root is still Nate's root repo!
-    expect(joshLineage.depth).toBe(2); // Depth is incremented to 2
+    expect(joshLineage.lineageRootRepositoryId).toBe(rootRepo.id);
+    expect(joshLineage.depth).toBe(2);
 
-    // 4. Generation 3: Alice forks josh/dronehunter -> alice/dronehunter (depth 3)
     const joshBare = join(testReposDir, 'repositories', joshRepo.id);
     if (!existsSync(joshBare)) {
       mkdirSync(joshBare, { recursive: true });
@@ -290,7 +277,7 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(aliceLineage.parentRepositoryId).toBe(joshRepo.id);
     expect(aliceLineage.forkedByUserId).toBe('usr_alice');
     expect(aliceLineage.lineageRootRepositoryId).toBe(rootRepo.id);
-    expect(aliceLineage.depth).toBe(3); // Depth is 3
+    expect(aliceLineage.depth).toBe(3);
   });
 
   it('Requirement 2: Unknown repository slug fails honestly with zero github fallbacks or directory invention', async () => {
@@ -306,13 +293,11 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(forkResult.message).toContain('no placeholder fork was created');
     expect(existsSync(forkResult.data.worktreePath)).toBe(false);
 
-    // Verify no repository row was created
     const repoCount = await ctx.d1.prepare(`
       SELECT COUNT(*) AS total FROM repositories WHERE slug = 'nonexistent-arcade-game'
     `).first<any>();
     expect(repoCount.total).toBe(0);
 
-    // Verify no fork edge was recorded
     const forkCount = await ctx.d1.prepare(`
       SELECT COUNT(*) AS total FROM repository_forks
     `).first<any>();
@@ -320,7 +305,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
   });
 
   it('Requirement 3: SLOPSHOP fork plan coordinates route through canonical fork API', async () => {
-    // Seed canonical forge repo
     const rootRepo = await seedCanonicalRepository({
       id: 'repo_mailer_canonical',
       ownerUserId: 'usr_nate',
@@ -328,7 +312,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       commitOid: OID_ROOT
     });
 
-    // Derive coordinate from verified forge transport
     const coordinate = coordinateFromForgeRepository({
       id: rootRepo.id,
       slug: 'certified-mailer',
@@ -345,7 +328,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(coordinate.slug).toBe('nate/certified-mailer');
     expect(coordinate.repoUrl).toBe('ssh://git@forge.example.test:22/nate/certified-mailer.git');
 
-    // Generate local agent plan
     const plan = generateLocalAgentPlan({
       coordinate,
       feature: {
@@ -363,7 +345,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
 
     expect(plan.singleLineCommand).toBe('slop fork "ssh://git@forge.example.test:22/nate/certified-mailer.git"');
 
-    // Executing slop fork with the plan's ssh target calls the canonical fork API
     const forkResult = await handleFork(coordinate.repoUrl, {
       env: testEnv,
       sessionToken: 'token_sam_secret',
@@ -374,7 +355,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(forkResult.success).toBe(true);
     createdWorktrees.push(forkResult.data.worktreePath);
 
-    // Lineage table records the fork edge from the SSH coordinate
     const childRepo = await ctx.d1.prepare(`
       SELECT id FROM repositories WHERE owner_user_id = 'usr_sam' AND slug = 'certified-mailer'
     `).first<any>();
@@ -412,7 +392,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
   });
 
   it('Constraint: Honest empty-repo onboarding from B5 is preserved without fabricating files', async () => {
-    // Empty canonical repository (bare repo with no commits yet)
     const emptyRepoId = 'repo_empty_canonical';
     const emptyBarePath = join(testReposDir, 'repositories', emptyRepoId);
     mkdirSync(emptyBarePath, { recursive: true });
@@ -431,29 +410,22 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       `).bind(emptyRepoId)
     ]);
 
-    // Fork empty repo from local path (honest empty-repo clone without fabricating source)
     const res = await handleFork(emptyBarePath, { local: true });
     expect(res.success).toBe(true);
     expect(res.data.isEmptyRepo).toBe(true);
     expect(res.data.templateApplied).toBeNull();
     createdWorktrees.push(res.data.worktreePath);
 
-    // TRUTHFULNESS GUARANTEE: Never fabricate source into an empty repo!
     expect(existsSync(join(res.data.worktreePath, 'package.json'))).toBe(false);
     expect(existsSync(join(res.data.worktreePath, 'index.html'))).toBe(false);
     expect(existsSync(join(res.data.worktreePath, 'server.mjs'))).toBe(false);
     expect(existsSync(join(res.data.worktreePath, 'README.md'))).toBe(false);
   });
 
-  // =========================================================================
-  // FIX-UP ROUND (B6) — 3 P1 Codex Security Review Tests
-  // =========================================================================
-
   it('[P1 Security] local path with `"` + `;` metacharacters does NOT execute shell commands (execFileSync immunity)', async () => {
     const canaryPath = join(tmpdir(), `slop-canary-inject-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.txt`);
     if (existsSync(canaryPath)) rmSync(canaryPath, { force: true });
 
-    // 1. Attempt injection via crafted slug string with shell metacharacters
     const injectedSlug = `file:///tmp/repo"; touch "${canaryPath}"; "`;
 
     const res = await handleFork(injectedSlug, {
@@ -463,14 +435,12 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       reposRoot: testReposDir
     });
 
-    // Canary file MUST NEVER BE CREATED
     expect(existsSync(canaryPath)).toBe(false);
     expect(res.success).toBe(false);
     if (res.data?.worktreePath) {
       expect(existsSync(res.data.worktreePath)).toBe(false);
     }
 
-    // 2. Local directory whose actual path contains quotes and semicolons safely handled by execFileSync
     const funnyDir = join(testReposDir, 'funny"; touch canary; "');
     mkdirSync(funnyDir, { recursive: true });
     execSync('git init -b main', { cwd: funnyDir, stdio: 'pipe' });
@@ -487,7 +457,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
   });
 
   it('[P1 Honest Failure] fork API unreachable with local checkout present FAILS fatally without silent local fallback', async () => {
-    // Seed a canonical repo and have a local checkout present
     await seedCanonicalRepository({
       id: 'repo_fail_test',
       ownerUserId: 'usr_nate',
@@ -495,13 +464,11 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       commitOid: OID_ROOT
     });
 
-    // Control plane is unreachable (fetchImpl rejects)
     const forkRes = await handleFork('nate/dronehunter', {
       fetchImpl: () => Promise.reject(new Error('ECONNREFUSED: Control plane unreachable')),
       reposRoot: testReposDir
     });
 
-    // MUST FAIL FATALLY — NO silent fallback to local checkout!
     expect(forkRes.success).toBe(false);
     expect(forkRes.message).toContain('Control plane unreachable');
     expect(forkRes.data.registeredFork).toBeNull();
@@ -509,7 +476,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
   });
 
   it('[P1 Lineage Integrity] file:// / local source registers canonical lineage when resolvable, rejects unregistered sources', async () => {
-    // 1. Resolvable canonical local source: bare repository path of registered repo
     const canonicalRepo = await seedCanonicalRepository({
       id: 'repo_local_lineage_test',
       ownerUserId: 'usr_nate',
@@ -529,7 +495,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(resSuccess.data.isRealWorktree).toBe(true);
     createdWorktrees.push(resSuccess.data.worktreePath);
 
-    // Lineage MUST be registered in D1 repository_forks
     expect(resSuccess.data.registeredFork?.repository?.id).toBeDefined();
     const childRepoId = resSuccess.data.registeredFork.repository.id;
     const childRepo = await ctx.d1.prepare(`
@@ -551,7 +516,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(lineageRow.parentRepositoryId).toBe(canonicalRepo.id);
     expect(lineageRow.forkedByUserId).toBe('usr_sam');
 
-    // 2. Unregistered local source: random local git directory NOT in control-plane D1
     const unregDir = join(testReposDir, 'unregistered-random-git');
     mkdirSync(unregDir, { recursive: true });
     execSync('git init -b main', { cwd: unregDir, stdio: 'pipe' });
@@ -567,12 +531,10 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
       reposRoot: testReposDir
     });
 
-    // MUST FAIL HONESTLY — NEVER an unregistered success by default
     expect(resUnregistered.success).toBe(false);
     expect(resUnregistered.message).toContain('no placeholder fork was created');
     expect(existsSync(resUnregistered.data.worktreePath)).toBe(false);
 
-    // No row created in repository_forks
     const unregForkCount = await ctx.d1.prepare(`
       SELECT COUNT(*) AS total FROM repository_forks WHERE child_repository_id = ?
     `).bind('unregistered-random-git').first<any>();
@@ -599,7 +561,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(forkRes.data.isRealWorktree).toBe(true);
     createdWorktrees.push(forkRes.data.worktreePath);
 
-    // Lineage recorded in D1
     const childRepo = await ctx.d1.prepare(`
       SELECT id FROM repositories WHERE owner_user_id = 'usr_josh' AND slug = 'dronehunter'
     `).first<any>();
@@ -615,7 +576,6 @@ describe('Wave 2 — Canonical Immutable Lineage (slop fork & SLOPSHOP)', () => 
     expect(lineage.forkedByUserId).toBe('usr_josh');
     expect(lineage.depth).toBe(1);
 
-    // Worktree exists with git repo and content
     expect(existsSync(join(forkRes.data.worktreePath, 'README.md'))).toBe(true);
     expect(existsSync(join(forkRes.data.worktreePath, '.git'))).toBe(true);
   });

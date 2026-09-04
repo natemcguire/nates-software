@@ -142,7 +142,6 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
       }}
       className="bg-w95-panel w95-border w95-shadow flex flex-col select-none nsw-popup-enter"
     >
-      {/* Title Bar */}
       <div
         draggable={false}
         onPointerDown={handleTitlePointerDown}
@@ -164,7 +163,6 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
           <span className="truncate">{windowState.title}</span>
         </div>
 
-        {/* Window Control Buttons */}
         <div className="flex items-center gap-1.5 shrink-0 ml-2 select-none">
           <button
             type="button"
@@ -196,7 +194,6 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
         </div>
       </div>
 
-      {/* Body Content */}
       <div
         className="flex-1 overflow-hidden p-3 flex flex-col bg-[#ece9d8]"
         style={{
@@ -207,7 +204,6 @@ export const RetroWindow: React.FC<RetroWindowProps> = ({
         {children}
       </div>
 
-      {/* Resize Handles */}
       {!windowState.isMaximized && (
         <>
           <div onPointerDown={(e) => startResize('n', e)} className="absolute top-0 left-2 right-2 h-2 cursor-n-resize select-none" />

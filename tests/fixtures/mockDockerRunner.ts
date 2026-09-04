@@ -10,10 +10,6 @@ export type MockHandler = (
   options?: CommandExecOptions
 ) => CommandExecResult | Promise<CommandExecResult>;
 
-/**
- * Injectable mock runner for unit and integration testing without a running Docker daemon.
- * Kept in test fixtures so test mock infrastructure never leaks into the production bundle.
- */
 export class MockDockerCommandRunner implements DockerCommandRunner {
   public recordedCalls: Array<{ file: string; args: string[]; options?: CommandExecOptions }> = [];
   private handlers: Map<string, MockHandler> = new Map();
@@ -42,7 +38,6 @@ export class MockDockerCommandRunner implements DockerCommandRunner {
       return handler(file, args, options);
     }
 
-    // Default canned responses for standard Docker CLI subcommands
     if (subcommand === 'version') {
       return {
         stdout: JSON.stringify({

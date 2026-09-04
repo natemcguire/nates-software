@@ -15,9 +15,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     ctx = await createTestD1Database({ foreignKeys: true });
   });
 
-  // ==========================================================================
-  // 1. MIGRATION CHAIN EXECUTION & SCHEMA VERIFICATION
-  // ==========================================================================
+
   describe('1. Migration Chain Sequence & Schema Generation', () => {
     it('should define the complete canonical migration chain', () => {
       expect(CANONICAL_MIGRATIONS).toEqual([
@@ -59,7 +57,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     it('should create all required tables across all migrations', () => {
       const tables = ctx.getTableNames();
 
-      // Migration 0001 core tables
+
       expect(tables).toContain('users');
       expect(tables).toContain('user_sessions');
       expect(tables).toContain('app_listings');
@@ -77,10 +75,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('git_refs');
       expect(tables).toContain('git_commits');
 
-      // Migration 0002 tables
+
       expect(tables).toContain('processed_webhook_events');
 
-      // Migration 0006 canonical forge tables
+
       expect(tables).toContain('repositories');
       expect(tables).toContain('repository_members');
       expect(tables).toContain('repository_ref_policies');
@@ -100,7 +98,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('forge_outbox_events');
       expect(tables).toContain('forge_reconciliation_issues');
 
-      // Migration 0007 DYNO benchmark tables
+
       expect(tables).toContain('dyno_suites');
       expect(tables).toContain('dyno_tasks');
       expect(tables).toContain('dyno_subjects');
@@ -110,7 +108,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('dyno_tool_events');
       expect(tables).toContain('dyno_grader_results');
 
-      // Migration 0009 durable commerce tables
+
       expect(tables).toContain('commerce_products');
       expect(tables).toContain('commerce_orders');
       expect(tables).toContain('commerce_order_allocations');
@@ -130,15 +128,15 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(tables).toContain('commerce_refund_allocations');
       expect(tables).toContain('commerce_recovery_obligations');
 
-      // Migration 0014 Hotwire upvotes table
+
       expect(tables).toContain('drop_upvotes');
-      // Migration 0018 ephemeral terminal sessions table
+
       expect(tables).toContain('terminal_session_tickets');
-      // Migration 0028 multi-SSH keys table
+
       expect(tables).toContain('user_ssh_keys');
-      // Migration 0029 contributor shares table
+
       expect(tables).toContain('contributor_shares');
-      // Migration 0033 chat channels and presence tables
+
       expect(tables).toContain('chat_channels');
       expect(tables).toContain('chat_presence');
     });
@@ -223,7 +221,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         )
       });
 
-      // Populate fixture with fulfilled order, frozen allocation, and child table rows
+
       await legacy.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, storage_key, status)
         VALUES ('repo_pop_test', 'usr_nate', 'pop-repo', 'storage_pop', 'active')
@@ -295,7 +293,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
 
       expect(legacy.runForeignKeyCheck()).toEqual([]);
 
-      // Verify all populated rows preserved with exact fidelity
+
       const alloc = await legacy.d1.prepare('SELECT * FROM commerce_order_allocations WHERE id = ?')
         .bind('coa_pop_1').first<any>();
       expect(alloc?.id).toBe('coa_pop_1');
@@ -320,7 +318,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(recovery?.allocation_id).toBe('coa_pop_1');
       expect(recovery?.amount_cents).toBe(2700);
 
-      // Verify FK enforcement is active post-rebuild
+
       await expect(
         legacy.d1.prepare(`
           INSERT INTO commerce_transfer_outbox (
@@ -329,7 +327,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow();
 
-      // Verify 'contributor' allocation row can now be inserted (CHECK widened)
+
       await legacy.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
@@ -343,7 +341,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(contribAlloc?.recipient_user_id).toBe('usr_sam');
       expect(contribAlloc?.amount_cents).toBe(300);
 
-      // Verify outbox trigger admits contributor transfer
+
       await legacy.d1.prepare(`
         INSERT INTO commerce_transfer_outbox (
           id, order_id, allocation_id, destination_user_id, amount_cents, currency
@@ -356,7 +354,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(contribOutbox?.destination_user_id).toBe('usr_sam');
       expect(contribOutbox?.amount_cents).toBe(300);
 
-      // Verify recovery trigger admits contributor recovery obligation
+
       await legacy.d1.prepare(`
         INSERT INTO commerce_recovery_obligations (
           id, order_id, source_kind, source_id, allocation_id, original_outbox_id,
@@ -373,23 +371,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(contribRecovery?.allocation_id).toBe('coa_pop_contrib');
       expect(contribRecovery?.amount_cents).toBe(300);
 
-      // NOTE: this used to also assert a "DARK invariant" that calculateAllocations
-      // never emits a 'contributor' row. Under the "Shareware, Restored" money
-      // model that's no longer just a runtime invariant — calculateAllocations'
-      // AllocationCalculationInput has no repositoryId/ancestors/contributors
-      // fields and its AllocationRole union is 'platform' | 'ancestor' | 'seller',
-      // so a contributor row is now a compile-time impossibility, not just a
-      // runtime guarantee. See src/lib/commerceDomain.ts and
-      // tests/money-model-additive-liens.test.ts.
 
-      // Verify final PRAGMA foreign_key_check is completely clean
       expect(legacy.runForeignKeyCheck()).toEqual([]);
     });
   });
 
-  // ==========================================================================
-  // 2. FOREIGN KEY CHECK ON SEEDED DATA
-  // ==========================================================================
+
   describe('2. PRAGMA foreign_key_check Integrity', () => {
     it('should pass PRAGMA foreign_key_check with zero violations on clean migration chain', () => {
       const violations = ctx.runForeignKeyCheck();
@@ -432,9 +419,8 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should have no seed comments after the 0036 honesty pass deletes the fabricated testimonials', async () => {
-      // Migration 0001 seeded 3 fabricated "testimonial" comments (c101/c102/c103);
-      // migration 0036's honesty pass deletes them (there are no real users, so no
-      // real comments). Any surviving comment must still reference valid users+apps.
+
+
       const comments = await ctx.d1.prepare(`
         SELECT c.id, c.app_id, c.user_id, u.username, a.name
         FROM comments c
@@ -446,9 +432,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
   });
 
-  // ==========================================================================
-  // 3. FOREIGN KEY ENFORCEMENT & VIOLATION REJECTION
-  // ==========================================================================
+
   describe('3. Foreign Key Enforcement (PRAGMA foreign_keys = ON)', () => {
     it('should reject user_sessions with non-existent user_id', async () => {
       await expect(
@@ -537,7 +521,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .run()
       ).rejects.toThrow(/FOREIGN KEY constraint failed/);
 
-      // Create valid order first
+
       await ctx.d1.prepare(`
         INSERT INTO orders (id, buyer_user_id, app_id, gross_cents, stripe_payment_intent_id)
         VALUES ('ord_valid1', 'usr_nate', 'dronehunter', 1500, 'pi_valid1')
@@ -601,19 +585,17 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
   });
 
-  // ==========================================================================
-  // 4. CASCADE DELETE INVARIANTS
-  // ==========================================================================
+
   describe('4. Cascading Deletes Across Schema Relationships', () => {
     it('should cascade delete user_sessions, shelf_items, comments, inbox_messages when user is deleted', async () => {
-      // Create a test user
+
       const testUserId = 'usr_cascade_test';
       await ctx.d1.prepare(`
         INSERT INTO users (id, username, display_name, role)
         VALUES (?, 'cascadetest', 'Cascade Test User', 'user')
       `).bind(testUserId).run();
 
-      // Add related records
+
       await ctx.d1.prepare(`
         INSERT INTO user_sessions (token_hash, user_id, expires_at)
         VALUES (?, ?, ?)
@@ -629,9 +611,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('c_cascade', 'dronehunter', ?, 'Testing cascade delete')
       `).bind(testUserId).run();
 
-      // Upvote the test's own comment. (The 0001-seeded 'c101' testimonial was
-      // deleted by migration 0036's honesty pass, so it no longer exists to
-      // reference here.)
+
       await ctx.d1.prepare(`
         INSERT INTO comment_upvotes (comment_id, user_id)
         VALUES ('c_cascade', ?)
@@ -662,7 +642,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('key_cascade', ?, 'ssh-ed25519', 'AAAAC3...', 'ssh-ed25519 AAAAC3...', 'test')
       `).bind(testUserId).run();
 
-      // Verify all child rows exist
+
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_sessions WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM shelf_items WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM comments WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
@@ -673,10 +653,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM terminal_session_tickets WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_ssh_keys WHERE user_id = ?').bind(testUserId).first('c')).toBe(1);
 
-      // Delete parent user
+
       await ctx.d1.prepare('DELETE FROM users WHERE id = ?').bind(testUserId).run();
 
-      // Verify all cascaded rows are automatically purged
+
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_sessions WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM shelf_items WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM comments WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
@@ -687,7 +667,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM terminal_session_tickets WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM user_ssh_keys WHERE user_id = ?').bind(testUserId).first('c')).toBe(0);
 
-      // Verify foreign key integrity remains clean after cascade
+
       expect(ctx.runForeignKeyCheck()).toEqual([]);
     });
 
@@ -711,7 +691,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should cascade delete dyno_task_attempts and dyno_tool_events when dyno_run is deleted', async () => {
-      // Setup Dyno suite, task, subject, environment
+
       await ctx.d1.prepare(`
         INSERT INTO dyno_suites (id, slug, version, name, methodology_markdown, task_manifest_digest, grader_version)
         VALUES ('suite_1', 'core-bench', 'v1.0', 'Core Bench', '# Method', 'man_1', 'g1')
@@ -752,7 +732,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('gr_1', 'att_1', 'gk1', 'v1', 1, 100, 100, 'ev_1')
       `).run();
 
-      // Delete dyno_run
+
       await ctx.d1.prepare('DELETE FROM dyno_runs WHERE id = ?').bind('run_1').run();
 
       expect(await ctx.d1.prepare('SELECT count(*) AS c FROM dyno_task_attempts WHERE run_id = ?').bind('run_1').first('c')).toBe(0);
@@ -762,12 +742,10 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
   });
 
-  // ==========================================================================
-  // 5. IMMUTABILITY TRIGGERS & CHECK CONSTRAINTS
-  // ==========================================================================
+
   describe('5. Database Triggers & Check Constraints', () => {
     it('should prevent mutation or deletion of repository_forks via SQLite triggers', async () => {
-      // Create parent and child repositories
+
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, storage_key)
         VALUES ('repo_p', 'usr_nate', 'parent-repo', 'storage_p')
@@ -778,7 +756,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('repo_c', 'usr_sam', 'child-fork', 'storage_c')
       `).run();
 
-      // Insert fork lineage
+
       await ctx.d1.prepare(`
         INSERT INTO repository_forks (
           child_repository_id, parent_repository_id, forked_by_user_id,
@@ -787,14 +765,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         ) VALUES ('repo_c', 'repo_p', 'usr_sam', 'refs/heads/main', 'sha_p1', 'sha_c1', 'repo_p', 1)
       `).run();
 
-      // Attempt UPDATE -> must be aborted by trigger
+
       await expect(
         ctx.d1.prepare('UPDATE repository_forks SET depth = 2 WHERE child_repository_id = ?')
           .bind('repo_c')
           .run()
       ).rejects.toThrow(/repository fork ancestry is immutable/);
 
-      // Attempt DELETE -> must be aborted by trigger
+
       await expect(
         ctx.d1.prepare('DELETE FROM repository_forks WHERE child_repository_id = ?')
           .bind('repo_c')
@@ -841,7 +819,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('suite_chk', 'chk-bench', 'v1.0', 'Check Bench', '# Method', 'man_chk', 'g1')
       `).run();
 
-      // Invalid category
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO dyno_tasks (id, suite_id, task_key, category, title, prompt_digest, fixture_digest, grader_manifest_digest, time_limit_seconds)
@@ -849,7 +827,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Non-positive time limit (<= 0)
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO dyno_tasks (id, suite_id, task_key, category, title, prompt_digest, fixture_digest, grader_manifest_digest, time_limit_seconds)
@@ -857,7 +835,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Non-positive weight (<= 0)
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO dyno_tasks (id, suite_id, task_key, category, title, prompt_digest, fixture_digest, grader_manifest_digest, time_limit_seconds, weight)
@@ -926,7 +904,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should enforce CHECK constraints on terminal_session_tickets (0018)', async () => {
-      // expires_at <= issued_at must fail
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at)
@@ -934,7 +912,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // redeemed_at < issued_at must fail
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at, redeemed_at)
@@ -942,7 +920,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // closed_at without redeemed_at must fail
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO terminal_session_tickets (jti, user_id, issued_at, expires_at, closed_at)
@@ -952,9 +930,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
   });
 
-  // ==========================================================================
-  // 6. UNIQUE CONSTRAINTS & DEDUPLICATION LEDGER (0002)
-  // ==========================================================================
+
   describe('6. Unique Constraints & Deduplication Ledger (0002)', () => {
     it('should enforce UNIQUE constraint on licenses(order_id)', async () => {
       await ctx.d1.prepare(`
@@ -967,7 +943,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('lic_1', 'KEY-1', 'dronehunter', 'usr_nate', 'ord_uniq1')
       `).run();
 
-      // Second license with identical order_id must fail unique constraint
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO licenses (id, license_key, app_id, owner_user_id, order_id)
@@ -977,7 +953,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should enforce UNIQUE constraint on shelf_items(user_id, app_id)', async () => {
-      // usr_nate already owns dronehunter from seed data
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO shelf_items (id, user_id, app_id, license_key)
@@ -997,7 +973,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('tr_r1', 'ord_uniq_role', 'usr_nate', 'acct_1', 1050, 'maker')
       `).run();
 
-      // Second transfer for same order with role 'maker' must fail
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO transfers_ledger (id, order_id, destination_user_id, destination_stripe_account, amount_cents, role)
@@ -1012,7 +988,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('evt_123', 'payment_intent.succeeded')
       `).run();
 
-      // Duplicate event insert must fail
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO processed_webhook_events (event_id, event_type)
@@ -1022,13 +998,13 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should enforce deployment_state CHECK constraint on app_listings', async () => {
-      // Valid deployment states: draft, source_ready, building, deployable, active, failed, retired, client_demo
+
       const valid = await ctx.d1.prepare(`
         SELECT id, deployment_state FROM app_listings WHERE id = 'american-gardener'
       `).first<{ id: string; deployment_state: string }>();
       expect(valid?.deployment_state).toBe('draft');
 
-      // Invalid deployment state must fail CHECK constraint
+
       await expect(
         ctx.d1.prepare(`
           UPDATE app_listings SET deployment_state = 'invalid_state' WHERE id = 'american-gardener'
@@ -1044,7 +1020,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       `).all();
       expect(activeWithoutRevision.results).toEqual([]);
 
-      // Verify that the seed demo entries are seeded as client_demo, NOT active
+
       const demos = await ctx.d1.prepare(`
         SELECT id, deployment_state, active_deployment_id
         FROM app_listings
@@ -1055,7 +1031,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should support explicit repository_id foreign key linkage (migration 0024)', async () => {
-      // 1. Check column exists and is nullable
+
       const listing = await ctx.d1.prepare(`
         SELECT id, repository_id FROM app_listings WHERE id = 'wallart'
       `).first<{ id: string; repository_id: string | null }>();
@@ -1063,14 +1039,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(listing?.id).toBe('wallart');
       expect(listing?.repository_id).toBeNull();
 
-      // 2. Reject non-existent repository_id under foreign key enforcement
+
       await expect(
         ctx.d1.prepare(`
           UPDATE app_listings SET repository_id = 'nonexistent_repo' WHERE id = 'wallart'
         `).run()
       ).rejects.toThrow(/FOREIGN KEY constraint failed/);
 
-      // 3. Link valid repository
+
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, storage_key, status)
         VALUES ('repo_wallart', 'usr_nate', 'wallart', 'storage_wallart', 'active')
@@ -1089,7 +1065,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should support host resolution and origin dispatch metadata (migration 0025)', async () => {
-      // 1. Verify columns exist and are populated with backfilled defaults
+
       const listing = await ctx.d1.prepare(`
         SELECT id, hostname, origin_kind, origin_ref FROM app_listings WHERE id = 'dronehunter'
       `).first<{ id: string; hostname: string; origin_kind: string; origin_ref: string | null }>();
@@ -1099,14 +1075,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(listing?.origin_kind).toBe('r2_static');
       expect(listing?.origin_ref).toBeNull();
 
-      // 2. Reject invalid origin_kind values under CHECK constraint
+
       await expect(
         ctx.d1.prepare(`
           UPDATE app_listings SET origin_kind = 'invalid_kind' WHERE id = 'dronehunter'
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // 3. Accept valid origin_kind values
+
       for (const kind of ['r2_static', 'worker', 'cf_container', 'fargate_warm'] as const) {
         await ctx.d1.prepare(`
           UPDATE app_listings SET origin_kind = ? WHERE id = 'dronehunter'
@@ -1117,12 +1093,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         expect(updated?.origin_kind).toBe(kind);
       }
 
-      // Reset back to r2_static
+
       await ctx.d1.prepare(`
         UPDATE app_listings SET origin_kind = 'r2_static' WHERE id = 'dronehunter'
       `).run();
 
-      // 4. Verify index on hostname exists
+
       const indices = ctx.getIndexNames();
       expect(indices.some(idx => idx === 'idx_app_listings_hostname' || idx === 'idx_app_listings_hostname_unique')).toBe(true);
 
@@ -1130,7 +1106,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should support Postgres add-on metadata (migration 0027)', async () => {
-      // 1. Verify columns exist on app_listings
+
       const listing = await ctx.d1.prepare(`
         SELECT id, db_kind, db_secret_path, db_provisioned_at FROM app_listings WHERE id = 'dronehunter'
       `).first<{ id: string; db_kind: string | null; db_secret_path: string | null; db_provisioned_at: string | null }>();
@@ -1140,14 +1116,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(listing?.db_secret_path).toBeNull();
       expect(listing?.db_provisioned_at).toBeNull();
 
-      // 2. Reject invalid db_kind under CHECK constraint
+
       await expect(
         ctx.d1.prepare(`
           UPDATE app_listings SET db_kind = 'mysql' WHERE id = 'dronehunter'
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // 3. Accept valid postgres db_kind and secret path
+
       await ctx.d1.prepare(`
         UPDATE app_listings SET
           db_kind = 'postgres',
@@ -1172,7 +1148,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         VALUES ('key_uniq_1', 'usr_sam', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIUniqKey', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIUniqKey', 'key1')
       `).run();
 
-      // Second key with identical key_prefix must fail UNIQUE constraint
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
@@ -1191,7 +1167,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should support multi-SSH-key storage and backfill existing keys (migration 0028)', async () => {
-      // 1. Verify seed user usr_nate's legacy ssh_public_key was backfilled
+
       const nateKeys = await ctx.d1.prepare(`
         SELECT id, user_id, key_type, key_base64, key_prefix, label
         FROM user_ssh_keys
@@ -1206,7 +1182,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(nateKey.key_prefix).toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGxY84pQ4eM19287KlmQ4892187');
       expect(nateKey.label).toBe('migrated');
 
-      // 2. Add a second key for usr_nate
+
       await ctx.d1.prepare(`
         INSERT INTO user_ssh_keys (id, user_id, key_type, key_base64, key_prefix, label)
         VALUES ('key_nate_agent', 'usr_nate', 'ssh-ed25519', 'AAAAC3NzaC1lZDI1NTE5AAAAIAgentKeyBlob', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAgentKeyBlob', 'agent')
@@ -1221,7 +1197,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
 
     it('should support contributor revenue sharing schema and invariants (migration 0029)', async () => {
-      // 1. Repositories grantable_bps column defaults to 0 and enforces [0, 10000]
+
       await ctx.d1.prepare(`
         INSERT INTO repositories (id, owner_user_id, slug, storage_key, status)
         VALUES ('repo_contrib_test', 'usr_nate', 'contrib-repo', 'storage_contrib_test', 'active')
@@ -1231,7 +1207,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         .bind('repo_contrib_test').first<{ id: string; grantable_bps: number }>();
       expect(repo?.grantable_bps).toBe(0);
 
-      // Rejects grantable_bps < 0 or > 10000
+
       await expect(
         ctx.d1.prepare('UPDATE repositories SET grantable_bps = -1 WHERE id = ?')
           .bind('repo_contrib_test').run()
@@ -1242,15 +1218,14 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .bind('repo_contrib_test').run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Accepts valid grantable_bps
+
       await ctx.d1.prepare('UPDATE repositories SET grantable_bps = 2500 WHERE id = ?')
         .bind('repo_contrib_test').run();
       const updatedRepo = await ctx.d1.prepare('SELECT grantable_bps FROM repositories WHERE id = ?')
         .bind('repo_contrib_test').first<{ grantable_bps: number }>();
       expect(updatedRepo?.grantable_bps).toBe(2500);
 
-      // 2. contributor_shares table constraints
-      // Rejects contributor == granted_by (self-grant check)
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points)
@@ -1258,7 +1233,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Rejects basis_points <= 0 or > 10000
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (id, repository_id, contributor_user_id, granted_by_user_id, basis_points)
@@ -1273,7 +1248,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed|contributor share exceeds available repository grantable pool/);
 
-      // Inserts valid pending contributor share
+
       await ctx.d1.prepare(`
         INSERT INTO contributor_shares (
           id, repository_id, contributor_user_id, granted_by_user_id,
@@ -1291,7 +1266,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(share?.activated_at).toBeNull();
       expect(share?.revoked_at).toBeNull();
 
-      // Enforces UNIQUE(merge_attempt_id)
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO contributor_shares (
@@ -1304,12 +1279,12 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/UNIQUE constraint failed/);
 
-      // BEFORE DELETE trigger prevents row deletion (#2)
+
       await expect(
         ctx.d1.prepare('DELETE FROM contributor_shares WHERE id = ?').bind('cs_valid1').run()
       ).rejects.toThrow(/contributor_shares rows cannot be deleted; use revocation/);
 
-      // 3. contributor_shares triggers: economics-immutable & provenance freeze (#3)
+
       await expect(
         ctx.d1.prepare('UPDATE contributor_shares SET basis_points = 1500 WHERE id = ?')
           .bind('cs_valid1').run()
@@ -1340,14 +1315,13 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .bind('cs_valid1').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // 4. contributor_shares triggers: status forward-only & timestamp coupling (#4)
-      // Activating without activated_at must fail (#4)
+
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
           .bind('cs_valid1').run()
       ).rejects.toThrow();
 
-      // pending -> active with activated_at is allowed
+
       await ctx.d1.prepare(`
         UPDATE contributor_shares SET status = 'active', activated_at = '2026-08-31 12:00:00' WHERE id = ?
       `).bind('cs_valid1').run();
@@ -1357,25 +1331,25 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(activeShare?.status).toBe('active');
       expect(activeShare?.activated_at).toBeTruthy();
 
-      // Rewriting activated_at must fail (#4)
+
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET activated_at = '2026-08-31 13:00:00' WHERE id = ?")
           .bind('cs_valid1').run()
       ).rejects.toThrow(/contributor share economics are immutable/);
 
-      // active -> revoked must be rejected
+
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'revoked' WHERE id = ?")
           .bind('cs_valid1').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // active -> pending must be rejected
+
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending' WHERE id = ?")
           .bind('cs_valid1').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // Insert another pending share and test pending -> revoked
+
       await ctx.d1.prepare(`
         INSERT INTO contributor_shares (
           id, repository_id, contributor_user_id, granted_by_user_id,
@@ -1395,19 +1369,19 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(revokedShare?.status).toBe('revoked');
       expect(revokedShare?.revoked_at).toBeTruthy();
 
-      // revoked -> active must be rejected
+
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'active' WHERE id = ?")
           .bind('cs_valid2').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // revoked -> pending must be rejected
+
       await expect(
         ctx.d1.prepare("UPDATE contributor_shares SET status = 'pending' WHERE id = ?")
           .bind('cs_valid2').run()
       ).rejects.toThrow(/contributor share status transition is forward-only/);
 
-      // 5. Widened commerce_order_allocations accepts 'contributor' role
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_orders (
           id, idempotency_key, buyer_user_id, app_id, seller_user_id,
@@ -1416,28 +1390,28 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
                   'v1.0.0', 1, 2000, 'usd', '{}', 'fulfilled')
       `).run();
 
-      // Insert maker allocation
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
         ) VALUES ('calloc_maker', 'cord_contrib', 0, 'maker', 'usr_nate', 8000, 1600)
       `).run();
 
-      // Insert contributor allocation
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, source_repository_id, basis_points, amount_cents
         ) VALUES ('calloc_contrib', 'cord_contrib', 1, 'contributor', 'usr_sam', 'repo_contrib_test', 1000, 200)
       `).run();
 
-      // Insert protocol_pool allocation
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_order_allocations (
           id, order_id, sequence, role, recipient_user_id, basis_points, amount_cents
         ) VALUES ('calloc_pool', 'cord_contrib', 2, 'protocol_pool', NULL, 1000, 200)
       `).run();
 
-      // Verify recipient_user_id NULL check for contributor fails
+
       await expect(
         ctx.d1.prepare(`
           INSERT INTO commerce_order_allocations (
@@ -1446,7 +1420,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
         `).run()
       ).rejects.toThrow(/CHECK constraint failed/);
 
-      // Verify allocations immutability triggers still active
+
       await expect(
         ctx.d1.prepare('UPDATE commerce_order_allocations SET amount_cents = 300 WHERE id = ?')
           .bind('calloc_contrib').run()
@@ -1457,7 +1431,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
           .bind('calloc_contrib').run()
       ).rejects.toThrow(/commerce order allocations are immutable/);
 
-      // 6. commerce_outbox_requires_fulfilled_allocation accepts 'contributor' allocation
+
       await ctx.d1.prepare(`
         INSERT INTO commerce_transfer_outbox (
           id, order_id, allocation_id, destination_user_id, amount_cents, currency
@@ -1470,7 +1444,7 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
       expect(outbox?.destination_user_id).toBe('usr_sam');
       expect(outbox?.amount_cents).toBe(200);
 
-      // 7. commerce_recovery_matches_order_allocation accepts 'contributor' allocation
+
       await ctx.d1.prepare(`
         INSERT INTO stripe_event_inbox (event_id, event_type, livemode, payload_json, payload_sha256)
         VALUES ('evt_refund_contrib', 'charge.refund.updated', 0, '{}', ?)
@@ -1496,5 +1470,4 @@ describe('Local D1-Compatible SQLite Migration-Chain Integrity Suite', () => {
     });
   });
 });
-
 
