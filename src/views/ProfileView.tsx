@@ -387,51 +387,53 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
 
-        <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-6 flex flex-col items-center justify-center text-center">
-          <div className="max-w-md w-full bg-[#ece9d8] border-2 border-white border-r-gray-800 border-b-gray-800 p-6 space-y-5">
-            <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue flex items-center justify-center mx-auto text-w95-blue">
-              <ShieldCheck size={32} />
-            </div>
+        <Win95Scroll className="flex-1 bg-white border-2 border-gray-800">
+          <div className="min-h-full w-full p-6 flex flex-col items-center justify-center text-center">
+            <div className="max-w-md w-full bg-[#ece9d8] border-2 border-white border-r-gray-800 border-b-gray-800 p-6 space-y-5">
+              <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue flex items-center justify-center mx-auto text-w95-blue">
+                <ShieldCheck size={32} />
+              </div>
 
-            <div>
-              <h2 className="text-base font-bold text-gray-900">Session Authentication Required</h2>
-              <p className="text-gray-600 text-xs mt-1.5 leading-relaxed">
-                Sign in to view your owned apps, license keys, and maker earnings.
-              </p>
-            </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Session Authentication Required</h2>
+                <p className="text-gray-600 text-xs mt-1.5 leading-relaxed">
+                  Sign in to view your owned apps, license keys, and maker earnings.
+                </p>
+              </div>
 
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <button
-                onClick={() => openAuthModal('login')}
-                className="btn-w95 btn-w95-primary px-5 py-2 text-xs font-bold flex items-center gap-1.5"
-              >
-                <LogIn size={14} />
-                <span>Log In</span>
-              </button>
-              <button
-                onClick={() => openAuthModal('register')}
-                className="btn-w95 px-5 py-2 text-xs font-bold flex items-center gap-1.5"
-              >
-                <UserPlus size={14} />
-                <span>Create Account</span>
-              </button>
-            </div>
-
-            <div className="border-t border-gray-300 pt-4 mt-4">
-              <span className="text-xs text-gray-500 font-bold block mb-2">Or Lookup a Public Maker Profile:</span>
-              <form onSubmit={handleSearchMaker} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. nate, sam, josh"
-                  value={searchHandleInput}
-                  onChange={(e) => setSearchHandleInput(e.target.value)}
-                  className="flex-1 p-1.5 border border-gray-400 text-xs font-mono"
-                />
-                <button type="submit" className="btn-w95 px-3 py-1.5 text-xs font-bold flex items-center gap-1">
-                  <Search size={12} />
-                  <span>Lookup</span>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="btn-w95 btn-w95-primary px-5 py-2 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <LogIn size={14} />
+                  <span>Log In</span>
                 </button>
-              </form>
+                <button
+                  onClick={() => openAuthModal('register')}
+                  className="btn-w95 px-5 py-2 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <UserPlus size={14} />
+                  <span>Create Account</span>
+                </button>
+              </div>
+
+              <div className="border-t border-gray-300 pt-4 mt-4">
+                <span className="text-xs text-gray-500 font-bold block mb-2">Or Lookup a Public Maker Profile:</span>
+                <form onSubmit={handleSearchMaker} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. nate, sam, josh"
+                    value={searchHandleInput}
+                    onChange={(e) => setSearchHandleInput(e.target.value)}
+                    className="flex-1 p-1.5 border border-gray-400 text-xs font-mono"
+                  />
+                  <button type="submit" className="btn-w95 px-3 py-1.5 text-xs font-bold flex items-center gap-1">
+                    <Search size={12} />
+                    <span>Lookup</span>
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </Win95Scroll>
