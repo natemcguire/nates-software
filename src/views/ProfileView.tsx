@@ -161,7 +161,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleCopyCliToken = () => {
     if (!cliToken) return;
     playSuccessChime();
-    navigator.clipboard.writeText(cliToken);
+    navigator.clipboard.writeText(`slop login ${cliToken}`);
     setCliTokenCopied(true);
     setTimeout(() => setCliTokenCopied(false), 2500);
   };
