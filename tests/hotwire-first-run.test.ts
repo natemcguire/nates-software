@@ -925,7 +925,7 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect((product as any).royalty_bps).toBe(2500);
     });
 
-    it('defaults royalty_bps to 0 when omitted (blank field means 0, never a hardcoded rate) (E1a)', async () => {
+    it('defaults royalty_bps to 1000 when omitted (E1a)', async () => {
       const dropId = 'royalty-omitted-app';
       const req = new Request('http://localhost/api/drops', {
         method: 'POST',
@@ -941,7 +941,37 @@ describe('HOTWIRE Guest First Run, Catalog Purity & Truthful Invariants', () => 
       expect(res.status).toBe(200);
 
       const product = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE app_id = ?').bind(dropId).first();
-      expect((product as any).royalty_bps).toBe(0);
+      expect((product as any).royalty_bps).toBe(1000);
+    });
+
+    it('defaults an empty royalty_bps field to 1000 while preserving explicit zero (E1a)', async () => {
+      const emptyId = 'royalty-empty-app';
+      const zeroId = 'royalty-zero-app';
+
+      for (const [id, royaltyBps] of [[emptyId, ''], [zeroId, 0]] as const) {
+        const req = new Request('http://localhost/api/drops', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer valid_test_token' },
+          body: JSON.stringify({
+            id,
+            name: id === emptyId ? 'Royalty Empty App' : 'Royalty Zero App',
+            tagline: 'Royalty default behavior',
+            description: 'Tests royalty defaults.',
+            version: '1.0.0',
+            price: '$10',
+            storage: 'SQLite',
+            tags: ['test'],
+            screenshots: [],
+            royaltyBps
+          })
+        });
+        expect((await dropsApi.onRequestPost({ request: req, env: { DB: ctx.d1 } })).status).toBe(200);
+      }
+
+      const emptyProduct = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE app_id = ?').bind(emptyId).first();
+      const zeroProduct = await ctx.d1.prepare('SELECT royalty_bps FROM commerce_products WHERE app_id = ?').bind(zeroId).first();
+      expect((emptyProduct as any).royalty_bps).toBe(1000);
+      expect((zeroProduct as any).royalty_bps).toBe(0);
     });
 
     it('rejects a royalty_bps above 10000 with a 422 and writes nothing (E1a)', async () => {

@@ -66,7 +66,7 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
   const [, setForkResult] = useState<any | null>(null);
 
   const [publishPrice, setPublishPrice] = useState<string>('15');
-  const [publishRoyaltyPct, setPublishRoyaltyPct] = useState<string>('');
+  const [publishRoyaltyPct, setPublishRoyaltyPct] = useState<string>('10');
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
 
   const [gitsmithState, setGitsmithState] = useState<'checking' | 'ready' | 'unavailable'>('checking');
@@ -524,8 +524,8 @@ This panel shows the real "slop publish" command and the revenue split it would 
 
   const handleSavePriceAndPublish = async () => {
     playClickSound();
-    const pct = Number(publishRoyaltyPct);
-    const royaltyBps = Math.min(10000, Math.max(0, Math.round((Number.isFinite(pct) ? pct : 0) * 100)));
+    const pct = publishRoyaltyPct.trim() === '' ? 10 : Number(publishRoyaltyPct);
+    const royaltyBps = Math.min(10000, Math.max(0, Math.round((Number.isFinite(pct) ? pct : 10) * 100)));
     const publishVersion = /^v?\d+\.\d+\.\d+$/.test(coordinate.version) ? coordinate.version : 'v1.0.0';
 
     setIsPublishing(true);
@@ -1437,7 +1437,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
                 <br />• Platform takes <b>10%</b> (${((Number(publishPrice) || 0) * 0.1).toFixed(2)}).
                 <br />• You keep the rest — up to <b>90%</b> (${((Number(publishPrice) || 0) * 0.9).toFixed(2)}) if this is a root app with no ancestors.
                 <br />• If you forked this from someone, their frozen royalty is paid from that 90% first — you keep what's left.
-                <br />• Your own royalty rate ({publishRoyaltyPct || '0'}%) is what <b>you</b> will earn when someone forks &amp; resells this app later.
+                <br />• Your own royalty rate ({publishRoyaltyPct || '10'}%) is what <b>you</b> will earn when someone forks &amp; resells this app later.
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button

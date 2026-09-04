@@ -34,7 +34,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
   const initialRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
-  const [royaltyPercent, setRoyaltyPercent] = useState<number>(
+  const [royaltyPercent, setRoyaltyPercent] = useState<number | ''>(
     typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10
   );
   const isFork = typeof app.forkDepth === 'number' && app.forkDepth > 0;
@@ -73,7 +73,9 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
       try {
         setIsSaving(true);
 
-        const clampedRoyaltyPercent = Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
+        const clampedRoyaltyPercent = royaltyPercent === ''
+          ? 10
+          : Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
         const royaltyBps = Math.round(clampedRoyaltyPercent * 100);
 
         const updated: AppListing = {
@@ -462,7 +464,9 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                     max={100}
                     step={1}
                     value={royaltyPercent}
-                    onChange={(e) => setRoyaltyPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                    onChange={(e) => setRoyaltyPercent(
+                      e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value)))
+                    )}
                     className="w-full p-2 border-2 border-gray-600 font-bold text-base text-w95-blue bg-blue-50 font-mono"
                   />
                 </div>
@@ -492,7 +496,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                 On a <b>${Math.max(0, Number(price) || 0).toFixed(0)}</b> sale of your own app, you keep{' '}
                 <b className="text-green-800">${(Math.max(0, Number(price) || 0) * 0.9).toFixed(2)}</b> (the platform takes a flat 10%).
                 When someone forks it and sells their version, you earn{' '}
-                <b className="text-w95-blue">{Math.max(0, Math.min(100, Number(royaltyPercent) || 0))}%</b> of that sale —{' '}
+                <b className="text-w95-blue">{royaltyPercent === '' ? 10 : Math.max(0, Math.min(100, Number(royaltyPercent) || 0))}%</b> of that sale —{' '}
                 and a fork-of-a-fork still pays you, frozen at the rate above. It deposits to your connected Stripe account automatically.
               </p>
             </div>

@@ -489,8 +489,8 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     
     const rawRoyaltyBps = body.royaltyBps !== undefined ? body.royaltyBps : body.royalty_bps;
-    let validatedRoyaltyBps = 0;
-    if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null) {
+    let validatedRoyaltyBps = 1000;
+    if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null && rawRoyaltyBps !== '') {
       if (typeof rawRoyaltyBps !== 'number' || !Number.isSafeInteger(rawRoyaltyBps)) {
         return Response.json({
           success: false,
@@ -586,16 +586,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     
     const productPriceCents = priceValidation.priceCents;
-    // NSW-50: commerce_products.status may be 'active' only when there is real build+run
-    // evidence for the repository — a bare commit (initialDeploymentState = 'source_ready')
-    // is NOT sufficient proof and must stay 'draft' (visible + forkable, not purchasable).
-    // Evidence signal chosen from the data model (see migrations 0006 + 0022):
-    //   1) app_listings.deployment_state already IN ('deployable', 'active') — the RIG pipeline
-    //      only ever advances a listing to these states after a real build+deploy succeeded, or
-    //   2) a deployment_revisions row for this repository with status = 'healthy' — the terminal
-    //      "queued -> deploying -> healthy" success state in that table's own CHECK constraint;
-    //      there is no separate 'promoted'/'verified' literal in the schema, so 'healthy' is the
-    //      most authoritative "proven to build and run" signal deployment_revisions supports.
     const honestProductStatus = repositoryHasProvenBuild ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
       INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
