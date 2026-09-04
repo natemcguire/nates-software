@@ -112,21 +112,27 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             </div>
             <table className="w-full text-xs">
               <tbody>
-                {specs.map((s) => (
-                  <tr
-                    key={s.name}
-                    onClick={() => { if (!s.soon && s.onOpen) { playClickSound(); s.onOpen(); } }}
-                    className={`border-t border-gray-300 ${s.soon ? 'opacity-60' : 'cursor-pointer hover:bg-blue-50'}`}
-                  >
-                    <td className="align-top px-3 py-2 font-bold text-w95-blue whitespace-nowrap w-px">
-                      {s.name}
-                      {s.soon && <span className="ml-1.5 text-[10px] font-mono text-gray-500">(coming soon)</span>}
-                    </td>
-                    <td className="align-top px-3 py-2 text-gray-700 font-sans leading-snug">
-                      {s.desc}
-                    </td>
-                  </tr>
-                ))}
+                {specs.map((s) => {
+                  const isLive = !s.soon && Boolean(s.onOpen);
+                  return (
+                    <tr
+                      key={s.name}
+                      onClick={() => { if (isLive && s.onOpen) { playClickSound(); s.onOpen(); } }}
+                      className={`border-t border-gray-300 ${isLive ? 'cursor-pointer hover:bg-blue-50 group' : 'cursor-default bg-gray-50/50'}`}
+                    >
+                      <td className={`align-top px-3 py-2 font-bold whitespace-nowrap w-px ${isLive ? 'text-w95-blue underline decoration-dotted group-hover:decoration-solid' : 'text-gray-500'}`}>
+                        {s.name}
+                        {s.soon && <span className="ml-1.5 text-[10px] font-mono text-gray-400 font-normal">(coming soon)</span>}
+                      </td>
+                      <td className={`align-top px-3 py-2 font-sans leading-snug ${isLive ? 'text-gray-800' : 'text-gray-500'}`}>
+                        {s.desc}
+                      </td>
+                      <td className="align-top px-2 py-2 text-right w-6">
+                        {isLive && <span className="text-blue-800 font-bold font-mono">▸</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
