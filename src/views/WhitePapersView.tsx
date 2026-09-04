@@ -42,7 +42,7 @@ export const WhitePapersView: React.FC = () => {
     hotwire: {
       id: 'hotwire',
       title: "5. HOTWIRE Architectural White Paper",
-      subtitle: "Daily Drops Leaderboard, Streak Machines & Immutable Lineage Ledgers",
+      subtitle: "Daily Drops Leaderboard, Streak Machines & Lineage Ledgers",
       icon: <Flame size={16} className="text-orange-600" />,
       content: WHITEPAPERS_DATA.hotwire
     },

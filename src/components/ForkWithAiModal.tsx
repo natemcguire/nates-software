@@ -366,7 +366,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                     <span>{parentRoyaltyPercent.toFixed(2)}%</span>
                   </div>
                   <div className="flex justify-between gap-3 border-t border-[#7ea6c4] pt-1 font-bold">
-                    <span>Total owed forever</span>
+                    <span>Total frozen royalty</span>
                     <span>{(totalRoyaltyBps / 100).toFixed(2)}%</span>
                   </div>
                 </div>

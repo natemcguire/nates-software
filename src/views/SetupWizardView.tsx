@@ -415,13 +415,13 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
               <div className="bg-white border-2 border-t-white border-l-white border-b-black border-r-black p-3 space-y-2 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="text-2xl mb-1">💎</div>
-                  <div className="font-bold text-xs text-blue-950">3. Immutable Royalties</div>
+                  <div className="font-bold text-xs text-blue-950">3. On-Platform Royalties</div>
                   <p className="text-gray-600 text-[11px] mt-1 leading-relaxed">
-                    When you sell your fork, upstream creators receive their frozen royalty percentage automatically on every checkout.
+                    When you sell your fork on Nate's Software, upstream creators receive their frozen royalty percentage automatically on every checkout.
                   </p>
                 </div>
                 <div className="bg-emerald-50 text-emerald-900 p-1.5 rounded font-mono text-[10px] border border-emerald-200">
-                  Creators paid forever
+                  Guaranteed on-platform
                 </div>
               </div>
             </div>

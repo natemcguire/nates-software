@@ -671,7 +671,7 @@ const InspectorPane: React.FC<InspectorPaneProps> = ({ app, inspectTab, setInspe
               {royaltyBps > 0 ? (
                 <>
                   <div className="text-[10px] mt-1 leading-snug">
-                    Fork today and @{app.author || app.creator || 'maker'}&rsquo;s royalty locks at the rate below — <b>never raised, never revoked</b>, for the life of your fork.
+                    Fork today and @{app.author || app.creator || 'maker'}&rsquo;s royalty locks at the rate below — <b>guaranteed for sales on Nate's Software</b>, for the life of your fork.
                   </div>
                   <div className="font-mono text-[10px] mt-1.5 bg-white border border-[#7ea6c4] px-1.5 py-1">
                     RATE {royaltyPct.toFixed(1)}% · FROZEN {frozenDate} · lien #{lienId}

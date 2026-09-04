@@ -523,7 +523,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   />
                 </div>
                 <p className="text-[11px] text-gray-700 mt-1">
-                  What anyone who forks this app owes you on every sale of their version — frozen the day they fork, forever.
+                  What anyone who forks this app owes you on every sale of their version through Nate's Software — frozen the day they fork.
                 </p>
                 <p className="text-[11px] text-blue-800 mt-1 font-mono">
                   Maximum available rate: {royaltyHeadroomPercent.toFixed(2)}%
