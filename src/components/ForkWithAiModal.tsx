@@ -37,6 +37,19 @@ export interface ForkWithAiModalProps {
   onOpenSandbox?: (appId: string) => void;
 }
 
+export type ForkPromptTool = 'claude' | 'agy' | 'cursor' | 'terminal';
+
+const FORK_TOOL_NAMES: Record<ForkPromptTool, string> = {
+  claude: 'Claude Code',
+  agy: 'Antigravity',
+  cursor: 'Cursor',
+  terminal: 'SLOP CLI'
+};
+
+export function formatForkPrompt(tool: ForkPromptTool, repository: string, prompt: string): string {
+  return `Target repository: ${repository}\nTool: ${FORK_TOOL_NAMES[tool]}\n\nGoal:\n${prompt.trim()}`;
+}
+
 const PROMPT_PRESETS: Record<string, string[]> = {
   dronehunter: [
     'Add dual-wield laser shotguns and a new boss wave telemetry table.',
@@ -76,9 +89,10 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const [isForking, setIsForking] = useState(false);
   const [forkError, setForkError] = useState<string | null>(null);
   const [forkResult, setForkResult] = useState<any | null>(null);
-  const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
+  const [activeTool, setActiveTool] = useState<ForkPromptTool>('claude');
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedWorktreeCmd, setCopiedWorktreeCmd] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const suggestedPrompts = PROMPT_PRESETS[app.id] || [
     `Implement a new local-first feature for ${app.name}; keep the storage adapter configurable and document its persistence boundary.`
@@ -100,6 +114,15 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
   const getCliCommand = () => {
     return `slop fork ${cliForkTarget}`;
+  };
+
+  const forkedRepository = `${user?.username || 'you'}/${forkResult?.repository?.slug || app.repoName || app.id}`;
+
+  const handleCopyPrompt = () => {
+    playSuccessChime();
+    navigator.clipboard.writeText(formatForkPrompt(activeTool, forkedRepository, customPrompt));
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
   const handleCopyCommand = () => {
@@ -182,7 +205,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5">
             <Bot size={13} className="text-yellow-300" />
-            <span>1-CLICK FORK &amp; CODE WITH AI — {app.name}</span>
+            <span>CREATE FORK — {app.name}</span>
           </div>
           <button
             onClick={handleClose}
@@ -201,7 +224,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
               </div>
 
               <p className="text-gray-700 text-xs">
-                Your fork is ready.
+                Your repository fork is ready. No AI editing session has started.
               </p>
 
               <div className="bg-slate-950 text-slate-100 p-3 rounded font-mono text-xs space-y-2 border border-slate-800">
@@ -242,6 +265,18 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                     </button>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-300 p-3 space-y-2">
+                <div className="font-bold text-blue-950 text-xs">Next step for {FORK_TOOL_NAMES[activeTool]}</div>
+                <div className="text-gray-700 text-xs">Copy the goal you selected, then paste it into {FORK_TOOL_NAMES[activeTool]} after opening your fork.</div>
+                <button
+                  onClick={handleCopyPrompt}
+                  className="btn-w95 btn-w95-primary px-3 py-1.5 font-bold text-xs flex items-center gap-1.5"
+                >
+                  {copiedPrompt ? <Check size={13} /> : <Copy size={13} />}
+                  <span>{copiedPrompt ? 'Prompt copied' : `Copy prompt for ${FORK_TOOL_NAMES[activeTool]}`}</span>
+                </button>
               </div>
 
               <div className="flex items-center justify-between pt-2">
@@ -460,7 +495,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                       className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow"
                     >
                       <GitFork size={13} />
-                      <span>{isForking ? 'Creating Fork...' : '⚡ Fork with AI (Create Real Fork)'}</span>
+                      <span>{isForking ? 'Creating fork...' : 'Create fork'}</span>
                     </button>
                   ) : (
                     <button
