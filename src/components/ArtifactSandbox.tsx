@@ -361,7 +361,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                   className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-0.5 rounded font-bold flex items-center gap-1"
                 >
                   <Network size={11} />
-                  <span>Lineage DAG</span>
+                  <span>Fork family tree</span>
                 </button>
               </div>
             </div>
