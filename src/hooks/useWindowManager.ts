@@ -34,7 +34,7 @@ const getResponsiveWindowConfig = (
 
   if (mode === 'portrait') {
     baseH = Math.min(Math.round(availableH * 0.88), Math.max(defaultH, 780));
-    baseW = Math.min(defaultW, Math.round(baseH * 0.8));
+    baseW = Math.min(defaultW, Math.round(baseH * 0.85));
   } else if (mode === 'landscape') {
     if (isUltraWide) {
       baseW = Math.min(Math.round(defaultW * 1.2), screenW - 120);
@@ -59,7 +59,7 @@ const getResponsiveWindowConfig = (
 
 export function useWindowManager(user?: AuthUser | null) {
   const setupConfig = getResponsiveWindowConfig(0, 840, 580, 'balanced');
-  const mktgConfig = getResponsiveWindowConfig(40, 660, 820, 'portrait');
+  const mktgConfig = getResponsiveWindowConfig(40, 780, 820, 'portrait');
   const hotwireConfig = getResponsiveWindowConfig(80, 1200, 760, 'landscape');
   const slopshopConfig = getResponsiveWindowConfig(120, 1140, 720, 'landscape');
   const inboxConfig = getResponsiveWindowConfig(90, 1140, 720, 'landscape');

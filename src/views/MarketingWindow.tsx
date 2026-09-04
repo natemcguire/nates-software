@@ -49,7 +49,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
     },
     {
       name: 'SERVERS & HOSTING',
-      desc: 'Free-tier hosting is limited and best-effort; paid tier comes later for heavy traffic. Runs on Cloudflare + AWS — static files on R2, apps in scale-to-zero containers, Postgres on Aurora. Idle apps cost near nothing; heavy traffic is what the paid tier covers. You always own the source to self-host anywhere.'
+      desc: 'Free tier and ephemeral envs'
     },
     {
       name: 'SLOPSHOP',
@@ -72,9 +72,9 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
 
   return (
     <div className="flex flex-col h-full font-tahoma text-sm">
-      <div className="pt-3 pb-2.5 px-1 border-b border-gray-300">
+      <div className="pt-3 pb-2.5 px-4 border-b border-gray-300">
         <div className="text-2xl font-black text-w95-blue tracking-tight leading-none">
-          NATE'S SOFTWARE
+          NATE'S SOFTWARE EMPORIUM
         </div>
         <p className="text-gray-800 text-sm font-black mt-1">
           Marketplace For the Software Enthusiasts
@@ -95,7 +95,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       </div>
 
       <Win95Scroll className="flex-1">
-        <div className="px-1 py-3 space-y-4">
+        <div className="px-4 py-3 space-y-4">
           <p className="text-gray-800 text-sm leading-relaxed font-sans">
             Buy a web app once and own the source — the live app, the full Git repo, and a
             real license key with your name on it. Free-tier hosting is limited and best-effort, and you always own the source to self-host anywhere. Fork anything for yourself and remix it with an AI agent; selling your version requires the author to have enabled resale, with upstream makers earning the royalty they locked the day you forked.
@@ -122,22 +122,22 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             <table className="w-full text-xs">
               <tbody>
                 {specs.map((s) => {
-                  const isLive = !s.soon && Boolean(s.onOpen);
+                  const isLink = !s.soon && Boolean(s.onOpen);
                   return (
                     <tr
                       key={s.name}
-                      onClick={() => { if (isLive && s.onOpen) { playClickSound(); s.onOpen(); } }}
-                      className={`border-t border-gray-300 ${isLive ? 'cursor-pointer hover:bg-blue-50 group' : 'cursor-default bg-gray-50/50'}`}
+                      onClick={() => { if (isLink && s.onOpen) { playClickSound(); s.onOpen(); } }}
+                      className={`border-t border-gray-300 ${isLink ? 'cursor-pointer hover:bg-blue-50 group' : 'cursor-default'}`}
                     >
-                      <td className={`align-top px-3 py-2 font-bold whitespace-nowrap w-px ${isLive ? 'text-w95-blue underline decoration-dotted group-hover:decoration-solid' : 'text-gray-500'}`}>
+                      <td className={`align-top px-3 py-2 font-bold whitespace-nowrap w-px ${s.soon ? 'text-gray-500' : isLink ? 'text-w95-blue underline decoration-dotted group-hover:decoration-solid' : 'text-gray-900'}`}>
                         {s.name}
                         {s.soon && <span className="ml-1.5 text-[10px] font-mono text-gray-400 font-normal">(coming soon)</span>}
                       </td>
-                      <td className={`align-top px-3 py-2 font-sans leading-snug ${isLive ? 'text-gray-800' : 'text-gray-500'}`}>
+                      <td className={`align-top px-3 py-2 font-sans leading-snug ${s.soon ? 'text-gray-500' : 'text-gray-800'}`}>
                         {s.desc}
                       </td>
                       <td className="align-top px-2 py-2 text-right w-6">
-                        {isLive && <span className="text-blue-800 font-bold font-mono">▸</span>}
+                        {isLink && <span className="text-blue-800 font-bold font-mono">▸</span>}
                       </td>
                     </tr>
                   );
@@ -157,7 +157,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
         </div>
       </Win95Scroll>
 
-      <div className="pt-2.5 border-t border-gray-300 flex items-center justify-between flex-wrap gap-2">
+      <div className="pt-2.5 pb-1 px-4 border-t border-gray-300 flex items-center justify-between flex-wrap gap-2">
         <button
           onClick={onDismiss}
           className="text-gray-600 hover:text-black underline text-xs cursor-pointer"
