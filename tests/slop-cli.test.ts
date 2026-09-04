@@ -11,6 +11,7 @@ import {
   handleFork,
   handleMod,
   handlePush,
+  createDraftListing,
   handleDrop,
   handleDyno,
   handleTest,
@@ -411,7 +412,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
   });
 
   describe('slop push', () => {
-    it('should truthfully fail when remote is unreachable without claiming false CAS success', () => {
+    it('should truthfully fail when remote is unreachable without claiming false CAS success', async () => {
       // Hermetic: build a throwaway repo whose `slop` remote points at a dead
       // address. Previously this test ran bare handlePush() from the developer
       // checkout's cwd — which meant it depended on that checkout's real `slop`
@@ -426,7 +427,7 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         execSync(`git -C "${pushTempDir}" add -A && git -C "${pushTempDir}" -c user.name=Test -c user.email=test@test.com commit -qm init`, { stdio: 'pipe' });
         execSync(`git -C "${pushTempDir}" remote add slop ssh://git@127.0.0.1:1/nobody/nowhere.git`, { stdio: 'pipe' });
         process.chdir(pushTempDir);
-        const res = handlePush();
+        const res = await handlePush();
         expect(res.command).toBe('push');
         expect(res.success).toBe(false);
         expect(res.data.casVerified).toBe(false);
@@ -436,6 +437,55 @@ describe('SLOP CLI — "Go Fork, and Multiply" Developer Loop', () => {
         process.chdir(originalCwd);
         rmSync(pushTempDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('slop push draft listing (NSW-132)', () => {
+    it('returns a finish-your-listing URL when the control plane creates a draft', async () => {
+      let capturedUrl = '';
+      let capturedInit: any = null;
+      const mockFetch = async (url: string, init: any) => {
+        capturedUrl = url;
+        capturedInit = init;
+        return Response.json({ success: true, id: 'dronehunter', productStatus: 'draft' });
+      };
+
+      const res = await createDraftListing({
+        appId: 'dronehunter',
+        name: 'DroneHunter 95',
+        version: 'v2.1.0',
+        options: { fetchImpl: mockFetch, sessionToken: 'real-token' }
+      });
+
+      expect(capturedUrl).toBe('https://nates-software.com/api/drops');
+      expect(capturedInit.headers.Authorization).toBe('Bearer real-token');
+      const body = JSON.parse(capturedInit.body);
+      expect(body).toMatchObject({ id: 'dronehunter', name: 'DroneHunter 95', version: 'v2.1.0' });
+      expect(body.price).toBeUndefined();
+      expect(res.listingUrl).toBe('https://nates-software.com/?app=dronehunter');
+    });
+
+    it('returns no URL and a reason when no CLI session is configured', async () => {
+      const res = await createDraftListing({
+        appId: 'dronehunter',
+        name: 'DroneHunter 95',
+        version: 'v2.1.0',
+        options: { fetchImpl: async () => Response.json({ success: true, id: 'x' }) }
+      });
+      expect(res.listingUrl).toBeNull();
+      expect(res.reason).toContain('slop login');
+    });
+
+    it('returns no URL when the control plane rejects the draft', async () => {
+      const mockFetch = async () => Response.json({ success: false, error: 'reserved id' }, { status: 400 });
+      const res = await createDraftListing({
+        appId: 'dronehunter',
+        name: 'DroneHunter 95',
+        version: 'v2.1.0',
+        options: { fetchImpl: mockFetch, sessionToken: 'real-token' }
+      });
+      expect(res.listingUrl).toBeNull();
+      expect(res.reason).toContain('reserved id');
     });
   });
 

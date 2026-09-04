@@ -1167,17 +1167,19 @@ export async function handleFork(
   };
 }
 
-export function handlePush(args: string[] = []): SlopCommandResult {
+export async function handlePush(args: string[] = [], options: any = {}): Promise<SlopCommandResult> {
   let pushedGit = false;
   let remoteRef = "refs/heads/main";
   let sha = "unknown";
   let appId = args[0] || "my-shareware-app";
   let suggestedPrice = 15;
+  let suggestedName = "";
+  let suggestedVersion = "v1.0.0";
   let gitError: string | null = null;
   let success = false;
   let remoteHeadVerified = false;
 
-  const cwd = typeof process !== "undefined" ? process.cwd() : "/tmp";
+  const cwd = options.cwd || (typeof process !== "undefined" ? process.cwd() : "/tmp");
 
   if (isNode) {
     try {
@@ -1198,8 +1200,12 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       if (fsMod && fsMod.existsSync(`${cwd}/slop.json`)) {
         try {
           const cfg = JSON.parse(fsMod.readFileSync(`${cwd}/slop.json`, 'utf-8'));
-          if (cfg.name) appId = cfg.name.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+          if (cfg.name) {
+            appId = cfg.name.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+            suggestedName = String(cfg.name);
+          }
           if (typeof cfg.price === 'number' && Number.isFinite(cfg.price)) suggestedPrice = cfg.price;
+          if (typeof cfg.version === 'string' && cfg.version.trim()) suggestedVersion = cfg.version.trim();
         } catch {}
       }
 
@@ -1255,14 +1261,34 @@ export function handlePush(args: string[] = []): SlopCommandResult {
   }
 
   if (success) {
-    const output = [
+    const draft = await createDraftListing({
+      appId,
+      name: suggestedName || appId,
+      version: suggestedVersion,
+      options
+    });
+
+    const lines = [
       `[GITSMITH] Pushing to forge...`,
       `  ✔ Remote push succeeded`,
-      `  ✔ Remote ref verified: ${remoteRef} -> ${sha}`,
-      `  ℹ This command does not publish a HOTWIRE drop or deploy an app.`,
-      `Next: run "slop drop --price ${suggestedPrice}" when you are ready to submit a release.`
-    ].join("\n");
-    console.log(output);
+      `  ✔ Remote ref verified: ${remoteRef} -> ${sha}`
+    ];
+    if (draft.listingUrl) {
+      lines.push(
+        `  ✔ Draft listing created for ${appId}`,
+        ``,
+        `  Finish your listing (set a price, then publish):`,
+        `    ${draft.listingUrl}`
+      );
+    } else {
+      lines.push(
+        `  ℹ This command does not publish a HOTWIRE drop or deploy an app.`,
+        draft.reason
+          ? `  ℹ Could not pre-create a draft listing: ${draft.reason}`
+          : `Next: run "slop drop --price ${suggestedPrice}" when you are ready to submit a release.`
+      );
+    }
+    console.log(lines.join("\n"));
 
     return {
       success: true,
@@ -1272,6 +1298,8 @@ export function handlePush(args: string[] = []): SlopCommandResult {
         appId,
         sha,
         remoteRef,
+        listingUrl: draft.listingUrl,
+        draftCreated: Boolean(draft.listingUrl),
         casVerified: remoteHeadVerified,
         pushedGit: true,
         published: false,
@@ -1299,6 +1327,70 @@ export function handlePush(args: string[] = []): SlopCommandResult {
       }
     };
   }
+}
+
+export async function createDraftListing(input: {
+  appId: string;
+  name: string;
+  version: string;
+  options: any;
+}): Promise<{ listingUrl: string | null; reason?: string }> {
+  const { appId, name, version, options } = input;
+
+  const token = resolveCliToken(options);
+  if (!token) {
+    return { listingUrl: null, reason: 'no authenticated CLI session (run "slop login")' };
+  }
+
+  let controlPlaneUrl: string;
+  try {
+    controlPlaneUrl = resolveControlPlaneUrl(options.controlPlaneUrl);
+  } catch (err: any) {
+    return { listingUrl: null, reason: err.message };
+  }
+
+  const draftName = name && name.trim().length >= 3 ? name.trim() : appId;
+  const payload: Record<string, any> = {
+    id: appId,
+    name: draftName,
+    version: /^v?\d+\.\d+\.\d+$/.test(version) ? version : 'v1.0.0'
+  };
+
+  const requestInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload)
+  };
+  const endpoint = `${controlPlaneUrl.replace(/\/$/, '')}/api/drops`;
+
+  let res: Response | null = null;
+  try {
+    if (options.env) {
+      const req = new Request(endpoint, requestInit);
+      const dropsModulePath = "../functions/api/drops.ts";
+      const dropsControlPlane = await import( dropsModulePath);
+      res = await dropsControlPlane.onRequestPost({ request: req, env: options.env });
+    } else if (options.fetchImpl) {
+      res = await options.fetchImpl(endpoint, requestInit);
+    } else if (typeof fetch !== 'undefined') {
+      res = await fetch(endpoint, { ...requestInit, signal: AbortSignal.timeout(8000) });
+    } else {
+      return { listingUrl: null, reason: 'control plane fetch unavailable' };
+    }
+  } catch (err: any) {
+    return { listingUrl: null, reason: `control plane unreachable (${err.message})` };
+  }
+
+  if (!res) {
+    return { listingUrl: null, reason: 'no response from control plane' };
+  }
+
+  const data: any = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success || !data.id) {
+    return { listingUrl: null, reason: data.error || `control plane responded ${res.status}` };
+  }
+
+  return { listingUrl: `${controlPlaneUrl.replace(/\/$/, '')}/?app=${encodeURIComponent(data.id)}` };
 }
 
 function readSlopJsonConfig(cwd: string): any {
