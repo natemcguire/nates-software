@@ -584,14 +584,16 @@ export const LocalAgentMailbox: React.FC = () => {
             {probing ? 'PROBING' : health.running ? 'CONNECTED' : 'OFFLINE'}
           </span>
         </span>
-        <button
-          onClick={probe}
-          disabled={probing}
-          title="Reconnect to local service"
-          className="btn-w95 px-2 py-0.5 text-[10px] flex items-center gap-1 font-bold disabled:opacity-50"
-        >
-          <Power size={11} className={probing ? 'animate-spin' : ''} /> Reconnect
-        </button>
+        {!showOffline && (
+          <button
+            onClick={probe}
+            disabled={probing}
+            title="Reconnect to local service"
+            className="btn-w95 px-2 py-0.5 text-[10px] flex items-center gap-1 font-bold disabled:opacity-50"
+          >
+            <Power size={11} className={probing ? 'animate-spin' : ''} /> Reconnect
+          </button>
+        )}
       </div>
 
       {probing && !probed ? (

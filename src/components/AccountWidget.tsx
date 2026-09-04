@@ -61,12 +61,6 @@ export const AccountWidget: React.FC<AccountWidgetProps> = ({
             <LogIn size={10} />
             <span>Log In</span>
           </button>
-          <button
-            onClick={() => openAuthModal('register')}
-            className="win95-btn px-2 py-0.5 font-bold text-black text-[10px]"
-          >
-            Create account
-          </button>
         </div>
       )}
     </div>

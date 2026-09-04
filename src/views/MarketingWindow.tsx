@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, BookOpen, ExternalLink, Newspaper } from 'lucide-react';
+import { Flame, BookOpen, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { playClickSound } from '../lib/soundEngine';
 import { Win95Scroll } from '../components/Win95Scroll';
@@ -41,9 +41,8 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       onOpen: () => onOpenGitsmith()
     },
     {
-      name: 'Servers & hosting',
-      desc: 'Push a repo, get a live URL — no Dockerfile, no servers',
-      onOpen: onOpenWhitepapers
+      name: 'SERVERS & HOSTING',
+      desc: 'Push a repo, get a live URL — no Dockerfile, no servers'
     },
     {
       name: 'SLOPSHOP',
@@ -51,7 +50,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
       onOpen: onOpenSlopshop
     },
     {
-      name: 'Agent Inbox',
+      name: 'AGENT INBOX',
       desc: 'A live window onto your local AI agents',
       soon: true,
       onOpen: onOpenInbox
@@ -137,13 +136,7 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
               onClick={() => { playClickSound(); onOpenWhitepapers(); }}
               className="btn-w95 justify-start"
             >
-              <Newspaper size={14} className="text-blue-700" /> Editorial — AI benchmarks, tooling &amp; shareware
-            </button>
-            <button
-              onClick={() => { playClickSound(); onOpenWhitepapers(); }}
-              className="btn-w95 justify-start"
-            >
-              <BookOpen size={14} /> Architectural White Papers
+              <BookOpen size={14} className="text-blue-700" /> Architectural White Papers &amp; Editorial
             </button>
           </div>
         </div>
