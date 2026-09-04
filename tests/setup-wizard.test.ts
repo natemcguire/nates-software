@@ -62,6 +62,16 @@ describe('First-Time User Onboarding & Setup Wizard Flow (WAVE-UX-A)', () => {
     expect(source).toContain("const owner = user?.username || selectedStarter.repoOwner || 'nate';");
   });
 
+  it('only surfaces RUNNABLE starters — a failed/draft app must never dead-end a first-timer', () => {
+    // The wizard leads with "Run in the browser now". A starter whose deployment
+    // is not active (e.g. certified-mailer/wallart while `failed`) would send a
+    // brand-new visitor into a raw build-error panel. The forkable filter must
+    // gate on deploymentState === 'active', not just an active repo.
+    const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain("const isDeployable = d.deploymentState === 'active';");
+    expect(source).toContain('return hasRepo && isRepoActive && isDeployable;');
+  });
+
   it('reframes browser sandbox as a feature without throwaway warning (O1)', () => {
     const source = readFileSync(fileURLToPath(new URL('../src/views/SetupWizardView.tsx', import.meta.url)), 'utf8');
     expect(source).toContain('Runs in a fresh cloud sandbox — nothing to install. Closes when you leave.');

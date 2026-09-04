@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { TerminalView } from '../src/views/TerminalView';
 import { ArtifactSandbox } from '../src/components/ArtifactSandbox';
+import { EphemeralLiveApp } from '../src/components/EphemeralLiveApp';
 import { AuthProvider, AuthContext, AuthContextType } from '../src/context/AuthContext';
 import { CatalogProvider } from '../src/context/CatalogContext';
 import { AlertProvider } from '../src/context/AlertContext';
@@ -148,5 +149,43 @@ describe('Spec L: Synthesized-link Fix in ArtifactSandbox', () => {
 
     expect(html).not.toContain('Local AI Agent Workflow ·');
     expect(html).not.toContain('github.com/natemcguire/my-draft-app.git');
+  });
+});
+
+describe('Deployment-error surface does not leak a raw build stack trace', () => {
+  const failedApp: AppListing = {
+    id: 'broken-app',
+    name: 'Broken App',
+    tagline: 'A build that failed',
+    description: 'Deploy blew up',
+    author: 'nate',
+    authorAvatar: '💥',
+    version: 'v0.1.0',
+    upvotes: 0,
+    forkCount: 0,
+    tags: ['Tools'],
+    screenshots: [],
+    comments: [],
+    deploymentState: 'failed',
+    // Real prod shape: multi-line build stderr / stack trace.
+    deploymentError:
+      'vinext: not found\n  at spawn (node:child_process:1234)\n  at buildStep (/workspace/build.js:88)\n  at async run (/workspace/build.js:200)'
+  };
+
+  it('shows only the first line of a multi-line build error, not the full trace', () => {
+    const html = renderToString(
+      <AlertProvider>
+        <AuthProvider>
+          <CatalogProvider>
+            <EphemeralLiveApp app={failedApp} />
+          </CatalogProvider>
+        </AuthProvider>
+      </AlertProvider>
+    );
+    // First line surfaces (honest diagnostic).
+    expect(html).toContain('vinext: not found');
+    // Interior trace lines must NOT leak to a visitor.
+    expect(html).not.toContain('at spawn (node:child_process');
+    expect(html).not.toContain('/workspace/build.js');
   });
 });

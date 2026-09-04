@@ -29,6 +29,17 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
     deploymentError: app.deploymentError
   });
 
+  // The stored deploymentError can be raw multi-line build stderr (e.g. a
+  // pip/vinext trace). Show only the first meaningful line, capped, so the
+  // diagnostic stays useful without dumping a build stack trace to a visitor.
+  const displayError = (app.deploymentError || '')
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l.length > 0);
+  const shortError = displayError
+    ? (displayError.length > 160 ? `${displayError.slice(0, 160)}…` : displayError)
+    : '';
+
   const getStatusBadge = (state: AppDeploymentState) => {
     switch (state) {
       case 'active':
@@ -154,9 +165,9 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
                 <div><span className="text-gray-400">Lifecycle State:</span> <span className={deploymentState === 'failed' ? 'text-rose-400 font-bold' : 'text-amber-300'}>{deploymentState}</span></div>
                 <div><span className="text-gray-400">Detected Project Type:</span> {app.detectedProjectType || 'Awaiting repository intake'}</div>
                 {app.activeCommitOid && <div><span className="text-gray-400">Commit OID:</span> {app.activeCommitOid}</div>}
-                {app.deploymentError && (
+                {shortError && (
                   <div className="mt-2 pt-2 border-t border-gray-800 text-rose-300">
-                    <span className="font-bold text-rose-400">Error Evidence:</span> {app.deploymentError}
+                    <span className="font-bold text-rose-400">Error Evidence:</span> {shortError}
                   </div>
                 )}
                 {app.deploymentEvidence && (

@@ -796,10 +796,22 @@ export function getHonestDeploymentMessage(
   const state = app.deploymentState || 'draft';
   const name = app.name || app.id;
 
+  // deploymentError can be raw multi-line build stderr (a pip/vinext trace).
+  // Never surface the full trace in user-facing copy — collapse to the first
+  // meaningful line, capped, so the message stays honest without leaking a
+  // stack trace. The full evidence stays server-side / in stored evidence.
+  const firstErrLine = (app.deploymentError || '')
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l.length > 0);
+  const cleanError = firstErrLine
+    ? (firstErrLine.length > 160 ? `${firstErrLine.slice(0, 160)}…` : firstErrLine)
+    : '';
+
   if (state === 'failed') {
     return {
       headline: `Deployment failed for ${name}.`,
-      subtext: app.deploymentError || 'The candidate build or smoke test failed with recorded evidence.',
+      subtext: cleanError || 'The candidate build or smoke test failed with recorded evidence.',
       state: 'failed',
       guidance: [
         'Inspect the deployment error logs below for compiler, runtime, or network failures.',
@@ -812,7 +824,7 @@ export function getHonestDeploymentMessage(
   if (state === 'draft') {
     return {
       headline: `No deployable revision exists for ${name}.`,
-      subtext: app.deploymentError || 'Source has not been imported into GITSMITH and built by RIG.',
+      subtext: cleanError || 'Source has not been imported into GITSMITH and built by RIG.',
       state: 'draft',
       guidance: [
         `1. Add GITSMITH remote: git remote add gitsmith git@gitsmith.nates-software.com:${app.id}.git`,
@@ -825,7 +837,7 @@ export function getHonestDeploymentMessage(
   if (state === 'source_ready') {
     return {
       headline: `Source repository is ready for ${name}.`,
-      subtext: app.deploymentError || 'Canonical Git commit received; candidate build is awaiting RIG execution.',
+      subtext: cleanError || 'Canonical Git commit received; candidate build is awaiting RIG execution.',
       state: 'source_ready',
       guidance: [
         'A canonical repository and commit exist in GITSMITH.',

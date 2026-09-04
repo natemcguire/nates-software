@@ -81,7 +81,12 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         .filter((d: any) => {
           const hasRepo = Boolean(d.canonicalRepositoryId || d.repositoryId || (d.repoSlugName && d.repoStatus === 'active'));
           const isRepoActive = d.repoStatus ? d.repoStatus === 'active' : hasRepo;
-          return hasRepo && isRepoActive;
+          // First-run starters must be RUNNABLE. The wizard leads with "Run in
+          // the browser now", so only surface apps whose deployment is actually
+          // active — a `failed`/`draft` app would dead-end a first-time visitor
+          // on a raw build error (e.g. certified-mailer/wallart while broken).
+          const isDeployable = d.deploymentState === 'active';
+          return hasRepo && isRepoActive && isDeployable;
         })
         .map((d: any) => {
           const rawPrice = d.price;
