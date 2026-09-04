@@ -33,24 +33,27 @@ const getResponsiveWindowConfig = (offset: number, defaultW: number, defaultH: n
     ? Math.min(Math.round(defaultH * 1.1), screenH - 120)
     : Math.min(defaultH, screenH - 80);
 
-  const posX = Math.max(30, Math.floor((screenW - w) / 2) + offset);
-  const posY = Math.max(25, Math.floor((screenH - h - 40) / 2) + offset);
+  const maxX = Math.max(30, screenW - w - 20);
+  const maxY = Math.max(25, screenH - h - 60);
+
+  const posX = Math.min(maxX, Math.max(30, Math.floor((screenW - w) / 2) + offset));
+  const posY = Math.min(maxY, Math.max(25, Math.floor((screenH - h - 40) / 2) + offset));
 
   return { x: posX, y: posY, width: w, height: h };
 };
 
 export function useWindowManager(user?: AuthUser | null) {
   const setupConfig = getResponsiveWindowConfig(0, 880, 580);
-  const mktgConfig = getResponsiveWindowConfig(10, 620, 780);
-  const hotwireConfig = getResponsiveWindowConfig(25, 1180, 740);
-  const slopshopConfig = getResponsiveWindowConfig(45, 1120, 700);
-  const inboxConfig = getResponsiveWindowConfig(35, 1120, 700);
-  const papersConfig = getResponsiveWindowConfig(15, 1140, 720);
-  const dynoConfig = getResponsiveWindowConfig(30, 1000, 600);
-  const profileConfig = getResponsiveWindowConfig(20, 1100, 700);
-  const gitsmithConfig = getResponsiveWindowConfig(35, 1180, 740);
-  const chatConfig = getResponsiveWindowConfig(20, 960, 620);
-  const terminalConfig = getResponsiveWindowConfig(50, 900, 560);
+  const mktgConfig = getResponsiveWindowConfig(40, 620, 780);
+  const hotwireConfig = getResponsiveWindowConfig(80, 1180, 740);
+  const slopshopConfig = getResponsiveWindowConfig(120, 1120, 700);
+  const inboxConfig = getResponsiveWindowConfig(90, 1120, 700);
+  const papersConfig = getResponsiveWindowConfig(50, 1140, 720);
+  const dynoConfig = getResponsiveWindowConfig(100, 1000, 600);
+  const profileConfig = getResponsiveWindowConfig(60, 1100, 700);
+  const gitsmithConfig = getResponsiveWindowConfig(110, 1180, 740);
+  const chatConfig = getResponsiveWindowConfig(70, 960, 620);
+  const terminalConfig = getResponsiveWindowConfig(130, 900, 560);
 
   const getInboxTitle = (u?: AuthUser | null) =>
     u?.username
@@ -253,8 +256,8 @@ export function useWindowManager(user?: AuthUser | null) {
         .filter(([wid, ws]) => wid !== id && ws.isOpen && !ws.isMinimized)
         .map(([, ws]) => ({ x: ws.x, y: ws.y }));
 
-      const STEP = 32;
-      const NEAR = 24;
+      const STEP = 52;
+      const NEAR = 36;
       const maxX = Math.max(centerX, screenW - w - 20);
       const maxY = Math.max(centerY, screenH - h - taskbarH - 20);
 
@@ -267,8 +270,8 @@ export function useWindowManager(user?: AuthUser | null) {
           x += STEP;
           y += STEP;
           if (x > maxX || y > maxY) {
-            x = Math.min(maxX, centerX + ((i % 5) + 1) * 16);
-            y = Math.min(maxY, centerY + ((i % 5) + 1) * 16);
+            x = Math.min(maxX, 30 + ((i % 6) + 1) * 36);
+            y = Math.min(maxY, 25 + ((i % 6) + 1) * 36);
           }
         }
       }
