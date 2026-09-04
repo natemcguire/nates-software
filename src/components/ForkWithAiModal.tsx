@@ -37,6 +37,23 @@ export interface ForkWithAiModalProps {
   onOpenSandbox?: (appId: string) => void;
 }
 
+export type ForkPromptTool = 'claude' | 'agy' | 'cursor' | 'terminal';
+
+const FORK_TOOL_NAMES: Record<ForkPromptTool, string> = {
+  claude: 'Claude Code',
+  agy: 'Antigravity',
+  cursor: 'Cursor',
+  terminal: 'SLOP CLI'
+};
+
+export function formatForkPrompt(tool: ForkPromptTool, repository: string, prompt: string): string {
+  return `Target repository: ${repository}\nTool: ${FORK_TOOL_NAMES[tool]}\n\nGoal:\n${prompt.trim()}`;
+}
+
+export function resolveForkAppId(appId: string, repositoryId?: string | null): string | undefined {
+  return repositoryId && appId === repositoryId ? undefined : appId;
+}
+
 const PROMPT_PRESETS: Record<string, string[]> = {
   dronehunter: [
     'Add dual-wield laser shotguns and a new boss wave telemetry table.',
@@ -76,9 +93,10 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const [isForking, setIsForking] = useState(false);
   const [forkError, setForkError] = useState<string | null>(null);
   const [forkResult, setForkResult] = useState<any | null>(null);
-  const [activeTool, setActiveTool] = useState<'claude' | 'agy' | 'cursor' | 'terminal'>('claude');
+  const [activeTool, setActiveTool] = useState<ForkPromptTool>('claude');
   const [copiedCmd, setCopiedCmd] = useState(false);
   const [copiedWorktreeCmd, setCopiedWorktreeCmd] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const suggestedPrompts = PROMPT_PRESETS[app.id] || [
     `Implement a new local-first feature for ${app.name}; keep the storage adapter configurable and document its persistence boundary.`
@@ -94,10 +112,21 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
   const resolvedRepoSlug = app.repoSlug || (app.repoName ? `${app.author || app.creator || 'nate'}/${app.repoName}` : null);
   const parentRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
   const parentRoyaltyPercent = typeof parentRoyaltyBps === 'number' ? parentRoyaltyBps / 100 : null;
+  const inheritedLiens = Array.isArray(app.inheritedLiens) ? app.inheritedLiens : [];
+  const totalRoyaltyBps = inheritedLiens.reduce((sum, lien) => sum + lien.bps, 0) + (parentRoyaltyBps || 0);
   const cliForkTarget = resolvedRepoSlug || `${app.author || app.creator || 'nate'}/${app.id}`;
 
   const getCliCommand = () => {
     return `slop fork ${cliForkTarget}`;
+  };
+
+  const forkedRepository = `${user?.username || 'you'}/${forkResult?.repository?.slug || app.repoName || app.id}`;
+
+  const handleCopyPrompt = () => {
+    playSuccessChime();
+    navigator.clipboard.writeText(formatForkPrompt(activeTool, forkedRepository, customPrompt));
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
   const handleCopyCommand = () => {
@@ -132,13 +161,14 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
 
     try {
       const parentIdentifier = app.repositoryId || app.repoSlug || app.id;
+      const resolvedAppId = resolveForkAppId(app.id, app.repositoryId);
       const res = await fetch('/api/git', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'fork',
           parentRepositoryId: parentIdentifier,
-          appId: app.id,
+          ...(resolvedAppId ? { appId: resolvedAppId } : {}),
           childSlug: app.repoName || app.id,
           parentRefName: app.repoDefaultRef || 'refs/heads/main'
         })
@@ -180,7 +210,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
         <div className="bg-[#000080] text-white px-2 py-1 flex items-center justify-between font-bold text-xs">
           <div className="flex items-center gap-1.5">
             <Bot size={13} className="text-yellow-300" />
-            <span>1-CLICK FORK &amp; CODE WITH AI — {app.name}</span>
+            <span>CREATE FORK — {app.name}</span>
           </div>
           <button
             onClick={handleClose}
@@ -199,7 +229,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
               </div>
 
               <p className="text-gray-700 text-xs">
-                Your fork is ready.
+                Your repository fork is ready. No AI editing session has started.
               </p>
 
               <div className="bg-slate-950 text-slate-100 p-3 rounded font-mono text-xs space-y-2 border border-slate-800">
@@ -240,6 +270,18 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                     </button>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-300 p-3 space-y-2">
+                <div className="font-bold text-blue-950 text-xs">Next step for {FORK_TOOL_NAMES[activeTool]}</div>
+                <div className="text-gray-700 text-xs">Copy the goal you selected, then paste it into {FORK_TOOL_NAMES[activeTool]} after opening your fork.</div>
+                <button
+                  onClick={handleCopyPrompt}
+                  className="btn-w95 btn-w95-primary px-3 py-1.5 font-bold text-xs flex items-center gap-1.5"
+                >
+                  {copiedPrompt ? <Check size={13} /> : <Copy size={13} />}
+                  <span>{copiedPrompt ? 'Prompt copied' : `Copy prompt for ${FORK_TOOL_NAMES[activeTool]}`}</span>
+                </button>
               </div>
 
               <div className="flex items-center justify-between pt-2">
@@ -291,7 +333,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                 <div className="text-right font-mono text-[11px]">
                   <div className="text-emerald-800 font-bold">
                     {parentRoyaltyPercent !== null
-                      ? `You'll owe @${app.author || app.creator || 'nate'} ${parentRoyaltyPercent}% forever`
+                      ? `Frozen royalty total: ${(totalRoyaltyBps / 100).toFixed(2)}%`
                       : 'Frozen Maker Royalty'}
                   </div>
                   {resolvedRepoSlug ? (
@@ -304,6 +346,25 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                   )}
                 </div>
               </div>
+
+              {parentRoyaltyPercent !== null && (
+                <div className="bg-[#e4f0f7] border border-[#7ea6c4] p-2.5 text-[11px] font-mono text-[#1c4a6b] space-y-1">
+                  {inheritedLiens.map((lien, index) => (
+                    <div key={`${lien.maker}-${index}`} className="flex justify-between gap-3">
+                      <span>@{lien.maker}</span>
+                      <span>{(lien.bps / 100).toFixed(2)}%</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-3">
+                    <span>@{app.author || app.creator || 'nate'}</span>
+                    <span>{parentRoyaltyPercent.toFixed(2)}%</span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-[#7ea6c4] pt-1 font-bold">
+                    <span>Total owed forever</span>
+                    <span>{(totalRoyaltyBps / 100).toFixed(2)}%</span>
+                  </div>
+                </div>
+              )}
 
               {!canPerformRealFork ? (
                 <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded text-xs space-y-1 text-amber-900">
@@ -439,7 +500,7 @@ export const ForkWithAiModal: React.FC<ForkWithAiModalProps> = ({
                       className="btn-w95 btn-w95-primary px-4 py-1.5 font-bold text-xs flex items-center gap-1.5 shadow"
                     >
                       <GitFork size={13} />
-                      <span>{isForking ? 'Creating Fork...' : '⚡ Fork with AI (Create Real Fork)'}</span>
+                      <span>{isForking ? 'Creating fork...' : 'Create fork'}</span>
                     </button>
                   ) : (
                     <button

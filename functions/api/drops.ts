@@ -13,6 +13,7 @@ import {
 } from '../../src/lib/hotwireBackend';
 import { validateDropSubmission, parseAndValidatePrice, RESERVED_APP_IDS } from '../../src/lib/hotwireDomain';
 import { buildRepositoryStorageKey } from '../../src/lib/forgeDomain';
+import { assertListingRoyaltyAllowed } from '../../src/lib/royaltyLiens';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -44,6 +45,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         r.default_ref AS repoDefaultRef,
         r.grantable_bps AS grantable_bps,
         r.grantable_bps AS grantableBps,
+        cp.royalty_bps AS royaltyBps,
+        cp.status AS productStatus,
         ru.username AS repoOwnerUsername,
         rf.commit_oid AS repoHeadCommitOid,
         u.id AS creatorId, u.username AS creator, u.avatar_url AS creatorAvatar,
@@ -61,6 +64,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       )
       LEFT JOIN users ru ON ru.id = r.owner_user_id
       LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = COALESCE(r.default_ref, 'refs/heads/main')
+      LEFT JOIN commerce_products cp ON cp.app_id = a.id
     `;
 
     
@@ -173,6 +177,27 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     }
 
     
+    const inheritedLiensByRepository = new Map<string, Array<{ maker: string; bps: number }>>();
+    const repositoryIds = Array.from(new Set(
+      results.map((row: any) => row.canonicalRepositoryId || row.repositoryId).filter(Boolean)
+    ));
+    if (env?.DB && repositoryIds.length > 0) {
+      const placeholders = repositoryIds.map(() => '?').join(', ');
+      const lienResult = await env.DB.prepare(`
+        SELECT l.holder_of_repository_id AS holderRepositoryId, l.bps, u.username AS maker
+        FROM repository_fork_liens l
+        JOIN users u ON u.id = l.ancestor_user_id
+        WHERE l.holder_of_repository_id IN (${placeholders})
+        ORDER BY l.holder_of_repository_id, l.depth DESC
+      `).bind(...repositoryIds).all();
+      for (const lien of lienResult.results || []) {
+        const holderRepositoryId = String((lien as any).holderRepositoryId);
+        const rows = inheritedLiensByRepository.get(holderRepositoryId) || [];
+        rows.push({ maker: String((lien as any).maker), bps: Number((lien as any).bps) });
+        inheritedLiensByRepository.set(holderRepositoryId, rows);
+      }
+    }
+
     const parsedDrops: DropRankingInput[] = (results || []).map((r: any) => {
       let screenshots: string[] = [];
       let binaries: Record<string, string> = {};
@@ -196,6 +221,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const repoStatus = r.repoStatus || null;
       const repoDefaultRef = r.repoDefaultRef || null;
       const repositoryId = r.canonicalRepositoryId || r.repositoryId || null;
+      const royaltyBps = typeof r.royaltyBps === 'number' ? r.royaltyBps : 1000;
+      const inheritedLiens = repositoryId ? inheritedLiensByRepository.get(repositoryId) || [] : [];
       const grantable_bps = typeof r.grantable_bps === 'number'
         ? r.grantable_bps
         : (typeof r.grantableBps === 'number' ? r.grantableBps : 0);
@@ -224,6 +251,8 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       return {
         ...r,
         repositoryId,
+        royaltyBps,
+        inheritedLiens,
         hasCanonicalRepo,
         isRepoActive,
         repoSlug,
@@ -344,13 +373,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const creatorId = authUser.id;
 
     
-    const existingListing = await env.DB.prepare('SELECT id, creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
-    if (existingListing && existingListing.creator_id !== creatorId) {
+    const ownershipListing = await env.DB.prepare('SELECT id, creator_id FROM app_listings WHERE id = ?').bind(dropId).first();
+    if (ownershipListing && ownershipListing.creator_id !== creatorId) {
       return Response.json({
         success: false,
         error: 'Forbidden: drop listing ID is owned by another maker'
       }, { status: 403 });
     }
+    const existingListing = ownershipListing
+      ? await env.DB.prepare(`
+          SELECT id, creator_id, repository_id, deployment_state, deployment_error,
+                 deployment_evidence_json, active_deployment_id, active_commit_oid
+          FROM app_listings WHERE id = ?
+        `).bind(dropId).first()
+      : null;
 
     
     const mergedBinaries = typeof binaries === 'object' && binaries !== null ? { ...binaries } : {};
@@ -367,6 +403,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     const candidateRepositoryId: string | null = body.repositoryId ? String(body.repositoryId).trim() : null;
     let linkedRepositoryId: string | null = null;
+    let linkedDefaultCommitOid: string | null = null;
     try {
 
       const repoRecord = await env.DB.prepare(`
@@ -377,6 +414,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       `).bind(candidateRepositoryId || dropId, dropId, dropId, creatorId).first();
       if (repoRecord) {
         linkedRepositoryId = repoRecord.id;
+        linkedDefaultCommitOid = (repoRecord as any).defaultCommitOid || null;
         if (repoRecord.defaultCommitOid) {
           initialDeploymentState = 'source_ready';
         }
@@ -483,14 +521,50 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
     }
 
+    const deploymentRanks: Record<string, number> = {
+      draft: 0,
+      source_ready: 1,
+      building: 2,
+      deployable: 3,
+      active: 4
+    };
+    const existingDeploymentState = String((existingListing as any)?.deployment_state || '');
+    const existingRepositoryId = (existingListing as any)?.repository_id || null;
+    const existingActiveCommitOid = (existingListing as any)?.active_commit_oid || null;
+    const sourceChanged = Boolean(existingListing && (
+      (existingRepositoryId && linkedRepositoryId && existingRepositoryId !== linkedRepositoryId) ||
+      (existingActiveCommitOid && linkedDefaultCommitOid && existingActiveCommitOid !== linkedDefaultCommitOid)
+    ));
+    const existingDeploymentRank = deploymentRanks[existingDeploymentState] ?? Number.POSITIVE_INFINITY;
+    const initialDeploymentRank = deploymentRanks[initialDeploymentState] ?? 0;
+    const preserveDeploymentMetadata = Boolean(
+      existingListing && !sourceChanged && existingDeploymentRank >= initialDeploymentRank
+    );
+    const persistedDeploymentState = preserveDeploymentMetadata ? existingDeploymentState : initialDeploymentState;
+    const deploymentStateUpdate = preserveDeploymentMetadata
+      ? 'app_listings.deployment_state'
+      : 'excluded.deployment_state';
+    const deploymentErrorUpdate = preserveDeploymentMetadata
+      ? 'app_listings.deployment_error'
+      : 'excluded.deployment_error';
+    const deploymentEvidenceUpdate = preserveDeploymentMetadata
+      ? 'app_listings.deployment_evidence_json'
+      : 'NULL';
+    const activeDeploymentUpdate = preserveDeploymentMetadata
+      ? 'app_listings.active_deployment_id'
+      : 'NULL';
+    const activeCommitUpdate = preserveDeploymentMetadata
+      ? 'app_listings.active_commit_oid'
+      : 'NULL';
+
     
     
     
     
     
     const rawRoyaltyBps = body.royaltyBps !== undefined ? body.royaltyBps : body.royalty_bps;
-    let validatedRoyaltyBps = 0;
-    if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null) {
+    let validatedRoyaltyBps = 1000;
+    if (rawRoyaltyBps !== undefined && rawRoyaltyBps !== null && rawRoyaltyBps !== '') {
       if (typeof rawRoyaltyBps !== 'number' || !Number.isSafeInteger(rawRoyaltyBps)) {
         return Response.json({
           success: false,
@@ -504,6 +578,20 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         }, { status: 422 });
       }
       validatedRoyaltyBps = rawRoyaltyBps;
+    }
+
+    const inheritedRoyaltyRow = linkedRepositoryId
+      ? await env.DB.prepare(`
+          SELECT COALESCE(SUM(bps), 0) AS inheritedRoyaltyBps
+          FROM repository_fork_liens
+          WHERE holder_of_repository_id = ?
+        `).bind(linkedRepositoryId).first()
+      : null;
+    const inheritedRoyaltyBps = Number((inheritedRoyaltyRow as any)?.inheritedRoyaltyBps || 0);
+    try {
+      assertListingRoyaltyAllowed(inheritedRoyaltyBps, validatedRoyaltyBps);
+    } catch (error: any) {
+      return Response.json({ success: false, error: error.message }, { status: 422 });
     }
 
     
@@ -535,13 +623,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         tags = excluded.tags,
         screenshots = excluded.screenshots,
         binaries = excluded.binaries,
-        deployment_state = excluded.deployment_state,
-        deployment_error = excluded.deployment_error,
+        deployment_state = ${deploymentStateUpdate},
+        deployment_error = ${deploymentErrorUpdate},
         repository_id = COALESCE(excluded.repository_id, app_listings.repository_id),
         hostname = COALESCE(app_listings.hostname, excluded.hostname),
-        deployment_evidence_json = NULL,
-        active_deployment_id = NULL,
-        active_commit_oid = NULL
+        deployment_evidence_json = ${deploymentEvidenceUpdate},
+        active_deployment_id = ${activeDeploymentUpdate},
+        active_commit_oid = ${activeCommitUpdate}
       WHERE app_listings.creator_id = excluded.creator_id
       RETURNING id, deployment_state
     `).bind(
@@ -586,17 +674,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     
     const productPriceCents = priceValidation.priceCents;
-    // NSW-50: commerce_products.status may be 'active' only when there is real build+run
-    // evidence for the repository — a bare commit (initialDeploymentState = 'source_ready')
-    // is NOT sufficient proof and must stay 'draft' (visible + forkable, not purchasable).
-    // Evidence signal chosen from the data model (see migrations 0006 + 0022):
-    //   1) app_listings.deployment_state already IN ('deployable', 'active') — the RIG pipeline
-    //      only ever advances a listing to these states after a real build+deploy succeeded, or
-    //   2) a deployment_revisions row for this repository with status = 'healthy' — the terminal
-    //      "queued -> deploying -> healthy" success state in that table's own CHECK constraint;
-    //      there is no separate 'promoted'/'verified' literal in the schema, so 'healthy' is the
-    //      most authoritative "proven to build and run" signal deployment_revisions supports.
-    const honestProductStatus = repositoryHasProvenBuild ? 'active' : 'draft';
+    const payoutAccount = await env.DB.prepare(`
+      SELECT payouts_enabled AS payoutsEnabled
+      FROM stripe_accounts
+      WHERE user_id = ?
+    `).bind(creatorId).first();
+    const payoutsEnabled = Boolean((payoutAccount as any)?.payoutsEnabled);
+    const honestProductStatus = repositoryHasProvenBuild && payoutsEnabled ? 'active' : 'draft';
     const productStmt = env.DB.prepare(`
       INSERT INTO commerce_products (app_id, repository_id, seller_user_id, price_cents, currency, status, royalty_bps)
       SELECT id, ?, creator_id, ?, 'usd', ?, ?
@@ -640,14 +724,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     return Response.json({
       success: true,
       id: dropId,
-      deploymentState: initialDeploymentState,
+      deploymentState: persistedDeploymentState,
       repositoryId: linkedRepositoryId,
       repositoryProvisioned: Boolean(newRepositoryStmt),
       productStatus: honestProductStatus,
+      payoutsEnabled,
       batchWindow,
       message: honestProductStatus === 'active'
         ? 'Drop published successfully to Cloudflare D1'
-        : 'Drop published as a draft — link a deployable repository (slop push / GITSMITH build) before it can be sold as active.'
+        : !payoutsEnabled
+          ? 'Drop saved as a draft — connect Stripe and enable payouts before this paid listing can go on sale.'
+          : 'Drop published as a draft — link a deployable repository (slop push / GITSMITH build) before it can be sold as active.'
     });
   } catch (err: any) {
     console.error('HOTWIRE drop publication failed', err);

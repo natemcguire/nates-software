@@ -4,6 +4,10 @@ import { Save, Plus, Trash2, CheckCircle2, Copy, Check, AlertTriangle } from 'lu
 import { playClickSound } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
 import { useAuth } from '../context/AuthContext';
+import { calculateAllocations } from '../lib/commerceDomain';
+import { formatCentsToUsd } from '../lib/profileDomain';
+import { getListingRoyaltyHeadroomBps } from '../lib/royaltyLiens';
+import { usePayoutStatus } from '../hooks/usePayoutStatus';
 
 export interface DropPersistResult {
   productStatus?: string;
@@ -22,6 +26,7 @@ interface PostEditorViewProps {
 export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab = 'guide', onSave, onCancel }) => {
   const { showAlert } = useAlert();
   const { user, requireAuth } = useAuth();
+  const { payoutsEnabled, isChecking: isCheckingPayouts } = usePayoutStatus();
   const [activeTab, setActiveTab] = useState<'info' | 'media' | 'guide' | 'pricing'>(initialTab);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -34,13 +39,63 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [version, setVersion] = useState(app.version);
   const [price, setPrice] = useState(app.price);
   const initialRoyaltyBps = app.royaltyBps ?? app.royalty_bps;
-  const [royaltyPercent, setRoyaltyPercent] = useState<number>(
-    typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10
+  const inheritedLiens = app.inheritedLiens || [];
+  const inheritedRoyaltyBps = inheritedLiens.reduce((sum, lien) => sum + lien.bps, 0);
+  const royaltyHeadroomBps = getListingRoyaltyHeadroomBps(inheritedRoyaltyBps);
+  const royaltyHeadroomPercent = royaltyHeadroomBps / 100;
+  const [royaltyPercent, setRoyaltyPercent] = useState<number | ''>(
+    Math.min(royaltyHeadroomPercent, typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10)
   );
   const isFork = typeof app.forkDepth === 'number' && app.forkDepth > 0;
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const effectiveRoyaltyPercent = royaltyPercent === ''
+    ? Math.min(10, royaltyHeadroomPercent)
+    : Math.max(0, Math.min(royaltyHeadroomPercent, Number(royaltyPercent) || 0));
+  const previewGrossCents = Number.isFinite(Number(price)) && Number(price) > 0
+    ? Math.round(Number(price) * 100)
+    : null;
+  const allocationLiens = inheritedLiens.map((lien, index) => ({
+    ancestorUserId: lien.maker,
+    ancestorRepositoryId: null,
+    bps: lien.bps,
+    depth: inheritedLiens.length - index
+  }));
+  let sellerPreview = null;
+  let descendantPreview = null;
+  if (previewGrossCents) {
+    try {
+      sellerPreview = calculateAllocations({
+        grossCents: previewGrossCents,
+        currency: 'usd',
+        sellerUserId: app.author || app.creator || app.id,
+        sellerRepositoryId: app.repositoryId,
+        liens: allocationLiens
+      });
+      descendantPreview = calculateAllocations({
+        grossCents: previewGrossCents,
+        currency: 'usd',
+        sellerUserId: 'descendant',
+        liens: [
+          ...allocationLiens,
+          {
+            ancestorUserId: 'current-maker',
+            ancestorRepositoryId: app.repositoryId || null,
+            bps: Math.round(effectiveRoyaltyPercent * 100),
+            depth: 1
+          }
+        ]
+      });
+    } catch {
+      sellerPreview = null;
+      descendantPreview = null;
+    }
+  }
+  const descendantOwesMakerCents = descendantPreview?.allocations.find(
+    allocation => allocation.role === 'ancestor' && allocation.recipientUserId === 'current-maker'
+  )?.amountCents ?? 0;
+  const requiresPayoutSetup = Boolean(user && Number(price) > 0 && !payoutsEnabled);
 
   const handleCopy = (text: string, index: number) => {
     playClickSound();
@@ -73,8 +128,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
       try {
         setIsSaving(true);
 
-        const clampedRoyaltyPercent = Math.max(0, Math.min(100, Number(royaltyPercent) || 0));
-        const royaltyBps = Math.round(clampedRoyaltyPercent * 100);
+        const royaltyBps = Math.round(effectiveRoyaltyPercent * 100);
 
         const updated: AppListing = {
           ...app,
@@ -459,15 +513,20 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
                   <input
                     type="number"
                     min={0}
-                    max={100}
+                    max={royaltyHeadroomPercent}
                     step={1}
                     value={royaltyPercent}
-                    onChange={(e) => setRoyaltyPercent(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                    onChange={(e) => setRoyaltyPercent(
+                      e.target.value === '' ? '' : Math.max(0, Math.min(royaltyHeadroomPercent, Number(e.target.value)))
+                    )}
                     className="w-full win95-field bg-white p-1.5 font-bold text-sm text-blue-900 font-mono focus:outline-none"
                   />
                 </div>
                 <p className="text-[11px] text-gray-700 mt-1">
                   What anyone who forks this app owes you on every sale of their version — frozen the day they fork, forever.
+                </p>
+                <p className="text-[11px] text-blue-800 mt-1 font-mono">
+                  Maximum available rate: {royaltyHeadroomPercent.toFixed(2)}%
                 </p>
                 {isFork ? (
                   <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-950 bg-amber-100 border border-amber-400 px-2 py-1.5">
@@ -484,16 +543,54 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
               </div>
             </div>
 
-            <div className="bg-[#c0c0c0] border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] p-3 space-y-2 text-xs text-black">
-              <div className="font-bold text-black text-xs flex items-center gap-1.5">
-                <CheckCircle2 size={14} className="text-green-800" /> What you earn:
+            {requiresPayoutSetup && (
+              <div className="bg-amber-50 border-2 border-amber-400 p-3 text-xs text-amber-950 flex items-start gap-2">
+                <AlertTriangle size={15} className="shrink-0" />
+                <div>
+                  <div className="font-bold">Connect Stripe before publishing this paid listing</div>
+                  <div>Payouts are not enabled on your Profile. This listing can be saved only as a draft until Stripe payouts are connected.</div>
+                </div>
               </div>
-              <p className="text-gray-800 leading-relaxed">
-                On a <b>${Math.max(0, Number(price) || 0).toFixed(0)}</b> sale of your own app, you keep{' '}
-                <b className="text-green-900">${(Math.max(0, Number(price) || 0) * 0.9).toFixed(2)}</b> (the platform takes a flat 10%).
-                When someone forks it and sells their version, you earn{' '}
-                <b className="text-blue-900">{Math.max(0, Math.min(100, Number(royaltyPercent) || 0))}%</b> of that sale —{' '}
-                and a fork-of-a-fork still pays you, frozen at the rate above. It deposits to your connected Stripe account automatically.
+            )}
+
+            <div className="bg-blue-50 border-2 border-w95-blue p-3.5 rounded space-y-2 text-xs">
+              <div className="font-bold text-w95-blue text-sm flex items-center gap-1.5">
+                <CheckCircle2 size={16} className="text-green-700" /> Sale receipt preview
+              </div>
+              {sellerPreview && previewGrossCents ? (
+                <div className="bg-white border border-blue-300 p-2.5 font-mono space-y-1">
+                  <div className="flex justify-between gap-3 border-b border-dotted border-gray-300 pb-1 font-bold">
+                    <span>Listing price</span>
+                    <span>{formatCentsToUsd(previewGrossCents)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Platform</span>
+                    <span>{formatCentsToUsd(sellerPreview.platformCents)}</span>
+                  </div>
+                  {sellerPreview.allocations.filter(allocation => allocation.role === 'ancestor').map(allocation => (
+                    <div key={allocation.sequence} className="flex justify-between gap-3">
+                      <span>Upstream @{allocation.recipientUserId}</span>
+                      <span>{formatCentsToUsd(allocation.amountCents)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between gap-3 border-t border-gray-500 pt-1 font-bold text-green-800">
+                    <span>You</span>
+                    <span>{formatCentsToUsd(sellerPreview.sellerCents)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-blue-300 pt-1 mt-1 text-w95-blue font-bold">
+                    <span>What a fork of you would owe you at this price</span>
+                    <span>{formatCentsToUsd(descendantOwesMakerCents)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 text-gray-700">
+                    <span>What that fork's seller would keep</span>
+                    <span>{formatCentsToUsd(descendantPreview?.sellerCents ?? 0)}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-amber-800">Enter a valid listing price and royalty stack to preview the receipt.</p>
+              )}
+              <p className="text-gray-600 leading-relaxed">
+                The receipt uses the same allocation function as checkout. Every frozen royalty is settled from the after-platform remainder.
               </p>
             </div>
           </div>
@@ -510,9 +607,9 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
 
         <button
           onClick={handleSave}
-          disabled={isSaving}
+          disabled={isSaving || requiresPayoutSetup || Boolean(user && isCheckingPayouts)}
           className={`win95-btn bg-[#000080] hover:bg-blue-800 text-white px-5 py-1 text-xs font-bold flex items-center gap-1.5 ${
-            isSaving ? 'opacity-70 cursor-wait' : ''
+            isSaving || requiresPayoutSetup || Boolean(user && isCheckingPayouts) ? 'opacity-70 cursor-not-allowed' : ''
           }`}
         >
           <Save size={13} />

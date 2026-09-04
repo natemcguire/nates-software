@@ -1894,7 +1894,11 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         const rawAppId = String(body.appId).trim();
         if (rawAppId) {
           let isLinked = false;
-          if ((parent as any).appId === rawAppId || (parent as any).slug === rawAppId) {
+          if (
+            (parent as any).id === rawAppId ||
+            (parent as any).appId === rawAppId ||
+            (parent as any).slug === rawAppId
+          ) {
             isLinked = true;
           } else {
             const linkedListing = await db.prepare(`

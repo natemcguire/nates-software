@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
+import { deriveListingStatus } from '../lib/listingStatus';
 
 interface HotwireViewProps {
   onOpenApp?: (appId: string) => void;
@@ -405,6 +406,12 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
             const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
             const isMine = username && (app.author === username || app.creator === username);
             const royaltyBps = getRoyaltyBps(app);
+            const listingStatus = deriveListingStatus({
+              isDemo: app.isDemo,
+              hasCanonicalRepo: Boolean(app.hasCanonicalRepo),
+              productStatus: app.productStatus,
+              isAuthoritativeLive
+            });
             return (
               <div
                 key={app.id}
@@ -421,11 +428,9 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                     {isMine && (
                       <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Published by you">MINE</span>
                     )}
-                    {app.isDemo || !isAuthoritativeLive ? (
-                      <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Demo listing — source not published yet, so it can't be forked or bought.">DEMO</span>
-                    ) : (
-                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Live in the library">LIVE</span>
-                    )}
+                    <span className={`${listingStatus.className} border font-bold font-mono text-xs px-1.5 rounded`}>
+                      {listingStatus.label}
+                    </span>
                     {royaltyBps > 0 && (
                       <span className="bg-[#e4f0f7] text-[#1c4a6b] border border-[#7ea6c4] font-mono text-[11px] px-1.5 rounded flex items-center gap-0.5" title="Resale royalty — frozen onto every fork">
                         <Snowflake size={9} /> {(royaltyBps / 100).toFixed(1)}%
@@ -434,16 +439,17 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                   </div>
 
                   <p className="text-[11px] text-gray-700 mt-0.5 line-clamp-1">{app.tagline}</p>
+                  <p className="text-xs text-gray-600 mt-0.5 line-clamp-1">{listingStatus.sentence}</p>
 
-                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-[10px]">
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap text-xs">
                     {app.hasCanonicalRepo && app.repoSlug ? (
-                      <span className="bg-blue-50 text-blue-900 border border-blue-300 font-mono text-[11px] px-1.5 rounded flex items-center gap-1" title={`Canonical repo: ${app.repoSlug}`}>
+                      <span className="text-blue-900 font-mono flex items-center gap-1" title={`Canonical repo: ${app.repoSlug}`}>
                         <GitFork size={9} className="text-blue-700 shrink-0" />
                         {app.repoSlug}
                         {app.repoHeadCommitOid && <span className="text-blue-600">· #{app.repoHeadCommitOid.slice(0, 7)}</span>}
                       </span>
                     ) : (
-                      <span className="bg-gray-100 text-gray-500 border border-gray-300 font-mono text-[11px] px-1.5 rounded" title="Source not published to the forge yet — can't be forked or bought until it is.">not yet on forge</span>
+                      <span className="text-gray-500 font-mono">No GITSMITH source</span>
                     )}
                     <span className="text-gray-500 font-mono flex items-center gap-0.5"><GitFork size={10} /> {app.forkCount || 0} forks</span>
                     <span className="text-gray-400 font-mono">|</span>
@@ -706,15 +712,15 @@ const CodeInspector: React.FC<{ app: AppListing }> = ({ app }) => {
         </div>
         <Win95Scroll className="flex-1 p-3 font-mono text-[11px] leading-relaxed text-gray-800">
           {app.hasCanonicalRepo && app.repoSlug ? (
-            <pre className="whitespace-pre-wrap">{`// ${selectedFile}
-// ${librarySlug(app)} · ${app.version}
-//
-// The real file tree and source stream from the canonical
-// repo (${app.repoSlug}${app.repoHeadCommitOid ? ` @ ${app.repoHeadCommitOid.slice(0, 7)}` : ''}).
-//
-// Buying gives you this repository plus a license key. You run
-// it yourself — this library page is where you read the code
-// before you decide to buy or fork.`}</pre>
+            <pre className="whitespace-pre-wrap">{`${selectedFile}
+${librarySlug(app)} · ${app.version}
+
+The real file tree and source stream from the canonical
+repo (${app.repoSlug}${app.repoHeadCommitOid ? ` @ ${app.repoHeadCommitOid.slice(0, 7)}` : ''}).
+
+Buying gives you this repository plus a license key. You run
+it yourself — this library page is where you read the code
+before you decide to buy or fork.`}</pre>
           ) : (
             <div className="text-gray-500">
               <p className="font-bold mb-2">Source not on the forge yet.</p>

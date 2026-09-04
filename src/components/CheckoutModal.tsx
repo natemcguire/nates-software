@@ -515,6 +515,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                 </div>
               )}
 
+              <div className="bg-amber-50 border border-amber-300 px-2.5 py-2 text-[11px] text-amber-950 leading-relaxed">
+                One-time purchase. Includes the listed version, source access, and license. All sales final except where required by law.
+              </div>
+
               <div className="flex items-center justify-between pt-2 border-t border-gray-300">
                 <button
                   type="button"
@@ -652,8 +656,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
                   <div className="font-bold text-amber-950 text-sm">Still confirming your order</div>
                   <div className="text-amber-900 text-[11px] mt-0.5 leading-relaxed">
                     We didn&apos;t get a confirmation back in time — this can happen when settlement is slow.
-                    <strong> If your card was charged, the license will appear on your Shelf within a few minutes.</strong>
-                    {' '}If it doesn&apos;t, you were not charged. Check your Shelf, or refresh it below.
+                    <strong> If your card was charged, the license shows up on your Shelf.</strong>
+                    {' '}If your Shelf is still empty after a few minutes, email us with this order id — please do not pay twice.
+                    <span className="block font-mono mt-1">Order id: {quote?.orderId}</span>
                   </div>
                 </div>
               </div>

@@ -23,6 +23,7 @@ import { ForkWithAiModal } from './ForkWithAiModal';
 import { useAlert } from '../context/AlertContext';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Win95Scroll } from './Win95Scroll';
+import { deriveListingStatus } from '../lib/listingStatus';
 
 interface ArtifactSandboxProps {
   app: AppListing;
@@ -39,8 +40,28 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
 }) => {
   const { showAlert } = useAlert();
   const { user, openAuthModal } = useAuth();
-  const { isOwned } = useCatalog();
+  const { isOwned, isAuthoritativeLive } = useCatalog();
   const isAppOwned = isOwned(app.id);
+  const hasPurchasableForgeSource = Boolean(
+    app.hasCanonicalRepo && app.isRepoActive !== false && (app.repositoryId || app.repoSlug || app.repoName)
+  );
+  const buyDisabledReason = app.isDemo
+    ? 'Showcase listing — it cannot be purchased.'
+    : !hasPurchasableForgeSource
+      ? 'Source is not available on the forge yet.'
+      : app.productStatus !== 'active'
+        ? `This listing is ${app.productStatus || 'draft'} and cannot be purchased yet.`
+        : null;
+  const canBuy = buyDisabledReason === null;
+  const displayedPrice = typeof app.price === 'number'
+    ? app.price
+    : Number.parseFloat(String(app.price || '').replace(/[^0-9.]/g, ''));
+  const listingStatus = deriveListingStatus({
+    isDemo: app.isDemo,
+    hasCanonicalRepo: hasPurchasableForgeSource,
+    productStatus: app.productStatus,
+    isAuthoritativeLive
+  });
   const grantableBps = typeof app.grantable_bps === 'number'
     ? app.grantable_bps
     : (typeof app.grantableBps === 'number' ? app.grantableBps : 0);
@@ -241,31 +262,13 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-0.5 rounded border border-green-400">
                 {app.version}
               </span>
-              {app.isDemo ? (
-                <span className="bg-amber-100 text-amber-900 border border-amber-400 text-[10px] font-bold font-mono px-1.5 py-0.2 rounded">
-                  DEMO DATA
-                </span>
-              ) : (
-                <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 text-[10px] font-bold font-mono px-1.5 py-0.2 rounded">
-                  LIVE D1 DROP
-                </span>
-              )}
-              {app.hasCanonicalRepo && app.repoSlug ? (
-                <span className="bg-blue-100 text-blue-900 border border-blue-300 font-mono text-[10px] px-1.5 py-0.2 rounded flex items-center gap-1 font-bold" title={`Canonical GITSMITH Repo: ${app.repoSlug}`}>
-                  <GitBranch size={10} className="text-blue-700 shrink-0" />
-                  <span>{app.repoSlug}</span>
-                  {app.repoHeadCommitOid && (
-                    <span className="text-blue-600 font-normal">#{app.repoHeadCommitOid.slice(0, 7)}</span>
-                  )}
-                </span>
-              ) : (
-                <span className="bg-gray-200 text-gray-600 border border-gray-400 font-mono text-[10px] px-1.5 py-0.2 rounded" title="Source repository not yet on GITSMITH forge">
-                  not yet on forge
-                </span>
-              )}
+              <span className={`${listingStatus.className} border text-xs font-bold font-mono px-1.5 py-0.5 rounded`}>
+                {listingStatus.label}
+              </span>
               <span className="text-gray-500 text-xs font-medium">by @{app.author || app.creator}</span>
             </div>
             <p className="text-gray-600 text-xs mt-0.5 line-clamp-1">{app.tagline}</p>
+            <p className="text-gray-700 text-xs mt-0.5 line-clamp-1">{listingStatus.sentence}</p>
           </div>
         </div>
 
@@ -550,23 +553,28 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
               <span>License Active on Shelf</span>
             </span>
           ) : (
-            <button
-              onClick={() => {
-                playClickSound();
-                setShowCheckoutModal(true);
-              }}
-              className="btn-w95 btn-w95-primary text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm"
-            >
-              <CreditCard size={12} />
-              <span>
-                {(() => {
-                  const numPrice = typeof app.price === 'number'
-                    ? app.price
-                    : (app.price && String(app.price).replace(/[^0-9.]/g, '') ? parseFloat(String(app.price).replace(/[^0-9.]/g, '')) : null);
-                  return numPrice !== null && !isNaN(numPrice) ? `Buy for $${numPrice}` : 'Buy';
-                })()}
-              </span>
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                disabled={!canBuy}
+                title={buyDisabledReason || 'Purchase the listed source and license'}
+                onClick={() => {
+                  if (!canBuy) return;
+                  playClickSound();
+                  setShowCheckoutModal(true);
+                }}
+                className={`btn-w95 text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold shadow-sm ${
+                  canBuy ? 'btn-w95-primary' : 'text-gray-400 cursor-not-allowed opacity-70'
+                }`}
+              >
+                <CreditCard size={12} />
+                <span>
+                  {Number.isFinite(displayedPrice) ? `Buy for $${displayedPrice}` : 'Buy'}
+                </span>
+              </button>
+              {buyDisabledReason && (
+                <span className="text-xs text-amber-800 max-w-[250px] text-right">{buyDisabledReason}</span>
+              )}
+            </div>
           )}
           {hasActiveDeployment && authoritativeLiveUrl ? (
             <a

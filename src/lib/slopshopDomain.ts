@@ -13,6 +13,7 @@ export interface RepoCoordinate {
   readonly version: string;
   readonly price: string;
   readonly icon: string;
+  readonly inheritedLiens?: ReadonlyArray<{ maker: string; bps: number }>;
 }
 
 export interface ForgeRepositoryProjection {
@@ -21,6 +22,7 @@ export interface ForgeRepositoryProjection {
   readonly slug: string;
   readonly ownerUsername?: string | null;
   readonly status: string;
+  readonly inheritedLiens?: ReadonlyArray<{ maker: string; bps: number }>;
 }
 
 export interface ForgeSshTransport {
@@ -525,7 +527,8 @@ export function coordinateFromForgeRepository(
     sshRemote: remote,
     tagline: known?.tagline || `Active GITSMITH repository ${canonicalSlug}.`,
     version: known?.version || 'Forge repository',
-    price: known?.price || 'Not listed'
+    price: known?.price || 'Not listed',
+    inheritedLiens: repository.inheritedLiens || []
   };
 }
 

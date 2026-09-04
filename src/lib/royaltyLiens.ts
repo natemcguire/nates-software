@@ -1,4 +1,25 @@
-import { CommerceValidationError } from './commerceDomain';
+import { COMMERCE_BASIS_POINTS, CommerceValidationError } from './commerceDomain';
+
+export const MINIMUM_SELLER_HEADROOM_BPS = 1;
+
+export function getListingRoyaltyHeadroomBps(inheritedSumBps: number): number {
+  if (!Number.isSafeInteger(inheritedSumBps) || inheritedSumBps < 0 || inheritedSumBps > COMMERCE_BASIS_POINTS.TOTAL) {
+    throw new CommerceValidationError('Inherited royalty basis points must be an integer between 0 and 10000.');
+  }
+  return Math.max(0, COMMERCE_BASIS_POINTS.TOTAL - MINIMUM_SELLER_HEADROOM_BPS - inheritedSumBps);
+}
+
+export function assertListingRoyaltyAllowed(inheritedSumBps: number, listingRoyaltyBps: number): void {
+  if (!Number.isSafeInteger(listingRoyaltyBps) || listingRoyaltyBps < 0) {
+    throw new CommerceValidationError('Listing royalty basis points must be a non-negative integer.');
+  }
+  const headroomBps = getListingRoyaltyHeadroomBps(inheritedSumBps);
+  if (listingRoyaltyBps > headroomBps) {
+    throw new CommerceValidationError(
+      `Royalty rate exceeds the ${headroomBps} bps available after inherited liens and the minimum seller remainder.`
+    );
+  }
+}
 
 export function assertForkAllowed(sumBps: number): void {
   if (sumBps > 10000) {

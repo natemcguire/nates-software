@@ -94,6 +94,13 @@ export interface MakerRoyaltiesSummary {
   readonly makerSalesCents: number;
   readonly lineageEarnedCents: number;
   readonly lineageBreakdown: LineageBreakdownItem[];
+  readonly grossSalesCents: number;
+  readonly platformFeesCents: number;
+  readonly upstreamRoyaltiesPaidCents: number;
+  readonly netEarningsCents: number;
+  readonly availableForPayoutCents: number;
+  readonly pendingPayoutCents: number;
+  readonly paidOutCents: number;
 }
 
 export interface ProfileValidationInput {
@@ -236,6 +243,13 @@ export function calculateMakerEconomics(
     makerBalanceCents: makerSalesCents + lineageEarnedCents,
     makerSalesCents,
     lineageEarnedCents,
-    lineageBreakdown
+    lineageBreakdown,
+    grossSalesCents: 0,
+    platformFeesCents: 0,
+    upstreamRoyaltiesPaidCents: 0,
+    netEarningsCents: makerSalesCents + lineageEarnedCents,
+    availableForPayoutCents: 0,
+    pendingPayoutCents: 0,
+    paidOutCents: 0
   };
 }
