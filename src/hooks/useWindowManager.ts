@@ -160,7 +160,7 @@ export function useWindowManager(user?: AuthUser | null) {
       y: profileConfig.y,
       width: profileConfig.width,
       height: profileConfig.height,
-      zIndex: 50
+      zIndex: 17
     },
     gitsmith: {
       id: 'gitsmith',
@@ -222,18 +222,21 @@ export function useWindowManager(user?: AuthUser | null) {
 
   const focusWindow = useCallback((id: string) => {
     setActiveWindowId(id);
-    setTopZ(prev => {
-      const next = prev + 1;
-      const nextZ = id === 'profile' ? Math.max(next, 50) : next;
-      setWindows(curr => ({
+    setWindows(curr => {
+      const target = curr[id];
+      if (!target) return curr;
+      const maxZ = Math.max(10, ...Object.values(curr).map(w => w.zIndex || 0));
+      const nextZ = maxZ + 1;
+      setTopZ(nextZ);
+      return {
         ...curr,
-        [id]: { ...curr[id], zIndex: nextZ, isMinimized: false }
-      }));
-      return nextZ;
+        [id]: { ...target, zIndex: nextZ, isMinimized: false }
+      };
     });
   }, []);
 
   const openWindow = useCallback((id: string) => {
+    setActiveWindowId(id);
     setWindows(curr => {
       const target = curr[id];
       if (!target) return curr;
@@ -255,26 +258,31 @@ export function useWindowManager(user?: AuthUser | null) {
       const maxX = Math.max(centerX, screenW - w - 20);
       const maxY = Math.max(centerY, screenH - h - taskbarH - 20);
 
-      let x = centerX;
-      let y = centerY;
-      for (let i = 0; i < occupied.length + 1; i++) {
-        const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
-        if (!collides) break;
-        x += STEP;
-        y += STEP;
-        if (x > maxX || y > maxY) {
-          x = Math.min(maxX, centerX + ((i % 5) + 1) * 16);
-          y = Math.min(maxY, centerY + ((i % 5) + 1) * 16);
+      let x = target.isOpen ? target.x : centerX;
+      let y = target.isOpen ? target.y : centerY;
+      if (!target.isOpen) {
+        for (let i = 0; i < occupied.length + 1; i++) {
+          const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
+          if (!collides) break;
+          x += STEP;
+          y += STEP;
+          if (x > maxX || y > maxY) {
+            x = Math.min(maxX, centerX + ((i % 5) + 1) * 16);
+            y = Math.min(maxY, centerY + ((i % 5) + 1) * 16);
+          }
         }
       }
 
+      const maxZ = Math.max(10, ...Object.values(curr).map(w => w.zIndex || 0));
+      const nextZ = maxZ + 1;
+      setTopZ(nextZ);
+
       return {
         ...curr,
-        [id]: { ...target, isOpen: true, isMinimized: false, x, y }
+        [id]: { ...target, isOpen: true, isMinimized: false, zIndex: nextZ, x, y }
       };
     });
-    focusWindow(id);
-  }, [focusWindow]);
+  }, []);
 
   const closeWindow = useCallback((id: string) => {
     setWindows(curr => ({
