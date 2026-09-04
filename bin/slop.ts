@@ -782,6 +782,10 @@ export async function handleFork(
         }
         const childSlug = options.childSlug || (parentIdentifier.includes('/') ? parentIdentifier.split('/').pop()! : parentIdentifier);
 
+        if (!token) {
+          throw new Error(`Not signed in. Run "slop login" and paste a CLI token from ACCOUNT.CFG (Profile) to fork ${slug}.`);
+        }
+
         const forkPayload = {
           action: 'fork',
           parentRepositoryId: parentIdentifier,
@@ -839,7 +843,13 @@ export async function handleFork(
         if (!forkRes.ok || !forkBody.success) {
           const errMsg = forkBody.error || `Control plane fork returned status ${forkRes.status}`;
           if (forkRes.status === 401) {
-            throw new Error(`Control plane authentication failed for ${slug}: Unauthorized. (${errMsg})`);
+            throw new Error(`Your CLI session was rejected forking ${slug}. Your token is expired or revoked — generate a new one from ACCOUNT.CFG (Profile) and run "slop login" again. (${errMsg})`);
+          }
+          if (forkRes.status === 403) {
+            throw new Error(`Not allowed to fork ${slug} with your account. (${errMsg})`);
+          }
+          if (forkRes.status === 409) {
+            throw new Error(`You already have a fork of ${slug}. Open it from GITSMITH instead of forking again. (${errMsg})`);
           }
           throw new Error(`No canonical repository is registered for ${slug}; no placeholder fork was created. (${errMsg})`);
         }
