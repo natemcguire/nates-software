@@ -473,11 +473,16 @@ export const DynoView: React.FC = () => {
                   <select
                     value={selectedRepetitions}
                     onChange={e => setSelectedRepetitions(Number(e.target.value))}
-                    className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
+                    title={
+                      selectedRepetitions === 1 ? '1 pull — fast run' :
+                      selectedRepetitions === 2 ? '2 pulls — variance check' :
+                      '3 pulls — confidence band'
+                    }
+                    className="w-full win95-field bg-white text-black p-1 font-mono text-xs"
                   >
-                    <option value={1}>1 Street Pull (Fast)</option>
-                    <option value={2}>2 Street Pulls (Variance Check)</option>
-                    <option value={3}>3 Street Pulls (Confidence Band)</option>
+                    <option value={1}>1 pull — fast run</option>
+                    <option value={2}>2 pulls — variance check</option>
+                    <option value={3}>3 pulls — confidence band</option>
                   </select>
                 </div>
 
@@ -486,11 +491,16 @@ export const DynoView: React.FC = () => {
                   <select
                     value={selectedNetworkPolicy}
                     onChange={e => setSelectedNetworkPolicy(e.target.value as any)}
-                    className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
+                    title={
+                      selectedNetworkPolicy === 'none' ? 'none — block all egress' :
+                      selectedNetworkPolicy === 'local_only' ? 'local_only — localhost mocks' :
+                      'isolated — ephemeral network'
+                    }
+                    className="w-full win95-field bg-white text-black p-1 font-mono text-xs"
                   >
-                    <option value="none">none (Strictly Isolated - Block all egress)</option>
-                    <option value="local_only">local_only (Localhost mocks only)</option>
-                    <option value="isolated">isolated (Ephemeral network)</option>
+                    <option value="none">none — block all egress</option>
+                    <option value="local_only">local_only — localhost mocks</option>
+                    <option value="isolated">isolated — ephemeral network</option>
                   </select>
                 </div>
               </div>
