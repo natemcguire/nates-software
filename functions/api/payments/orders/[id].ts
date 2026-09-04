@@ -1,6 +1,7 @@
 import { requireAuth } from '../../_auth';
 import { safePublishedArtifacts } from '../../../../src/lib/profileDomain';
 import { decryptLicenseSecret } from '../../../../src/lib/commerce/licenseCrypto';
+import { listingSourceIsPrivate } from '../../_sourcePolicy';
 
 function parseObject(value: unknown): Record<string, unknown> {
   if (!value) return {};
@@ -54,10 +55,11 @@ export async function handleGetOrder(context: { request: Request; env: any; para
     }
 
     const appListing: any = await env.DB.prepare(`
-      SELECT a.id, a.name, a.version, a.tagline, a.storage, a.binaries,
-             cp.forking_enabled AS forkingEnabled
+      SELECT a.id, a.name, a.version, a.tagline, a.storage, a.binaries, a.repository_id AS repositoryId,
+             cp.app_id AS sourceProductAppId, cp.repository_id AS sourceProductRepositoryId,
+             cp.forking_enabled AS forkingEnabled, 1 AS sourceCommerceEvidenceCount
       FROM app_listings a
-      JOIN commerce_products cp ON cp.app_id = a.id
+      LEFT JOIN commerce_products cp ON cp.app_id = a.id
       WHERE a.id = ?
     `).bind(order.appId).first();
 
@@ -111,7 +113,7 @@ export async function handleGetOrder(context: { request: Request; env: any; para
     }
 
     const binaries = safePublishedArtifacts(parseObject(appListing?.binaries));
-    if (Number(appListing?.forkingEnabled) === 0) {
+    if (listingSourceIsPrivate(appListing)) {
       delete binaries.source;
     }
 

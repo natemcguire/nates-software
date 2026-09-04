@@ -3,8 +3,8 @@ import type { GatewayConfig } from './types.ts';
 import { GitsmithGatewayService } from './gatewayService.ts';
 import { ForgeOutboxDispatcher } from './outboxDispatcher.ts';
 import { GatewayHealthChecker } from './health.ts';
-import { constantTimeTokenCompare, validateRepoFilePath, getMaxFileSizeBytes } from '../forgeDomain.ts';
-import { archiveAuthoritativeCommit, getProposalDiff, inspectCommitTree, readCommitFileBase64, readCommitFileBuffer } from './gitStorage.ts';
+import { constantTimeTokenCompare, validateRepoFilePath, getMaxFileSizeBytes, isValidGitOid } from '../forgeDomain.ts';
+import { archiveAuthoritativeCommit, getProposalDiff, hasGitObject, inspectCommitTree, readCommitFileBase64, readCommitFileBuffer } from './gitStorage.ts';
 
 export interface CreateServerOptions {
   service?: GitsmithGatewayService;
@@ -70,6 +70,31 @@ export function createGatewayServer(config: GatewayConfig, options?: CreateServe
       }
       return constantTimeTokenCompare(token, config.gatewayToken);
     };
+
+    if (req.method === 'POST' && url.pathname === '/api/gateway/object-presence') {
+      if (!verifyToken()) {
+        res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Valid gateway token required.' }));
+        return;
+      }
+      try {
+        const body = await readJsonBody();
+        const storageKey = typeof body?.storageKey === 'string' ? body.storageKey.trim() : '';
+        const commitOids = Array.isArray(body?.commitOids) ? body.commitOids : [];
+        if (!storageKey || commitOids.length === 0 || commitOids.length > 512 || commitOids.some((oid: unknown) => typeof oid !== 'string' || !isValidGitOid(oid))) {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ success: false, error: 'storageKey and 1 to 512 valid commitOids are required.' }));
+          return;
+        }
+        const matchedCommitOid = commitOids.find((oid: string) => hasGitObject(config.reposRoot, storageKey, oid)) || null;
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' });
+        res.end(JSON.stringify({ success: true, matchedCommitOid }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ success: false, error: 'Invalid JSON request body.' }));
+      }
+      return;
+    }
 
     if ((req.method === 'GET' || req.method === 'POST') && (url.pathname === '/api/gateway/archive' || url.pathname === '/v1/archive')) {
       if (!verifyToken()) {

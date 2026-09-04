@@ -5,6 +5,7 @@ import {
   parseAndValidateSshKeyString,
   ParsedSshKey
 } from '../../src/lib/sshDomain';
+import { listingSourceIsPrivate } from './_sourcePolicy';
 
 const unavailable = (message = 'Profile service is temporarily unavailable') => Response.json(
   { success: false, error: message },
@@ -86,6 +87,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     const { results: publishedApps } = await env.DB.prepare(`
         SELECT a.id, a.name, a.tagline, a.version, a.upvotes, a.forks, a.price, a.storage,
                a.screenshots, a.binaries, a.tags, a.created_at AS createdAt,
+               a.repository_id AS repositoryId, cp.app_id AS sourceProductAppId,
+               cp.repository_id AS sourceProductRepositoryId,
+               (SELECT COUNT(*) FROM commerce_orders o WHERE o.app_id = a.id) AS sourceCommerceEvidenceCount,
                cp.forking_enabled AS forkingEnabled
         FROM app_listings a
         LEFT JOIN commerce_products cp ON cp.app_id = a.id
@@ -95,7 +99,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const formattedApps = (publishedApps || []).map((app: any) => {
       const binaries = safePublishedArtifacts(parseJsonColumn(app.binaries, {}));
-      if (app.forkingEnabled !== null && app.forkingEnabled !== undefined && Number(app.forkingEnabled) === 0) {
+      if (listingSourceIsPrivate(app)) {
         delete binaries.source;
       }
       return {

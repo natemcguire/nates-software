@@ -1,6 +1,7 @@
 import { requireAuth } from './_auth';
 import { safePublishedArtifacts } from '../../src/lib/profileDomain';
 import { handleVerify } from './shelf/verify';
+import { listingSourceIsPrivate } from './_sourcePolicy';
 
 export { handleVerify };
 
@@ -24,7 +25,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       SELECT cl.id, cl.app_id AS appId, cl.license_key_last4 AS licenseKeyLast4,
              cl.status, cl.issued_at AS purchasedDate, a.name, a.version,
              a.tagline, a.storage, a.binaries, u.avatar_url AS creatorAvatar,
-             u.username AS creatorUsername, cp.forking_enabled AS forkingEnabled
+             u.username AS creatorUsername, a.repository_id AS repositoryId,
+             cp.app_id AS sourceProductAppId, cp.repository_id AS sourceProductRepositoryId,
+             cp.forking_enabled AS forkingEnabled, 1 AS sourceCommerceEvidenceCount
       FROM commerce_licenses cl
       JOIN app_listings a ON a.id = cl.app_id
       JOIN users u ON u.id = a.creator_id
@@ -35,7 +38,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
 
     const shelf = (results || []).map((row: any) => {
       const binaries = safePublishedArtifacts(parseObject(row.binaries));
-      if (row.forkingEnabled !== null && row.forkingEnabled !== undefined && Number(row.forkingEnabled) === 0) {
+      if (listingSourceIsPrivate(row)) {
         delete binaries.source;
       }
       return {

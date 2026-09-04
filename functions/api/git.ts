@@ -16,6 +16,7 @@ import {
 import { parseAndValidateSshKeyInput } from '../../src/lib/sshDomain';
 import { getProposalDiff } from '../../src/lib/gitsmith/gitStorage';
 import { buildInheritedLiens, assertForkAllowed } from '../../src/lib/royaltyLiens';
+import { repositorySourceIsPrivate, repositorySourcePolicyColumns, repositorySourcePolicyJoin } from './_sourcePolicy';
 
 type D1Database = { prepare(sql: string): any; batch(statements: any[]): Promise<any[]> };
 
@@ -76,8 +77,10 @@ async function repositoryAccess(db: D1Database, repositoryId: string, userId = '
            r.slug, r.visibility, r.object_format AS objectFormat,
            r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
            r.created_at AS createdAt, r.updated_at AS updatedAt,
+           ${repositorySourcePolicyColumns},
            CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
     FROM repositories r
+    ${repositorySourcePolicyJoin}
     LEFT JOIN repository_members m
       ON m.repository_id = r.id AND m.user_id = ?
     WHERE r.id = ?
@@ -182,18 +185,19 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
           ma.status AS attemptStatus,
           mj.target_ref AS targetRef, mj.status AS jobStatus,
           r.id AS repositoryId, r.storage_key AS storageKey, r.slug AS repositorySlug,
-          r.visibility,
+          r.visibility, ${repositorySourcePolicyColumns},
           CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE rm.role END AS memberRole
         FROM inbox_messages m
         LEFT JOIN merge_attempts ma ON ma.id = m.merge_attempt_id
         LEFT JOIN merge_jobs mj ON mj.id = ma.merge_job_id
         LEFT JOIN repositories r ON r.id = mj.target_repository_id
+        ${repositorySourcePolicyJoin}
         LEFT JOIN repository_members rm ON rm.repository_id = r.id AND rm.user_id = ?
         WHERE (m.id = ? OR m.merge_attempt_id = ?)
       `).bind(user?.id || '', user?.id || '', proposalId, proposalId).first();
 
       if (!proposal) return failure('Proposal not found.', 404);
-      if ((proposal as any).visibility === 'private' && (proposal as any).recipientId !== user?.id && (proposal as any).senderId !== user?.id && !(proposal as any).memberRole) {
+      if (((proposal as any).visibility === 'private' || repositorySourceIsPrivate(proposal)) && (proposal as any).recipientId !== user?.id && (proposal as any).senderId !== user?.id && !(proposal as any).memberRole) {
         return failure(user ? 'Forbidden.' : 'Authentication required.', user ? 403 : 401);
       }
       if (!(proposal as any).inputTargetOid || !(proposal as any).resultCommitOid) {
@@ -213,7 +217,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     if (repoIdParam && baseParam && headParam) {
       const repository = await repositoryAccess(db, repoIdParam, user?.id);
       if (!repository) return failure('Repository not found.', 404);
-      if ((repository as any).visibility === 'private' && !(repository as any).memberRole) {
+      if (((repository as any).visibility === 'private' || repositorySourceIsPrivate(repository)) && !(repository as any).memberRole) {
         return failure(user ? 'Forbidden.' : 'Authentication required.', user ? 403 : 401);
       }
 
@@ -270,8 +274,10 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                  r.slug, r.visibility, r.object_format AS objectFormat,
                  r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
                  r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 ${repositorySourcePolicyColumns},
                  CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
           FROM repositories r
+          ${repositorySourcePolicyJoin}
           LEFT JOIN repository_members m
             ON m.repository_id = r.id AND m.user_id = ?
           WHERE (r.owner_user_id = ? OR r.owner_user_id = (SELECT id FROM users WHERE username = ?))
@@ -489,14 +495,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       const repository = await db.prepare(`
         SELECT r.id, r.storage_key AS storageKey, r.status, r.visibility, r.default_ref AS defaultRef,
-               COALESCE(cp.forking_enabled, 1) AS forkingEnabled,
+               ${repositorySourcePolicyColumns},
                CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
         FROM repositories r
         JOIN users owner_user ON owner_user.id = r.owner_user_id
         LEFT JOIN repository_members m ON m.repository_id = r.id AND m.user_id = ?
-        LEFT JOIN commerce_products cp
-          ON cp.repository_id = r.id
-          OR (cp.repository_id IS NULL AND cp.app_id = r.app_id)
+        ${repositorySourcePolicyJoin}
         WHERE owner_user.username = ? AND r.slug = ?
         LIMIT 1
       `).bind((actor as any).id, (actor as any).id, owner, slug).first();
@@ -505,7 +509,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
 
       const role = String((repository as any).memberRole || '');
       const mayRead = (
-        (repository as any).visibility !== 'private' && Number((repository as any).forkingEnabled) !== 0
+        (repository as any).visibility !== 'private' && !repositorySourceIsPrivate(repository)
       ) || Boolean(role);
       const mayWrite = ['writer', 'maintainer', 'owner'].includes(role);
       if ((operation === 'read' && !mayRead) || (operation === 'write' && !mayWrite)) {
@@ -1835,8 +1839,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
                  r.slug, r.visibility, r.object_format AS objectFormat,
                  r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
                  r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 ${repositorySourcePolicyColumns},
                  CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
           FROM repositories r
+          ${repositorySourcePolicyJoin}
           LEFT JOIN repository_members m
             ON m.repository_id = r.id AND m.user_id = ?
           WHERE (r.owner_user_id = ? OR r.owner_user_id = (SELECT id FROM users WHERE username = ?))
@@ -1849,8 +1855,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
                  r.slug, r.visibility, r.object_format AS objectFormat,
                  r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
                  r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 ${repositorySourcePolicyColumns},
                  CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
           FROM repositories r
+          ${repositorySourcePolicyJoin}
           LEFT JOIN repository_members m
             ON m.repository_id = r.id AND m.user_id = ?
           WHERE r.slug = ?
@@ -1865,8 +1873,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
                  r.slug, r.visibility, r.object_format AS objectFormat,
                  r.default_ref AS defaultRef, r.storage_key AS storageKey, r.status,
                  r.created_at AS createdAt, r.updated_at AS updatedAt,
+                 ${repositorySourcePolicyColumns},
                  CASE WHEN r.owner_user_id = ? THEN 'owner' ELSE m.role END AS memberRole
           FROM repositories r
+          ${repositorySourcePolicyJoin}
           LEFT JOIN repository_members m
             ON m.repository_id = r.id AND m.user_id = ?
           WHERE r.id = (SELECT repository_id FROM app_listings WHERE id = ?)
@@ -1941,11 +1951,10 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
         SELECT royalty_bps AS royaltyBps, seller_user_id AS sellerUserId,
                forking_enabled AS forkingEnabled
         FROM commerce_products
-        WHERE repository_id = ?
-           OR (repository_id IS NULL AND app_id = (SELECT app_id FROM repositories WHERE id = ?))
+        WHERE app_id = ?
         LIMIT 1
-      `).bind(parentRepositoryId, parentRepositoryId).first();
-      if (gateParentListingRow && Number((gateParentListingRow as any).forkingEnabled) === 0) {
+      `).bind((parent as any).sourceProductAppId || '').first();
+      if (repositorySourceIsPrivate(parent)) {
         return failure('Forking is disabled because this app keeps its source private.', 403);
       }
       const readiness = await gatewayReadiness(env);

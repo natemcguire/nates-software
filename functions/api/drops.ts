@@ -14,6 +14,8 @@ import {
 import { validateDropSubmission, parseAndValidatePrice, RESERVED_APP_IDS } from '../../src/lib/hotwireDomain';
 import { buildRepositoryStorageKey } from '../../src/lib/forgeDomain';
 import { assertListingRoyaltyAllowed } from '../../src/lib/royaltyLiens';
+import { checkRepositoryResalePolicy } from './_resalePolicy';
+import { listingSourceIsPrivate } from './_sourcePolicy';
 
 export const onRequestGet = async ({ request, env }: { request: Request; env: any }) => {
   try {
@@ -48,6 +50,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
         cp.royalty_bps AS royaltyBps,
         cp.resale_enabled AS resaleEnabled,
         cp.forking_enabled AS forkingEnabled,
+        cp.app_id AS sourceProductAppId,
+        cp.repository_id AS sourceProductRepositoryId,
+        (SELECT COUNT(*) FROM commerce_orders o WHERE o.app_id = a.id) AS sourceCommerceEvidenceCount,
         cp.status AS productStatus,
         ru.username AS repoOwnerUsername,
         rf.commit_oid AS repoHeadCommitOid,
@@ -227,10 +232,9 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
       const resaleEnabled = r.resaleEnabled === undefined || r.resaleEnabled === null
         ? true
         : Boolean(r.resaleEnabled);
-      const forkingEnabled = r.forkingEnabled === undefined || r.forkingEnabled === null
-        ? true
-        : Boolean(r.forkingEnabled);
-      if (!forkingEnabled) {
+      const sourcePrivate = listingSourceIsPrivate({ ...r, repositoryId });
+      const forkingEnabled = !sourcePrivate;
+      if (sourcePrivate) {
         delete binaries.source;
       }
       const inheritedLiens = repositoryId ? inheritedLiensByRepository.get(repositoryId) || [] : [];
@@ -628,30 +632,16 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       ? ((existingProductRights as any)?.forkingEnabled === undefined ? true : Boolean((existingProductRights as any).forkingEnabled))
       : rawForkingEnabled;
 
-    if (linkedRepositoryId) {
-      const blockedAncestor = await env.DB.prepare(`
-        WITH RECURSIVE ancestors(repository_id) AS (
-          SELECT parent_repository_id
-          FROM repository_forks
-          WHERE child_repository_id = ?
-          UNION
-          SELECT rf.parent_repository_id
-          FROM repository_forks rf
-          JOIN ancestors a ON rf.child_repository_id = a.repository_id
-        )
-        SELECT cp.app_id AS appId
-        FROM ancestors a
-        JOIN repositories ar ON ar.id = a.repository_id
-        JOIN commerce_products cp
-          ON cp.repository_id = a.repository_id
-          OR (cp.repository_id IS NULL AND cp.app_id = ar.app_id)
-        WHERE cp.resale_enabled = 0
-        LIMIT 1
-      `).bind(linkedRepositoryId).first();
-      if (blockedAncestor) {
+    const productPriceCents = priceValidation.priceCents;
+    if (linkedRepositoryId && !newRepositoryStmt && productPriceCents > 0) {
+      const resalePolicy = await checkRepositoryResalePolicy(env, linkedRepositoryId);
+      if (resalePolicy.status === 'unavailable') {
+        return Response.json({ success: false, error: resalePolicy.error }, { status: 503 });
+      }
+      if (resalePolicy.status === 'blocked') {
         return Response.json({
           success: false,
-          error: 'This fork cannot be published for sale because an upstream author disabled fork resale.'
+          error: 'This source cannot be published for sale because an upstream author disabled fork resale.'
         }, { status: 403 });
       }
     }
@@ -735,7 +725,6 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     
     
     
-    const productPriceCents = priceValidation.priceCents;
     const payoutAccount = await env.DB.prepare(`
       SELECT payouts_enabled AS payoutsEnabled
       FROM stripe_accounts

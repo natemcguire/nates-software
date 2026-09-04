@@ -1,5 +1,6 @@
 import { requireAuth } from '../_auth';
 import { calculateAllocations, fetchFrozenLiens, CommerceValidationError } from '../../../src/lib/commerceDomain';
+import { checkAppResalePolicy } from '../_resalePolicy';
 
 type PaymentIntentRecoveryResult =
   | { ok: true; paymentIntentId: string; clientSecret: string }
@@ -118,6 +119,17 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     const appId = typeof body?.appId === 'string' ? body.appId.trim() : '';
     if (!appId) {
       return Response.json({ success: false, error: 'appId is required' }, { status: 400 });
+    }
+
+    const resalePolicy = await checkAppResalePolicy(env, appId);
+    if (resalePolicy.status === 'unavailable') {
+      return Response.json({ success: false, error: resalePolicy.error }, { status: 503 });
+    }
+    if (resalePolicy.status === 'blocked') {
+      return Response.json({
+        success: false,
+        error: 'This app is no longer available for sale because an upstream author disabled fork resale.'
+      }, { status: 403 });
     }
 
     const existingOrder: any = await env.DB.prepare(`
