@@ -30,7 +30,7 @@ interface HotwireViewProps {
   onOpenLeaders?: () => void;
 }
 
-type LibraryTab = 'hot' | 'forked' | 'bought' | 'rising' | 'mine';
+type LibraryTab = 'hot' | 'forked' | 'bought' | 'rising';
 type InspectTab = 'code' | 'readme' | 'preview' | 'lineage';
 
 const PLATFORM_RATE = 0.10;
@@ -155,10 +155,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       );
     }
 
-    if (activeTab === 'mine' && user?.username) {
-      list = list.filter(a => a.author === user.username || a.creator === user.username);
-    }
-
     switch (activeTab) {
       case 'forked':
         return list.sort((a, b) => (b.forkCount || 0) - (a.forkCount || 0));
@@ -167,11 +163,10 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
       case 'rising':
         return list.sort((a, b) => ((b.upvotes || 0) + (b.forkCount || 0) * 2) - ((a.upvotes || 0) + (a.forkCount || 0) * 2));
       case 'hot':
-      case 'mine':
       default:
         return list.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
     }
-  }, [apps, searchQuery, activeTab, user]);
+  }, [apps, searchQuery, activeTab]);
 
   const handleOpenNewApp = () => {
     playClickSound();
@@ -270,7 +265,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             tabs={tabs}
             activeTab={activeTab}
             onTabSelect={handleTabSelect}
-            showMine={Boolean(user?.username)}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
             onSubmit={handleOpenNewApp}
@@ -295,7 +289,6 @@ interface LibraryIndexProps {
   tabs: { id: LibraryTab; label: string; icon: React.ReactNode }[];
   activeTab: LibraryTab;
   onTabSelect: (tab: LibraryTab) => void;
-  showMine: boolean;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   onSubmit: () => void;
@@ -312,7 +305,7 @@ interface LibraryIndexProps {
 }
 
 const LibraryIndex: React.FC<LibraryIndexProps> = ({
-  apps, tabs, activeTab, onTabSelect, showMine, searchQuery, setSearchQuery,
+  apps, tabs, activeTab, onTabSelect, searchQuery, setSearchQuery,
   onSubmit, onOpen, onUpvote, upvotedApps, isAuthenticated, isAuthoritativeLive,
   isLoading, username, appCount, leaderboardCount, onOpenLeaders
 }) => {
@@ -348,14 +341,6 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
             {tab.icon} {tab.label}
           </button>
         ))}
-        {showMine && (
-          <button
-            onClick={() => onTabSelect('mine')}
-            className={`win95-btn px-2.5 py-1 flex items-center gap-1 font-bold ${activeTab === 'mine' ? 'bg-white text-blue-900 border-2' : 'bg-[#c0c0c0]'}`}
-          >
-            <span className="text-emerald-700 font-bold">●</span> Mine
-          </button>
-        )}
         <div className="flex-1 min-w-[180px] win95-field p-1 bg-white flex items-center gap-1.5 border border-gray-600 ml-1">
           <Search size={13} className="text-gray-500 ml-1" />
           <input
@@ -384,16 +369,14 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
           <div className="p-8 text-center space-y-2">
             <div className="text-2xl">📚</div>
             <div className="font-bold text-xs text-slate-700">
-              {searchQuery.trim() ? 'No apps found' : activeTab === 'mine' ? 'You haven’t published any apps yet' : isAuthoritativeLive ? 'The library is empty' : 'Library unavailable'}
+              {searchQuery.trim() ? 'No apps found' : isAuthoritativeLive ? 'The library is empty' : 'Library unavailable'}
             </div>
             <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
               {searchQuery.trim()
                 ? `Nothing matched "${searchQuery}". Try another maker or tag.`
-                : activeTab === 'mine'
-                  ? 'Submit source to the library and it shows up here.'
-                  : isAuthoritativeLive
-                    ? 'Be the first maker to publish source into the library.'
-                    : 'Could not reach the live library index. This panel never shows invented apps.'}
+                : isAuthoritativeLive
+                  ? 'Be the first maker to publish source into the library.'
+                  : 'Could not reach the live library index. This panel never shows invented apps.'}
             </p>
             {isAuthoritativeLive && !searchQuery.trim() && (
               <button onClick={onSubmit} className="win95-btn px-3 py-1 text-black font-bold flex items-center gap-1 text-xs bg-[#dfdfdf] hover:bg-white mx-auto mt-2">
