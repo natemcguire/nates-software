@@ -779,7 +779,7 @@ export const GitsmithView: React.FC = () => {
                   </p>
 
                   <div className="flex items-center gap-3 text-[11px] text-slate-400 font-mono">
-                    <span className="flex items-center gap-1"><CircleDot size={11} className="text-amber-400" /> {repo.language.split('/')[0]}</span>
+                    <span className="flex items-center gap-1"><CircleDot size={11} className="text-amber-400" /> {repo.language ? repo.language.split('/')[0] : 'unknown'}</span>
                     <span className="flex items-center gap-1"><Star size={11} className="text-yellow-400" /> {repo.stars ?? 'not tracked'}</span>
                     <span className="flex items-center gap-1"><GitFork size={11} className="text-sky-400" /> {repo.forks ?? 'not synced'}</span>
                   </div>
