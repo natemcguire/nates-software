@@ -643,10 +643,10 @@ export function AppInner() {
           { id: 'profile', label: 'ACCOUNT.CFG', icon: '👤', group: 'main', onClick: () => { playClickSound(); openWindow('profile'); } },
           { id: 'papers', label: 'WHITE_PAPERS.DOC', icon: '📖', group: 'refs', onClick: () => { playClickSound(); openWindow('papers'); } },
           { id: 'github', label: 'Source Code', icon: '🌐', group: 'refs', onClick: () => { playClickSound(); window.open('https://github.com/natemcguire/nates-software', '_blank'); } },
-          { id: 'slopshop', label: 'SLOPSHOP', icon: '🔧', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('slopshop'); } },
-          { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('inbox'); } },
-          { id: 'dyno', label: 'DYNO', icon: '🏎️', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('dyno'); } },
-          { id: 'terminal', label: 'TERMINAL.EXE', icon: '💻', group: 'soon', comingSoon: true, onClick: () => { playClickSound(); openWindow('terminal'); } },
+          { id: 'slopshop', label: 'SLOPSHOP', icon: '🔧', group: 'soon', onClick: () => { playClickSound(); openWindow('slopshop'); } },
+          { id: 'inbox', label: 'Agent Inbox', icon: '📫', group: 'soon', onClick: () => { playClickSound(); openWindow('inbox'); } },
+          { id: 'dyno', label: 'DYNO', icon: '🏎️', group: 'soon', onClick: () => { playClickSound(); openWindow('dyno'); } },
+          { id: 'terminal', label: 'TERMINAL.EXE', icon: '💻', group: 'soon', onClick: () => { playClickSound(); openWindow('terminal'); } },
         ];
         const groupIndex: Record<'main' | 'refs' | 'soon', number> = { main: 0, refs: 0, soon: 0 };
         return icons.map((item) => {
@@ -704,7 +704,7 @@ export function AppInner() {
             }}
           >
             <span className="text-white/70 text-xs font-bold uppercase tracking-widest text-shadow">
-              Coming Soon
+              More Apps
             </span>
           </div>
         );

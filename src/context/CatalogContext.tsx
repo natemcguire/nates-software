@@ -33,7 +33,7 @@ export interface CatalogContextType {
   }>;
 }
 
-const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
+export const CatalogContext = createContext<CatalogContextType | undefined>(undefined);
 
 export const CatalogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [apps, setApps] = useState<AppListing[]>([]);

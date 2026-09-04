@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAlert } from '../context/AlertContext';
 import { useAuth } from '../context/AuthContext';
+import { CatalogContext } from '../context/CatalogContext';
 import { useTerminalGateway } from '../hooks/useTerminalGateway';
 import { runSlopCli } from '../../bin/slop.ts';
 import {
@@ -57,6 +58,7 @@ export const SlopshopView: React.FC<SlopshopViewProps> = ({
 }) => {
   const { showAlert } = useAlert();
   const { user, isAuthenticated, openAuthModal } = useAuth();
+  const catalog = useContext(CatalogContext);
   const { payoutsEnabled, isChecking: isCheckingPayouts } = usePayoutStatus();
   const terminalGateway = useTerminalGateway();
 
@@ -611,6 +613,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
         throw new Error(data?.error || `Failed to publish listing (${res.status})`);
       }
       setModalType(null);
+      try { await catalog?.refreshCatalog(); } catch {}
       showAlert(
         `"${makerHandle}/${coordinate.appId}" published at $${publishPrice}.00 with a ${(royaltyBps / 100).toFixed(2)}% fork royalty.`,
         'Published',
@@ -1529,7 +1532,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
                   disabled={isPublishing || requiresPayoutSetup || Boolean(isAuthenticated && isCheckingPayouts)}
                   className="btn-w95 px-4 py-1 text-xs font-bold disabled:opacity-60"
                 >
-                  {isPublishing ? 'Publishing…' : 'Save Price'}
+                  {isPublishing ? 'Publishing…' : 'Publish Listing'}
                 </button>
               </div>
             </div>
