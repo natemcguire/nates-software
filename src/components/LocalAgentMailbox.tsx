@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Users
 } from 'lucide-react';
+import { Win95Scroll } from './Win95Scroll';
 
 export const LOCAL_AGENT_INBOX_URL = 'http://127.0.0.1:8791';
 
@@ -268,7 +269,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
         </span>
         {threadsLoading && <span className="text-gray-400 font-normal">Loading…</span>}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <Win95Scroll className="flex-1">
         {!selectedAddress ? (
           <div className="flex flex-col items-center justify-center p-8 text-gray-400 gap-2 text-center">
             <Inbox size={22} className="text-gray-300" />
@@ -324,7 +325,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
             </div>
           ))
         )}
-      </div>
+      </Win95Scroll>
     </div>
 
     <div className="col-span-6 bg-white border-2 border-gray-800 p-3 flex flex-col overflow-y-auto">

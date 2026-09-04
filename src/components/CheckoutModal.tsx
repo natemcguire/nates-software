@@ -5,6 +5,7 @@ import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { useCatalog } from '../context/CatalogContext';
 import { publishedArtifactLinks } from '../lib/profileDomain';
+import { Win95Scroll } from './Win95Scroll';
 
 export interface CheckoutModalProps {
   isOpen: boolean;
@@ -354,7 +355,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
           </button>
         </div>
 
-        <div className="p-4 bg-w95-gray space-y-4 overflow-y-auto flex-1">
+        <Win95Scroll className="p-4 bg-w95-gray space-y-4 flex-1">
           {status === 'auth_required' && (
             <div className="space-y-4">
               <div className="bg-amber-50 border-2 border-amber-500 p-3 text-amber-950 flex items-start gap-2.5">
@@ -675,7 +676,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, a
               </div>
             </div>
           )}
-        </div>
+        </Win95Scroll>
       </div>
     </div>
   );

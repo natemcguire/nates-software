@@ -16,6 +16,7 @@ import {
   RepoCoordinate
 } from '../lib/slopshopDomain';
 import { createRigInstance } from '../lib/rigClient';
+import { Win95Scroll } from '../components/Win95Scroll';
 import type { RigSpec } from '../lib/rigDomain';
 import '@xterm/xterm/css/xterm.css';
 
@@ -1253,7 +1254,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
               <p className="text-xs text-black m-0">
                 Choose an application to copy into your isolated worktree namespace:
               </p>
-              <div className="space-y-1.5 max-h-60 overflow-y-auto border border-[#808080] bg-white p-2">
+              <Win95Scroll className="space-y-1.5 max-h-60 border border-[#808080] bg-white p-2">
                 {allCoordinates.map((app) => (
                   <div
                     key={app.appId}
@@ -1283,7 +1284,7 @@ This panel shows the real "slop publish" command and the revenue split it would 
                     <span className="text-xs font-mono">{app.price}</span>
                   </div>
                 ))}
-              </div>
+              </Win95Scroll>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   onClick={() => setModalType(null)}

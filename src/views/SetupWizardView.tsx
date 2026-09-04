@@ -4,6 +4,7 @@ import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
 import { ForkWithAiModal } from '../components/ForkWithAiModal';
+import { Win95Scroll } from '../components/Win95Scroll';
 
 interface StarterApp {
   id: string;
@@ -213,7 +214,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 p-4 overflow-y-auto bg-w95-gray">
+      <Win95Scroll className="flex-1 p-4 bg-w95-gray">
         {step === 1 && (
           <div className="space-y-4 max-w-2xl mx-auto w-full">
             <div className="bg-white border-2 border-t-black border-l-black border-b-white border-r-white p-3 space-y-1">
@@ -634,7 +635,7 @@ export const SetupWizardView: React.FC<SetupWizardViewProps> = ({
             </div>
           </div>
         )}
-      </div>
+      </Win95Scroll>
 
       <div className="bg-w95-gray px-4 py-2.5 border-t border-gray-400 flex items-center justify-between shrink-0 shadow-sm">
         {step > 1 ? (

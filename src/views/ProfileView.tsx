@@ -5,6 +5,7 @@ import {
   LogIn, UserPlus, ShieldCheck, Search, ArrowLeft, Terminal, Copy, GitBranch
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Win95Scroll } from '../components/Win95Scroll';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import {
   validateMakerProfile,
@@ -344,7 +345,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
 
-        <div className="flex-1 bg-white border-2 border-gray-800 p-6 overflow-y-auto flex flex-col items-center justify-center text-center">
+        <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-6 flex flex-col items-center justify-center text-center">
           <div className="max-w-md w-full bg-gray-50 border-2 border-gray-400 p-6 rounded shadow-sm space-y-5">
             <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue rounded-full flex items-center justify-center mx-auto text-w95-blue">
               <ShieldCheck size={32} />
@@ -391,7 +392,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </form>
             </div>
           </div>
-        </div>
+        </Win95Scroll>
       </div>
     );
   }
@@ -467,7 +468,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 bg-white border-2 border-gray-800 p-4 overflow-y-auto">
+      <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-4">
         {errorMessage && (
           <div className="mb-4 bg-red-50 border-2 border-red-500 p-3 rounded text-red-800 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1043,7 +1044,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           </form>
         )}
-      </div>
+      </Win95Scroll>
     </div>
   );
 };

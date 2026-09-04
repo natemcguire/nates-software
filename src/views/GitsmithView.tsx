@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAlert } from '../context/AlertContext';
 
 import { ForkWithAiModal } from '../components/ForkWithAiModal';
+import { Win95Scroll } from '../components/Win95Scroll';
 import { Bot } from 'lucide-react';
 
 export interface GitsmithRepo {
@@ -710,7 +711,7 @@ export const GitsmithView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-800">
+          <Win95Scroll className="flex-1 divide-y divide-slate-800">
             {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
               <div className="p-4 space-y-3 text-slate-300">
                 <p className="font-bold text-white">No canonical repositories to show.</p>
@@ -785,7 +786,7 @@ export const GitsmithView: React.FC = () => {
                 </div>
               );
             })}
-          </div>
+          </Win95Scroll>
         </div>
 
         <div
@@ -997,9 +998,9 @@ export const GitsmithView: React.FC = () => {
               </div>
 
               <div className="flex flex-1 overflow-hidden">
-                <div 
+                <Win95Scroll
                   style={{ width: `${fileTreeWidth}px`, minWidth: '160px', maxWidth: '460px' }}
-                  className="bg-[#0f172a] p-2 space-y-1 overflow-y-auto shrink-0"
+                  className="bg-[#0f172a] p-2 space-y-1 shrink-0"
                 >
                   <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 tracking-wider font-mono">
                     Repository Files
@@ -1031,7 +1032,7 @@ export const GitsmithView: React.FC = () => {
                       </button>
                     );
                   })}
-                </div>
+                </Win95Scroll>
 
                 <div
                   onMouseDown={startResizeFileTree}

@@ -3,6 +3,7 @@ import { BookOpen, Cpu, Wrench, GitMerge, Mail, Flame, Download, ShieldCheck, Co
 import { WHITEPAPERS_DATA } from '../data/whitepapersData';
 import { MONEY_MODEL_MARKDOWN } from '../data/moneyModelData';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
+import { Win95Scroll } from '../components/Win95Scroll';
 import { playClickSound } from '../lib/soundEngine';
 
 export const WhitePapersView: React.FC = () => {
@@ -72,7 +73,7 @@ export const WhitePapersView: React.FC = () => {
 
   return (
     <div className="grid grid-cols-12 gap-3 h-full overflow-hidden font-tahoma text-sm">
-      <div className="col-span-4 bg-white border-2 border-gray-800 p-2.5 overflow-y-auto space-y-1.5 flex flex-col justify-between">
+      <Win95Scroll className="col-span-4 bg-white border-2 border-gray-800 p-2.5 space-y-1.5 flex flex-col justify-between">
         <div className="space-y-1.5">
           <div className="font-bold text-base text-w95-blue border-b pb-1.5 mb-2 flex items-center gap-1.5">
             <BookOpen size={16} /> Architectural White Papers
@@ -101,7 +102,7 @@ export const WhitePapersView: React.FC = () => {
             All 5 white papers are released under open licenses and explain why each tool is completely standalone and self-hostable.
           </p>
         </div>
-      </div>
+      </Win95Scroll>
 
       <div className="col-span-8 bg-white border-2 border-gray-800 p-5 overflow-y-auto flex flex-col">
         <div className="border-b pb-3 mb-4 flex items-start justify-between flex-wrap gap-2">
@@ -131,9 +132,9 @@ export const WhitePapersView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-[#fafafa] border border-gray-300 rounded shadow-inner select-text">
+        <Win95Scroll className="flex-1 p-6 bg-[#fafafa] border border-gray-300 rounded shadow-inner select-text">
           <MarkdownRenderer content={current.content} />
-        </div>
+        </Win95Scroll>
       </div>
     </div>
   );

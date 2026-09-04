@@ -71,11 +71,12 @@ export const Win95Scroll: React.FC<Win95ScrollProps> = ({ children, className, s
     scrollByPx((isAbove ? -1 : 1) * metrics.clientHeight * 0.9);
   };
 
-  const arrowBtn = 'w-full flex items-center justify-center bg-w95-gray active:bg-gray-300 select-none';
+  const raisedBevel = 'inset -1px -1px #000000, inset 1px 1px #dfdfdf, inset -2px -2px #808080, inset 2px 2px #ffffff';
+  const arrowBtn = 'w-full flex items-center justify-center select-none';
   const arrowStyle: React.CSSProperties = {
     height: ARROW,
-    border: '1px solid #000',
-    boxShadow: 'inset 1px 1px #fff, inset -1px -1px #808080',
+    background: '#c0c0c0',
+    boxShadow: raisedBevel,
   };
 
   return (
@@ -92,19 +93,18 @@ export const Win95Scroll: React.FC<Win95ScrollProps> = ({ children, className, s
       {overflows && (
         <div
           className="absolute top-0 bottom-0 right-0 flex flex-col"
-          style={{ width: BAR, background: '#fff' }}
+          style={{ width: BAR, background: '#c0c0c0' }}
         >
           <button type="button" aria-label="Scroll up" className={arrowBtn} style={arrowStyle} onClick={() => scrollByPx(-48)}>
-            <svg width="8" height="8" viewBox="0 0 8 8"><path d="M4 1 L7 6 L1 6 Z" fill="#000" /></svg>
+            <svg width="7" height="7" viewBox="0 0 7 7"><path d="M3.5 1 L6 5 L1 5 Z" fill="#000" /></svg>
           </button>
 
           <div
             className="relative flex-1"
             style={{
-              backgroundColor: '#fff',
-              backgroundImage: 'repeating-linear-gradient(45deg, #000 0, #000 0.5px, transparent 0.5px, transparent 3px)',
-              borderLeft: '1px solid #000',
-              borderRight: '1px solid #000',
+              backgroundColor: '#c0c0c0',
+              backgroundImage: 'repeating-conic-gradient(#c0c0c0 0% 25%, #ffffff 0% 50%)',
+              backgroundSize: '2px 2px',
             }}
           >
             <div className="absolute inset-0" onMouseDown={(e) => {
@@ -117,15 +117,14 @@ export const Win95Scroll: React.FC<Win95ScrollProps> = ({ children, className, s
               style={{
                 top: thumbTop,
                 height: thumbHeight,
-                background: '#fff',
-                border: '1px solid #000',
-                boxShadow: 'inset 1px 1px #fff, inset -1px -1px #808080',
+                background: '#c0c0c0',
+                boxShadow: raisedBevel,
               }}
             />
           </div>
 
           <button type="button" aria-label="Scroll down" className={arrowBtn} style={arrowStyle} onClick={() => scrollByPx(48)}>
-            <svg width="8" height="8" viewBox="0 0 8 8"><path d="M1 2 L7 2 L4 7 Z" fill="#000" /></svg>
+            <svg width="7" height="7" viewBox="0 0 7 7"><path d="M1 2 L6 2 L3.5 6 Z" fill="#000" /></svg>
           </button>
         </div>
       )}

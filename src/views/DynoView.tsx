@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
+import { Win95Scroll } from '../components/Win95Scroll';
 
 export const DynoView: React.FC = () => {
   const { user, requireAuth } = useAuth();
@@ -406,7 +407,7 @@ export const DynoView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-3 space-y-3">
+      <Win95Scroll className="flex-1 p-3 space-y-3">
         <div className="bg-blue-50 border border-blue-300 p-2.5 rounded text-[11px] text-blue-950 flex items-start gap-2">
           <ShieldCheck size={16} className="text-blue-700 shrink-0 mt-0.5" />
           <div className="space-y-0.5">
@@ -560,7 +561,7 @@ export const DynoView: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <div className="md:col-span-1 space-y-1 overflow-y-auto max-h-72 border p-1 rounded bg-gray-50">
+                <Win95Scroll className="md:col-span-1 space-y-1 max-h-72 border p-1 rounded bg-gray-50">
                   {NEUTRAL_DEV_FIXTURES.map((task, idx) => (
                     <button
                       key={task.key}
@@ -580,7 +581,7 @@ export const DynoView: React.FC = () => {
                       </span>
                     </button>
                   ))}
-                </div>
+                </Win95Scroll>
 
                 <div className="md:col-span-2 border p-3 rounded bg-white space-y-2 text-xs">
                   <div className="flex items-center justify-between border-b pb-1">
@@ -1179,7 +1180,7 @@ export const DynoView: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
+      </Win95Scroll>
     </div>
   );
 };

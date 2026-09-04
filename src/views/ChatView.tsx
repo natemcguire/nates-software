@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
+import { Win95Scroll } from '../components/Win95Scroll';
 
 export const ChatView: React.FC = () => {
   const { user } = useAuth();
@@ -356,7 +357,7 @@ export const ChatView: React.FC = () => {
             <span className="text-[10px] bg-blue-900 px-1 rounded font-mono">#lounge</span>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-1 font-mono text-xs divide-y divide-gray-100">
+          <Win95Scroll className="flex-1 space-y-1 font-mono text-xs divide-y divide-gray-100">
             {users.length === 0 && (
               <div className="text-gray-400 text-[11px] italic p-2 text-center">
                 No active users
@@ -393,7 +394,7 @@ export const ChatView: React.FC = () => {
                   </div>
                 );
               })}
-          </div>
+          </Win95Scroll>
 
           <div className="border-t border-gray-300 pt-2 text-[10px] text-gray-500 font-mono text-center">
             You are: <strong className="text-blue-900">{user ? `@${user.username}` : 'guest'}</strong>

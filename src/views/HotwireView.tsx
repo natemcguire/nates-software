@@ -3,6 +3,7 @@ import { useCatalog } from '../context/CatalogContext';
 import { useAlert } from '../context/AlertContext';
 import { AppListing } from '../data/mockData';
 import { ArtifactSandbox } from '../components/ArtifactSandbox';
+import { Win95Scroll } from '../components/Win95Scroll';
 import {
   Flame,
   GitFork,
@@ -385,7 +386,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             />
           </div>
 
-          <div className="flex-1 win95-field p-1 bg-white overflow-y-auto divide-y divide-gray-200">
+          <Win95Scroll className="flex-1 win95-field p-1 bg-white divide-y divide-gray-200">
             {activeFilter === 'streaks' ? (
               <div className="p-2 space-y-2">
                 <div className="font-bold text-xs text-blue-900 mb-2 flex items-center justify-between">
@@ -662,7 +663,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                 );
               })
             )}
-          </div>
+          </Win95Scroll>
         </div>
 
         <div className="w-1/2 flex flex-col min-w-[320px]">
@@ -693,7 +694,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
               </button>
             </div>
 
-            <div className="space-y-1.5 max-h-60 overflow-y-auto bg-white p-2 border border-gray-600">
+            <Win95Scroll className="space-y-1.5 max-h-60 bg-white p-2 border border-gray-600">
               {activeVoterApp.voters?.map((voter, i) => (
                 <div key={i} className="flex items-center justify-between p-1.5 border-b border-gray-100 last:border-0">
                   <div className="flex items-center gap-2">
@@ -708,7 +709,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                   </span>
                 </div>
               ))}
-            </div>
+            </Win95Scroll>
 
             <div className="flex justify-end">
               <button onClick={() => setActiveVoterApp(null)} className="win95-btn px-4 py-1 font-bold">

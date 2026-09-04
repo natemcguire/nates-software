@@ -22,6 +22,7 @@ import { CheckoutModal } from './CheckoutModal';
 import { ForkWithAiModal } from './ForkWithAiModal';
 import { useAlert } from '../context/AlertContext';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { Win95Scroll } from './Win95Scroll';
 
 interface ArtifactSandboxProps {
   app: AppListing;
@@ -300,7 +301,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
         })()}
       </div>
 
-      <div className="flex-1 bg-white border-2 border-gray-400 border-r-white border-b-white p-3 overflow-y-auto mb-2">
+      <Win95Scroll className="flex-1 bg-white border-2 border-gray-400 border-r-white border-b-white p-3 mb-2">
         {activeTab === 'preview' && (
           <div className="h-full flex flex-col">
             <div className="bg-gray-100 p-2 border border-gray-300 mb-2 flex items-center justify-between text-xs font-mono flex-wrap gap-2">
@@ -360,7 +361,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                 <span className="animate-pulse">Loading spec.md from repository...</span>
               </div>
             ) : processedSpecContent ? (
-              <div className="flex-1 overflow-y-auto p-4 bg-white border border-gray-300 rounded shadow-inner">
+              <Win95Scroll className="flex-1 p-4 bg-white border border-gray-300 rounded shadow-inner">
                 <div className="mb-3 pb-2 border-b border-gray-200 flex items-center justify-between text-xs text-gray-500 font-mono">
                   <span className="flex items-center gap-1.5 font-bold text-gray-700">
                     <FileText size={14} className="text-blue-700" />
@@ -373,7 +374,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                   )}
                 </div>
                 <MarkdownRenderer content={processedSpecContent} />
-              </div>
+              </Win95Scroll>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50 border border-dashed border-gray-300 rounded">
                 <FileText size={36} className="text-gray-400 mb-2" />
@@ -456,7 +457,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                 <p className="text-[11px] text-gray-500 mt-0.5">Be the first to leave feedback for the maker!</p>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-2 border border-gray-300 p-2 bg-gray-50 rounded">
+              <Win95Scroll className="flex-1 space-y-2 border border-gray-300 p-2 bg-gray-50 rounded">
                 {comments.map(c => (
                   <div key={c.id} className="bg-white p-2.5 rounded border border-gray-200 space-y-1">
                     <div className="flex items-center justify-between text-xs">
@@ -474,7 +475,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                     <p className="text-xs text-gray-800 leading-relaxed">{c.text}</p>
                   </div>
                 ))}
-              </div>
+              </Win95Scroll>
             )}
 
             <form onSubmit={handleAddComment} className="flex gap-2">
@@ -491,7 +492,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
             </form>
           </div>
         )}
-      </div>
+      </Win95Scroll>
 
       <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-gray-400">
         <div className="flex items-center gap-1.5 flex-wrap">
