@@ -274,7 +274,6 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
             isAuthenticated={isAuthenticated}
             isAuthoritativeLive={isAuthoritativeLive}
             isLoading={isLoading}
-            username={user?.username}
             appCount={apps.length}
             leaderboardCount={makerLeaderboard?.length || 0}
             onOpenLeaders={onOpenLeaders}
@@ -298,7 +297,6 @@ interface LibraryIndexProps {
   isAuthenticated: boolean;
   isAuthoritativeLive: boolean;
   isLoading: boolean;
-  username?: string;
   appCount: number;
   leaderboardCount: number;
   onOpenLeaders?: () => void;
@@ -307,7 +305,7 @@ interface LibraryIndexProps {
 const LibraryIndex: React.FC<LibraryIndexProps> = ({
   apps, tabs, activeTab, onTabSelect, searchQuery, setSearchQuery,
   onSubmit, onOpen, onUpvote, upvotedApps, isAuthenticated, isAuthoritativeLive,
-  isLoading, username, appCount, leaderboardCount, onOpenLeaders
+  isLoading, appCount, leaderboardCount, onOpenLeaders
 }) => {
   return (
     <div className="flex-1 flex flex-col overflow-hidden p-2">
@@ -354,9 +352,10 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
       </div>
 
       <Win95Scroll className="flex-1 win95-field bg-white border border-gray-600">
-        <div className="grid grid-cols-[28px_1fr_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
+        <div className="grid grid-cols-[28px_1fr_120px_auto] gap-2 px-3 py-1.5 bg-[#ece9d8] border-b border-gray-400 font-bold text-[10px] text-gray-600 uppercase tracking-wide sticky top-0 z-10">
           <span className="text-right">#</span>
-          <span>App · maker · repo</span>
+          <span>App · repo</span>
+          <span>Maker</span>
           <span className="text-right">Votes</span>
         </div>
 
@@ -387,7 +386,6 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
         ) : (
           apps.map((app, index) => {
             const isUpvoted = upvotedApps.has(app.id) || Boolean(app.hasVoted);
-            const isMine = username && (app.author === username || app.creator === username);
             const royaltyBps = getRoyaltyBps(app);
             const listingStatus = deriveListingStatus({
               isDemo: app.isDemo,
@@ -395,11 +393,12 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
               productStatus: app.productStatus,
               isAuthoritativeLive
             });
+            const makerHandle = `@${app.author || app.creator || 'maker'}`;
             return (
               <div
                 key={app.id}
                 onClick={() => onOpen(app)}
-                className="grid grid-cols-[28px_1fr_auto] gap-2 px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-blue-50 items-start"
+                className="grid grid-cols-[28px_1fr_120px_auto] gap-2 px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-blue-50 items-start"
               >
                 <span className="font-bold font-mono text-sm text-[#7a1f00] text-right leading-5">{index + 1}</span>
 
@@ -407,10 +406,6 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-bold text-[13px] text-blue-900">{app.name}</span>
                     <span className="bg-green-100 text-green-800 font-mono text-[10px] px-1 rounded">{app.version}</span>
-                    <span className="text-gray-500 text-[10px] text-[#2b5fa8]">by @{app.author || app.creator || 'maker'}</span>
-                    {isMine && (
-                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-400 font-bold font-mono text-[11px] px-1.5 rounded" title="Published by you">MINE</span>
-                    )}
                     <span className={`${listingStatus.className} border font-bold font-mono text-xs px-1.5 rounded`}>
                       {listingStatus.label}
                     </span>
@@ -447,6 +442,15 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                       🌳 lineage →
                     </a>
                   </div>
+                </div>
+
+                <div className="flex flex-col justify-start pt-0.5 min-w-0">
+                  <span className="font-mono text-xs font-bold text-[#2b5fa8] truncate" title={makerHandle}>
+                    {makerHandle}
+                  </span>
+                  {app.authorAvatar && (
+                    <span className="text-[10px] text-gray-500 font-mono">{app.authorAvatar}</span>
+                  )}
                 </div>
 
                 <button
