@@ -50,7 +50,6 @@ describe('GITSMITH Real Repos, File Browser & Readiness Honesty', () => {
   it('initializes in loading state and does not leak bundled fixture repos by default', () => {
     const html = renderComponent();
 
-    expect(html).toContain('LOADING CANONICAL FORGE');
     expect(html).toContain('Loading the forge');
 
     expect(html).not.toContain('nate/dronehunter');

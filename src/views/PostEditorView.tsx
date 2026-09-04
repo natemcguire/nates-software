@@ -613,7 +613,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
           }`}
         >
           <Save size={13} />
-          <span>{isSaving ? 'Saving to D1...' : 'Save & Update Live Listing'}</span>
+          <span>{isSaving ? 'Saving…' : 'Save & Update Live Listing'}</span>
         </button>
       </div>
     </div>

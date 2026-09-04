@@ -76,7 +76,6 @@ describe('GITSMITH canonical repository view model', () => {
       )
     );
 
-    expect(html).toContain('LOADING CANONICAL FORGE');
     expect(html).toContain('Loading the forge');
     expect(html).not.toContain('nate/dronehunter');
     expect(html).not.toContain('Bundled Showcase');

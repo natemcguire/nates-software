@@ -21,7 +21,8 @@ import {
   GripVertical,
   Globe,
   Plus,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { playClickSound, playSuccessChime } from '../lib/soundEngine';
 import { useAuth } from '../context/AuthContext';
@@ -795,7 +796,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           </div>
           <span className="text-gray-600 font-mono text-[11px] hidden sm:inline flex items-center gap-1.5">
             <Globe size={13} className="text-blue-700" />
-            <span>Repository control plane · Git transport requires the GITSMITH gateway</span>
+            <span>Git repositories · Push &amp; clone over SSH</span>
           </span>
         </div>
 
@@ -803,7 +804,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <button
             onClick={() => {
               if (!user) return openAuthModal('login');
-              if (!gatewayReady) return showAlert('Repository creation is disabled until the GITSMITH gateway is ready.', 'GITSMITH Gateway Unavailable', 'error');
+              if (!gatewayReady) return showAlert('Repository creation is unavailable while the forge is offline.', 'Forge Unavailable', 'error');
               setShowCreateRepo(true);
             }}
             disabled={Boolean(user) && !gatewayReady}
@@ -848,14 +849,15 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <button type="button" onClick={() => setShowCreateRepo(false)} className="win95-btn p-1 text-black hover:bg-[#dfdfdf]" aria-label="Close repository form">
             <X size={16} />
           </button>
-          <p className="basis-full text-[11px] text-gray-600">The control plane creates a provisioning record first. Git objects and refs become active only after confirmation from the authoritative gateway.</p>
+          <p className="basis-full text-[11px] text-gray-600">Repositories are created immediately. Git objects and refs become active as soon as you push your first commit.</p>
         </form>
       )}
 
       {showingShowcases ? (
-        <div className="bg-[#fff3cd] border-b border-[#ffeeba] px-3 py-1.5 text-[11px] text-[#856404] font-mono flex items-center justify-between">
-          <span>DEMO GALLERY — Bundled showcase snapshots for UI preview only. Not canonical repositories, gateway objects, or live forge state.</span>
+        <div className="bg-[#fff3cd] border-b border-[#ffeeba] text-[#856404] px-3 py-1.5 text-[11px] flex items-center justify-between font-mono">
+          <span>SHOWCASE MODE — Viewing bundled offline repositories. Real push/pull operations require live forge repositories.</span>
           <button
+            type="button"
             onClick={() => {
               setShowBundledExamples(false);
               setSelectedRepo(canonicalRepositories.length > 0 ? canonicalRepositories[0] : null);
@@ -866,13 +868,11 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           </button>
         </div>
       ) : canonicalRepositories.length > 0 ? null : (
-        <div className={`${canonicalLoadState === 'error' ? 'bg-[#f8d7da] border-[#f5c6cb] text-[#721c24]' : 'bg-[#ece9d8] border-[#808080] text-gray-700'} border-b px-3 py-1.5 text-[11px] font-mono`}>
-          {canonicalLoadState === 'loading'
-            ? 'LOADING CANONICAL FORGE…'
-            : canonicalLoadState === 'error'
-              ? 'CANONICAL FORGE UNAVAILABLE — No cached or example repository has been substituted.'
-              : 'NO VISIBLE CANONICAL REPOSITORIES — Create your first repository or explicitly open the bundled examples.'}
-        </div>
+        canonicalLoadState === 'loading' ? (
+          <div className="bg-[#ece9d8] border-b border-[#808080] text-gray-700 px-3 py-1 text-[11px] font-mono">
+            LOADING FORGE…
+          </div>
+        ) : null
       )}
       <div className="flex-1 flex overflow-hidden">
         <div 
@@ -917,8 +917,8 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                   </button>
                 )}
               </div>
-              <span className={showingShowcases ? 'text-amber-800 font-bold' : 'text-emerald-800 font-bold'}>
-                {showingShowcases ? 'Bundled snapshots' : 'Canonical D1'}
+              <span className={showingShowcases ? 'text-amber-800 font-bold' : canonicalLoadState === 'error' ? 'text-red-800 font-bold' : 'text-emerald-800 font-bold'}>
+                {showingShowcases ? 'Demo Gallery' : canonicalLoadState === 'error' ? 'Offline' : 'Live'}
               </span>
             </div>
           </div>
@@ -926,12 +926,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           <Win95Scroll className="flex-1 divide-y divide-[#d0d0d0] bg-white win95-field">
             {repositoryCatalog.length === 0 && canonicalLoadState !== 'loading' && (
               <div className="p-4 space-y-3 text-gray-700">
-                <p className="font-bold text-black">No canonical repositories to show.</p>
-                <p className="text-[11px] leading-relaxed text-gray-600">
-                  {canonicalLoadState === 'error'
-                    ? 'The control plane could not be reached. Retry before creating, cloning, or forking anything.'
-                    : user ? 'Create a repository to provision its authoritative bare Git storage.' : 'Sign in to create a repository, or explore the demo gallery.'}
-                </p>
+                <p className="font-bold text-black text-xs">No repositories to show.</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -939,9 +934,9 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                     setSelectedRepo(GITSMITH_REPOS[0]);
                     setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
                   }}
-                  className="win95-btn w-full bg-[#dfdfdf] hover:bg-white text-black px-3 py-2 text-[11px] font-bold"
+                  className="win95-btn w-full bg-[#dfdfdf] hover:bg-white text-black px-2 py-2 text-[11px] font-bold whitespace-normal break-words"
                 >
-                  Open Demo Gallery (Bundled Examples)
+                  Open Demo Gallery
                 </button>
               </div>
             )}
@@ -973,7 +968,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                       <span className="text-base">{repo.avatar}</span>
                       <span className={isSelected ? 'text-white' : 'text-blue-900'}>{repo.owner}/{repo.name}</span>
                       {isOwner && (
-                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border font-bold ${
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 border font-bold ${
                           isSelected ? 'bg-emerald-900 text-emerald-100 border-emerald-400' : 'bg-emerald-100 text-emerald-800 border-emerald-600'
                         }`}>
                           you
@@ -1018,16 +1013,43 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                 {canonicalLoadState === 'loading'
                   ? 'Loading the forge…'
                   : canonicalLoadState === 'error'
-                    ? 'Forge Control Plane Unavailable'
-                    : 'Start with an authoritative repository'}
+                    ? 'Forge Unavailable'
+                    : 'Start with a repository'}
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-gray-700">
                 {canonicalLoadState === 'error'
-                  ? 'GITSMITH could not load the canonical catalog. Nothing from the bundled examples is being presented as live repository state.'
+                  ? "Couldn't reach the forge. Retry before creating, cloning, or forking anything."
                   : canonicalLoadState === 'loading'
-                    ? 'Checking the control plane and Git gateway before enabling repository actions.'
-                    : 'Create a repository to commission bare Git storage, then push the first ref from your local checkout.'}
+                    ? 'Connecting to the forge before enabling repository actions.'
+                    : 'Create a repository to start hosting your code, then push from your local checkout.'}
               </p>
+              {canonicalLoadState === 'error' && (
+                <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      void refreshCanonicalRepositories();
+                    }}
+                    className="win95-btn btn-w95-primary px-4 py-1.5 text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Retry</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setShowBundledExamples(true);
+                      setSelectedRepo(GITSMITH_REPOS[0]);
+                      setActiveFile(GITSMITH_REPOS[0].files.find(file => file.type === 'file') || GITSMITH_REPOS[0].files[0]);
+                    }}
+                    className="win95-btn px-4 py-1.5 text-xs font-bold bg-[#dfdfdf] hover:bg-white text-black"
+                  >
+                    Open Demo Gallery
+                  </button>
+                </div>
+              )}
             </div>
           ) : (<>
           <div className="bg-[#c0c0c0] border-2 border-t-white border-l-white border-b-[#808080] border-r-[#808080] p-3 shadow-sm">
@@ -1142,7 +1164,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                 </span>
                 <span className="text-blue-900 font-bold">{selectedRepo.lastCommit.sha}</span>
                 <span className="text-black">"{selectedRepo.lastCommit.message}"</span>
-                <span className="bg-[#ece9d8] text-gray-700 font-mono text-[10px] px-1.5 py-0.2 rounded font-bold border border-[#808080]">
+                <span className="bg-[#ece9d8] text-gray-700 font-mono text-[10px] px-1.5 py-0.5 font-bold border border-[#808080]">
                   {selectedRepo.source === 'canonical'
                     ? (selectedRepo.lastCommit.sha === 'No projected ref' ? 'NO REF PROJECTED' : 'D1 PROJECTION')
                     : 'DEMO ONLY'}

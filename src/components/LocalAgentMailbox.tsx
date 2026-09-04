@@ -121,24 +121,29 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
   const [showGuide, setShowGuide] = useState(false);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 font-tahoma text-xs">
-      <div className="w-full max-w-md border-2 border-gray-800 bg-white shadow-md">
-        <div className="bg-w95-blue text-white px-2 py-1 font-bold flex items-center gap-1.5">
-          <AlertTriangle size={13} /> Local Agent Mailbox Offline
+    <div className="flex-1 flex flex-col items-center justify-start p-6 pt-8 font-tahoma text-xs overflow-y-auto">
+      <div className="w-full max-w-lg win95-field bg-[#c0c0c0] p-1 border-2 border-gray-600">
+        <div className="bg-[#ece9d8] border-b border-gray-400 px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-gray-800 text-sm">
+            <AlertTriangle size={15} className="text-amber-700" />
+            <span>Local Agent Mailbox Service</span>
+          </div>
+          <span className="bg-amber-100 text-amber-900 border border-amber-400 text-[10px] font-mono font-bold px-1.5 py-0.5">
+            OFFLINE
+          </span>
         </div>
-        <div className="p-4 space-y-3 text-gray-800">
+        <div className="p-4 space-y-3 text-gray-800 bg-white border border-gray-500 m-1">
           <p className="leading-relaxed">
-            Could not reach the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
-            <span className="font-mono bg-gray-100 border border-gray-300 px-1 rounded">
+            Start the local <span className="font-mono font-bold">agent-inbox</span> service on{' '}
+            <span className="font-mono bg-gray-100 border border-gray-300 px-1">
               http://127.0.0.1:8791
-            </span>
-            . Either it is not running, or your browser is blocking local-network
-            access from this site (grant it when prompted, then Reconnect).
+            </span>{' '}
+            to inspect inter-agent mail:
           </p>
 
           <div className="space-y-1">
             <div className="font-bold text-gray-700">To enable inter-agent mailbox inspection:</div>
-            <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 rounded space-y-1">
+            <ol className="font-mono text-[11px] bg-gray-900 text-emerald-300 p-2.5 space-y-1 border border-gray-700">
               <li>
                 <span className="text-gray-300 font-semibold">1. Install:</span> ./scripts/install.sh
               </li>
@@ -158,26 +163,26 @@ export const OfflinePane: React.FC<OfflinePaneProps> = ({ probing, onReconnect }
             </button>
 
             {showGuide && (
-              <div className="mt-2 bg-[#fbfbf8] border border-gray-400 p-2.5 text-[11px] text-gray-800 space-y-2 rounded shadow-inner">
+              <div className="mt-2 bg-[#fbfbf8] border border-gray-400 p-2.5 text-[11px] text-gray-800 space-y-2">
                 <div className="font-bold text-blue-900 border-b border-gray-300 pb-1">Quickstart Installation Guide</div>
                 <div className="space-y-1">
                   <p><b>Step 1: Install the CLI</b></p>
                   <p className="text-gray-600">Run the installer script in your project root to set up the agent-inbox binary:</p>
-                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 font-mono text-[10px] select-text border border-gray-700">
                     ./scripts/install.sh
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p><b>Step 2: Start the background service</b></p>
                   <p className="text-gray-600">Launch the local daemon listening on port 8791:</p>
-                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 font-mono text-[10px] select-text border border-gray-700">
                     agent-inbox serve
                   </div>
                 </div>
                 <div className="space-y-1">
                   <p><b>Step 3: Register an agent mailbox</b></p>
                   <p className="text-gray-600">From any project directory with an active AI coding session:</p>
-                  <div className="bg-gray-900 text-emerald-300 p-1.5 rounded font-mono text-[10px] select-text">
+                  <div className="bg-gray-900 text-emerald-300 p-1.5 font-mono text-[10px] select-text border border-gray-700">
                     agent-inbox whoami
                   </div>
                 </div>
@@ -252,7 +257,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
         <span className="flex items-center gap-1">
           <Cpu size={13} /> Agent Inboxes
         </span>
-        <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1 py-0.2 rounded font-mono font-bold">
+        <span className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 border border-emerald-400 font-mono font-bold">
           {version ? `v${version}` : 'LIVE'}
         </span>
       </div>
@@ -358,7 +363,7 @@ export const RunningPane: React.FC<RunningPaneProps> = ({
                   {t.subject}
                 </span>
                 {t.unread_count > 0 && (
-                  <span className="bg-w95-blue text-white text-[9px] px-1 py-0.2 rounded font-mono font-bold shrink-0 ml-1">
+                  <span className="bg-w95-blue text-white text-[10px] px-1.5 py-0.5 font-mono font-bold shrink-0 ml-1">
                     {t.unread_count}
                   </span>
                 )}
@@ -573,25 +578,27 @@ export const LocalAgentMailbox: React.FC = () => {
           <Server size={13} className={health.running ? 'text-emerald-600' : 'text-gray-400'} />
           Local Agent Mailbox
           <span
-            className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${
+            className={`text-[10px] px-1.5 py-0.5 font-mono font-bold border ${
               probing
-                ? 'bg-blue-100 text-blue-800'
+                ? 'bg-blue-100 text-blue-800 border-blue-400'
                 : health.running
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-red-100 text-red-800'
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-400'
+                : 'bg-red-100 text-red-800 border-red-400'
             }`}
           >
             {probing ? 'PROBING' : health.running ? 'CONNECTED' : 'OFFLINE'}
           </span>
         </span>
-        <button
-          onClick={probe}
-          disabled={probing}
-          title="Reconnect to local service"
-          className="btn-w95 px-2 py-0.5 text-[10px] flex items-center gap-1 font-bold disabled:opacity-50"
-        >
-          <Power size={11} className={probing ? 'animate-spin' : ''} /> Reconnect
-        </button>
+        {!showOffline && (
+          <button
+            onClick={probe}
+            disabled={probing}
+            title="Reconnect to local service"
+            className="btn-w95 px-2 py-0.5 text-[10px] flex items-center gap-1 font-bold disabled:opacity-50"
+          >
+            <Power size={11} className={probing ? 'animate-spin' : ''} /> Reconnect
+          </button>
+        )}
       </div>
 
       {probing && !probed ? (

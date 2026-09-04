@@ -377,64 +377,63 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-sm select-none">
         <div className="bg-gradient-to-r from-w95-blue via-blue-900 to-w95-blue text-white p-3 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-3">
-            <div className="text-3xl bg-white p-1 rounded border border-gray-400 text-black">👤</div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base">Guest Session</span>
-                <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">
-                  ● NOT SIGNED IN
-                </span>
-              </div>
-              <p className="text-blue-100 text-xs mt-0.5">Sign in to see your shelf, your SSH keys, and what you've earned.</p>
+            <div className="text-3xl bg-white p-1 border border-gray-400 text-black">👤</div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-base">Guest Session</span>
+              <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 font-mono border border-amber-800">
+                ● NOT SIGNED IN
+              </span>
             </div>
           </div>
         </div>
 
-        <Win95Scroll className="flex-1 bg-white border-2 border-gray-800 p-6 flex flex-col items-center justify-center text-center">
-          <div className="max-w-md w-full bg-gray-50 border-2 border-gray-400 p-6 rounded shadow-sm space-y-5">
-            <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue rounded-full flex items-center justify-center mx-auto text-w95-blue">
-              <ShieldCheck size={32} />
-            </div>
+        <Win95Scroll className="flex-1 bg-white border-2 border-gray-800">
+          <div className="min-h-full w-full p-6 flex flex-col items-center justify-center text-center">
+            <div className="max-w-md w-full bg-[#ece9d8] border-2 border-white border-r-gray-800 border-b-gray-800 p-6 space-y-5">
+              <div className="w-16 h-16 bg-blue-100 border-2 border-w95-blue flex items-center justify-center mx-auto text-w95-blue">
+                <ShieldCheck size={32} />
+              </div>
 
-            <div>
-              <h2 className="text-base font-bold text-gray-900">Session Authentication Required</h2>
-              <p className="text-gray-600 text-xs mt-1.5 leading-relaxed">
-                Sign in to view your owned apps, license keys, and maker earnings.
-              </p>
-            </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Session Authentication Required</h2>
+                <p className="text-gray-600 text-xs mt-1.5 leading-relaxed">
+                  Sign in to view your owned apps, license keys, and maker earnings.
+                </p>
+              </div>
 
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <button
-                onClick={() => openAuthModal('login')}
-                className="btn-w95 btn-w95-primary px-5 py-2 text-xs font-bold flex items-center gap-1.5"
-              >
-                <LogIn size={14} />
-                <span>Log In</span>
-              </button>
-              <button
-                onClick={() => openAuthModal('register')}
-                className="btn-w95 px-5 py-2 text-xs font-bold flex items-center gap-1.5"
-              >
-                <UserPlus size={14} />
-                <span>Create Account</span>
-              </button>
-            </div>
-
-            <div className="border-t border-gray-300 pt-4 mt-4">
-              <span className="text-xs text-gray-500 font-bold block mb-2">Or Lookup a Public Maker Profile:</span>
-              <form onSubmit={handleSearchMaker} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. nate, sam, josh"
-                  value={searchHandleInput}
-                  onChange={(e) => setSearchHandleInput(e.target.value)}
-                  className="flex-1 p-1.5 border border-gray-400 text-xs font-mono"
-                />
-                <button type="submit" className="btn-w95 px-3 py-1.5 text-xs font-bold flex items-center gap-1">
-                  <Search size={12} />
-                  <span>Lookup</span>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="btn-w95 btn-w95-primary px-5 py-2 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <LogIn size={14} />
+                  <span>Log In</span>
                 </button>
-              </form>
+                <button
+                  onClick={() => openAuthModal('register')}
+                  className="btn-w95 px-5 py-2 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <UserPlus size={14} />
+                  <span>Create Account</span>
+                </button>
+              </div>
+
+              <div className="border-t border-gray-300 pt-4 mt-4">
+                <span className="text-xs text-gray-500 font-bold block mb-2">Or Lookup a Public Maker Profile:</span>
+                <form onSubmit={handleSearchMaker} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. nate, sam, josh"
+                    value={searchHandleInput}
+                    onChange={(e) => setSearchHandleInput(e.target.value)}
+                    className="flex-1 win95-field bg-white text-black px-2 py-1 text-xs font-mono placeholder-gray-600 placeholder:text-gray-600 focus:outline-none"
+                  />
+                  <button type="submit" className="btn-w95 px-3 py-1.5 text-xs font-bold flex items-center gap-1">
+                    <Search size={12} />
+                    <span>Lookup</span>
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </Win95Scroll>
@@ -1053,7 +1052,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       <span className="font-bold font-mono text-[11px]">
                         {profileData.stripeAccountId ? `Connected (${profileData.stripeAccountId.slice(0, 12)}...)` : 'Connected'}
                       </span>
-                      <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.2 rounded font-mono">
+                      <span className="bg-green-600 text-white text-[10px] px-1.5 py-0.5 font-mono">
                         Active
                       </span>
                     </div>

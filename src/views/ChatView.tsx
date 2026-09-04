@@ -283,7 +283,7 @@ export const ChatView: React.FC = () => {
           <span className="bg-emerald-950 text-emerald-300 border border-emerald-500 px-2 py-0.5 rounded font-bold flex items-center gap-1">
             <Radio size={11} className="text-emerald-400 animate-pulse" />
             <span>{serverStatus}</span>
-            <span className="bg-blue-900 text-cyan-300 px-1.5 py-0.2 rounded text-[10px]">24h Ephemeral Buffer</span>
+            <span className="bg-blue-900 text-cyan-300 px-1.5 py-0.5 text-[10px]">24h Ephemeral Buffer</span>
           </span>
 
           <button

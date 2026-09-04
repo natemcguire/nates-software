@@ -583,25 +583,25 @@ export function AppInner() {
         <button
           data-testid="desktop-explainer-button"
           onClick={() => { playClickSound(); openWindow('mktg'); }}
-          className="flex items-center gap-1.5 bg-black/40 hover:bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma font-bold cursor-pointer transition-colors shadow-sm"
+          className="flex items-center gap-1.5 bg-[#c0c0c0] hover:bg-[#d0d0d0] px-2.5 py-1 border-2 border-white border-r-gray-800 border-b-gray-800 text-black text-[11px] font-tahoma font-bold cursor-pointer"
           title="What is Nate's Software and what does each app do?"
         >
-          <span className="text-amber-300 font-bold">?</span>
+          <span className="text-blue-900 font-bold">?</span>
           <span>What is this?</span>
         </button>
         {authLoading ? (
-          <div className="flex items-center gap-1.5 bg-black/30 px-2.5 py-1 rounded border border-white/10 text-white/60 text-[11px] font-tahoma">
-            <span className="inline-block w-3 h-3 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
+          <div className="flex items-center gap-1.5 bg-[#c0c0c0] px-2.5 py-1 border-2 border-gray-500 border-r-white border-b-white text-gray-700 text-[11px] font-tahoma">
+            <span className="inline-block w-3 h-3 border-2 border-gray-600 border-t-transparent animate-spin" />
             <span>Loading…</span>
           </div>
         ) : isAuthenticated && user ? (
           <div
             data-testid="desktop-greeting"
-            className="flex items-center gap-1.5 bg-black/40 backdrop-blur-sm px-2.5 py-1 rounded border border-white/20 text-white text-[11px] font-tahoma"
+            className="flex items-center gap-1.5 bg-[#c0c0c0] px-2.5 py-1 border-2 border-gray-500 border-r-white border-b-white text-black text-[11px] font-tahoma"
           >
             <span>{user.avatar || '👤'}</span>
-            <span className="text-gray-300">
-              Welcome back, <strong className="text-white">{`@${user.displayName || user.username}`}</strong>
+            <span className="text-gray-800">
+              Welcome back, <strong className="text-blue-900">{`@${user.displayName || user.username}`}</strong>
             </span>
           </div>
         ) : (
@@ -616,14 +616,14 @@ export function AppInner() {
           </button>
         )}
         <FontSizer />
-        <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm p-1.5 rounded border border-white/20 text-white text-[11px] font-tahoma">
-          <span className="text-gray-300 font-bold mr-1">Theme:</span>
+        <div className="flex items-center gap-1 bg-[#c0c0c0] p-1 border-2 border-white border-r-gray-800 border-b-gray-800 text-black text-[11px] font-tahoma">
+          <span className="text-black font-bold mr-1">Theme:</span>
           {Object.values(THEMES).map(t => (
             <button
               key={t.id}
               onClick={() => { playClickSound(); setTheme(t.id); }}
-              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                theme === t.id ? 'bg-w95-blue text-white shadow-sm border border-blue-400' : 'text-gray-300 hover:text-white'
+              className={`px-2 py-0.5 text-[10px] font-bold border-2 ${
+                theme === t.id ? 'bg-w95-blue text-white border-gray-800 border-r-white border-b-white' : 'bg-[#c0c0c0] text-black border-white border-r-gray-800 border-b-gray-800 hover:bg-[#d0d0d0]'
               }`}
             >
               {t.label}

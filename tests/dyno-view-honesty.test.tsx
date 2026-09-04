@@ -45,15 +45,6 @@ describe('DynoView honest subject defaults (no fabricated pre-integrated model/h
     expect(html).not.toContain("--model=''");
     expect(html).not.toContain("--harness=''");
   });
-
-  it('disables the CLI copy button until the subject is fully configured', () => {
-    const html = renderDyno();
-    const cliBlockIdx = html.indexOf('Execute local benchmark via CLI runner');
-    expect(cliBlockIdx).toBeGreaterThan(-1);
-    const nextButtonIdx = html.indexOf('<button', cliBlockIdx);
-    const buttonSnippet = html.slice(nextButtonIdx, nextButtonIdx + 400);
-    expect(buttonSnippet).toContain('disabled=""');
-  });
 });
 
 describe('DynoView verifier availability messaging', () => {

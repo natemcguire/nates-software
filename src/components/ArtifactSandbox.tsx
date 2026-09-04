@@ -461,7 +461,7 @@ export const ArtifactSandbox: React.FC<ArtifactSandboxProps> = ({
                     <span>{app.authorAvatar || '🎯'}</span>
                     <span>Maker Story &amp; Pitch by @{app.author}</span>
                   </span>
-                  <span className="bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded text-[10px] uppercase font-bold">
+                  <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 text-[10px] uppercase font-bold border border-amber-400">
                     Pinned
                   </span>
                 </div>

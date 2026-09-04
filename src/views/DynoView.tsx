@@ -362,15 +362,9 @@ export const DynoView: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-[#ece9d8] font-tahoma text-xs">
-      <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2.5 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+      <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2">
+        <div className="flex items-center gap-2 px-1">
           <Gauge size={18} className="text-yellow-400" />
-          <div>
-            <div className="font-bold text-sm text-yellow-300 font-mono">DYNO — LLM DYNAMOMETER</div>
-            <div className="text-[10px] text-gray-300 font-sans">
-              Model + Harness + Tools measured under real developer load
-            </div>
-          </div>
         </div>
 
         <div className="flex gap-1 font-sans flex-wrap">
@@ -408,31 +402,10 @@ export const DynoView: React.FC = () => {
       </div>
 
       <Win95Scroll className="flex-1 p-3 space-y-3">
-        <div className="bg-blue-50 border border-blue-300 p-2.5 rounded text-[11px] text-blue-950 flex items-start gap-2">
-          <ShieldCheck size={16} className="text-blue-700 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <div>
-              <strong>The LLM Dynamometer:</strong> DYNO measures Model + Harness + Tools against common developer work, completely unrelated to marketplace app runtimes.
-            </div>
-            <div className="text-[10px] text-blue-900">
-              Public <strong>Street</strong> measurements run locally via <code>./bin/slop dyno</code> and remain self-reported after upload. Only Nate-run private evaluations can receive <strong>DYNO Certified</strong>; independent replay can mark a Street run <strong>Reproduced</strong>.
-            </div>
-          </div>
+        <div className="bg-blue-50 border border-blue-300 px-2.5 py-1.5 text-[11px] text-blue-950 flex items-center gap-2">
+          <ShieldCheck size={14} className="text-blue-700 shrink-0" />
+          <span><strong>The LLM Dynamometer:</strong> Measures Model + Harness + Tools against developer tasks locally via <code>./bin/slop dyno</code>.</span>
         </div>
-
-        {!loadingVerifierStatus && verifierStatus && (
-          <div className={`border p-2.5 rounded text-[11px] flex items-start gap-2 ${
-            verifierStatus.acceptingJobs
-              ? 'bg-green-50 border-green-300 text-green-950'
-              : 'bg-amber-50 border-amber-300 text-amber-950'
-          }`}>
-            <ShieldCheck size={16} className={`shrink-0 mt-0.5 ${verifierStatus.acceptingJobs ? 'text-green-700' : 'text-amber-700'}`} />
-            <div>
-              <strong>{verifierStatus.acceptingJobs ? 'Independent verification: online.' : 'Independent verification: offline.'}</strong>{' '}
-              {verifierStatus.message}
-            </div>
-          </div>
-        )}
 
         {activeTab === 'setup' && (
           <div className="space-y-3">
@@ -473,11 +446,16 @@ export const DynoView: React.FC = () => {
                   <select
                     value={selectedRepetitions}
                     onChange={e => setSelectedRepetitions(Number(e.target.value))}
-                    className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
+                    title={
+                      selectedRepetitions === 1 ? '1 pull — fast run' :
+                      selectedRepetitions === 2 ? '2 pulls — variance check' :
+                      '3 pulls — confidence band'
+                    }
+                    className="w-full win95-field bg-white text-black p-1 font-mono text-xs"
                   >
-                    <option value={1}>1 Street Pull (Fast)</option>
-                    <option value={2}>2 Street Pulls (Variance Check)</option>
-                    <option value={3}>3 Street Pulls (Confidence Band)</option>
+                    <option value={1}>1 pull — fast run</option>
+                    <option value={2}>2 pulls — variance check</option>
+                    <option value={3}>3 pulls — confidence band</option>
                   </select>
                 </div>
 
@@ -486,11 +464,16 @@ export const DynoView: React.FC = () => {
                   <select
                     value={selectedNetworkPolicy}
                     onChange={e => setSelectedNetworkPolicy(e.target.value as any)}
-                    className="w-full border border-gray-400 p-1 rounded font-mono text-xs bg-gray-50"
+                    title={
+                      selectedNetworkPolicy === 'none' ? 'none — block all egress' :
+                      selectedNetworkPolicy === 'local_only' ? 'local_only — localhost mocks' :
+                      'isolated — ephemeral network'
+                    }
+                    className="w-full win95-field bg-white text-black p-1 font-mono text-xs"
                   >
-                    <option value="none">none (Strictly Isolated - Block all egress)</option>
-                    <option value="local_only">local_only (Localhost mocks only)</option>
-                    <option value="isolated">isolated (Ephemeral network)</option>
+                    <option value="none">none — block all egress</option>
+                    <option value="local_only">local_only — localhost mocks</option>
+                    <option value="isolated">isolated — ephemeral network</option>
                   </select>
                 </div>
               </div>
@@ -511,17 +494,22 @@ export const DynoView: React.FC = () => {
 
               <div className="bg-gray-900 text-green-400 p-3 rounded font-mono text-xs border border-gray-700 relative">
                 <div className="text-[10px] text-gray-400 mb-1"># Execute local benchmark via CLI runner:</div>
-                <div className="select-all">
+                <div className="select-all pr-36">
                   {getCliCommand()}
                 </div>
-                <button
-                  onClick={copyCommand}
-                  disabled={!isSubjectConfigured}
-                  className="absolute top-2.5 right-2.5 btn-w95 text-[10px] py-0.5 px-2 bg-gray-800 text-gray-200 hover:bg-gray-700 border-gray-600 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {copiedCommand ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-                  <span>{copiedCommand ? 'Copied' : 'Copy'}</span>
-                </button>
+                {isSubjectConfigured ? (
+                  <button
+                    onClick={copyCommand}
+                    className="absolute top-2 right-2 btn-w95 btn-w95-primary text-[11px] py-1 px-3 font-bold flex items-center gap-1.5 shadow"
+                  >
+                    {copiedCommand ? <Check size={13} className="text-green-300" /> : <Copy size={13} />}
+                    <span>{copiedCommand ? 'Copied!' : 'Copy CLI Command'}</span>
+                  </button>
+                ) : (
+                  <span className="absolute top-2 right-2 text-[10px] font-mono text-gray-400 bg-gray-800 px-2 py-0.5 border border-gray-700 select-none">
+                    Fill fields above to generate
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-1 border-t border-gray-200 flex-wrap gap-2 text-[11px]">
@@ -530,11 +518,12 @@ export const DynoView: React.FC = () => {
                   <span>Output saved to <code>~/.dyno/report.json</code>. Remains strictly local until submitted.</span>
                 </div>
                 <button
+                  type="button"
                   onClick={handleToggleSchemaExample}
-                  className="btn-w95 text-[11px] py-0.5 px-2.5 bg-gray-100 flex items-center gap-1"
+                  className="text-blue-800 hover:text-blue-950 underline flex items-center gap-1 font-mono text-[11px] cursor-pointer"
                 >
                   <Code size={12} />
-                  <span>{showSchemaExample ? 'Hide Schema Example' : 'View Non-Submittable Schema Example'}</span>
+                  <span>{showSchemaExample ? 'Hide schema example' : 'View report schema example'}</span>
                 </button>
               </div>
 
@@ -576,7 +565,7 @@ export const DynoView: React.FC = () => {
                         <span className="font-mono text-gray-400 mr-1.5">{(idx + 1).toString().padStart(2, '0')}.</span>
                         <span>{task.title}</span>
                       </div>
-                      <span className="bg-gray-200 text-gray-700 px-1 py-0.2 rounded text-[9px] font-mono shrink-0 ml-1">
+                      <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 text-[10px] font-mono shrink-0 ml-1 border border-gray-400">
                         {task.category}
                       </span>
                     </button>
@@ -789,13 +778,26 @@ export const DynoView: React.FC = () => {
                   )}
                 </div>
 
+                {!loadingVerifierStatus && verifierStatus && (
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 border ${
+                      verifierStatus.acceptingJobs
+                        ? 'bg-green-100 text-green-900 border-green-400'
+                        : 'bg-amber-100 text-amber-900 border-amber-400'
+                    }`}
+                    title={verifierStatus.message}
+                  >
+                    Verifier: {verifierStatus.acceptingJobs ? 'Online' : 'Offline'}
+                  </span>
+                )}
+
                 <button
                   onClick={fetchLeaderboard}
                   disabled={loadingLeaderboard}
                   className="btn-w95 text-xs py-1 px-3 flex items-center gap-1.5 bg-gray-100 hover:bg-white"
                 >
                   <RefreshCw size={13} className={loadingLeaderboard ? 'animate-spin' : ''} />
-                  <span>{loadingLeaderboard ? 'Querying D1...' : 'Refresh Leaderboard'}</span>
+                  <span>{loadingLeaderboard ? 'Refreshing…' : 'Refresh Leaderboard'}</span>
                 </button>
               </div>
             </div>
@@ -950,7 +952,7 @@ export const DynoView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-gray-500 font-bold uppercase tracking-wider">Inspecting Run</span>
                         <span className="font-mono text-xs font-bold text-blue-900">{selectedRun.run?.id || selectedRun.id}</span>
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase font-mono ${
+                        <span className={`px-1.5 py-0.5 text-[10px] font-bold uppercase font-mono ${
                           (selectedRun.run?.verification_status || selectedRun.verification_status) === 'reproducible'
                             ? 'bg-blue-100 text-blue-900 border border-blue-400'
                             : 'bg-yellow-100 text-yellow-900 border border-yellow-400'
@@ -1081,7 +1083,7 @@ export const DynoView: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-gray-400 font-bold w-5">{(idx + 1).toString().padStart(2, '0')}</span>
                               <span className="font-bold text-gray-900 font-mono">{att.task_id}</span>
-                              <span className="bg-gray-200 text-gray-700 px-1 py-0.2 rounded text-[9px] font-mono">
+                              <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 text-[10px] font-mono border border-gray-400">
                                 Execution #{att.attempt_number}
                               </span>
                             </div>
