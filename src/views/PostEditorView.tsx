@@ -37,6 +37,7 @@ export const PostEditorView: React.FC<PostEditorViewProps> = ({ app, initialTab 
   const [royaltyPercent, setRoyaltyPercent] = useState<number>(
     typeof initialRoyaltyBps === 'number' ? initialRoyaltyBps / 100 : 10
   );
+  const isFork = typeof app.forkDepth === 'number' && app.forkDepth > 0;
   const [tagsStr, setTagsStr] = useState(app.tags?.join(', '));
   const [screenshots, setScreenshots] = useState<string[]>(app.screenshots);
   const [newImageUrl, setNewImageUrl] = useState('');
@@ -453,6 +454,18 @@ $ slop fork {app.creator || 'nate'}/{app.id || 'dronehunter'}</pre>
                 <p className="text-[11px] text-gray-500 mt-1">
                   What anyone who forks this app owes you on every sale of their version — frozen the day they fork, forever.
                 </p>
+                {isFork ? (
+                  <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 px-2 py-1.5 rounded">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                    <span>
+                      This is a fork — makers above you already hold frozen royalty liens on every sale. Your rate stacks on top of theirs, and the combined stack is capped at 100%. If your fork's total lien would exceed 100%, GITSMITH blocks the next fork down the line.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-1.5 text-[11px] text-gray-600 bg-blue-50 border border-blue-200 px-2 py-1.5 rounded">
+                    This is an original app — you keep 90%, platform 10%. Your royalty applies to anyone who forks and resells.
+                  </div>
+                )}
               </div>
             </div>
 

@@ -547,7 +547,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                         )}
 
                         {app.isDemo || !isAuthoritativeLive ? (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Seed Demo Data">
+                          <span className="bg-amber-100 text-amber-900 border border-amber-400 font-bold font-mono text-[9px] px-1.5 py-0.2 rounded" title="Demo listing — source not published yet, so it can't be forked or bought.">
                             DEMO
                           </span>
                         ) : (
@@ -565,7 +565,7 @@ export const HotwireView: React.FC<HotwireViewProps> = ({ onOpenApp, onOpenPostE
                             )}
                           </span>
                         ) : (
-                          <span className="bg-gray-100 text-gray-500 border border-gray-300 font-mono text-[9px] px-1.5 py-0.2 rounded" title="Source repository not yet on GITSMITH forge">
+                          <span className="bg-gray-100 text-gray-500 border border-gray-300 font-mono text-[9px] px-1.5 py-0.2 rounded" title="This app hasn't published its source to GITSMITH yet — it can't be forked or bought until it does.">
                             not yet on forge
                           </span>
                         )}
