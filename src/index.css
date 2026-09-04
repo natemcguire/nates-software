@@ -164,7 +164,8 @@ html, body {
   .nsw-popup-enter { animation: none; }
 }
 
-.btn-w95 {
+.btn-w95,
+.win95-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -181,7 +182,8 @@ html, body {
   white-space: nowrap;
 }
 
-.btn-w95:active {
+.btn-w95:active,
+.win95-btn:active {
   border-color: #404040 #ffffff #ffffff #404040;
   transform: translate(1px, 1px);
 }
