@@ -77,8 +77,11 @@ export function resolveAppRoute(
     return { type: 'standalone_view', id: 'terminal', title: 'TERMINAL.EXE INTERACTIVE DOS SHELL' };
   }
 
+  const lowerHost = hostname.toLowerCase();
+  const isPagesPreviewHost = lowerHost.endsWith('.pages.dev') || lowerHost === 'localhost' || lowerHost.startsWith('localhost:') || lowerHost.startsWith('127.0.0.1');
   const hostLabel = hostname ? hostname.split('.')[0].toLowerCase() : null;
-  const requestedAppId = appIdQuery || (hostLabel && !RESERVED_VIEW_HOSTS.has(hostLabel) ? hostLabel : null);
+  const hostAppId = isPagesPreviewHost ? null : (hostLabel && !RESERVED_VIEW_HOSTS.has(hostLabel) ? hostLabel : null);
+  const requestedAppId = appIdQuery || hostAppId;
 
   if (requestedAppId && !RESERVED_VIEW_HOSTS.has(requestedAppId)) {
     return {
