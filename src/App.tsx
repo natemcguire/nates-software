@@ -1109,7 +1109,9 @@ export function AppInner() {
             <div className="bg-w95-blue text-white px-2.5 py-1.5 flex items-center justify-between border-b-2 border-gray-800 select-none">
               <div className="flex items-center gap-2">
                 <span>{liveSandboxApp.creatorAvatar || liveSandboxApp.authorAvatar || '🚀'}</span>
-                <span className="font-bold text-xs font-mono">{liveSandboxApp.name} — Live Cloud Sandbox</span>
+                <span className="font-bold text-xs font-mono">
+                  {liveSandboxApp.name} — {liveSandboxApp.deploymentState === 'active' && liveSandboxApp.activeDeploymentId ? 'Live Cloud Sandbox' : 'Source Preview'}
+                </span>
               </div>
               <button
                 onClick={() => {

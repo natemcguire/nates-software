@@ -135,7 +135,7 @@ export const EphemeralLiveApp: React.FC<EphemeralLiveAppProps> = ({ app }) => {
       <div className="bg-gradient-to-r from-gray-900 via-blue-950 to-gray-900 text-white p-2 flex items-center justify-between border-b-2 border-gray-700 flex-wrap gap-2 shadow-sm select-none">
         <div className="flex items-center gap-2">
           <span className={`w-2.5 h-2.5 rounded-full ${isVerifiedActive ? 'bg-green-500 animate-pulse' : deploymentState === 'failed' ? 'bg-red-500' : 'bg-amber-400'}`} />
-          <span className="font-bold text-xs">{app.name} Live Sandbox</span>
+          <span className="font-bold text-xs">{app.name} {hasRunnableDeployment ? 'Live Sandbox' : 'Source Preview'}</span>
           <span className="text-gray-400 font-mono text-[11px]">({app.version})</span>
         </div>
 
