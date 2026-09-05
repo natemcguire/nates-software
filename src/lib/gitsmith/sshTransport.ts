@@ -509,8 +509,20 @@ main().catch(err => {
         fs.writeFileSync(policyFile, JSON.stringify(policyData), { mode: 0o600 });
       }
 
+      // Untrusted writers push here. Cap the pack size (receive.maxInputSize rejects an
+      // oversized pack during ingest, before hooks run — protects shared disk from a
+      // multi-GB push) and validate object integrity (transfer.fsckObjects) so malformed
+      // objects can't enter the authoritative store.
+      const maxPushBytes = this.config.maxPushBytes && this.config.maxPushBytes > 0
+        ? this.config.maxPushBytes
+        : 500 * 1024 * 1024;
       const args = operation === 'write'
-        ? ['-c', `core.hooksPath=${hookDir}`, 'receive-pack', resolved.resolvedPath]
+        ? [
+            '-c', `core.hooksPath=${hookDir}`,
+            '-c', `receive.maxInputSize=${maxPushBytes}`,
+            '-c', 'transfer.fsckObjects=true',
+            'receive-pack', resolved.resolvedPath
+          ]
         : ['upload-pack', resolved.resolvedPath];
       const child = spawn('git', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -541,10 +553,19 @@ main().catch(err => {
             const oldOid = zero.test(oldRaw) ? null : oldRaw;
             const newOid = zero.test(newRaw) ? null : newRaw;
             const idempotencyKey = `ssh:${authorization.repositoryId}:${refName}:${oldRaw}:${newRaw}`;
-            await this.gatewayService.recordAppliedRef({
+            const applied = await this.gatewayService.recordAppliedRef({
               repositoryId: authorization.repositoryId, refName, oldOid, newOid,
               actorUserId: authorization.actorUserId, idempotencyKey
             });
+            // The ref has already moved on disk. If the control-plane projection failed AND
+            // the durable receipt did not persist, this ref move is not recoverable by the
+            // periodic replay — surface it loudly so it is observable rather than silently lost.
+            if (applied && applied.reconciled === false && (applied as any).receiptPersisted === false) {
+              console.error(
+                `[GITSMITH][CRITICAL] Ref move applied on disk but NOT projected and receipt NOT persisted: ` +
+                `repo=${authorization.repositoryId} ref=${refName} ${oldRaw}->${newRaw}. D1 projection is now stale.`
+              );
+            }
           }
           try { fs.unlinkSync(updatesFile); } catch {}
         } else if (updatesFile) {

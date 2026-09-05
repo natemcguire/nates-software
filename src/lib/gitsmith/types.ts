@@ -17,6 +17,7 @@ export interface GatewayConfig {
   readonly leaseDurationSeconds?: number;
   readonly baseBackoffSeconds?: number;
   readonly maxBackoffSeconds?: number;
+  readonly maxPushBytes?: number;
 }
 
 export interface GitCapabilities {

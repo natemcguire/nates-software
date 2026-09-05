@@ -56,6 +56,14 @@ async function main() {
     fs.mkdirSync(config.reposRoot, { recursive: true });
     await service.replayPendingCallbacks();
     dispatcher.startPolling();
+    // Self-heal any push whose ref moved on disk but whose control-plane D1 projection
+    // failed at the time: replay persisted receipts on a cadence, not just at startup, so a
+    // stale repository_refs projection recovers without an operator restart.
+    const replayIntervalMs = Math.max(15000, (config.pollIntervalMs || 1000) * 30);
+    const replayTimer = setInterval(() => {
+      service.replayPendingCallbacks().catch(() => {});
+    }, replayIntervalMs);
+    if (typeof replayTimer.unref === 'function') replayTimer.unref();
     await sshTransport.start();
     healthChecker.setTransportStatus(sshTransport.getStatus());
     const server = createGatewayServer(config, { service, dispatcher, healthChecker });
@@ -76,6 +84,7 @@ async function main() {
 
     const shutdown = () => {
       console.log('\nStopping GITSMITH Gateway...');
+      clearInterval(replayTimer);
       dispatcher.stopPolling();
       void sshTransport.stop().finally(() => server.close(() => {
         console.log('GITSMITH Gateway stopped.');

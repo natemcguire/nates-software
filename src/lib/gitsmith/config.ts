@@ -24,7 +24,8 @@ export const DEFAULT_DEV_CONFIG: GatewayConfig = {
   maxAttempts: 5,
   leaseDurationSeconds: 60,
   baseBackoffSeconds: 2,
-  maxBackoffSeconds: 300
+  maxBackoffSeconds: 300,
+  maxPushBytes: 500 * 1024 * 1024
 };
 
 export function validateProductionStartup(config: GatewayConfig): void {

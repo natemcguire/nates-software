@@ -493,30 +493,34 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
                       
                       
                       
-                      const oldActiveId = listing.activeDeploymentId || null;
-                      const flipRes = oldActiveId
-                        ? await env.DB.prepare(`
-                            UPDATE app_listings SET
-                              deployment_state = 'active',
-                              origin_kind = ?,
-                              origin_ref = ?,
-                              active_deployment_id = ?,
-                              active_commit_oid = ?,
-                              deployment_error = NULL,
-                              deployment_evidence_json = ?
-                            WHERE id = ? AND (active_deployment_id = ? OR active_deployment_id IS NULL)
-                          `).bind(targetOriginKind, workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId, oldActiveId).run()
-                        : await env.DB.prepare(`
-                            UPDATE app_listings SET
-                              deployment_state = 'active',
-                              origin_kind = ?,
-                              origin_ref = ?,
-                              active_deployment_id = ?,
-                              active_commit_oid = ?,
-                              deployment_error = NULL,
-                              deployment_evidence_json = ?
-                            WHERE id = ? AND active_deployment_id IS NULL
-                          `).bind(targetOriginKind, workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+                      // Stale-build promotion guard — both predicates live IN the UPDATE so the
+                      // decision is atomic (no TOCTOU between a JS check and the write):
+                      // (1) commit recency — promote only if this build's commit is STILL the
+                      //     repo default-ref head; an older commit stops being head the moment a
+                      //     newer one is pushed, so a slow older-commit build can never win.
+                      // (2) monotonic revision — gated on revision_number (MAX+1 at completion),
+                      //     NOT the active_deployment_id snapshot, so overlapping first-deploy
+                      //     flips resolve deterministically and a lower-rev finisher can't steal.
+                      const flipRes = await env.DB.prepare(`
+                        UPDATE app_listings SET
+                          deployment_state = 'active',
+                          origin_kind = ?,
+                          origin_ref = ?,
+                          active_deployment_id = ?,
+                          active_commit_oid = ?,
+                          deployment_error = NULL,
+                          deployment_evidence_json = ?
+                        WHERE id = ?
+                          AND ? > COALESCE((SELECT revision_number FROM deployment_revisions WHERE id = app_listings.active_deployment_id), 0)
+                          AND ? = COALESCE((
+                            SELECT rf.commit_oid FROM repositories r
+                            LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
+                            WHERE r.id = ?
+                          ), ?)
+                      `).bind(
+                        targetOriginKind, workerUrl, revisionId, commitOid, JSON.stringify(promotionEvidence),
+                        appId, revisionNumber, commitOid, (listing.repositoryId || appId), commitOid
+                      ).run();
 
                       const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
 
@@ -2694,28 +2698,27 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
       
       
       
-      const oldActiveId = appListing.active_deployment_id || null;
-      const flipRes = oldActiveId
-        ? await env.DB.prepare(`
-            UPDATE app_listings SET
-              deployment_state = 'active',
-              origin_kind = 'r2_static',
-              active_deployment_id = ?,
-              active_commit_oid = ?,
-              deployment_error = NULL,
-              deployment_evidence_json = ?
-            WHERE id = ? AND (active_deployment_id = ? OR active_deployment_id IS NULL)
-          `).bind(revisionId, commitOid, JSON.stringify(promotionEvidence), appId, oldActiveId).run()
-        : await env.DB.prepare(`
-            UPDATE app_listings SET
-              deployment_state = 'active',
-              origin_kind = 'r2_static',
-              active_deployment_id = ?,
-              active_commit_oid = ?,
-              deployment_error = NULL,
-              deployment_evidence_json = ?
-            WHERE id = ? AND active_deployment_id IS NULL
-          `).bind(revisionId, commitOid, JSON.stringify(promotionEvidence), appId).run();
+      // Stale-build promotion guard (same atomic form as the build-pipeline flip):
+      // commit-recency + monotonic-revision, both predicates in the UPDATE (no TOCTOU).
+      const flipRes = await env.DB.prepare(`
+        UPDATE app_listings SET
+          deployment_state = 'active',
+          origin_kind = 'r2_static',
+          active_deployment_id = ?,
+          active_commit_oid = ?,
+          deployment_error = NULL,
+          deployment_evidence_json = ?
+        WHERE id = ?
+          AND ? > COALESCE((SELECT revision_number FROM deployment_revisions WHERE id = app_listings.active_deployment_id), 0)
+          AND ? = COALESCE((
+            SELECT rf.commit_oid FROM repositories r
+            LEFT JOIN repository_refs rf ON rf.repository_id = r.id AND rf.ref_name = r.default_ref
+            WHERE r.id = ?
+          ), ?)
+      `).bind(
+        revisionId, commitOid, JSON.stringify(promotionEvidence),
+        appId, revisionNumber, commitOid, (appListing.repository_id || appId), commitOid
+      ).run();
 
       const flipChanges = flipRes?.meta?.changes ?? (flipRes as any)?.changes ?? 0;
 
