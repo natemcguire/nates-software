@@ -59,13 +59,11 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
     {
       name: 'AGENT INBOX',
       desc: 'A live window onto your local AI agents',
-      soon: true,
       onOpen: onOpenInbox
     },
     {
       name: 'DYNO',
       desc: 'Real-world AI model + agent benchmark',
-      soon: true,
       onOpen: onOpenDyno
     }
   ];
