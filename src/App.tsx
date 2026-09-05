@@ -212,26 +212,48 @@ export function AppInner() {
   const route = resolveAppRoute(hostname, pathname, viewQuery, urlParams?.get('app') || null);
 
   if (route.type === 'standalone_app' && route.id) {
-    const resolvedApp = getApp(route.id) || {
-      id: route.id,
-      name: route.id.replace(/[-_]/g, ' ').replace(/ \w/g, c => c.toUpperCase()),
-      tagline: `${route.id} — Go Fork, and Multiply!`,
-      description: "Shareware application provisioned on Nate's Software.",
-      author: 'nate',
-      authorAvatar: '⚡',
-      creator: 'nate',
-      creatorAvatar: '⚡',
-      version: 'v1.0.0',
-      upvotes: 0,
-      forkCount: 0,
-      tags: ['Shareware', 'App'],
-      sqliteDatabase: '',
-      sqliteSize: 'Not specified',
-      screenshots: [],
-      comments: [],
-      deploymentState: 'draft' as const,
-      deploymentError: `No deployable revision exists for ${route.id}. Source has not been imported into GITSMITH and built by RIG.`
-    };
+    const resolvedApp = getApp(route.id);
+
+    // Do NOT fabricate a listing for an app that isn't a real, board-visible catalog entry.
+    // A missing id here means the app doesn't exist, or is withdrawn/private/failed — show an
+    // honest "not available" state rather than inventing a plausible draft page (no fake data).
+    if (!resolvedApp) {
+      return (
+        <div className="fixed inset-0 bg-[#ece9d8] flex flex-col font-tahoma text-xs overflow-hidden">
+          <div className="bg-w95-blue text-white p-2 flex items-center justify-between border-b-2 border-gray-800 select-none shadow-md">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🔍</span>
+              <span className="font-bold text-sm font-mono">App not found</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <AccountWidget />
+              <a
+                href="https://nates-software.com"
+                className="btn-w95 text-xs py-1 px-3 font-bold text-black bg-gray-200 hover:bg-white"
+              >
+                ⚡ Return to Nate's Software Web OS
+              </a>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-6 text-center">
+            <div className="w-full max-w-md bg-[#c0c0c0] border-2 border-t-white border-l-white border-b-black border-r-black shadow-[4px_4px_0_rgba(0,0,0,0.4)]">
+              <div className="p-5 text-black">
+                <div className="text-3xl mb-2">🔍</div>
+                <div className="font-bold text-base mb-1">No app at this address</div>
+                <p className="text-xs text-gray-800 leading-relaxed mb-4">
+                  There's no published app at <span className="font-mono">{route.id}</span> right now.
+                  It may be unlisted, still in progress, or the link is wrong.
+                </p>
+                <a href="https://nates-software.com/?view=hotwire"
+                   className="btn-w95 btn-w95-primary inline-block px-4 py-1.5 text-xs font-bold">
+                  Browse HOTWIRE →
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     const isAppActive = resolvedApp.deploymentState === 'active' && Boolean(resolvedApp.activeDeploymentId);
 
