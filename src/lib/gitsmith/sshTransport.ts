@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import ssh2, { type Connection, type AuthContext, type Session } from 'ssh2';
 import type { GatewayConfig } from './types.ts';
-import { resolveRepoPath } from './gitStorage.ts';
+import { resolveRepoPath, initBareRepo } from './gitStorage.ts';
 import { GitsmithGatewayService } from './gatewayService.ts';
 import { isValidRefPolicies } from '../forgeDomain.ts';
 
@@ -478,8 +478,24 @@ main().catch(err => {
       if (operation === 'write' && (!isValidRefPolicies(authorization.refPolicies) || typeof authorization.defaultRef !== 'string' || !authorization.defaultRef.trim())) {
         return rejectExec();
       }
-      const resolved = resolveRepoPath(this.config.reposRoot, authorization.storageKey);
-      if (!resolved.valid || !resolved.resolvedPath || !fs.existsSync(resolved.resolvedPath)) return rejectExec();
+      let resolved = resolveRepoPath(this.config.reposRoot, authorization.storageKey);
+      if (!resolved.valid || !resolved.resolvedPath) return rejectExec();
+
+      // Lazy-init the bare repo on first push. A repo can be provisioned in D1 (via slop init
+      // / create-repository) before its on-disk bare git dir exists — e.g. repos seeded
+      // pre-forge. Without this, the FIRST push to any such repo is rejected forever. On a
+      // write to a not-yet-created path, initialize the bare repo, then proceed. Reads still
+      // reject a missing repo (nothing to serve).
+      if (!fs.existsSync(resolved.resolvedPath)) {
+        if (operation !== 'write') return rejectExec();
+        const init = initBareRepo(this.config.reposRoot, {
+          storageKey: authorization.storageKey,
+          defaultRef: authorization.defaultRef || 'refs/heads/main'
+        });
+        if (!init.success) return rejectExec();
+        resolved = resolveRepoPath(this.config.reposRoot, authorization.storageKey);
+        if (!resolved.valid || !resolved.resolvedPath || !fs.existsSync(resolved.resolvedPath)) return rejectExec();
+      }
 
       const channel = acceptExec();
       if (operation === 'write') {
