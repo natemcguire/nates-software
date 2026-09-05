@@ -136,6 +136,31 @@ describe('CLUSTER B: Hotwire Authoritative State (§1-§7)', () => {
     });
   });
 
+  describe('§4b Storefront hygiene: failed/retired deployments excluded from the public board', () => {
+    it('omits failed and retired listings but keeps active and source_ready ones', async () => {
+      await ctx.d1.prepare('DELETE FROM commerce_products').run();
+      await ctx.d1.prepare('DELETE FROM app_listings').run();
+      await ctx.d1.prepare(`
+        INSERT INTO app_listings (id, name, tagline, description, creator_id, version, license, listing_status, deployment_state) VALUES
+          ('good-active',  'Good Active',  't', 'd', 'usr_nate', 'v1.0.0', 'MIT', 'active', 'active'),
+          ('good-source',  'Good Source',  't', 'd', 'usr_nate', 'v1.0.0', 'MIT', 'active', 'source_ready'),
+          ('broken-failed','Broken Failed','t', 'd', 'usr_nate', 'v1.0.0', 'MIT', 'active', 'failed'),
+          ('gone-retired', 'Gone Retired', 't', 'd', 'usr_nate', 'v1.0.0', 'MIT', 'active', 'retired')
+      `).run();
+
+      const req = new Request('http://localhost/api/drops', { method: 'GET' });
+      const res = await dropsApi.onRequestGet({ request: req, env: { DB: ctx.d1 } });
+      const data = await res.json();
+      expect(data.success).toBe(true);
+
+      const ids = (data.drops || []).map((d: any) => d.id);
+      expect(ids).toContain('good-active');
+      expect(ids).toContain('good-source');
+      expect(ids).not.toContain('broken-failed');
+      expect(ids).not.toContain('gone-retired');
+    });
+  });
+
   describe('§5 Live maker leaderboard and voter transparency gating', () => {
     it('computes live maker leaderboard from D1 drop history', async () => {
       const req = new Request('http://localhost/api/drops', { method: 'GET' });

@@ -78,7 +78,11 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: an
     
     
     
-    const baseWhere = `a.listing_status = 'active'`;
+    // Storefront hygiene: a listing is on the board if its HOTWIRE listing_status is active
+    // AND its deployment isn't a dead-end. failed/retired apps are broken/withdrawn and must
+    // never clutter the public board a first-time visitor browses; draft/source_ready/building/
+    // active/client_demo are all legitimate in-progress-or-live states and stay.
+    const baseWhere = `a.listing_status = 'active' AND (a.deployment_state IS NULL OR a.deployment_state NOT IN ('failed', 'retired'))`;
     let windowClause = '';
     const windowParams: any[] = [];
     if (batchFilter.type === 'today' && batchFilter.windowStart && batchFilter.windowEnd) {
