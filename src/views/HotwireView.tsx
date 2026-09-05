@@ -491,12 +491,16 @@ const LibraryIndex: React.FC<LibraryIndexProps> = ({
                 <button
                   onClick={(e) => onUpvote(e, app.id)}
                   disabled={isUpvoted}
-                  className={`win95-btn px-2 py-1 flex flex-col items-center min-w-[46px] transition-all ${isUpvoted ? 'bg-orange-100 border-orange-500 text-orange-900 font-bold opacity-90 cursor-default' : 'bg-[#dfdfdf] hover:bg-white'}`}
-                  title={isUpvoted ? 'Already upvoted' : !isAuthenticated ? 'Sign in to upvote' : `Upvote (${app.upvotes})`}
+                  className={`px-2 py-1 flex flex-col items-center min-w-[46px] border-2 transition-all ${
+                    isUpvoted
+                      ? 'bg-orange-200 border-t-orange-700 border-l-orange-700 border-b-orange-300 border-r-orange-300 text-orange-900 font-bold cursor-default shadow-inner'
+                      : 'win95-btn bg-[#dfdfdf] hover:bg-white active:border-t-black active:border-l-black active:border-b-white active:border-r-white'
+                  }`}
+                  title={isUpvoted ? 'You already upvoted this' : !isAuthenticated ? 'Sign in to upvote' : `Upvote (${app.upvotes})`}
                 >
                   <Flame size={13} className={isUpvoted ? 'text-orange-600 fill-orange-600' : 'text-gray-600'} />
                   <span className="font-mono text-xs mt-0.5">{app.upvotes}</span>
-                  {isUpvoted && <span className="text-[10px] font-mono text-orange-800 font-bold uppercase">Voted</span>}
+                  {isUpvoted && <span className="text-[10px] font-mono text-orange-800 font-bold uppercase flex items-center gap-0.5">✓ Voted</span>}
                 </button>
               </div>
             );

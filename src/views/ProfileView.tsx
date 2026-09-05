@@ -31,7 +31,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenPostEditor
 }) => {
   const { isAuthenticated, openAuthModal } = useAuth();
-  const { showToast } = useAlert();
+  const { showToast, showAlert } = useAlert();
 
   const [activeTab, setActiveTab] = useState<'shelf' | 'royalties' | 'profile' | 'published'>('shelf');
   const [viewingUsername, setViewingUsername] = useState<string | null>(initialUsername || null);
@@ -185,10 +185,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       if (res.ok && data?.onboardingUrl) {
         window.open(data.onboardingUrl, '_blank', 'noopener,noreferrer');
       } else {
-        showToast(data?.error || 'Stripe Connect payout onboarding is not available right now.');
+        showAlert(
+          data?.error || 'Stripe Connect payouts are disabled in test mode. You’ll be able to connect your payout account when payouts go live.',
+          'Payouts unavailable',
+          'error'
+        );
       }
     } catch {
-      showToast('Stripe Connect payout onboarding is not configured on this server instance.');
+      showAlert('Payout onboarding is temporarily unavailable. Please try again shortly.', 'Payouts unavailable', 'error');
     } finally {
       setIsConnectingStripe(false);
     }

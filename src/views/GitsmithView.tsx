@@ -874,9 +874,9 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
           </div>
         ) : null
       )}
-      <div className="flex-1 flex overflow-hidden">
-        <div 
-          style={{ width: `${sidebarWidth}px`, minWidth: '220px', maxWidth: '520px' }}
+      <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+        <div
+          style={{ width: `${sidebarWidth}px`, minWidth: '180px', maxWidth: '520px' }}
           className="border-r border-[#808080] bg-[#ece9d8] flex flex-col overflow-hidden shrink-0"
         >
           <div className="p-2 border-b border-[#808080] bg-[#c0c0c0]">
@@ -1133,10 +1133,10 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                       handleCopyClone(selectedRepo);
                     }}
                     className="win95-btn bg-[#dfdfdf] hover:bg-white text-black px-3 py-1 text-xs font-bold flex items-center gap-1.5"
-                    title="Copy SLOP install command"
+                    title="Copy the slop CLI clone command"
                   >
                     {copiedClone ? <Check size={13} className="text-emerald-700" /> : <Copy size={13} />}
-                    <span>{copiedClone ? 'Install copied!' : 'Install'}</span>
+                    <span>{copiedClone ? 'Command copied!' : 'Clone (CLI)'}</span>
                   </button>
                 </div>
                 <div className="text-[11px] font-mono text-gray-600 flex items-center gap-1">
@@ -1232,7 +1232,7 @@ export const GitsmithView: React.FC<GitsmithViewProps> = ({ initialRepoSlug }) =
                 </div>
               </div>
 
-              <div className="flex flex-1 overflow-hidden">
+              <div className="flex flex-1 min-w-0 overflow-hidden">
                 <Win95Scroll
                   style={{ width: `${fileTreeWidth}px`, minWidth: '160px', maxWidth: '460px' }}
                   className="bg-white win95-field p-2 space-y-0.5 shrink-0"

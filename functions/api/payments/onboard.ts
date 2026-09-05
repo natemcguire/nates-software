@@ -13,7 +13,10 @@ async function stripePost(path: string, key: string, params: URLSearchParams): P
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: params.toString()
+      body: params.toString(),
+      // Bound the Stripe call so a hang can't run past the Worker CPU/subrequest limit
+      // (which would make Cloudflare kill the isolate and emit a raw empty-body 502).
+      signal: AbortSignal.timeout(8000)
     });
   } catch {
     throw new Error('Stripe is temporarily unreachable. No onboarding link was created.');
@@ -28,7 +31,7 @@ async function stripePost(path: string, key: string, params: URLSearchParams): P
   return payload;
 }
 
-export const onRequestPost = async ({ request, env }: { request: Request; env: any }) => {
+const handleOnboard = async ({ request, env }: { request: Request; env: any }) => {
   if (env?.PAYMENTS_ENABLED !== 'true') {
     return jsonError('Maker payouts are temporarily unavailable while Stripe Connect settlement is being commissioned.', 503);
   }
@@ -146,4 +149,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: a
     expiresAt: Number.isFinite(link.expires_at) ? link.expires_at : null,
     message: 'Stripe Connect Express onboarding link created.'
   });
+};
+
+// Outer boundary: any throw that escapes handleOnboard (auth, URL parsing, an isolate-killing
+// Stripe hang) returns a clean JSON error instead of a raw empty-body Cloudflare 502.
+export const onRequestPost = async (ctx: { request: Request; env: any }) => {
+  try {
+    return await handleOnboard(ctx);
+  } catch (err: any) {
+    console.error('[ONBOARD] unhandled error:', err?.message || err);
+    return jsonError('Payout onboarding is temporarily unavailable. Please try again shortly.', 503);
+  }
 };

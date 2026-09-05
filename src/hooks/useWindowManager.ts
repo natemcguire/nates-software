@@ -279,15 +279,21 @@ export function useWindowManager(user?: AuthUser | null) {
       let x = target.isOpen ? target.x : centerX;
       let y = target.isOpen ? target.y : centerY;
       if (!target.isOpen) {
-        for (let i = 0; i < occupied.length + 1; i++) {
-          const collides = occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR);
-          if (!collides) break;
-          x += STEP;
-          y += STEP;
-          if (x > maxX || y > maxY) {
-            x = Math.min(maxX, 30 + ((i % 6) + 1) * 36);
-            y = Math.min(maxY, 25 + ((i % 6) + 1) * 36);
-          }
+        // Cascade: each new window opens down-and-right of the others so they never fully
+        // stack. Anchor near the top-left, step by the open-window count, and wrap back up
+        // once the cascade would run off the bottom-right.
+        const openCount = occupied.length;
+        const ANCHOR_X = 40, ANCHOR_Y = 30;
+        const wrap = openCount % 8; // restart the diagonal every 8 windows
+        x = Math.min(maxX, ANCHOR_X + wrap * STEP);
+        y = Math.min(maxY, ANCHOR_Y + wrap * STEP);
+        // If that spot still lands right on top of an existing window, nudge until clear.
+        let guard = 0;
+        while (occupied.some(o => Math.abs(o.x - x) < NEAR && Math.abs(o.y - y) < NEAR) && guard < 10) {
+          x = Math.min(maxX, x + STEP);
+          y = Math.min(maxY, y + STEP);
+          if (x >= maxX && y >= maxY) { x = ANCHOR_X; y = ANCHOR_Y; }
+          guard++;
         }
       }
 

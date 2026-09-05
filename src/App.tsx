@@ -405,7 +405,7 @@ export function AppInner() {
       case 'inbox': return renderStandaloneWrapper(route.title || "INBOX", <InboxView />);
       case 'white-papers': return renderStandaloneWrapper(route.title || "WHITE PAPERS", <WhitePapersView />);
       case 'dyno': return renderStandaloneWrapper(route.title || "DYNO", <DynoView />);
-      case 'profile': return renderStandaloneWrapper(route.title || "ACCOUNT.CFG (Profile)", <ProfileView />);
+      case 'profile': return renderStandaloneWrapper(route.title || "ACCOUNT.CFG (Profile)", <ProfileView onOpenHotwire={() => { window.location.href = 'https://nates-software.com/?view=hotwire'; }} />);
       case 'terminal': return renderStandaloneWrapper(route.title || "TERMINAL", <TerminalView />);
     }
   }
