@@ -13,7 +13,6 @@ export interface DesktopIconProps {
   onOpen?: () => void;
   introClassName?: string;
   introDelayMs?: number;
-  comingSoon?: boolean;
   voxelReveal?: boolean;
   voxelDelayMs?: number;
 }
@@ -30,7 +29,6 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
   onContextMenu,
   introClassName,
   introDelayMs,
-  comingSoon,
   voxelReveal,
   voxelDelayMs
 }) => {
@@ -157,13 +155,13 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({
         isDragging ? 'opacity-90 ring-1 ring-yellow-300/70' : ''
       } ${introClassName || ''}`}
     >
-      <div className={`text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1 flex items-center justify-center ${comingSoon ? 'grayscale opacity-55' : ''}`} style={{ minHeight: 64 }}>
+      <div className="text-5xl filter drop-shadow-md group-hover:scale-105 transition-transform mb-1 flex items-center justify-center" style={{ minHeight: 64 }}>
         {voxelReveal && !voxelDone
           ? <VoxelReveal glyph={icon} size={64} grid={12} duration={2.4} startDelayMs={voxelDelayMs} onDone={() => setVoxelDone(true)} />
           : icon}
       </div>
       <div
-        className={`text-xs font-bold text-shadow px-1 py-0.5 rounded line-clamp-2 leading-snug w-full max-w-full break-words hyphens-auto ${comingSoon ? 'text-white/60' : 'text-white'}`}
+        className="text-xs font-bold text-shadow px-1 py-0.5 rounded line-clamp-2 leading-snug w-full max-w-full break-words hyphens-auto text-white"
         style={{ overflowWrap: 'anywhere' }}
       >
         {label}

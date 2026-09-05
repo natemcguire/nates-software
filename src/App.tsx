@@ -635,7 +635,7 @@ export function AppInner() {
       </div>
 
       {(() => {
-        type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'refs' | 'soon'; comingSoon?: boolean };
+        type DeskIcon = { id: string; label: string; icon: string; onClick: () => void; group: 'main' | 'refs' | 'soon' };
         const icons: DeskIcon[] = [
           { id: 'setup', label: 'SETUP.EXE', icon: '🚀', group: 'main', onClick: () => { playClickSound(); openWindow('setup'); } },
           { id: 'whatis', label: 'WHAT_IS_THIS.TXT', icon: '❓', group: 'main', onClick: () => { playClickSound(); triggerIntroReveal(); openWindow('mktg'); } },
@@ -679,7 +679,6 @@ export function AppInner() {
               label={item.label}
               icon={item.icon}
               position={pos}
-              comingSoon={item.comingSoon}
               onPositionChange={(newPos) => handleIconPositionChange(item.id, newPos)}
               onClick={item.onClick}
               onContextMenu={(e) => openContextMenu(e, item.id)}

@@ -19,7 +19,6 @@ interface MarketingWindowProps {
 interface SpecItem {
   name: string;
   desc: string;
-  soon?: boolean;
   onOpen?: () => void;
 }
 
@@ -120,18 +119,17 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
             <table className="w-full text-xs">
               <tbody>
                 {specs.map((s) => {
-                  const isLink = !s.soon && Boolean(s.onOpen);
+                  const isLink = Boolean(s.onOpen);
                   return (
                     <tr
                       key={s.name}
                       onClick={() => { if (isLink && s.onOpen) { playClickSound(); s.onOpen(); } }}
                       className={`border-t border-gray-300 ${isLink ? 'cursor-pointer hover:bg-blue-50 group' : 'cursor-default'}`}
                     >
-                      <td className={`align-top px-3 py-2 font-bold whitespace-nowrap w-px ${s.soon ? 'text-gray-500' : isLink ? 'text-w95-blue underline decoration-dotted group-hover:decoration-solid' : 'text-gray-900'}`}>
+                      <td className={`align-top px-3 py-2 font-bold whitespace-nowrap w-px ${isLink ? 'text-w95-blue underline decoration-dotted group-hover:decoration-solid' : 'text-gray-900'}`}>
                         {s.name}
-                        {s.soon && <span className="ml-1.5 text-[10px] font-mono text-gray-400 font-normal">(coming soon)</span>}
                       </td>
-                      <td className={`align-top px-3 py-2 font-sans leading-snug ${s.soon ? 'text-gray-500' : 'text-gray-800'}`}>
+                      <td className="align-top px-3 py-2 font-sans leading-snug text-gray-800">
                         {s.desc}
                       </td>
                       <td className="align-top px-2 py-2 text-right w-6">
