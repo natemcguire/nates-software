@@ -93,10 +93,13 @@ export const MarketingWindow: React.FC<MarketingWindowProps> = ({
 
       <Win95Scroll className="flex-1">
         <div className="px-4 py-3 space-y-4">
-          <p className="text-gray-800 text-sm leading-relaxed font-sans">
-            Buy a web app once and own the source — the live app, the full Git repo, and a
-            real license key with your name on it. Free-tier hosting is limited and best-effort, and you always own the source to self-host anywhere. Fork anything for yourself and remix it with an AI agent; selling your version requires the author to have enabled resale, with upstream makers earning the royalty they locked the day you forked.
-          </p>
+          <div className="text-gray-800 text-sm leading-relaxed font-sans space-y-1.5">
+            <p>Buy a web app once and you own the source.</p>
+            <p>The live app, the full Git repo, a real license key with your name on it.</p>
+            <p>Free-tier hosting is limited and best-effort. You always own the source, so self-host anywhere.</p>
+            <p>Fork anything for yourself and remix it with an AI agent.</p>
+            <p>Selling your version only works if the author enabled resale. Upstream makers earn the royalty they locked the day you forked.</p>
+          </div>
 
           <div>
             <button
